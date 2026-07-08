@@ -1,11 +1,11 @@
-# Sierra Intake
+# Marks Food Photography
 
-Sierra Intake is a React + Flask starter app for a Kroger merchandise intake workflow backed by Airtable. This first pass is intentionally stubbed so pages, routes, and backend integration points can be wired progressively without locking in the Airtable schema yet.
+Marks Food Photography is a React + Flask app for studio job intake and SKU production tracking backed by Airtable.
 
 ## Structure
 
-- `frontend/` - Vite React app with producer-focused navigation and stub workflow pages.
-- `backend/` - Flask API with environment loading, CORS support, route blueprints, and an Airtable helper.
+- `frontend/` - Vite React app for dashboard, job intake, job lists, SKU tracking, and settings.
+- `backend/` - Flask API with environment loading, CORS support, Airtable helpers, and route blueprints.
 - `.env.example` - root-level configuration reference for local development.
 
 ## Local Setup
@@ -25,14 +25,13 @@ In another terminal:
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev -- --port 5175
 ```
 
-Frontend: `http://localhost:5174`
+Frontend: `http://localhost:5175`
 
 Backend health: `http://localhost:5057/api/health`
 
 ## Current Scope
 
-The app includes sidebar navigation, dashboard and workflow pages, and stub API routes for merchandise intake, work queue, shot assignment, Creative Force handoff, settings, and Airtable connection status. The Airtable helper reads credentials from the root `.env` and is ready for read/create/update calls once the schema is finalized.
-# marksfoodphotography
+The app includes sidebar navigation, a dashboard, new job intake, job list, SKU tracking, settings, and Airtable connection status. Airtable table and field IDs are currently configured for the Marks Food Photography base.

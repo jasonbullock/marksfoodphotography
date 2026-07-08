@@ -14,7 +14,7 @@ def create_app():
 
     @app.route("/")
     def root():
-        return jsonify({"name": "Sierra Intake API", "status": "running"})
+        return jsonify({"name": "Marks Food Photography API", "status": "running"})
 
     return app
 

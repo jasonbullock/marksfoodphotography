@@ -19,7 +19,7 @@ def err(msg, status=400):
 def health():
     return jsonify({
         "status": "ok",
-        "service": "Sierra Intake API",
+        "service": "Marks Food Photography API",
         "airtableConfigured": C.airtable_ready(),
     })
 
