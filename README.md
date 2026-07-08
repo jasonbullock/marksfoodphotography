@@ -35,3 +35,4 @@ Backend health: `http://localhost:5057/api/health`
 ## Current Scope
 
 The app includes sidebar navigation, dashboard and workflow pages, and stub API routes for merchandise intake, work queue, shot assignment, Creative Force handoff, settings, and Airtable connection status. The Airtable helper reads credentials from the root `.env` and is ready for read/create/update calls once the schema is finalized.
+# marksfoodphotography
