@@ -22,7 +22,8 @@ class AirtableClient:
         }
 
     def _table_url(self, table_name):
-        return f"{self.base_url}/{quote(table_name, safe='')}"
+        path = "/".join(quote(segment, safe="") for segment in table_name.split("/"))
+        return f"{self.base_url}/{path}"
 
     def _request(self, method, table_name, **kwargs):
         if not self.is_configured:
@@ -52,6 +53,10 @@ class AirtableClient:
     def list_records(self, table_name, params=None, by_field_id=True):
         params = self._field_id_params(params) if by_field_id else dict(params or {})
         return self._request("GET", table_name, params=params)
+
+    def get_record(self, table_name, record_id, by_field_id=True):
+        params = self._field_id_params() if by_field_id else {}
+        return self._request("GET", f"{table_name}/{record_id}", params=params)
 
     def create_record(self, table_name, fields, by_field_id=True):
         params = self._field_id_params() if by_field_id else {}

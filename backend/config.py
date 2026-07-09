@@ -31,6 +31,7 @@ class Config:
     USERS_TABLE = "Users"
     ISSUES_TABLE = "Issues"
     HISTORY_TABLE = "History"
+    IMPORTS_TABLE = "Imports"
 
     # Field names — Locations
     F_LOCATION_NAME = "Location"
@@ -43,6 +44,8 @@ class Config:
     F_USER_EMAIL = "Email"
     F_USER_ROLE = "Role"
     F_USER_ACTIVE = "Active"
+    F_USER_CLIENTS = "Clients"
+    F_USER_ALL_CLIENTS = "All Clients"
 
     # Field names — Receipts
     F_RECEIPT_NAME = "Receipt"
@@ -67,19 +70,19 @@ class Config:
     # Field names — Jobs
     F_JOB_NAME = "Job"
     F_JOB_CLIENT = "Client"
-    F_JOB_EXT_ID = "Ext ID"
-    F_JOB_OUTPUT = "Output"
+    F_JOB_EXT_ID = "Job ID"
+    F_JOB_OUTPUT = "Output Type"
     F_JOB_STATUS = "Status"
     F_JOB_DUE = "Due"
     F_JOB_NOTES = "Notes"
 
     # Field names — Items
-    F_ITEM_NAME = "Name"
+    F_ITEM_NAME = "Item"
     F_ITEM_CLIENT = "Client"
     F_ITEM_JOB = "Job"
-    F_ITEM_IDENTIFIER = "ID"
+    F_ITEM_IDENTIFIER = "Product ID"
     F_ITEM_CODE_TYPE = "Code Type"
-    F_ITEM_PRODUCT = "Product"
+    F_ITEM_PRODUCT = "Product Name"
     F_ITEM_BRAND = "Brand"
     F_ITEM_CATEGORY = "Category"
     F_ITEM_RECEIVED = "Received"
@@ -112,9 +115,29 @@ class Config:
     F_HISTORY_USER = "User"
     F_HISTORY_TYPE = "Type"
     F_HISTORY_DATE = "Date"
+    F_HISTORY_FIELD = "Field"
     F_HISTORY_FROM = "From"
     F_HISTORY_TO = "To"
     F_HISTORY_DETAILS = "Details"
+
+    # Field names — Imports
+    F_IMPORT_NAME = "Import"
+    F_IMPORT_CLIENT = "Client"
+    F_IMPORT_USER = "User"
+    F_IMPORT_FILE = "File"
+    F_IMPORT_TYPE = "Type"
+    F_IMPORT_STATUS = "Status"
+    F_IMPORT_STARTED = "Started"
+    F_IMPORT_FINISHED = "Finished"
+    F_IMPORT_ROWS = "Rows"
+    F_IMPORT_JOBS_CREATED = "Jobs Created"
+    F_IMPORT_JOBS_REUSED = "Jobs Reused"
+    F_IMPORT_ITEMS_CREATED = "Items Created"
+    F_IMPORT_ITEMS_UPDATED = "Items Updated"
+    F_IMPORT_ROWS_SKIPPED = "Rows Skipped"
+    F_IMPORT_ERRORS = "Errors"
+    F_IMPORT_WARNINGS = "Warnings"
+    F_IMPORT_DETAILS = "Details"
 
     @classmethod
     def cors_origins(cls):

@@ -3,6 +3,7 @@
 
 const BASE_ID = 'appE30EGZv8OzssDx';
 const AT_URL  = `https://api.airtable.com/v0/${BASE_ID}`;
+const BACKEND_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5057/api';
 
 const TABLES = {
   CLIENTS: 'Clients',
@@ -13,6 +14,7 @@ const TABLES = {
   USERS: 'Users',
   ISSUES: 'Issues',
   HISTORY: 'History',
+  IMPORTS: 'Imports',
 };
 
 const F = {
@@ -24,17 +26,17 @@ const F = {
   CLIENT_ACTIVE: 'Active',
   JOB_NAME: 'Job',
   JOB_CLIENT: 'Client',
-  JOB_EXT_ID: 'Ext ID',
-  JOB_OUTPUT: 'Output',
+  JOB_EXT_ID: 'Job ID',
+  JOB_OUTPUT: 'Output Type',
   JOB_STATUS: 'Status',
   JOB_DUE: 'Due',
   JOB_NOTES: 'Notes',
-  SKU_NAME: 'Name',
+  SKU_NAME: 'Item',
   SKU_CLIENT: 'Client',
   SKU_JOB: 'Job',
-  SKU_GTIN_UPC: 'ID',
+  SKU_GTIN_UPC: 'Product ID',
   SKU_CODE_TYPE: 'Code Type',
-  SKU_PRODUCT: 'Product',
+  SKU_PRODUCT: 'Product Name',
   SKU_BRAND: 'Brand',
   SKU_CATEGORY: 'Category',
   SKU_MERCH_VERIFIED: 'Received',
@@ -68,6 +70,25 @@ async function at(method, path, body) {
     throw new Error(e?.error?.message || `Airtable error ${res.status}`);
   }
   return res.json();
+}
+
+async function backend(method, path, body) {
+  const isFormData = body instanceof FormData;
+  let res;
+  try {
+    res = await fetch(`${BACKEND_API_URL}${path}`, {
+      method,
+      headers: isFormData ? undefined : { 'Content-Type': 'application/json' },
+      body: body ? (isFormData ? body : JSON.stringify(body)) : undefined,
+    });
+  } catch (e) {
+    throw new Error('Backend API is not running.');
+  }
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload?.error || `Backend error ${res.status}`);
+  }
+  return payload;
 }
 
 function shapeClient(r) {
@@ -107,6 +128,7 @@ function shapeSku(r) {
     name: f[F.SKU_NAME] ?? '',
     clientIds: f[F.SKU_CLIENT] ?? [],
     jobIds: f[F.SKU_JOB] ?? [],
+    productId: f[F.SKU_GTIN_UPC] ?? '',
     gtinUpc: f[F.SKU_GTIN_UPC] ?? '',
     identifier: f[F.SKU_GTIN_UPC] ?? '',
     codeType,
@@ -126,96 +148,49 @@ function shapeSku(r) {
 
 function validateItemIdentifier(identifier, codeType) {
   if (codeType === 'UPC-12' && !/^\d{12}$/.test(identifier || '')) {
-    throw new Error('ID must be exactly 12 digits for UPC-12.');
+    throw new Error('Product ID must be exactly 12 digits for UPC-12.');
   }
   if (codeType === 'GTIN-14' && !/^\d{14}$/.test(identifier || '')) {
-    throw new Error('ID must be exactly 14 digits for GTIN-14.');
+    throw new Error('Product ID must be exactly 14 digits for GTIN-14.');
   }
   if (codeType === 'Item #' && !identifier) {
-    throw new Error('ID is required for Item #.');
+    throw new Error('Product ID is required for Item #.');
   }
 }
 
 export const api = {
   listClients: async () => {
-    const d = await at('GET', `${TABLES.CLIENTS}?sort[0][field]=${F.CLIENT_NAME}&sort[0][direction]=asc`);
-    return { records: d.records.map(shapeClient) };
+    return backend('GET', '/clients');
   },
 
   listJobs: async (clientId) => {
-    let path = `${TABLES.JOBS}?sort[0][field]=${F.JOB_DUE}&sort[0][direction]=asc`;
-    if (clientId) path += `&filterByFormula=FIND("${clientId}",ARRAYJOIN({${F.JOB_CLIENT}}))`;
-    const d = await at('GET', path);
-    return { records: d.records.map(shapeJob) };
+    const params = new URLSearchParams();
+    if (clientId) params.set('clientId', clientId);
+    return backend('GET', `/jobs${params.toString() ? `?${params.toString()}` : ''}`);
   },
 
   createJob: async ({ clientId, job, name, sgsJobNum, extId, output, status, due, deadline, notes }) => {
     const jobName = job || name || sgsJobNum;
-    const fields = {
-      [F.JOB_NAME]: jobName,
-      [F.JOB_CLIENT]: [clientId],
-    };
-    if (extId) fields[F.JOB_EXT_ID] = extId;
-    if (output) fields[F.JOB_OUTPUT] = output;
-    if (status) fields[F.JOB_STATUS] = status;
-    if (due || deadline) fields[F.JOB_DUE] = due || deadline;
-    if (notes) fields[F.JOB_NOTES] = notes;
-    const d = await at('POST', TABLES.JOBS, { records: [{ fields }] });
-    return shapeJob(d.records[0]);
+    return backend('POST', '/jobs', { clientId, job: jobName, extId, output, status, due: due || deadline, notes });
   },
 
   listSkus: async (jobId) => {
-    let path = `${TABLES.SKUS}?sort[0][field]=${F.SKU_NAME}&sort[0][direction]=asc`;
-    if (jobId) path += `&filterByFormula=FIND("${jobId}",ARRAYJOIN({${F.SKU_JOB}}))`;
-    const d = await at('GET', path);
-    return { records: d.records.map(shapeSku) };
+    const params = new URLSearchParams();
+    if (jobId) params.set('jobId', jobId);
+    return backend('GET', `/items${params.toString() ? `?${params.toString()}` : ''}`);
   },
 
-  createSku: async ({ clientId, jobId, gtinUpc, id, codeType, name, product, brand, category, merchVerified, status, notes }) => {
-    const identifier = id || gtinUpc;
+  createSku: async ({ clientId, jobId, productId, gtinUpc, id, codeType, name, product, brand, category, merchVerified, status, notes }) => {
+    const identifier = productId || id || gtinUpc;
     validateItemIdentifier(identifier, codeType);
-    const fields = {
-      [F.SKU_NAME]: name || product || identifier,
-      [F.SKU_GTIN_UPC]: identifier,
-    };
-    if (clientId) fields[F.SKU_CLIENT] = [clientId];
-    if (jobId) fields[F.SKU_JOB] = [jobId];
-    if (product)       fields[F.SKU_PRODUCT]        = product;
-    if (brand)         fields[F.SKU_BRAND]          = brand;
-    if (category)      fields[F.SKU_CATEGORY]       = category;
-    if (merchVerified != null) fields[F.SKU_MERCH_VERIFIED] = Boolean(merchVerified);
-    if (status)        fields[F.SKU_STATUS]         = status;
-    if (notes)         fields[F.SKU_NOTES]          = notes;
-    const d = await at('POST', TABLES.SKUS, { records: [{ fields }] });
-    return shapeSku(d.records[0]);
+    return backend('POST', '/items', { clientId, jobId, productId: identifier, codeType, name, product, brand, category, merchVerified, status, notes });
   },
 
   updateSku: async (id, patch) => {
-    if ('gtinUpc' in patch || 'identifier' in patch) {
-      validateItemIdentifier(patch.identifier || patch.gtinUpc, patch.codeType);
+    if ('productId' in patch || 'gtinUpc' in patch || 'identifier' in patch) {
+      validateItemIdentifier(patch.productId || patch.identifier || patch.gtinUpc, patch.codeType);
     }
-    const map = {
-      clientIds:     F.SKU_CLIENT,
-      jobIds:        F.SKU_JOB,
-      gtinUpc:       F.SKU_GTIN_UPC,
-      identifier:    F.SKU_GTIN_UPC,
-      product:       F.SKU_PRODUCT,
-      brand:         F.SKU_BRAND,
-      category:      F.SKU_CATEGORY,
-      merchVerified: F.SKU_MERCH_VERIFIED,
-      received:      F.SKU_MERCH_VERIFIED,
-      recDate:       F.SKU_REC_DATE,
-      locationIds:   F.SKU_LOCATION,
-      condition:     F.SKU_CONDITION,
-      status:        F.SKU_STATUS,
-      notes:         F.SKU_NOTES,
-    };
-    const fields = {};
-    for (const [key, fieldId] of Object.entries(map)) {
-      if (key in patch) fields[fieldId] = patch[key];
-    }
-    const d = await at('PATCH', `${TABLES.SKUS}/${id}`, { fields });
-    return shapeSku(d);
+    return backend('PATCH', `/items/${id}`, patch);
   },
 
   settings: async () => ({
@@ -232,6 +207,7 @@ export const api = {
         users: TABLES.USERS,
         issues: TABLES.ISSUES,
         history: TABLES.HISTORY,
+        imports: TABLES.IMPORTS,
       },
     },
   }),
@@ -240,3 +216,78 @@ export const api = {
 api.listItems = api.listSkus;
 api.createItem = api.createSku;
 api.updateItem = api.updateSku;
+
+api.adminListItems = () => backend('GET', '/items');
+api.adminListLocations = () => backend('GET', '/locations');
+api.adminListIssues = () => backend('GET', '/issues');
+api.adminUpdateItem = (id, patch) => backend('PATCH', `/items/${id}`, patch);
+api.adminUpdateIssue = (id, patch) => backend('PATCH', `/issues/${id}`, patch);
+api.adminListHistory = ({ itemId, jobId, userId, limit = 10 } = {}) => {
+  const params = new URLSearchParams();
+  if (itemId) params.set('itemId', itemId);
+  if (jobId) params.set('jobId', jobId);
+  if (userId) params.set('userId', userId);
+  params.set('limit', String(limit));
+  return backend('GET', `/history?${params.toString()}`);
+};
+
+api.listImports = ({ limit = 25 } = {}) => {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  return backend('GET', `/imports?${params.toString()}`);
+};
+
+api.getImport = (id) => backend('GET', `/imports/${id}`);
+
+api.intakeListClients = async () => {
+  const data = await backend('GET', '/clients');
+  return { records: (data.records ?? []).filter(client => client.active) };
+};
+
+api.intakeMappingTargets = async () => backend('GET', '/intake/mapping-targets');
+
+api.previewSpreadsheet = async ({ clientId, file }) => {
+  const form = new FormData();
+  form.append('clientId', clientId);
+  form.append('file', file);
+  try {
+    return await backend('POST', '/intake/preview', form);
+  } catch (e) {
+    if (e.message === 'Backend API is not running.') {
+      throw new Error('Spreadsheet preview service is not running. Start the backend, then try the upload again.');
+    }
+    throw e;
+  }
+};
+
+api.reviewSpreadsheetImport = ({ clientId, file, importId }) => {
+  const form = new FormData();
+  form.append('clientId', clientId);
+  form.append('file', file);
+  if (importId) form.append('importId', importId);
+  return backend('POST', '/intake/review', form);
+};
+
+api.executeSpreadsheetImport = ({ clientId, file, importId }) => {
+  const form = new FormData();
+  form.append('clientId', clientId);
+  form.append('file', file);
+  if (importId) form.append('importId', importId);
+  return backend('POST', '/intake/import', form);
+};
+
+api.reviewSpreadsheetRows = ({ clientId, fileName, rows, importId }) => {
+  return backend('POST', '/intake/review', { clientId, fileName, rows, importId });
+};
+
+api.executeSpreadsheetRows = ({ clientId, fileName, rows, importId }) => {
+  return backend('POST', '/intake/import', { clientId, fileName, rows, importId });
+};
+
+api.reviewSpreadsheetSourceRows = ({ clientId, fileName, columnHeaders, sourceRows, mapping, importId }) => {
+  return backend('POST', '/intake/review', { clientId, fileName, columnHeaders, sourceRows, mapping, importId });
+};
+
+api.executeSpreadsheetSourceRows = ({ clientId, fileName, columnHeaders, sourceRows, mapping, importId }) => {
+  return backend('POST', '/intake/import', { clientId, fileName, columnHeaders, sourceRows, mapping, importId });
+};

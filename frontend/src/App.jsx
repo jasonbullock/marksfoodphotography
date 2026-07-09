@@ -36,6 +36,13 @@ const Icon = {
       <line x1="3" y1="8" x2="13" y2="8"/>
     </svg>
   ),
+  Upload: () => (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 11V3"/>
+      <polyline points="4.5,6.5 8,3 11.5,6.5"/>
+      <path d="M3 11v2a1 1 0 001 1h8a1 1 0 001-1v-2"/>
+    </svg>
+  ),
   Settings: () => (
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
       <circle cx="8" cy="8" r="2"/>
@@ -641,7 +648,7 @@ function JobsPage({ navigate }) {
                   <td><StatusBadge status={job.status} /></td>
                   <td>
                     <button className="btn btn-ghost" onClick={() => navigate('skus', { jobId: job.id })}>
-                      SKUs <Icon.ChevronRight />
+                      Items <Icon.ChevronRight />
                     </button>
                   </td>
                 </tr>
@@ -725,110 +732,72 @@ function NewJobPage({ navigate }) {
   );
 }
 
-// ── SKUs page ─────────────────────────────────────────────────────────────────
+// ── Items page ────────────────────────────────────────────────────────────────
 function SkusPage({ navigate, jobId: initJobId }) {
   const jobs = useResource(() => api.listJobs());
   const [jobFilter, setJobFilter] = useState(initJobId ?? '');
-  const skus = useResource(
+  const items = useResource(
     () => api.listSkus(jobFilter || undefined),
     [jobFilter]
   );
 
   const jobList = jobs.data?.records ?? [];
-  const [skuList, setSkuList]   = useState([]);
-  const [togglingId, setTogglingId] = useState(null);
-  const [showForm, setShowForm] = useState(false);
+  const [itemList, setItemList] = useState([]);
 
   useEffect(() => {
-    if (skus.data?.records) setSkuList(skus.data.records);
-  }, [skus.data]);
+    if (items.data?.records) setItemList(items.data.records);
+  }, [items.data]);
 
-  async function toggleMerch(sku) {
-    setTogglingId(sku.id);
-    try {
-      const updated = await api.updateSku(sku.id, { merchVerified: !sku.merchVerified });
-      setSkuList(prev => prev.map(s => s.id === sku.id ? updated : s));
-    } catch (e) {
-      alert('Update failed: ' + e.message);
-    } finally {
-      setTogglingId(null);
-    }
-  }
-
-  function gateStatus(sku) {
-    const g1 = sku.merchVerified;
-    const g2 = Boolean(sku.gtinUpc);
-    if (g1 && g2)  return <span className="badge badge-green">✓ Cleared</span>;
-    if (!g1 && !g2) return <span className="badge badge-red">Both gates open</span>;
-    if (!g1)        return <span className="badge badge-red">No merch</span>;
-    return <span className="badge badge-amber">No GTIN</span>;
+  function jobNames(item) {
+    const names = (item.jobIds ?? [])
+      .map(id => jobList.find(job => job.id === id)?.name)
+      .filter(Boolean);
+    return names.length ? names.join(', ') : '—';
   }
 
   return (
     <div className="page-stack">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div className="filter-bar">
-          <select value={jobFilter} onChange={e => setJobFilter(e.target.value)}>
-            <option value="">All jobs</option>
-            {jobList.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
-          </select>
-        </div>
-        <button className="btn btn-primary" onClick={() => setShowForm(f => !f)}>
-          <Icon.Add /> {showForm ? 'Cancel' : 'Add SKU'}
-        </button>
+      <div className="filter-bar">
+        <select value={jobFilter} onChange={e => setJobFilter(e.target.value)}>
+          <option value="">All jobs</option>
+          {jobList.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
+        </select>
       </div>
 
-      {showForm && jobFilter && (
-        <AddSkuForm
-          jobId={jobFilter}
-          onSaved={sku => { setSkuList(prev => [...prev, sku]); setShowForm(false); }}
-          onCancel={() => setShowForm(false)}
-        />
-      )}
-      {showForm && !jobFilter && (
-        <div className="error-state">Select a job before adding a SKU.</div>
-      )}
-
-      {skus.error && <div className="error-state">{skus.error}</div>}
+      {items.error && <div className="error-state">{items.error}</div>}
 
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>SKU / Name</th>
-              <th>GTIN / UPC</th>
+              <th>Item</th>
+              <th>Product ID</th>
+              <th>Product Name</th>
               <th>Brand</th>
-              <th>Output</th>
-              <th>Gate status</th>
-              <th>Merch</th>
+              <th>Job</th>
+              <th>Status</th>
+              <th>Received</th>
             </tr>
           </thead>
           <tbody>
-            {skus.loading && <tr><td colSpan="6" className="empty-state">Loading…</td></tr>}
-            {!skus.loading && skuList.length === 0 && (
-              <tr><td colSpan="6" className="empty-state">No SKUs found</td></tr>
+            {items.loading && <tr><td colSpan="7" className="empty-state">Loading…</td></tr>}
+            {!items.loading && itemList.length === 0 && (
+              <tr><td colSpan="7" className="empty-state">No Items found</td></tr>
             )}
-            {skuList.map(sku => (
-              <tr key={sku.id}>
-                <td style={{ fontWeight: 600 }}>{sku.name || '—'}</td>
+            {itemList.map(item => (
+              <tr key={item.id}>
+                <td style={{ fontWeight: 600 }}>{item.name || '—'}</td>
                 <td>
-                  {sku.gtinUpc
-                    ? <code>{sku.gtinUpc}</code>
+                  {item.identifier
+                    ? <code>{item.identifier}</code>
                     : <span style={{ color: 'var(--red)', fontWeight: 700, fontSize: 11 }}>MISSING</span>
                   }
                 </td>
-                <td>{sku.brand || '—'}</td>
-                <td>{sku.outputType || '—'}</td>
-                <td>{gateStatus(sku)}</td>
-                <td>
-                  <button
-                    className={`gate-toggle ${sku.merchVerified ? 'verified' : 'pending'}`}
-                    disabled={togglingId === sku.id}
-                    onClick={() => toggleMerch(sku)}
-                  >
-                    {togglingId === sku.id ? '…' : sku.merchVerified ? '✓ Verified' : 'Verify'}
-                  </button>
-                </td>
+                <td>{item.product || '—'}</td>
+                <td>{item.brand || '—'}</td>
+                <td>{jobNames(item)}</td>
+                <td><StatusBadge status={item.status || 'New'} /></td>
+                <td>{item.received ? <span className="badge badge-green">Yes</span> : <span className="badge badge-neutral">No</span>}</td>
               </tr>
             ))}
           </tbody>
@@ -968,9 +937,1101 @@ function SettingsPage() {
   );
 }
 
+// ── Intake page ──────────────────────────────────────────────────────────────
+const INTAKE_TARGET_LABELS = {
+  'Jobs.Job': 'Jobs.Job',
+  'Jobs.Job ID': 'Jobs.Job ID',
+  'Jobs.Due': 'Jobs.Due',
+  'Jobs.Output Type': 'Jobs.Output Type',
+  'Jobs.Notes': 'Jobs.Notes',
+  'Items.Item': 'Items.Item',
+  'Items.Product ID': 'Items.Product ID',
+  'Items.Product Name': 'Items.Product Name',
+  'Items.Brand': 'Items.Brand',
+  'Items.Notes': 'Items.Notes',
+};
+
+const INTAKE_FALLBACK_TARGET_DESCRIPTIONS = {
+  Ignore: 'Do not import this source column.',
+  'Jobs.Job': 'Human-readable job or group name.',
+  'Jobs.Job ID': 'External production job or project number.',
+  'Jobs.Due': 'Job due date when present in the source spreadsheet.',
+  'Jobs.Output Type': 'Photo Only, Render Only, or Photo + Render.',
+  'Jobs.Notes': 'Source notes that describe the job.',
+  'Items.Item': 'Readable item display name.',
+  'Items.Product ID': 'Client product identifier, usually UPC or GTIN.',
+  'Items.Product Name': 'Product or item description.',
+  'Items.Brand': 'Product brand.',
+  'Items.Notes': 'Source notes that describe the item.',
+};
+
+const INTAKE_REQUIRED_TARGETS = ['Jobs.Job ID', 'Items.Product ID', 'Items.Product Name'];
+const INTAKE_TARGET_OPTIONS = [
+  'Ignore',
+  'Jobs.Job',
+  'Jobs.Job ID',
+  'Jobs.Due',
+  'Jobs.Output Type',
+  'Jobs.Notes',
+  'Items.Item',
+  'Items.Product ID',
+  'Items.Product Name',
+  'Items.Brand',
+  'Items.Notes',
+];
+
+const KNOWN_INTAKE_MAPPINGS = {
+  kroger: {
+    'Job #': 'Jobs.Job ID',
+    Description: 'Jobs.Job',
+    UPC: 'Items.Product ID',
+    Brand: 'Items.Brand',
+    'Product Received': 'Items.Product Name',
+    'Output Type': 'Jobs.Output Type',
+    Notes: 'Items.Notes',
+  },
+  unfi: {
+    'Project Number': 'Jobs.Job ID',
+    Description: 'Items.Product Name',
+    UPC: 'Items.Product ID',
+    'Output Type': 'Jobs.Output Type',
+    Notes: 'Items.Notes',
+  },
+  smithfield: {
+    'Job #': 'Jobs.Job ID',
+    GTIN: 'Items.Product ID',
+    Brand: 'Items.Brand',
+    'Product Description': 'Items.Product Name',
+    Notes: 'Items.Notes',
+    Output: 'Jobs.Output Type',
+  },
+};
+
+const VALIDATE_COLUMN_MAPPINGS = {
+  extId: 'Jobs.Job ID',
+  jobName: 'Jobs.Job',
+  due: 'Jobs.Due',
+  output: 'Jobs.Output Type',
+  jobNotes: 'Jobs.Notes',
+  itemName: 'Items.Item',
+  id: 'Items.Product ID',
+  product: 'Items.Product Name',
+  brand: 'Items.Brand',
+  notes: 'Items.Notes',
+};
+
+const INTAKE_TARGET_FIELDS = {
+  'Jobs.Job': 'jobName',
+  'Jobs.Job ID': 'extId',
+  'Jobs.Due': 'due',
+  'Jobs.Output Type': 'output',
+  'Jobs.Notes': 'jobNotes',
+  'Items.Item': 'itemName',
+  'Items.Product ID': 'id',
+  'Items.Product Name': 'product',
+  'Items.Brand': 'brand',
+  'Items.Notes': 'notes',
+};
+
+function MappingLegend() {
+  return (
+    <div className="intake-map-legend" aria-label="Column mapping legend">
+      <span><i className="intake-map-swatch is-mapped" />Mapped column</span>
+      <span><i className="intake-map-swatch" />Unmapped column</span>
+    </div>
+  );
+}
+
+function MappingHeader({ children, source, target, showTarget = true, showUnmapped = false }) {
+  const isMapped = Boolean(target);
+  return (
+    <th className={isMapped ? 'is-mapped-column' : showUnmapped ? 'is-unmapped-column' : ''}>
+      <span>{source || children}</span>
+      {isMapped && showTarget && <small>↓ {target}</small>}
+      {!isMapped && showUnmapped && <small>Unmapped</small>}
+    </th>
+  );
+}
+
+function mappingTargetLabel(target) {
+  return INTAKE_TARGET_LABELS[target] || '';
+}
+
+function buildInitialColumnMapping(headers, clientName) {
+  const known = KNOWN_INTAKE_MAPPINGS[(clientName || '').trim().toLowerCase()] || {};
+  return (headers || []).reduce((mapping, header) => {
+    mapping[header] = known[header] || 'Ignore';
+    return mapping;
+  }, {});
+}
+
+function requiredMappingGaps(mapping) {
+  const mappedTargets = new Set(Object.values(mapping || {}).filter(target => target && target !== 'Ignore'));
+  return INTAKE_REQUIRED_TARGETS.filter(target => !mappedTargets.has(target));
+}
+
+function IntakePage({ navigate }) {
+  const clients = useResource(() => api.intakeListClients());
+  const mappingTargets = useResource(() => api.intakeMappingTargets());
+  const [clientId, setClientId] = useState('');
+  const [step, setStep] = useState('upload');
+  const [preview, setPreview] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [review, setReview] = useState(null);
+  const [editableRows, setEditableRows] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [fileMeta, setFileMeta] = useState(null);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [parsing, setParsing] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [previewRows, setPreviewRows] = useState('10');
+  const [columnMapping, setColumnMapping] = useState({});
+  const [importId, setImportId] = useState('');
+  const clientList = clients.data?.records ?? [];
+  const selectedClient = clientList.find(client => client.id === clientId);
+  const targetDescriptions = {
+    ...INTAKE_FALLBACK_TARGET_DESCRIPTIONS,
+    ...Object.fromEntries((mappingTargets.data?.targets ?? []).map(item => [item.target, item.description])),
+  };
+  const missingRequiredMappings = requiredMappingGaps(columnMapping);
+  const mappedColumnCount = Object.values(columnMapping).filter(target => target && target !== 'Ignore').length;
+  const unmappedColumnCount = Math.max((preview?.columnHeaders?.length ?? 0) - mappedColumnCount, 0);
+  const sourceColumnMappings = Object.fromEntries(
+    Object.entries(columnMapping).map(([source, target]) => [source, mappingTargetLabel(target)])
+  );
+  const sourceColumnByTarget = Object.entries(columnMapping).reduce((targets, [source, target]) => {
+    if (target && target !== 'Ignore' && !targets[target]) targets[target] = source;
+    return targets;
+  }, {});
+
+  useEffect(() => {
+    if (!clientId && clientList.length) setClientId(clientList[0].id);
+  }, [clientId, clientList]);
+
+  useEffect(() => {
+    if (clients.error) console.error('Failed to load Intake clients:', clients.error);
+  }, [clients.error]);
+
+  async function parseFile(file) {
+    setError('');
+    setNotice('');
+    setPreview(null);
+    setReview(null);
+    setEditableRows([]);
+    setSummary(null);
+    setColumnMapping({});
+    if (!clientId) {
+      setError('Choose a client before uploading a spreadsheet.');
+      return;
+    }
+    if (!file) return;
+    setSelectedFile(file);
+    setFileMeta({ name: file.name, size: file.size });
+    setParsing(true);
+    try {
+      const data = await api.previewSpreadsheet({ clientId, file });
+      setPreview({ ...data, clientName: selectedClient?.name || '', fileSize: file.size });
+      setImportId(data.importId || '');
+      setColumnMapping(buildInitialColumnMapping(data.columnHeaders || [], selectedClient?.name || ''));
+      setStep('preview');
+    } catch (e) {
+      console.error('Failed to parse Intake spreadsheet:', e);
+      setError(e.message);
+    } finally {
+      setParsing(false);
+    }
+  }
+
+  function resetIntake() {
+    setStep('upload');
+    setPreview(null);
+    setSelectedFile(null);
+    setReview(null);
+    setEditableRows([]);
+    setSummary(null);
+    setFileMeta(null);
+    setColumnMapping({});
+    setError('');
+    setNotice('');
+    setPreviewRows('10');
+    setImportId('');
+  }
+
+  function changeClient(value) {
+    const nextClient = clientList.find(client => client.id === value);
+    setClientId(value);
+    setReview(null);
+    setEditableRows([]);
+    setSummary(null);
+    setNotice('');
+    setError('');
+    if (preview) setColumnMapping(buildInitialColumnMapping(preview.columnHeaders || [], nextClient?.name || ''));
+    if (preview) setStep('preview');
+  }
+
+  function rowsFromReview(data) {
+    return (data.rows ?? []).map(row => ({
+      rowNumber: row.rowNumber,
+      extId: row.extId || '',
+      id: row.id || '',
+      product: row.product || '',
+      brand: row.brand || '',
+      due: row.due || '',
+      output: row.output || 'Photo + Render',
+      jobNotes: row.jobNotes || '',
+      notes: row.notes || '',
+      status: row.status || 'New',
+      jobName: row.jobName || '',
+      itemName: row.itemName || '',
+      category: row.category || '',
+      existingItemId: row.existingItemId || null,
+      action: row.action || 'create',
+      errors: row.errors ?? [],
+      warnings: row.warnings ?? [],
+    }));
+  }
+
+  function validateRows(rows, baseReview = review) {
+    const seen = {};
+    const codeType = baseReview?.codeType || selectedClient?.codeType || '';
+    return rows.map((row, index) => {
+      const errors = [];
+      const warnings = [];
+      const id = String(row.id || '').trim();
+      if (!String(row.extId || '').trim()) errors.push('Missing Job ID');
+      if (!id) errors.push('Missing Product ID');
+      if (id && codeType === 'UPC-12' && !/^\d{12}$/.test(id)) errors.push('Product ID must be exactly 12 digits for UPC-12.');
+      if (id && codeType === 'GTIN-14' && !/^\d{14}$/.test(id)) errors.push('Product ID must be exactly 14 digits for GTIN-14.');
+      if (codeType === 'Item #' && !id) errors.push('Product ID is required for Item #.');
+      if (id) {
+        if (seen[id]) warnings.push(`Duplicate Product ID also appears on row ${seen[id]}`);
+        else seen[id] = row.rowNumber || index + 1;
+      }
+      if (!String(row.product || '').trim()) warnings.push('Blank Product Name/Description');
+      return { ...row, errors, warnings };
+    });
+  }
+
+  function reviewFromRows(rows) {
+    const validRows = rows.filter(row => !row.errors.length);
+    const jobs = {};
+    const existingJobs = {};
+    (review?.jobsPreview ?? []).forEach(job => { existingJobs[job.extId] = job; });
+    validRows.forEach(row => {
+      if (!row.extId) return;
+      jobs[row.extId] = jobs[row.extId] || {
+        extId: row.extId,
+        jobName: row.jobName || `${selectedClient?.name || 'Client'} ${row.extId}`,
+        due: row.due || '',
+        output: row.output,
+        notes: row.jobNotes || '',
+        existingId: existingJobs[row.extId]?.existingId,
+        rowCount: 0,
+      };
+      jobs[row.extId].rowCount += 1;
+    });
+    return {
+      ...(review || {}),
+      totalRows: rows.length,
+      jobsDetected: Object.keys(jobs).length,
+      itemsToCreate: validRows.filter(row => row.action !== 'update').length,
+      itemsToUpdate: validRows.filter(row => row.action === 'update').length,
+      errorCount: rows.reduce((sum, row) => sum + row.errors.length, 0),
+      warningCount: rows.reduce((sum, row) => sum + row.warnings.length, 0),
+      jobsPreview: Object.values(jobs),
+      rows,
+    };
+  }
+
+  async function reviewActiveMapping() {
+    if (!preview) {
+      setError('Upload and preview a spreadsheet before validating.');
+      return;
+    }
+    if (missingRequiredMappings.length) {
+      setNotice(`Map required columns before validating: ${missingRequiredMappings.join(', ')}.`);
+      setStep('map');
+      return;
+    }
+    setError('');
+    setNotice('');
+    setReviewing(true);
+    try {
+      const data = await api.reviewSpreadsheetSourceRows({
+        clientId,
+        fileName: preview.fileName || fileMeta?.name || 'Import',
+        columnHeaders: preview.columnHeaders || [],
+        sourceRows: preview.rows || [],
+        mapping: columnMapping,
+        importId,
+      });
+      const rows = validateRows(rowsFromReview(data), data);
+      setReview(reviewFromRows(rows));
+      setEditableRows(rows);
+      setStep('validate');
+    } catch (e) {
+      console.error('Failed to review Intake import:', e);
+      setError(e.message);
+    } finally {
+      setReviewing(false);
+    }
+  }
+
+  function continueFromPreview() {
+    if (missingRequiredMappings.length) {
+      setNotice(`Map required columns before validating: ${missingRequiredMappings.join(', ')}.`);
+      setStep('map');
+      return;
+    }
+    reviewActiveMapping();
+  }
+
+  function openMapColumns() {
+    setNotice('');
+    setStep('map');
+  }
+
+  function updateColumnMapping(header, target) {
+    setColumnMapping(mapping => ({ ...mapping, [header]: target }));
+    setReview(null);
+    setEditableRows([]);
+    setSummary(null);
+    setNotice('');
+    setError('');
+  }
+
+  async function validateEditedRows() {
+    const rows = validateRows(editableRows);
+    setEditableRows(rows);
+    setReview(reviewFromRows(rows));
+    const validRows = rows.filter(row => !row.errors.length);
+    if (!validRows.length) {
+      setNotice('Fix at least one row before importing. Rows with unresolved errors will be skipped during import.');
+      return;
+    }
+    setError('');
+    setNotice('');
+    await executeImport(rows);
+  }
+
+  async function executeImport(rowsToImport = editableRows) {
+    setError('');
+    setNotice('');
+    setStep('importing');
+    setImporting(true);
+    try {
+      const data = await api.executeSpreadsheetRows({ clientId, fileName: preview?.fileName || fileMeta?.name || 'Import', rows: rowsToImport, importId });
+      setSummary(data.summary || {});
+      setImportId(data.importId || importId);
+      setReview(data);
+      setStep('summary');
+    } catch (e) {
+      console.error('Failed to import spreadsheet:', e);
+      setError(e.message);
+      setStep('validate');
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function updateEditableRow(rowNumber, field, value) {
+    const rows = editableRows.map(row => row.rowNumber === rowNumber ? { ...row, [field]: value } : row);
+    const validated = validateRows(rows);
+    setEditableRows(validated);
+    setReview(reviewFromRows(validated));
+    setNotice('');
+  }
+
+  function onDrop(e) {
+    e.preventDefault();
+    parseFile(e.dataTransfer.files?.[0]);
+  }
+
+  function formatFileSize(bytes) {
+    if (!bytes && bytes !== 0) return '—';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  const visibleRows = (preview?.previewRows ?? []).slice(0, Number(previewRows));
+  const clientError = clients.error ? `Unable to load active Clients. ${clients.error}` : '';
+  const activeReview = editableRows.length ? reviewFromRows(editableRows) : review;
+  const hasErrors = Boolean(activeReview?.errorCount);
+  const errorRowCount = editableRows.filter(row => row.errors.length).length;
+  const validImportRowCount = editableRows.filter(row => !row.errors.length).length;
+  const errorRowText = `${errorRowCount} ${errorRowCount === 1 ? 'row requires' : 'rows require'} attention.`;
+
+  function sourceValueForRow(row, columnIndex) {
+    const sourceIndex = Math.max((row.rowNumber || 2) - 2, 0);
+    return preview?.rows?.[sourceIndex]?.[columnIndex] || '';
+  }
+
+  function renderValidateCell(row, header, columnIndex) {
+    const target = columnMapping[header] || 'Ignore';
+    const field = INTAKE_TARGET_FIELDS[target];
+    if (!field) {
+      return <span className="intake-readonly-cell">{sourceValueForRow(row, columnIndex) || '—'}</span>;
+    }
+    if (field === 'output') {
+      return (
+        <select value={row.output} onChange={e => updateEditableRow(row.rowNumber, 'output', e.target.value)}>
+          <option>Photo Only</option>
+          <option>Render Only</option>
+          <option>Photo + Render</option>
+        </select>
+      );
+    }
+    return (
+      <input
+        value={row[field] || ''}
+        onChange={e => updateEditableRow(row.rowNumber, field, e.target.value)}
+      />
+    );
+  }
+
+  return (
+    <div className="page-stack intake-page">
+      <div className="intake-wizard-steps" aria-disabled={importing}>
+        {['Upload', 'Preview', 'Map Columns', 'Validate & Fix', 'Import Progress', 'Summary'].map((label, index) => {
+          const ids = ['upload', 'preview', 'map', 'validate', 'importing', 'summary'];
+          const currentIndex = ids.indexOf(step);
+          const state = index < currentIndex ? 'completed' : step === ids[index] ? 'active' : 'upcoming';
+          return (
+            <span className={`intake-step ${state}`} key={label}>
+              {state === 'completed' ? '✓' : index + 1}. {label}
+            </span>
+          );
+        })}
+      </div>
+
+      <div className={`intake-card ${step !== 'upload' ? 'is-compact' : ''}`}>
+        <div className="intake-hero">
+          <div className="field intake-client-field">
+            <label>Client</label>
+            <select value={clientId} onChange={e => changeClient(e.target.value)} disabled={clients.loading || importing}>
+              {clients.loading && <option value="">Loading clients…</option>}
+              {!clients.loading && !clientList.length && <option value="">No active clients found</option>}
+              {clientList.map(client => (
+                <option key={client.id} value={client.id}>{client.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="intake-compact-actions">
+            <button className="link-btn" type="button" onClick={() => navigate('import-history', importId ? { importId } : {})} disabled={importing}>Import History</button>
+          </div>
+        </div>
+
+        {clientError && <div className="error-state">{clientError}</div>}
+        {error && <div className="error-state">{error}</div>}
+        {notice && <div className="notice-state">{notice}</div>}
+
+        {!preview && (
+        <div className="intake-dropzone" onDragOver={e => e.preventDefault()} onDrop={onDrop}>
+          <div className="intake-drop-icon"><Icon.Upload /></div>
+          <div className="intake-drop-title">Drop your spreadsheet here</div>
+          <div className="intake-drop-or">or</div>
+          <label className="btn btn-primary intake-file-button">
+            Choose File
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={e => parseFile(e.target.files?.[0])}
+            />
+          </label>
+          <div className="intake-drop-helper">Supports .xlsx, .xls, .csv files</div>
+          {fileMeta && !preview && (
+            <div className="intake-file-note">{fileMeta.name} · {formatFileSize(fileMeta.size)}</div>
+          )}
+          {parsing && <div className="empty-state">Parsing spreadsheet…</div>}
+        </div>
+        )}
+      </div>
+
+      {step === 'preview' && preview && (
+        <div className="intake-card intake-preview-card">
+          <div className="intake-preview-head">
+            <div>
+              <div className="intake-preview-title">{preview.fileName}</div>
+              <div className="intake-preview-sub">{selectedClient?.name || preview.clientName || preview.clientId}</div>
+            </div>
+          </div>
+
+          <div className="intake-summary-grid">
+            <div className="intake-summary-item">
+              <span>Sheets</span>
+              <strong>{preview.sheetNames?.length || 1}</strong>
+            </div>
+            <div className="intake-summary-item">
+              <span>Rows</span>
+              <strong>{preview.rowCount}</strong>
+            </div>
+            <div className="intake-summary-item">
+              <span>Columns</span>
+              <strong>{preview.columnHeaders?.length ?? 0}</strong>
+            </div>
+            <div className="intake-summary-item">
+              <span>Size</span>
+              <strong>{formatFileSize(preview.fileSize)}</strong>
+            </div>
+          </div>
+
+          {preview.sheetNames?.length > 1 && (
+            <div className="intake-preview-controls">
+              <div className="field">
+              <label>Sheet</label>
+              <select value={preview.selectedSheet || ''} disabled>
+                <option value={preview.selectedSheet || ''}>{preview.selectedSheet || 'CSV'}</option>
+              </select>
+            </div>
+            </div>
+          )}
+
+          <div className="table-wrap intake-preview-table">
+            <table>
+              <thead>
+                <tr>
+                  {(preview.columnHeaders ?? []).map((header, index) => (
+                    <MappingHeader target={sourceColumnMappings[header]} showTarget={false} key={`${header}-${index}`}>
+                      {header || '(blank)'}
+                    </MappingHeader>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.map((row, rowIndex) => (
+                  <tr key={rowIndex}>
+                    {(preview.columnHeaders ?? []).map((_, columnIndex) => (
+                      <td key={columnIndex}>{row[columnIndex] || '—'}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="form-actions">
+            <button className="btn" type="button" onClick={resetIntake} disabled={importing}>Cancel</button>
+            <button className="btn btn-alt" type="button" onClick={openMapColumns} disabled={importing}>Map Columns</button>
+            <button className="btn btn-primary" type="button" onClick={reviewActiveMapping} disabled={reviewing || importing}>
+              {reviewing ? 'Validating…' : 'Validate'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 'map' && preview && (
+        <div className="intake-card intake-preview-card">
+          <div className="intake-preview-head">
+            <div>
+              <div className="intake-preview-title">Map Columns</div>
+              <div className="intake-preview-sub">Match spreadsheet columns to the fields needed for validation.</div>
+            </div>
+          </div>
+
+          <div className="intake-map-summary">
+            <span>{mappedColumnCount} mapped</span>
+            <span>{unmappedColumnCount} unmapped</span>
+            {missingRequiredMappings.length > 0 ? (
+              <span className="metric-error">Missing: {missingRequiredMappings.join(', ')}</span>
+            ) : (
+              <span className="metric-success">Required mappings complete</span>
+            )}
+          </div>
+
+          <div className="table-wrap intake-preview-table intake-map-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Source Column</th>
+                  <th>Maps To</th>
+                  <th>Description</th>
+                  <th>Requirement</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(preview.columnHeaders ?? []).map((header, index) => {
+                  const target = columnMapping[header] || 'Ignore';
+                  const isRequired = INTAKE_REQUIRED_TARGETS.includes(target);
+                  return (
+                    <tr key={`${header}-${index}`}>
+                      <td>{header || '(blank)'}</td>
+                      <td>
+                        <select value={target} onChange={e => updateColumnMapping(header, e.target.value)}>
+                          {INTAKE_TARGET_OPTIONS.map(option => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>{targetDescriptions[target] || '—'}</td>
+                      <td>
+                        {isRequired
+                          ? <span className="badge badge-blue">Required</span>
+                          : <span className="badge badge-neutral">Optional</span>
+                        }
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="form-actions">
+            <button className="btn" type="button" onClick={resetIntake} disabled={importing}>Cancel</button>
+            <button className="btn btn-primary" type="button" onClick={reviewActiveMapping} disabled={reviewing || importing || missingRequiredMappings.length > 0}>
+              {reviewing ? 'Validating…' : 'Validate'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 'validate' && activeReview && (
+        <div className="intake-card intake-preview-card">
+          <div className="intake-preview-head">
+            <div>
+              <div className="intake-preview-title">Validate & Fix</div>
+              <div className="intake-preview-sub">Edit mapped fields inline. Rows with errors stay red and will be skipped.</div>
+            </div>
+          </div>
+
+          <div className="intake-summary-grid is-six">
+            <div className="intake-summary-item"><span>Total rows</span><strong>{activeReview.totalRows}</strong></div>
+            <div className="intake-summary-item"><span>Jobs detected</span><strong>{activeReview.jobsDetected}</strong></div>
+            <div className="intake-summary-item"><span>Items create</span><strong>{activeReview.itemsToCreate}</strong></div>
+            <div className="intake-summary-item"><span>Items update</span><strong>{activeReview.itemsToUpdate}</strong></div>
+            <div className="intake-summary-item"><span>Errors</span><strong className="metric-error">{activeReview.errorCount}</strong></div>
+            <div className="intake-summary-item"><span>Warnings</span><strong className="metric-warning">{activeReview.warningCount}</strong></div>
+          </div>
+
+          {hasErrors ? (
+            <div className="intake-callout danger">
+              <div className="intake-callout-icon" aria-hidden="true">!</div>
+              <div>
+                <div className="intake-callout-title">Errors Found</div>
+                <div className="intake-callout-text">{errorRowText}</div>
+                <div className="intake-callout-text">Fix the highlighted rows below, or continue importing only the valid rows.</div>
+              </div>
+            </div>
+          ) : (
+            <div className="intake-callout success">
+              <div className="intake-callout-icon" aria-hidden="true">✓</div>
+              <div>
+                <div className="intake-callout-title">Success</div>
+                <div className="intake-callout-text">All rows passed validation.</div>
+                <div className="intake-callout-text">This import is ready to be imported.</div>
+              </div>
+            </div>
+          )}
+
+          <div className="intake-column-section">
+            <div className="intake-section-row">
+              <div className="intake-section-label">Editable rows</div>
+              <MappingLegend />
+            </div>
+            <div className="intake-inline-actions">
+              <button className="btn" type="button" onClick={resetIntake} disabled={importing}>Cancel</button>
+              <button className="btn btn-alt" type="button" onClick={openMapColumns} disabled={importing}>Map Columns</button>
+              <button className="btn btn-primary" type="button" onClick={validateEditedRows} disabled={importing || validImportRowCount === 0}>
+                Import
+              </button>
+            </div>
+            <div className="table-wrap intake-preview-table">
+              <table>
+                <thead>
+                  <tr>
+                    {(preview.columnHeaders ?? []).map((header, index) => {
+                      const target = columnMapping[header] && columnMapping[header] !== 'Ignore'
+                        ? mappingTargetLabel(columnMapping[header])
+                        : '';
+                      return (
+                        <MappingHeader target={target} showUnmapped key={`${header}-${index}`}>
+                          {header || '(blank)'}
+                        </MappingHeader>
+                      );
+                    })}
+                    <th className="problem-column-header">Alerts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {editableRows.map(row => (
+                    <tr className={row.errors.length ? 'row-error' : row.warnings.length ? 'row-warning' : ''} key={row.rowNumber}>
+                      {(preview.columnHeaders ?? []).map((header, columnIndex) => (
+                        <td key={`${row.rowNumber}-${header}-${columnIndex}`}>
+                          {renderValidateCell(row, header, columnIndex)}
+                        </td>
+                      ))}
+                      <td className="problem-column-cell">
+                        <div className="problem-row-alerts">
+                          {[...(row.errors ?? []), ...(row.warnings ?? [])].map((problem, index) => (
+                            <span className={`badge problem-badge ${row.errors?.includes(problem) ? 'badge-red' : 'badge-amber'}`} key={`${row.rowNumber}-${index}`}>
+                              <span className="problem-badge-icon" aria-hidden="true">!</span>
+                              {problem}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="form-actions">
+            <button className="btn" type="button" onClick={resetIntake} disabled={importing}>Cancel</button>
+            <button className="btn btn-alt" type="button" onClick={openMapColumns} disabled={importing}>Map Columns</button>
+            <button className="btn btn-primary" type="button" onClick={validateEditedRows} disabled={importing || validImportRowCount === 0}>
+              Import
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 'summary' && summary && (
+        <div className="intake-card intake-preview-card">
+          <div className="intake-preview-head">
+            <div>
+              <div className="intake-preview-title">Import Complete</div>
+              <div className="intake-preview-sub">{preview?.fileName}</div>
+            </div>
+            <span className="badge badge-green">Success</span>
+          </div>
+          <div className="intake-summary-grid">
+            <div className="intake-summary-item"><span>Rows imported</span><strong>{(summary.itemsCreated ?? 0) + (summary.itemsUpdated ?? 0)}</strong></div>
+            <div className="intake-summary-item"><span>Rows skipped</span><strong>{summary.rowsSkipped}</strong></div>
+            <div className="intake-summary-item"><span>Jobs created</span><strong>{summary.jobsCreated}</strong></div>
+            <div className="intake-summary-item"><span>Jobs reused</span><strong>{summary.jobsReused}</strong></div>
+            <div className="intake-summary-item"><span>Items created</span><strong>{summary.itemsCreated}</strong></div>
+            <div className="intake-summary-item"><span>Items updated</span><strong>{summary.itemsUpdated}</strong></div>
+            <div className="intake-summary-item"><span>Errors skipped</span><strong className="metric-error">{summary.errors}</strong></div>
+            <div className="intake-summary-item"><span>Warnings imported</span><strong className="metric-warning">{summary.warnings}</strong></div>
+          </div>
+          <div className="form-actions">
+            <button className="btn btn-primary" type="button" onClick={resetIntake}>New Intake</button>
+          </div>
+        </div>
+      )}
+
+      {importing && (
+        <div className="intake-modal-backdrop" role="status" aria-live="polite">
+          <div className="intake-modal">
+            <div className="intake-modal-spinner" />
+            <div className="intake-modal-title">Importing spreadsheet...</div>
+            <div className="intake-modal-sub">Creating and updating Jobs and Items in Airtable.</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImportHistoryPage({ importId }) {
+  const imports = useResource(() => api.listImports({ limit: 50 }));
+  const records = imports.data?.records ?? [];
+  const [selectedId, setSelectedId] = useState(importId || '');
+  const selected = records.find(record => record.id === selectedId) || records[0];
+
+  useEffect(() => {
+    if (!selectedId && records.length) setSelectedId(records[0].id);
+  }, [records, selectedId]);
+
+  function formatDateTime(value) {
+    if (!value) return '—';
+    return new Date(value).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+
+  return (
+    <div className="page-stack">
+      {imports.error && <div className="error-state">{imports.error}</div>}
+      <div className="panel">
+        <div className="panel-header">
+          <span className="panel-title">Recent imports</span>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Client</th>
+                <th>File</th>
+                <th>User</th>
+                <th>Status</th>
+                <th>Rows</th>
+                <th>Jobs Created</th>
+                <th>Jobs Reused</th>
+                <th>Items Created</th>
+                <th>Items Updated</th>
+                <th>Errors</th>
+                <th>Warnings</th>
+              </tr>
+            </thead>
+            <tbody>
+              {imports.loading && <tr><td colSpan="12" className="empty-state">Loading imports…</td></tr>}
+              {!imports.loading && records.length === 0 && <tr><td colSpan="12" className="empty-state">No imports yet.</td></tr>}
+              {records.map(record => (
+                <tr className={selected?.id === record.id ? 'is-selected-row' : ''} key={record.id} onClick={() => setSelectedId(record.id)}>
+                  <td>{formatDateTime(record.started)}</td>
+                  <td>{record.client || '—'}</td>
+                  <td>{record.file || '—'}</td>
+                  <td>{record.user || '—'}</td>
+                  <td><StatusBadge status={record.status} /></td>
+                  <td>{record.rows ?? 0}</td>
+                  <td>{record.jobsCreated ?? 0}</td>
+                  <td>{record.jobsReused ?? 0}</td>
+                  <td>{record.itemsCreated ?? 0}</td>
+                  <td>{record.itemsUpdated ?? 0}</td>
+                  <td>{record.errors ?? 0}</td>
+                  <td>{record.warnings ?? 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {selected && (
+        <div className="panel">
+          <div className="panel-header"><span className="panel-title">Import details</span></div>
+          <div className="settings-list">
+            <div className="setting-row"><span className="setting-key">File</span><span className="setting-val">{selected.file || '—'}</span></div>
+            <div className="setting-row"><span className="setting-key">Client</span><span className="setting-val">{selected.client || '—'}</span></div>
+            <div className="setting-row"><span className="setting-key">Status</span><span className="setting-val">{selected.status || '—'}</span></div>
+            <div className="setting-row"><span className="setting-key">Started</span><span className="setting-val">{formatDateTime(selected.started)}</span></div>
+            <div className="setting-row"><span className="setting-key">Finished</span><span className="setting-val">{formatDateTime(selected.finished)}</span></div>
+            <div className="setting-row"><span className="setting-key">Rows skipped</span><span className="setting-val">{selected.rowsSkipped ?? 0}</span></div>
+            <div className="setting-row"><span className="setting-key">Details</span><span className="setting-val">{selected.details || '—'}</span></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Temporary schema test panel ──────────────────────────────────────────────
+function SchemaTestPage() {
+  const items = useResource(() => api.adminListItems());
+  const locations = useResource(() => api.adminListLocations());
+  const issues = useResource(() => api.adminListIssues());
+  const [selectedItemId, setSelectedItemId] = useState('');
+  const [selectedIssueId, setSelectedIssueId] = useState('');
+  const [itemForm, setItemForm] = useState({ status: '', locationId: '', condition: '' });
+  const [issueStatus, setIssueStatus] = useState('');
+  const [history, setHistory] = useState([]);
+  const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const itemList = items.data?.records ?? [];
+  const locationList = locations.data?.records ?? [];
+  const issueList = issues.data?.records ?? [];
+  const selectedItem = itemList.find(item => item.id === selectedItemId);
+  const selectedIssue = issueList.find(issue => issue.id === selectedIssueId);
+
+  useEffect(() => {
+    if (!selectedItemId && itemList.length) setSelectedItemId(itemList[0].id);
+  }, [itemList, selectedItemId]);
+
+  useEffect(() => {
+    if (!selectedIssueId && issueList.length) setSelectedIssueId(issueList[0].id);
+  }, [issueList, selectedIssueId]);
+
+  useEffect(() => {
+    if (!selectedItem) return;
+    setItemForm({
+      status: selectedItem.status || '',
+      locationId: selectedItem.locationIds?.[0] || '',
+      condition: selectedItem.condition || '',
+    });
+  }, [selectedItem]);
+
+  useEffect(() => {
+    if (!selectedIssue) return;
+    setIssueStatus(selectedIssue.status || '');
+  }, [selectedIssue]);
+
+  async function loadItemHistory(itemId = selectedItemId) {
+    if (!itemId) return;
+    const data = await api.adminListHistory({ itemId, limit: 10 });
+    setHistory(data.records ?? []);
+  }
+
+  async function loadIssueHistory(issue = selectedIssue) {
+    if (!issue) return;
+    if (!issue.itemIds?.[0] && !issue.jobIds?.[0] && !issue.assignedIds?.[0]) {
+      setHistory([]);
+      return;
+    }
+    const data = await api.adminListHistory({
+      itemId: issue.itemIds?.[0],
+      jobId: issue.jobIds?.[0],
+      userId: issue.assignedIds?.[0],
+      limit: 10,
+    });
+    setHistory(data.records ?? []);
+  }
+
+  async function saveItem(e) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.adminUpdateItem(selectedItemId, {
+        status: itemForm.status,
+        locationIds: itemForm.locationId ? [itemForm.locationId] : [],
+        condition: itemForm.condition,
+      });
+      setMessage('Item saved through backend PATCH /items. History refreshed.');
+      await items.reload();
+      await loadItemHistory(selectedItemId);
+    } catch (error) {
+      setMessage(`Error: ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveIssue(e) {
+    e.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      await api.adminUpdateIssue(selectedIssueId, { status: issueStatus });
+      setMessage('Issue saved through backend PATCH /issues. History refreshed.');
+      await issues.reload();
+      await loadIssueHistory(selectedIssue);
+    } catch (error) {
+      setMessage(`Error: ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const loading = items.loading || locations.loading || issues.loading;
+  const error = items.error || locations.error || issues.error;
+
+  return (
+    <div className="page-stack">
+      <div className="panel">
+        <div className="panel-header"><span className="panel-title">Admin / Schema Test</span></div>
+        {loading && <div className="empty-state">Loading test data…</div>}
+        {error && <div className="error-state">{error}</div>}
+        {message && <div className={message.startsWith('Error') ? 'error-state' : 'empty-state'}>{message}</div>}
+
+        <div className="form-grid">
+          <form className="form-section" onSubmit={saveItem}>
+            <div className="form-title">Item history test</div>
+            <div className="field full">
+              <label>Item</label>
+              <select value={selectedItemId} onChange={e => setSelectedItemId(e.target.value)}>
+                {itemList.map(item => (
+                  <option key={item.id} value={item.id}>{item.name || item.identifier || item.id}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Status</label>
+              <select value={itemForm.status} onChange={e => setItemForm(f => ({ ...f, status: e.target.value }))}>
+                {['New', 'Waiting Merch', 'Issue', 'Ready Production', 'Production', 'Complete', 'Cancelled'].map(value => (
+                  <option key={value} value={value}>{value}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Location</label>
+              <select value={itemForm.locationId} onChange={e => setItemForm(f => ({ ...f, locationId: e.target.value }))}>
+                <option value="">No location</option>
+                {locationList.map(location => (
+                  <option key={location.id} value={location.id}>{location.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Condition</label>
+              <select value={itemForm.condition} onChange={e => setItemForm(f => ({ ...f, condition: e.target.value }))}>
+                {['Good', 'Damaged', 'Wrong', 'Unknown'].map(value => (
+                  <option key={value} value={value}>{value}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-actions">
+              <button className="btn btn-primary" type="submit" disabled={saving || !selectedItemId}>Save Item</button>
+              <button className="btn btn-ghost" type="button" onClick={() => loadItemHistory()}>Load Item History</button>
+            </div>
+          </form>
+
+          <form className="form-section" onSubmit={saveIssue}>
+            <div className="form-title">Issue history test</div>
+            <div className="field full">
+              <label>Issue</label>
+              <select value={selectedIssueId} onChange={e => setSelectedIssueId(e.target.value)}>
+                {issueList.map(issue => (
+                  <option key={issue.id} value={issue.id}>{issue.name || issue.id}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Status</label>
+              <select value={issueStatus} onChange={e => setIssueStatus(e.target.value)}>
+                {['Open', 'Waiting', 'Resolved', 'Cancelled'].map(value => (
+                  <option key={value} value={value}>{value}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-actions">
+              <button className="btn btn-primary" type="submit" disabled={saving || !selectedIssueId}>Save Issue</button>
+              <button className="btn btn-ghost" type="button" onClick={() => loadIssueHistory()}>Load Issue History</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header"><span className="panel-title">Latest linked History</span></div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Event</th>
+                <th>Type</th>
+                <th>Field</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.length === 0 && <tr><td colSpan="7" className="empty-state">No linked History loaded.</td></tr>}
+              {history.map(record => (
+                <tr key={record.id}>
+                  <td>{record.date || '—'}</td>
+                  <td>{record.event || '—'}</td>
+                  <td>{record.type || '—'}</td>
+                  <td>{record.field || '—'}</td>
+                  <td>{record.from || '—'}</td>
+                  <td>{record.to || '—'}</td>
+                  <td>{record.details || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── App shell ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [page, setPage]   = useState('dashboard');
+  const initialPage = window.location.pathname === '/admin/schema-test'
+    ? 'schema-test'
+    : window.location.pathname === '/intake/import-history'
+      ? 'import-history'
+    : window.location.pathname === '/intake'
+      ? 'intake'
+      : 'dashboard';
+  const [page, setPage]   = useState(initialPage);
   const [params, setParams] = useState({});
 
   function navigate(p, pms = {}) { setPage(p); setParams(pms); }
@@ -982,15 +2043,16 @@ export default function App() {
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: <Icon.Dashboard /> },
+    { id: 'intake',    label: 'Intake',    icon: <Icon.Add /> },
     { id: 'jobs',      label: 'Jobs',      icon: <Icon.Jobs /> },
-    { id: 'skus',      label: 'SKUs',      icon: <Icon.SKUs /> },
+    { id: 'skus',      label: 'Items',     icon: <Icon.SKUs /> },
     { id: 'new-job',   label: 'New Job',   icon: <Icon.Add /> },
     { id: 'settings',  label: 'Settings',  icon: <Icon.Settings /> },
   ];
 
   const pageTitle = {
-    dashboard: 'Dashboard', jobs: 'Jobs', skus: 'SKUs',
-    'new-job': 'New Job', settings: 'Settings',
+    dashboard: 'Dashboard', intake: 'Intake', 'import-history': 'Import History', jobs: 'Jobs', skus: 'Items',
+    'new-job': 'New Job', settings: 'Settings', 'schema-test': 'Admin / Schema Test',
   }[page] ?? '';
 
   return (
@@ -1040,10 +2102,13 @@ export default function App() {
 
         <div className="content">
           {page === 'dashboard' && <Dashboard navigate={navigate} />}
+          {page === 'intake'    && <IntakePage navigate={navigate} />}
+          {page === 'import-history' && <ImportHistoryPage importId={params.importId} />}
           {page === 'jobs'      && <JobsPage  navigate={navigate} />}
           {page === 'skus'      && <SkusPage  navigate={navigate} jobId={params.jobId} />}
           {page === 'new-job'   && <NewJobPage navigate={navigate} />}
           {page === 'settings'  && <SettingsPage />}
+          {page === 'schema-test' && <SchemaTestPage />}
         </div>
       </main>
     </div>
