@@ -44,14 +44,32 @@ class AirtableClient:
         payload["configured"] = True
         return payload
 
-    def list_records(self, table_name, params=None):
-        return self._request("GET", table_name, params=params or {})
+    def _field_id_params(self, params=None):
+        merged = dict(params or {})
+        merged.setdefault("returnFieldsByFieldId", "true")
+        return merged
 
-    def create_record(self, table_name, fields):
-        return self._request("POST", table_name, json={"fields": fields})
+    def list_records(self, table_name, params=None, by_field_id=True):
+        params = self._field_id_params(params) if by_field_id else dict(params or {})
+        return self._request("GET", table_name, params=params)
 
-    def update_record(self, table_name, record_id, fields):
-        return self._request("PATCH", f"{table_name}/{record_id}", json={"fields": fields})
+    def create_record(self, table_name, fields, by_field_id=True):
+        params = self._field_id_params() if by_field_id else {}
+        return self._request(
+            "POST",
+            table_name,
+            params=params,
+            json={"fields": fields},
+        )
+
+    def update_record(self, table_name, record_id, fields, by_field_id=True):
+        params = self._field_id_params() if by_field_id else {}
+        return self._request(
+            "PATCH",
+            f"{table_name}/{record_id}",
+            params=params,
+            json={"fields": fields},
+        )
 
 
 airtable = AirtableClient()

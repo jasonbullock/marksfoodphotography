@@ -1,45 +1,51 @@
 // Direct Airtable REST API — no backend required
-// Set VITE_AIRTABLE_TOKEN in .env
+// Requires VITE_AIRTABLE_TOKEN in .env
 
-const BASE_ID   = 'appE30EGZv8OzssDx';
-const AT_URL    = `https://api.airtable.com/v0/${BASE_ID}`;
+const BASE_ID = 'appE30EGZv8OzssDx';
+const AT_URL  = `https://api.airtable.com/v0/${BASE_ID}`;
 
 const TABLES = {
-  CLIENTS: 'tblQe6Fn5yAfqM6H7',
-  JOBS:    'tbliPzjwAh96ZA4vS',
-  SKUS:    'tblC9Tu69BEOIy6Q4',
+  CLIENTS: 'Clients',
+  JOBS:    'Jobs',
+  SKUS:    'Items',
+  RECEIPTS: 'Receipts',
+  LOCATIONS: 'Locations',
+  USERS: 'Users',
+  ISSUES: 'Issues',
+  HISTORY: 'History',
 };
 
 const F = {
-  // Clients
-  CLIENT_NAME:               'fldPDaLYrBzgd7UeH',
-  CLIENT_JOB_CODE_PREFIX:    'fldMycolmfMPd2URa',
-  CLIENT_GTIN_LENGTH:        'flduyn6PNava5wNUX',
-  CLIENT_CF_STYLE_GUIDE:     'fld65cAsTYvB0aUDP',
-  CLIENT_DELIVERY_PLATFORM:  'fldkLeYO9iTFcIkim',
-  // Jobs
-  JOB_NAME:            'fldJ7jGXuU5O5HbXO',
-  JOB_CLIENT:          'fldrU6lN2EJ5suawK',
-  JOB_SGS_JOB_NUM:     'fldE1JZrdsAgrkxPt',
-  JOB_CLIENT_BATCH_ID: 'fldGN52XjmW1Hk4pM',
-  JOB_PERIOD:          'fld89iGOcHvUhqvq1',
-  JOB_DEADLINE:        'fldnOcRSw5w4F9QBH',
-  JOB_STATUS:          'fldAQYGVZ1DGWK5et',
-  JOB_CF_JOB_ID:       'fldGJUUCLcj7nHRz1',
-  // SKUs
-  SKU_NAME:           'fld96N7hMpncFfXhJ',
-  SKU_JOB:            'fldTkQ5R14otWYKfb',
-  SKU_GTIN_UPC:       'fldN2Teu3TDxqMDzx',
-  SKU_BRAND:          'fldrb2JaNvtNmL7S5',
-  SKU_VENDOR:         'fldnok3l1TUpBhoPv',
-  SKU_OUTPUT_TYPE:    'fldQBxwewvqYrxzDI',
-  SKU_MASTER_VARIANT: 'fldkenv3gFLizbpyu',
-  SKU_PICKUP_JOB_NUM: 'fldiSiaLXDPTGmZAW',
-  SKU_SPECIAL_INSTR:  'fldxUE4VQU1vPI1Gv',
-  SKU_MERCH_VERIFIED: 'fldCAM9d4Btzlu4pe',
-  SKU_SHOOT_DATE:     'fldH2VMN1mpJWS6GX',
-  SKU_STATUS:         'fldIBIo4rw2Qhm444',
-  SKU_CF_PRODUCT_ID:  'fld2SzRZrHQOMnLXg',
+  CLIENT_NAME: 'Client',
+  CLIENT_CODE_TYPE: 'Code Type',
+  CLIENT_HOLD_DAYS: 'Hold Days',
+  CLIENT_DISPO_DAYS: 'Dispo Days',
+  CLIENT_JOB_PREFIX: 'Job Prefix',
+  CLIENT_ACTIVE: 'Active',
+  JOB_NAME: 'Job',
+  JOB_CLIENT: 'Client',
+  JOB_EXT_ID: 'Ext ID',
+  JOB_OUTPUT: 'Output',
+  JOB_STATUS: 'Status',
+  JOB_DUE: 'Due',
+  JOB_NOTES: 'Notes',
+  SKU_NAME: 'Name',
+  SKU_CLIENT: 'Client',
+  SKU_JOB: 'Job',
+  SKU_GTIN_UPC: 'ID',
+  SKU_CODE_TYPE: 'Code Type',
+  SKU_PRODUCT: 'Product',
+  SKU_BRAND: 'Brand',
+  SKU_CATEGORY: 'Category',
+  SKU_MERCH_VERIFIED: 'Received',
+  SKU_REC_DATE: 'Rec Date',
+  SKU_LOCATION: 'Location',
+  SKU_CONDITION: 'Condition',
+  SKU_STATUS: 'Status',
+  SKU_NOTES: 'Notes',
+  SKU_EXPORTED: 'Exported',
+  SKU_EXPORTED_ON: 'Exported On',
+  SKU_EXPORT_ERROR: 'Export Error',
 };
 
 function token() {
@@ -64,91 +70,100 @@ async function at(method, path, body) {
   return res.json();
 }
 
-// ── Clients ───────────────────────────────────────────────────────────────
-
 function shapeClient(r) {
   const f = r.fields ?? {};
   return {
-    id:               r.id,
-    name:             f[F.CLIENT_NAME]              ?? '',
-    jobCodePrefix:    f[F.CLIENT_JOB_CODE_PREFIX]   ?? '',
-    gtinLength:       f[F.CLIENT_GTIN_LENGTH]        ?? null,
-    cfStyleGuide:     f[F.CLIENT_CF_STYLE_GUIDE]    ?? '',
-    deliveryPlatform: f[F.CLIENT_DELIVERY_PLATFORM] ?? '',
+    id: r.id,
+    name: f[F.CLIENT_NAME] ?? '',
+    codeType: f[F.CLIENT_CODE_TYPE] ?? '',
+    holdDays: f[F.CLIENT_HOLD_DAYS] ?? null,
+    dispoDays: f[F.CLIENT_DISPO_DAYS] ?? null,
+    jobPrefix: f[F.CLIENT_JOB_PREFIX] ?? '',
+    active: f[F.CLIENT_ACTIVE] ?? false,
   };
 }
-
-// ── Jobs ──────────────────────────────────────────────────────────────────
 
 function shapeJob(r) {
   const f = r.fields ?? {};
   return {
-    id:            r.id,
-    name:          f[F.JOB_NAME]            ?? '',
-    clientIds:     f[F.JOB_CLIENT]          ?? [],
-    sgsJobNum:     f[F.JOB_SGS_JOB_NUM]    ?? '',
-    clientBatchId: f[F.JOB_CLIENT_BATCH_ID] ?? '',
-    period:        f[F.JOB_PERIOD]          ?? '',
-    deadline:      f[F.JOB_DEADLINE]        ?? '',
-    status:        f[F.JOB_STATUS]          ?? '',
-    cfJobId:       f[F.JOB_CF_JOB_ID]      ?? '',
+    id: r.id,
+    name: f[F.JOB_NAME] ?? '',
+    job: f[F.JOB_NAME] ?? '',
+    clientIds: f[F.JOB_CLIENT] ?? [],
+    extId: f[F.JOB_EXT_ID] ?? '',
+    output: f[F.JOB_OUTPUT] ?? '',
+    status: f[F.JOB_STATUS] ?? '',
+    due: f[F.JOB_DUE] ?? '',
+    deadline: f[F.JOB_DUE] ?? '',
+    notes: f[F.JOB_NOTES] ?? '',
   };
 }
-
-// ── SKUs ──────────────────────────────────────────────────────────────────
 
 function shapeSku(r) {
   const f = r.fields ?? {};
+  const codeType = Array.isArray(f[F.SKU_CODE_TYPE]) ? (f[F.SKU_CODE_TYPE][0] ?? '') : (f[F.SKU_CODE_TYPE] ?? '');
   return {
-    id:            r.id,
-    name:          f[F.SKU_NAME]           ?? '',
-    jobIds:        f[F.SKU_JOB]            ?? [],
-    gtinUpc:       f[F.SKU_GTIN_UPC]       ?? '',
-    brand:         f[F.SKU_BRAND]          ?? '',
-    vendor:        f[F.SKU_VENDOR]         ?? '',
-    outputType:    f[F.SKU_OUTPUT_TYPE]    ?? '',
-    masterVariant: f[F.SKU_MASTER_VARIANT] ?? '',
-    pickupJobNum:  f[F.SKU_PICKUP_JOB_NUM] ?? '',
-    specialInstr:  f[F.SKU_SPECIAL_INSTR]  ?? '',
+    id: r.id,
+    name: f[F.SKU_NAME] ?? '',
+    clientIds: f[F.SKU_CLIENT] ?? [],
+    jobIds: f[F.SKU_JOB] ?? [],
+    gtinUpc: f[F.SKU_GTIN_UPC] ?? '',
+    identifier: f[F.SKU_GTIN_UPC] ?? '',
+    codeType,
+    product: f[F.SKU_PRODUCT] ?? '',
+    brand: f[F.SKU_BRAND] ?? '',
+    category: f[F.SKU_CATEGORY] ?? '',
     merchVerified: f[F.SKU_MERCH_VERIFIED] ?? false,
-    shootDate:     f[F.SKU_SHOOT_DATE]     ?? '',
-    status:        f[F.SKU_STATUS]         ?? '',
-    cfProductId:   f[F.SKU_CF_PRODUCT_ID]  ?? '',
+    received: f[F.SKU_MERCH_VERIFIED] ?? false,
+    recDate: f[F.SKU_REC_DATE] ?? '',
+    location: '',
+    locationIds: Array.isArray(f[F.SKU_LOCATION]) ? f[F.SKU_LOCATION] : [],
+    condition: f[F.SKU_CONDITION] ?? '',
+    status: f[F.SKU_STATUS] ?? '',
+    notes: f[F.SKU_NOTES] ?? '',
   };
 }
 
-// ── Public API ────────────────────────────────────────────────────────────
+function validateItemIdentifier(identifier, codeType) {
+  if (codeType === 'UPC-12' && !/^\d{12}$/.test(identifier || '')) {
+    throw new Error('ID must be exactly 12 digits for UPC-12.');
+  }
+  if (codeType === 'GTIN-14' && !/^\d{14}$/.test(identifier || '')) {
+    throw new Error('ID must be exactly 14 digits for GTIN-14.');
+  }
+  if (codeType === 'Item #' && !identifier) {
+    throw new Error('ID is required for Item #.');
+  }
+}
 
 export const api = {
-  // Clients
   listClients: async () => {
     const d = await at('GET', `${TABLES.CLIENTS}?sort[0][field]=${F.CLIENT_NAME}&sort[0][direction]=asc`);
     return { records: d.records.map(shapeClient) };
   },
 
-  // Jobs
   listJobs: async (clientId) => {
-    let path = `${TABLES.JOBS}?sort[0][field]=${F.JOB_DEADLINE}&sort[0][direction]=asc`;
+    let path = `${TABLES.JOBS}?sort[0][field]=${F.JOB_DUE}&sort[0][direction]=asc`;
     if (clientId) path += `&filterByFormula=FIND("${clientId}",ARRAYJOIN({${F.JOB_CLIENT}}))`;
     const d = await at('GET', path);
     return { records: d.records.map(shapeJob) };
   },
 
-  createJob: async ({ clientId, sgsJobNum, clientBatchId, period, deadline }) => {
-    const name = sgsJobNum + (period ? ` — ${period}` : '');
+  createJob: async ({ clientId, job, name, sgsJobNum, extId, output, status, due, deadline, notes }) => {
+    const jobName = job || name || sgsJobNum;
     const fields = {
-      [F.JOB_NAME]:            name,
-      [F.JOB_CLIENT]:          [clientId],
-      [F.JOB_SGS_JOB_NUM]:    sgsJobNum,
-      [F.JOB_CLIENT_BATCH_ID]: clientBatchId,
-      [F.JOB_PERIOD]:          period,
+      [F.JOB_NAME]: jobName,
+      [F.JOB_CLIENT]: [clientId],
     };
-    if (deadline) fields[F.JOB_DEADLINE] = deadline;
+    if (extId) fields[F.JOB_EXT_ID] = extId;
+    if (output) fields[F.JOB_OUTPUT] = output;
+    if (status) fields[F.JOB_STATUS] = status;
+    if (due || deadline) fields[F.JOB_DUE] = due || deadline;
+    if (notes) fields[F.JOB_NOTES] = notes;
     const d = await at('POST', TABLES.JOBS, { records: [{ fields }] });
     return shapeJob(d.records[0]);
   },
 
-  // SKUs
   listSkus: async (jobId) => {
     let path = `${TABLES.SKUS}?sort[0][field]=${F.SKU_NAME}&sort[0][direction]=asc`;
     if (jobId) path += `&filterByFormula=FIND("${jobId}",ARRAYJOIN({${F.SKU_JOB}}))`;
@@ -156,35 +171,44 @@ export const api = {
     return { records: d.records.map(shapeSku) };
   },
 
-  createSku: async ({ jobId, gtinUpc, brand, vendor, outputType, masterVariant, pickupJobNum, specialInstr, merchVerified }) => {
+  createSku: async ({ clientId, jobId, gtinUpc, id, codeType, name, product, brand, category, merchVerified, status, notes }) => {
+    const identifier = id || gtinUpc;
+    validateItemIdentifier(identifier, codeType);
     const fields = {
-      [F.SKU_NAME]:    gtinUpc,
-      [F.SKU_JOB]:     [jobId],
-      [F.SKU_GTIN_UPC]: gtinUpc,
+      [F.SKU_NAME]: name || product || identifier,
+      [F.SKU_GTIN_UPC]: identifier,
     };
+    if (clientId) fields[F.SKU_CLIENT] = [clientId];
+    if (jobId) fields[F.SKU_JOB] = [jobId];
+    if (product)       fields[F.SKU_PRODUCT]        = product;
     if (brand)         fields[F.SKU_BRAND]          = brand;
-    if (vendor)        fields[F.SKU_VENDOR]         = vendor;
-    if (outputType)    fields[F.SKU_OUTPUT_TYPE]    = outputType;
-    if (masterVariant) fields[F.SKU_MASTER_VARIANT] = masterVariant;
-    if (pickupJobNum)  fields[F.SKU_PICKUP_JOB_NUM] = pickupJobNum;
-    if (specialInstr)  fields[F.SKU_SPECIAL_INSTR]  = specialInstr;
+    if (category)      fields[F.SKU_CATEGORY]       = category;
     if (merchVerified != null) fields[F.SKU_MERCH_VERIFIED] = Boolean(merchVerified);
+    if (status)        fields[F.SKU_STATUS]         = status;
+    if (notes)         fields[F.SKU_NOTES]          = notes;
     const d = await at('POST', TABLES.SKUS, { records: [{ fields }] });
     return shapeSku(d.records[0]);
   },
 
   updateSku: async (id, patch) => {
+    if ('gtinUpc' in patch || 'identifier' in patch) {
+      validateItemIdentifier(patch.identifier || patch.gtinUpc, patch.codeType);
+    }
     const map = {
+      clientIds:     F.SKU_CLIENT,
+      jobIds:        F.SKU_JOB,
       gtinUpc:       F.SKU_GTIN_UPC,
+      identifier:    F.SKU_GTIN_UPC,
+      product:       F.SKU_PRODUCT,
       brand:         F.SKU_BRAND,
-      vendor:        F.SKU_VENDOR,
-      outputType:    F.SKU_OUTPUT_TYPE,
-      masterVariant: F.SKU_MASTER_VARIANT,
-      pickupJobNum:  F.SKU_PICKUP_JOB_NUM,
-      specialInstr:  F.SKU_SPECIAL_INSTR,
+      category:      F.SKU_CATEGORY,
       merchVerified: F.SKU_MERCH_VERIFIED,
-      shootDate:     F.SKU_SHOOT_DATE,
+      received:      F.SKU_MERCH_VERIFIED,
+      recDate:       F.SKU_REC_DATE,
+      locationIds:   F.SKU_LOCATION,
+      condition:     F.SKU_CONDITION,
       status:        F.SKU_STATUS,
+      notes:         F.SKU_NOTES,
     };
     const fields = {};
     for (const [key, fieldId] of Object.entries(map)) {
@@ -194,12 +218,25 @@ export const api = {
     return shapeSku(d);
   },
 
-  // Settings (local — no backend call needed)
   settings: async () => ({
     settings: {
       airtableConfigured: Boolean(import.meta.env.VITE_AIRTABLE_TOKEN),
       base: BASE_ID,
-      tables: { clients: TABLES.CLIENTS, jobs: TABLES.JOBS, skus: TABLES.SKUS },
+      tables: {
+        clients: TABLES.CLIENTS,
+        jobs: TABLES.JOBS,
+        items: TABLES.SKUS,
+        skus: TABLES.SKUS,
+        receipts: TABLES.RECEIPTS,
+        locations: TABLES.LOCATIONS,
+        users: TABLES.USERS,
+        issues: TABLES.ISSUES,
+        history: TABLES.HISTORY,
+      },
     },
   }),
 };
+
+api.listItems = api.listSkus;
+api.createItem = api.createSku;
+api.updateItem = api.updateSku;
