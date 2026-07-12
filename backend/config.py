@@ -16,6 +16,14 @@ class Config:
 
     AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY", "")
     AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID", "")
+    R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID", "")
+    R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID", "")
+    R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "")
+    R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "")
+    R2_PUBLIC_BASE_URL = os.getenv("R2_PUBLIC_BASE_URL", "")
+    RECEIVING_PHOTO_STORAGE = os.getenv("RECEIVING_PHOTO_STORAGE", "local")
+    RECEIVING_PHOTO_MAX_BYTES = int(os.getenv("RECEIVING_PHOTO_MAX_BYTES", str(12 * 1024 * 1024)) or str(12 * 1024 * 1024))
+    RECEIVING_PHOTO_LOCAL_DIR = str(BACKEND_DIR / "uploads" / "receiving")
 
     # Table names — production schema uses concise Airtable field names.
     CLIENTS_TABLE = "Clients"
@@ -27,6 +35,7 @@ class Config:
     SKUS_TABLE = ITEMS_TABLE
     RECEIPTS_TABLE = "Receipts"
     RECEIVING_TABLE = RECEIPTS_TABLE
+    RECEIPT_ENTRIES_TABLE = "Receipt Entries"
     LOCATIONS_TABLE = "Locations"
     USERS_TABLE = "Users"
     ISSUES_TABLE = "Issues"
@@ -53,36 +62,63 @@ class Config:
     F_RECEIPT_ITEMS = "Items"
     F_RECEIPT_CARRIER = "Carrier"
     F_RECEIPT_TRACKING = "Tracking"
+    F_RECEIPT_BOX_QUANTITY = "Box Quantity"
     F_RECEIPT_RECEIVED = "Received"
     F_RECEIPT_RECEIVER = "Receiver"
     F_RECEIPT_LOCATION = "Location"
     F_RECEIPT_PHOTOS = "Photos"
     F_RECEIPT_NOTES = "Notes"
+    F_RECEIPT_REVIEW_STATUS = "Review Status"
+
+    # Field names — Receipt Entries
+    F_RECEIPT_ENTRY_NAME = "Product Name"
+    F_RECEIPT_ENTRY_LEGACY_NAME = "Receipt Entry"
+    F_RECEIPT_ENTRY_RECEIPT = "Receipt"
+    F_RECEIPT_ENTRY_SKU_ID = "SKU / ID"
+    F_RECEIPT_ENTRY_LEGACY_OBSERVED_IDENTIFIER = "Observed Identifier"
+    F_RECEIPT_ENTRY_QUANTITY = "Quantity"
+    F_RECEIPT_ENTRY_LOCATION = "Location"
+    F_RECEIPT_ENTRY_CONDITION = "Condition"
+    F_RECEIPT_ENTRY_DESCRIPTION = "Description"
+    F_RECEIPT_ENTRY_NOTES = "Notes"
+    F_RECEIPT_ENTRY_PHOTOS = "Photos"
+    F_RECEIPT_ENTRY_PHOTO_METADATA = "Photo Metadata"
+    F_RECEIPT_ENTRY_ITEM = "Item"
+    F_RECEIPT_ENTRY_VERIFICATION_STATUS = "Verification Status"
 
     # Field names — Clients
     F_CLIENT_NAME = "Client"
-    F_CLIENT_CODE_TYPE = "Code Type"
+    F_CLIENT_IDENTIFIER_TYPE = "Identifier Type"
     F_CLIENT_HOLD_DAYS = "Hold Days"
     F_CLIENT_DISPO_DAYS = "Dispo Days"
     F_CLIENT_JOB_PREFIX = "Job Prefix"
     F_CLIENT_ACTIVE = "Active"
+    F_CLIENT_IDENTIFIER_LABEL = "Identifier Label"
+    F_CLIENT_REQUIRED_PHOTO_FIELDS = "Required Photography Fields"
+    F_CLIENT_ARTWORK_REQUIREMENT = "Artwork Requirement"
+    F_CLIENT_MERCHANDISE_REQUIRED = "Merchandise Required"
 
     # Field names — Jobs
     F_JOB_NAME = "Job"
     F_JOB_CLIENT = "Client"
-    F_JOB_EXT_ID = "Job ID"
-    F_JOB_OUTPUT = "Output Type"
+    F_JOB_PARENT_NUMBER = "Parent Job Number"
+    F_JOB_EXT_ID = F_JOB_PARENT_NUMBER
+    F_JOB_PERIOD = "Period"
     F_JOB_STATUS = "Status"
     F_JOB_DUE = "Due"
-    F_JOB_NOTES = "Notes"
 
     # Field names — Items
     F_ITEM_NAME = "Item"
     F_ITEM_CLIENT = "Client"
     F_ITEM_JOB = "Job"
-    F_ITEM_IDENTIFIER = "Product ID"
-    F_ITEM_CODE_TYPE = "Code Type"
-    F_ITEM_PRODUCT = "Product Name"
+    F_ITEM_IDENTIFIER = "Identifier"
+    F_ITEM_IDENTIFIER_TYPE = "Identifier Type"
+    F_ITEM_PRODUCT = "Product or File Name"
+    F_ITEM_JOB_NUMBER = "Item Job Number"
+    F_ITEM_DESCRIPTION = "Description"
+    F_ITEM_OUTPUT = "Output Type"
+    F_ITEM_MASTER_VARIANT = "Master or Variant"
+    F_ITEM_PICKUP_JOB_NUMBER = "Pickup Job Number"
     F_ITEM_BRAND = "Brand"
     F_ITEM_CATEGORY = "Category"
     F_ITEM_RECEIVED = "Received"
@@ -91,6 +127,12 @@ class Config:
     F_ITEM_CONDITION = "Condition"
     F_ITEM_STATUS = "Status"
     F_ITEM_NOTES = "Notes"
+    F_ITEM_PHOTOS = "Photos"
+    F_ITEM_PHOTO_METADATA = "Photo Metadata"
+    F_ITEM_REFERENCE_DATA = "Reference Data"
+    F_ITEM_RECEIPTS = "Receipts"
+    F_ITEM_ISSUES = "Issues"
+    F_ITEM_ARTWORK_RECEIVED = "Artwork Received"
     F_ITEM_EXPORTED = "Exported"
     F_ITEM_EXPORTED_ON = "Exported On"
     F_ITEM_EXPORT_ERROR = "Export Error"

@@ -76,5 +76,12 @@ class AirtableClient:
             json={"fields": fields},
         )
 
+    def delete_record(self, table_name, record_id):
+        return self._request("DELETE", f"{table_name}/{record_id}")
+
+    def delete_records(self, table_name, record_ids):
+        params = [("records[]", record_id) for record_id in record_ids]
+        return self._request("DELETE", table_name, params=params)
+
 
 airtable = AirtableClient()

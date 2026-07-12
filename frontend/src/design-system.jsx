@@ -18,7 +18,7 @@ function iconNode(Icon, size = 16) {
   return Icon ? <Icon aria-hidden="true" size={size} strokeWidth={2.2} /> : null;
 }
 
-export function AppShell({ brand = "Food Hub", subtitle = "Operations", icon: Icon = PackageCheck, nav, search, actions, footer, children }) {
+export function AppShell({ brand = "Marks", subtitle = "Operations", icon: Icon = PackageCheck, nav, search, actions, footer, children }) {
   return (
     <div className="ds-app-shell">
       <header className="ds-app-shell__bar">

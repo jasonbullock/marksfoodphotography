@@ -2,22 +2,31 @@ import csv
 import io
 import json
 import os
+import random
 import re
+import uuid
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from xml.etree import ElementTree
 
 import requests
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_from_directory
 
 from airtable import airtable
 from config import Config
-
+from receiving_photo_storage import (
+    ReceivingPhotoConfigError,
+    ReceivingPhotoStorage,
+    ReceivingPhotoStorageError,
+    ReceivingPhotoValidationError,
+)
 
 api = Blueprint("api", __name__)
 
 C = Config  # shorthand
+UPLOAD_DIR = Path(__file__).resolve().parent / "uploads" / "receiving"
 
 
 def err(msg, status=400):
@@ -29,7 +38,29 @@ def airtable_err(error):
     status = getattr(response, "status_code", 500)
     if status in {403, 404}:
         return err("Airtable table is not configured yet.", 501)
-    return err("Airtable request failed.", status)
+    message = "Airtable request failed."
+    try:
+        payload = response.json() if response is not None else {}
+        airtable_message = (payload.get("error") or {}).get("message")
+        if airtable_message:
+            message = airtable_message
+    except ValueError:
+        pass
+    return err(message, status)
+
+
+def _photo_storage():
+    return ReceivingPhotoStorage(C)
+
+
+def _is_unknown_field_error(error, field_name):
+    response = getattr(error, "response", None)
+    try:
+        payload = response.json() if response is not None else {}
+    except ValueError:
+        return False
+    message = str((payload.get("error") or {}).get("message") or "")
+    return "Unknown field name" in message and field_name in message
 
 
 def _now_iso():
@@ -98,11 +129,60 @@ def _client_ids_permitted(client_ids, permissions=None):
     return permissions["all"] or bool(ids & permissions["client_ids"])
 
 
+def _receipt_client_permitted(client_ids, permissions=None):
+    ids = set(_as_list(client_ids))
+    if not ids:
+        return True
+    permissions = permissions or _permission_context()
+    return permissions["all"] or bool(ids & permissions["client_ids"])
+
+
 def _filter_by_client_field(records, field):
     permissions = _permission_context()
     if permissions["all"]:
         return records
     return [record for record in records if _client_ids_permitted(record.get("fields", {}).get(field, []), permissions)]
+
+
+def _filter_receipts_by_access(records):
+    permissions = _permission_context()
+    if permissions["all"]:
+        return records
+    return [record for record in records if _receipt_client_permitted(record.get("fields", {}).get(C.F_RECEIPT_CLIENT, []), permissions)]
+
+
+def _list_all_record_ids(table_name):
+    record_ids = []
+    params = {"pageSize": 100}
+    while True:
+        data = airtable.list_records(table_name, params=params, by_field_id=False)
+        record_ids.extend(record["id"] for record in data.get("records", []))
+        offset = data.get("offset")
+        if not offset:
+            return record_ids
+        params["offset"] = offset
+
+
+def _list_all_records(table_name, params=None):
+    records = []
+    merged = {"pageSize": 100, **(params or {})}
+    while True:
+        data = airtable.list_records(table_name, params=merged, by_field_id=False)
+        records.extend(data.get("records", []))
+        offset = data.get("offset")
+        if not offset:
+            return records
+        merged["offset"] = offset
+
+
+def _delete_records_in_batches(table_name, record_ids):
+    deleted = 0
+    for index in range(0, len(record_ids), 10):
+        batch = record_ids[index:index + 10]
+        if batch:
+            airtable.delete_records(table_name, batch)
+            deleted += len(batch)
+    return deleted
 
 
 def _permitted_client_records(records):
@@ -299,12 +379,146 @@ def _shape_client(r):
     return {
         "id": r["id"],
         "name": f.get(C.F_CLIENT_NAME, ""),
-        "codeType": f.get(C.F_CLIENT_CODE_TYPE, ""),
+        "codeType": f.get(C.F_CLIENT_IDENTIFIER_TYPE, ""),
+        "identifierLabel": f.get(C.F_CLIENT_IDENTIFIER_LABEL, "") or "Identifier",
+        "requiredPhotographyFields": f.get(C.F_CLIENT_REQUIRED_PHOTO_FIELDS, []) or ["Identifier"],
+        "artworkRequirement": f.get(C.F_CLIENT_ARTWORK_REQUIREMENT, "") or "Optional",
+        "merchandiseRequired": f.get(C.F_CLIENT_MERCHANDISE_REQUIRED, True),
         "holdDays": f.get(C.F_CLIENT_HOLD_DAYS),
         "dispoDays": f.get(C.F_CLIENT_DISPO_DAYS),
         "jobPrefix": f.get(C.F_CLIENT_JOB_PREFIX, ""),
         "active": f.get(C.F_CLIENT_ACTIVE, False),
     }
+
+
+READINESS_LABELS = {
+    "merchandise_issue": "Merchandise Issue",
+    "waiting_for_merchandise": "Waiting for Merchandise",
+    "missing_data": "Missing Data",
+    "missing_artwork": "Missing Artwork",
+    "ready_for_photo": "Ready for Photo",
+}
+MERCHANDISE_ISSUE_TYPES = {"Missing Merch", "Wrong Merch", "Damaged", "Unknown Item"}
+RESOLVED_ISSUE_STATUSES = {"Resolved", "Cancelled"}
+PRODUCTION_LOCK_STATUSES = {"Production", "In CF", "In Creative Force", "Complete", "Completed"}
+
+
+def _identifier_label(client):
+    return (client or {}).get("identifierLabel") or "Identifier"
+
+
+def _required_photo_fields(client):
+    fields = (client or {}).get("requiredPhotographyFields") or ["Identifier"]
+    return fields if isinstance(fields, list) else [fields]
+
+
+def _validate_identifier_value(identifier, code_type, label="Identifier"):
+    value = str(identifier or "")
+    code_type = code_type or ""
+    if code_type == "UPC-12" and not (value.isdigit() and len(value) == 12):
+        return f"{label} must be exactly 12 digits."
+    if code_type == "GTIN-14" and not (value.isdigit() and len(value) == 14):
+        return f"{label} must be exactly 14 digits."
+    if code_type == "GTIN-13" and not (value.isdigit() and len(value) == 13):
+        return f"{label} must be exactly 13 digits."
+    if code_type == "GTIN-12" and not (value.isdigit() and len(value) == 12):
+        return f"{label} must be exactly 12 digits."
+    if code_type == "GTIN-8" and not (value.isdigit() and len(value) == 8):
+        return f"{label} must be exactly 8 digits."
+    if code_type == "Numeric" and not value.isdigit():
+        return f"{label} must contain digits only."
+    if code_type in {"Text", "Item #"} and not value:
+        return f"{label} is required."
+    return ""
+
+
+def _item_has_merchandise(item):
+    return bool(item.get("received"))
+
+
+def _blocking_merchandise_issues(issues):
+    blockers = []
+    for issue in issues or []:
+        if issue.get("status") in RESOLVED_ISSUE_STATUSES:
+            continue
+        if issue.get("type") in MERCHANDISE_ISSUE_TYPES:
+            blockers.append(issue)
+    return blockers
+
+
+def evaluate_photo_readiness(item, client=None, issues=None, full=False):
+    client = client or {}
+    label = _identifier_label(client)
+    required_fields = _required_photo_fields(client)
+    artwork_requirement = client.get("artworkRequirement") or "Optional"
+    merchandise_required = client.get("merchandiseRequired")
+    if merchandise_required is None:
+        merchandise_required = True
+
+    details = {
+        "ready": False,
+        "state": "missing_data",
+        "label": READINESS_LABELS["missing_data"],
+        "missing": [],
+        "warnings": [],
+    }
+    if full:
+        details["requirements"] = {
+            "identifierLabel": label,
+            "codeType": client.get("codeType", ""),
+            "requiredPhotographyFields": required_fields,
+            "artworkRequirement": artwork_requirement,
+            "merchandiseRequired": merchandise_required,
+        }
+
+    if item.get("status") in PRODUCTION_LOCK_STATUSES:
+        details.update({"ready": True, "state": "ready_for_photo", "label": READINESS_LABELS["ready_for_photo"]})
+        details["warnings"].append("Item is already in production or complete; readiness will not move it backward.")
+        return details
+
+    blockers = _blocking_merchandise_issues(issues)
+    if blockers:
+        details.update({"state": "merchandise_issue", "label": READINESS_LABELS["merchandise_issue"]})
+        details["missing"].append("Resolve merchandise issue.")
+        if full:
+            details["issues"] = blockers
+        return details
+
+    if merchandise_required and not _item_has_merchandise(item):
+        details.update({"state": "waiting_for_merchandise", "label": READINESS_LABELS["waiting_for_merchandise"]})
+        details["missing"].append("Merchandise must be received and matched to this item.")
+        return details
+
+    missing_data = []
+    for field in required_fields:
+        if field in {"Identifier", "ID"}:
+            identifier = item.get("productId") or item.get("identifier") or ""
+            if not identifier:
+                missing_data.append(f"{label} is required.")
+            else:
+                message = _validate_identifier_value(identifier, client.get("codeType", ""), label)
+                if message:
+                    missing_data.append(message)
+        elif field in {"Product Name", "Product/File Name", "Product or File Name"} and not item.get("product"):
+            missing_data.append("Product or File Name is required.")
+        elif field == "Brand" and not item.get("brand"):
+            missing_data.append("Brand is required.")
+        elif field == "Artwork" and not item.get("artworkReceived"):
+            missing_data.append("Artwork is required.")
+
+    if missing_data:
+        details.update({"state": "missing_data", "label": READINESS_LABELS["missing_data"], "missing": missing_data})
+        return details
+
+    if artwork_requirement == "Required" and not item.get("artworkReceived"):
+        details.update({"state": "missing_artwork", "label": READINESS_LABELS["missing_artwork"]})
+        details["missing"].append("Artwork is required.")
+        return details
+    if artwork_requirement == "Optional" and not item.get("artworkReceived"):
+        details["warnings"].append("Artwork has not been received.")
+
+    details.update({"ready": True, "state": "ready_for_photo", "label": READINESS_LABELS["ready_for_photo"]})
+    return details
 
 
 # ── Intake preview ────────────────────────────────────────────────────────────
@@ -318,39 +532,44 @@ XLSX_RELS_NS = {
 DEFAULT_IMPORT_OUTPUT = "Photo + Render"
 IMPORT_OUTPUTS = {"Photo Only", "Render Only", "Photo + Render"}
 INTAKE_FALLBACK_DESCRIPTIONS = {
-    "Jobs.Job": "Human-readable job or group name.",
-    "Jobs.Job ID": "External production job or project number.",
-    "Jobs.Due": "Job due date when present in the source spreadsheet.",
-    "Jobs.Output Type": "Photo Only, Render Only, or Photo + Render.",
-    "Jobs.Notes": "Source notes that describe the job.",
-    "Items.Item": "Readable item display name.",
-    "Items.Product ID": "Client product identifier, usually UPC or GTIN.",
-    "Items.Product Name": "Product or item description.",
-    "Items.Brand": "Product brand.",
-    "Items.Notes": "Source notes that describe the item.",
+    "Item Name": "Optional item display name in the app.",
+    "Identifier": "Client product identifier.",
+    "Product or File Name": "Product or file name.",
+    "Description": "Longer source product or item description.",
+    "Item Job Number": "Row-level job or project number for the item.",
+    "Output Type": "Photo Only, Render Only, or Photo + Render.",
+    "Master or Variant": "Whether this item is a master or a variant.",
+    "Pickup Job Number": "Previous production job number for variant pickup work.",
+    "Brand": "Product brand.",
+    "Due Date": "Job due date when present in the source spreadsheet.",
+    "Notes": "Source notes that describe the item.",
+    "Job Name": "Human-readable job or group name.",
+    "Reference Data": "Preserve source values as item reference JSON.",
 }
 INTAKE_MAPPINGS = {
     "kroger": {
-        "ext_id": "Job #",
+        "item_job_number": "Job #",
         "job_name": "Description",
-        "product": "Product Received",
-        "product_fallback": "Description",
+        "item_name": "Product Received",
+        "description": "Description",
         "id": "UPC",
         "brand": "Brand",
         "output": "Output Type",
         "notes": ["Notes"],
     },
     "unfi": {
-        "ext_id": "Project Number",
-        "product": "Description",
+        "item_job_number": "Project Number",
+        "item_name": "Description",
+        "description": "Description",
         "id": "UPC",
         "output": "Output Type",
         "notes": ["Notes"],
     },
     "smithfield": {
-        "ext_id": "Job #",
-        "product": "Product Description",
-        "id": "GTIN",
+        "item_job_number": "Job #",
+        "item_name": "Product Description",
+        "description": "Product Description",
+        "id": "GAR #",
         "brand": "Brand",
         "output": "Output",
         "notes": ["Notes"],
@@ -436,9 +655,7 @@ def intake_preview():
     client_id = (request.form.get("clientId") or "").strip()
     uploaded = request.files.get("file")
 
-    if not client_id:
-        return err("Choose a client before uploading a spreadsheet.")
-    if not _client_permitted(client_id):
+    if client_id and not _client_permitted(client_id):
         return _forbidden()
     if not uploaded or not uploaded.filename:
         return err("Upload an XLSX or CSV file.")
@@ -453,13 +670,8 @@ def intake_preview():
         return err("The uploaded file is empty.")
 
     try:
-        if ext == ".csv":
-            parsed = _parse_csv(content)
-        elif ext == ".xlsx":
-            parsed = _parse_xlsx(content)
-        else:
-            parsed = _parse_xls(content)
-        import_record = _create_import_record(client_id, filename, "Parsed", rows=parsed.get("rowCount", 0))
+        parsed = _parse_spreadsheet(content, ext)
+        import_record = _create_import_record(client_id, filename, "Parsed", rows=parsed.get("rowCount", 0)) if client_id else None
     except UnicodeDecodeError:
         _fail_import_record(None, client_id, filename, "Unreadable file. The CSV encoding could not be detected.")
         return err("Unreadable file. The CSV encoding could not be detected.")
@@ -478,7 +690,7 @@ def intake_preview():
     return jsonify({
         "fileName": filename,
         "clientId": client_id,
-        "importId": import_record.get("id"),
+        "importId": import_record.get("id") if import_record else "",
         **parsed,
     })
 
@@ -566,6 +778,10 @@ def _intake_import_json_response(dry_run):
         return err("No rows were provided for import.")
 
     try:
+        if not import_id:
+            row_count = len(source_rows) if source_rows else len(rows)
+            import_record = _create_import_record(client_id, filename, "Parsed", rows=row_count)
+            import_id = import_record.get("id", "")
         if source_rows:
             result = _build_intake_plan_from_source_rows(client_id, filename, headers, source_rows, mapping)
         else:
@@ -590,11 +806,48 @@ def _intake_import_json_response(dry_run):
 
 
 def _parse_spreadsheet(content, ext):
+    if _looks_like_xlsx(content):
+        return _parse_xlsx(content)
     if ext == ".csv":
         return _parse_csv(content)
     if ext == ".xlsx":
         return _parse_xlsx(content)
+    if _looks_like_text_spreadsheet(content):
+        return _parse_delimited_text(content)
     return _parse_xls(content)
+
+
+def _looks_like_xlsx(content):
+    return bytes(content[:4]) == b"PK\x03\x04"
+
+
+def _looks_like_text_spreadsheet(content):
+    sample = bytes(content[:2048]).lstrip()
+    if not sample:
+        return False
+    return not sample.startswith(b"\xd0\xcf\x11\xe0")
+
+
+def _parse_delimited_text(content):
+    text = _decode_text_spreadsheet(content)
+    sample = text[:2048]
+    delimiter = "\t" if sample.count("\t") > sample.count(",") else ","
+    rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
+    summary = _summarize_rows(rows)
+    return {
+        "sheetNames": [],
+        "selectedSheet": "",
+        **summary,
+    }
+
+
+def _decode_text_spreadsheet(content):
+    for encoding in ("utf-8-sig", "utf-16", "cp1252", "latin-1"):
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return content.decode("utf-8-sig", errors="replace")
 
 
 @api.get("/imports")
@@ -608,6 +861,21 @@ def list_imports():
     data = airtable.list_records(C.IMPORTS_TABLE, params=params, by_field_id=False)
     records = _filter_by_client_field(data.get("records", []), C.F_IMPORT_CLIENT)
     return jsonify({"records": _shape_import_records(records)})
+
+
+@api.get("/imports/client-status")
+def import_client_status():
+    client_id = (request.args.get("clientId") or "").strip()
+    if not client_id:
+        return err("clientId is required")
+    if not _client_permitted(client_id):
+        return _forbidden()
+    records = _list_all_records(C.IMPORTS_TABLE)
+    records = [
+        record for record in records
+        if client_id in (record.get("fields", {}).get(C.F_IMPORT_CLIENT, []) or [])
+    ]
+    return jsonify({"clientId": client_id, "hasImports": bool(records), "importCount": len(records)})
 
 
 @api.get("/imports/<record_id>")
@@ -858,16 +1126,20 @@ def _client_name(client_record):
 
 def _intake_destination_field_map():
     return {
-        "Jobs.Job": (C.JOBS_TABLE, C.F_JOB_NAME),
-        "Jobs.Job ID": (C.JOBS_TABLE, C.F_JOB_EXT_ID),
-        "Jobs.Due": (C.JOBS_TABLE, C.F_JOB_DUE),
-        "Jobs.Output Type": (C.JOBS_TABLE, C.F_JOB_OUTPUT),
-        "Jobs.Notes": (C.JOBS_TABLE, C.F_JOB_NOTES),
-        "Items.Item": (C.ITEMS_TABLE, C.F_ITEM_NAME),
-        "Items.Product ID": (C.ITEMS_TABLE, C.F_ITEM_IDENTIFIER),
-        "Items.Product Name": (C.ITEMS_TABLE, C.F_ITEM_PRODUCT),
-        "Items.Brand": (C.ITEMS_TABLE, C.F_ITEM_BRAND),
-        "Items.Notes": (C.ITEMS_TABLE, C.F_ITEM_NOTES),
+        "Job Name": (C.JOBS_TABLE, C.F_JOB_NAME),
+        "Parent Job Number": (C.JOBS_TABLE, C.F_JOB_PARENT_NUMBER),
+        "Due Date": (C.JOBS_TABLE, C.F_JOB_DUE),
+        "Item Name": (C.ITEMS_TABLE, C.F_ITEM_NAME),
+        "Identifier": (C.ITEMS_TABLE, C.F_ITEM_IDENTIFIER),
+        "Product or File Name": (C.ITEMS_TABLE, C.F_ITEM_PRODUCT),
+        "Description": (C.ITEMS_TABLE, C.F_ITEM_DESCRIPTION),
+        "Item Job Number": (C.ITEMS_TABLE, C.F_ITEM_JOB_NUMBER),
+        "Output Type": (C.ITEMS_TABLE, C.F_ITEM_OUTPUT),
+        "Master or Variant": (C.ITEMS_TABLE, C.F_ITEM_MASTER_VARIANT),
+        "Pickup Job Number": (C.ITEMS_TABLE, C.F_ITEM_PICKUP_JOB_NUMBER),
+        "Brand": (C.ITEMS_TABLE, C.F_ITEM_BRAND),
+        "Notes": (C.ITEMS_TABLE, C.F_ITEM_NOTES),
+        "Reference Data": (C.ITEMS_TABLE, C.F_ITEM_REFERENCE_DATA),
     }
 
 
@@ -944,32 +1216,135 @@ def _mapped_notes(row, mapping):
     return "\n".join(notes)
 
 
+def _mapped_reference_data(row, mapping):
+    reference_data = {}
+    for field in mapping.get("reference_data", []):
+        value = _source_value(row, field)
+        if value:
+            reference_data[str(field)] = value
+    return reference_data
+
+
+def _normalize_reference_data(value):
+    if not isinstance(value, dict):
+        return {}
+    normalized = {}
+    for key, raw_value in value.items():
+        clean_key = str(key or "").strip()
+        clean_value = str(raw_value or "").strip()
+        if clean_key and clean_value:
+            normalized[clean_key] = clean_value
+    return normalized
+
+
+def _parse_reference_data(raw):
+    if not raw:
+        return {}
+    if isinstance(raw, dict):
+        return _normalize_reference_data(raw)
+    text = str(raw or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except (TypeError, ValueError):
+        print(f"Malformed Reference Data JSON: {text[:200]}")
+        return {"Raw": text}
+    if not isinstance(parsed, dict):
+        print(f"Malformed Reference Data JSON: {text[:200]}")
+        return {"Raw": text}
+    return _normalize_reference_data(parsed)
+
+
+def _reference_data_json(value):
+    normalized = _normalize_reference_data(value)
+    if not normalized:
+        return ""
+    return json.dumps(normalized, ensure_ascii=False, sort_keys=True)
+
+
 def _mapping_from_ui_mapping(ui_mapping):
     if not isinstance(ui_mapping, dict):
         raise ValueError("Invalid column mapping.")
 
-    mapping = {"notes": [], "job_notes": []}
+    mapping = {"notes": [], "reference_data": []}
+    single_job_name = str(ui_mapping.get("__singleJobName") or "").strip()
+    if single_job_name:
+        mapping["single_job_name"] = single_job_name
+    existing_job_id = str(ui_mapping.get("__existingJobId") or "").strip()
+    if existing_job_id:
+        mapping["existing_job_id"] = existing_job_id
+        mapping["existing_job_name"] = str(ui_mapping.get("__existingJobName") or "").strip()
+    job_group_field = str(ui_mapping.get("__jobGroupField") or "").strip()
+    if job_group_field:
+        mapping["job_group"] = job_group_field
     target_keys = {
+        "Item Name": "item_name",
+        "Identifier": "id",
+        "Product or File Name": "product",
+        "Product/File Name": "product",
+        "Product Name": "product",
+        "Description": "description",
+        "Item Job Number": "item_job_number",
+        "Brand": "brand",
+        "Job Number": "item_job_number",
+        "Parent Job Number": "parent_job_number",
+        "Output Type": "output",
+        "Master or Variant": "master_or_variant",
+        "Pickup Job Number": "pickup_job_number",
+        "Due Date": "due",
+        "Job Name": "job_name",
         "Jobs.Job": "job_name",
-        "Jobs.Job ID": "ext_id",
+        "Jobs.Job Number": "parent_job_number",
+        "Jobs.Parent Job Number": "parent_job_number",
         "Jobs.Due": "due",
-        "Jobs.Output Type": "output",
         "Items.Item": "item_name",
-        "Items.Product ID": "id",
+        "Items.Identifier": "id",
+        "Items.Product or File Name": "product",
+        "Items.Product/File Name": "product",
         "Items.Product Name": "product",
+        "Items.Description": "description",
+        "Items.Item Job Number": "item_job_number",
+        "Items.Job Number": "item_job_number",
+        "Items.Output Type": "output",
+        "Items.Master or Variant": "master_or_variant",
+        "Items.Pickup Job Number": "pickup_job_number",
         "Items.Brand": "brand",
         "Items.Category": "category",
         "Job": "job_name",
-        "Job ID": "ext_id",
         "Job Name": "job_name",
-        "Product ID": "id",
+        "Identifier": "id",
         "ID": "id",
+        "Product or File Name": "product",
+        "Product/File Name": "product",
         "Product Name": "product",
+        "Description": "description",
+        "Item Job Number": "item_job_number",
+        "Job Number": "item_job_number",
+        "Output Type": "output",
+        "Master or Variant": "master_or_variant",
+        "Pickup Job Number": "pickup_job_number",
         "Brand": "brand",
         "Category": "category",
-        "Output Type": "output",
     }
+
+    target_mapping = ui_mapping.get("__targetMapping")
+    if isinstance(target_mapping, dict):
+        for target, source in target_mapping.items():
+            source_name = str(source or "").strip()
+            target_name = str(target or "").strip()
+            if not source_name:
+                continue
+            if target_name == "Notes" or target_name == "Items.Notes":
+                mapping["notes"].append(source_name)
+                continue
+            key = target_keys.get(target_name)
+            if key and key not in {"notes", "job_notes"}:
+                mapping[key] = source_name
+
     for source, target in ui_mapping.items():
+        if source in {"__targetMapping", "__singleJobName", "__existingJobId", "__existingJobName", "__jobGroupField"}:
+            continue
         source_name = str(source or "").strip()
         target_name = str(target or "").strip()
         if not source_name or target_name == "Ignore":
@@ -977,14 +1352,16 @@ def _mapping_from_ui_mapping(ui_mapping):
         if target_name == "Items.Notes" or target_name == "Notes":
             mapping["notes"].append(source_name)
             continue
-        if target_name == "Jobs.Notes":
-            mapping["job_notes"].append(source_name)
+        if target_name == "Reference Data":
+            mapping["reference_data"].append(source_name)
             continue
         key = target_keys.get(target_name)
         if key and key not in mapping:
             mapping[key] = source_name
 
-    required_targets = (("Jobs.Job ID", "ext_id"), ("Items.Product ID", "id"), ("Items.Product Name", "product"))
+    required_targets = (("Identifier", "id"),)
+    if "single_job_name" not in mapping and "existing_job_id" not in mapping and "job_group" not in mapping:
+        required_targets = (*required_targets, ("Job", "job_group"))
     missing = [label for label, key in required_targets if key not in mapping]
     if missing:
         raise ValueError(f"Missing required column mapping: {', '.join(missing)}.")
@@ -1006,6 +1383,29 @@ def _normalize_output(value):
         "both": "Photo + Render",
     }
     return aliases.get(cleaned.lower(), cleaned if cleaned in IMPORT_OUTPUTS else DEFAULT_IMPORT_OUTPUT)
+
+
+def _normalize_master_or_variant(value):
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return ""
+    aliases = {
+        "master": "Master",
+        "m": "Master",
+        "variant": "Variant",
+        "v": "Variant",
+    }
+    return aliases.get(cleaned.lower(), cleaned if cleaned in {"Master", "Variant"} else "")
+
+
+def _normalize_item_job_number(value):
+    return str(value or "").strip()
+
+
+def _normalize_description(value):
+    text = str(value or "")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return text.strip()
 
 
 def _readable_item_name(brand, product, identifier):
@@ -1033,20 +1433,50 @@ def _default_item_status(row):
     return "New"
 
 
-def _validate_identifier(identifier, code_type):
-    return _validate_item_identifier(identifier, code_type)
+def _job_name_from_group_value(client_name, group_value):
+    value = str(group_value or "").strip()
+    if not value:
+        return ""
+    letters = re.sub(r"[^A-Za-z]+", "", value)
+    looks_like_code = len(letters) < 3 or bool(re.fullmatch(r"[A-Z]{0,4}[-_ ]?\d+[A-Z0-9-_. ]*", value, re.I))
+    return f"{client_name} {value}" if looks_like_code else value
 
 
-def _existing_jobs_by_ext_id(client_id):
+def _validate_identifier(identifier, code_type, label="Identifier"):
+    return _validate_item_identifier(identifier, code_type, label)
+
+
+def _normalized_required_fields(client_config):
+    return {
+        "Identifier" if field == "ID" else "Product or File Name" if field in {"Product Name", "Product/File Name"} else str(field or "").strip()
+        for field in (client_config or {}).get("requiredPhotographyFields", [])
+        if str(field or "").strip()
+    }
+
+
+def _existing_jobs_by_lookup(client_id):
     data = airtable.list_records(C.JOBS_TABLE, by_field_id=False)
     jobs = {}
     for record in _filter_by_client_field(data.get("records", []), C.F_JOB_CLIENT):
         fields = record.get("fields", {})
         if client_id in (fields.get(C.F_JOB_CLIENT, []) or []):
-            ext_id = fields.get(C.F_JOB_EXT_ID, "")
-            if ext_id:
-                jobs[ext_id] = record
+            parent_number = fields.get(C.F_JOB_PARENT_NUMBER, "")
+            name = fields.get(C.F_JOB_NAME, "")
+            if parent_number:
+                jobs[f"parent:{parent_number}"] = record
+            if name:
+                jobs[f"name:{name}"] = record
     return jobs
+
+
+def _existing_job_for_import(existing_jobs, group_key, job_name, parent_number=""):
+    if parent_number and f"parent:{parent_number}" in existing_jobs:
+        return existing_jobs[f"parent:{parent_number}"]
+    if job_name and f"name:{job_name}" in existing_jobs:
+        return existing_jobs[f"name:{job_name}"]
+    if group_key and f"parent:{group_key}" in existing_jobs:
+        return existing_jobs[f"parent:{group_key}"]
+    return {}
 
 
 def _existing_items_by_identifier(client_id):
@@ -1066,11 +1496,14 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
     if not _client_permitted(client_id):
         raise ValueError("You do not have access to that Client.")
     client_name = _client_name(client_record)
-    code_type = client_record.get("fields", {}).get(C.F_CLIENT_CODE_TYPE, "")
+    client_config = _shape_client(client_record)
+    code_type = client_config.get("codeType", "")
+    identifier_label = _identifier_label(client_config)
+    required_photo_fields = _normalized_required_fields(client_config)
     mapping = mapping or _mapping_for_client(client_name)
     headers = parsed.get("columnHeaders", [])
     rows = [_row_dict(headers, values) for values in parsed.get("rows", [])]
-    existing_jobs = _existing_jobs_by_ext_id(client_id)
+    existing_jobs = _existing_jobs_by_lookup(client_id)
     existing_items = _existing_items_by_identifier(client_id)
     seen_ids = {}
     row_results = []
@@ -1079,51 +1512,62 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
     items_to_update = 0
     warning_count = 0
     error_count = 0
+    single_job_name = str(mapping.get("single_job_name") or "").strip()
+    existing_job_id = str(mapping.get("existing_job_id") or "").strip()
+    existing_job_name = str(mapping.get("existing_job_name") or "").strip()
 
     for index, row in enumerate(rows, start=2):
-        ext_id = _mapped_value(row, mapping, "ext_id")
+        ext_id = existing_job_id or single_job_name or _mapped_value(row, mapping, "job_group") or _mapped_value(row, mapping, "ext_id")
         identifier = _mapped_value(row, mapping, "id")
         product = _mapped_value(row, mapping, "product")
         product_source = _source_value(row, mapping.get("product"))
+        item_job_number = _normalize_item_job_number(_mapped_value(row, mapping, "item_job_number"))
+        description = _normalize_description(_mapped_value(row, mapping, "description"))
+        parent_job_number = _normalize_item_job_number(_mapped_value(row, mapping, "parent_job_number"))
         brand = _mapped_value(row, mapping, "brand")
         category = _mapped_value(row, mapping, "category")
         output = _normalize_output(_mapped_value(row, mapping, "output"))
-        job_name_text = _mapped_value(row, mapping, "job_name")
+        master_or_variant = _normalize_master_or_variant(_mapped_value(row, mapping, "master_or_variant"))
+        pickup_job_number = _normalize_item_job_number(_mapped_value(row, mapping, "pickup_job_number"))
+        job_name_text = existing_job_name or single_job_name or _mapped_value(row, mapping, "job_name")
         job_due = _mapped_value(row, mapping, "due")
-        job_notes = _mapped_notes(row, {"notes": mapping.get("job_notes", [])})
         notes = _mapped_notes(row, mapping)
+        reference_data = _mapped_reference_data(row, mapping)
+        item_name = _mapped_value(row, mapping, "item_name")
         problems = []
         warnings = []
 
         if not ext_id:
-            problems.append("Missing Job ID")
+            problems.append("Missing Job")
         if not identifier:
-            problems.append("Missing Product ID")
+            problems.append(f"Missing {identifier_label}")
         if identifier:
-            validation_error = _validate_identifier(identifier, code_type)
+            validation_error = _validate_identifier(identifier, code_type, identifier_label)
             if validation_error:
                 problems.append(validation_error)
             if identifier in seen_ids:
-                warnings.append(f"Duplicate Product ID also appears on row {seen_ids[identifier]}")
+                warnings.append(f"Duplicate {identifier_label} also appears on row {seen_ids[identifier]}")
             else:
                 seen_ids[identifier] = index
-        if not product_source:
-            warnings.append("Blank Product Name/Description")
+        if "Product or File Name" in required_photo_fields and not product_source:
+            problems.append("Missing Product or File Name")
+        if "Brand" in required_photo_fields and not brand:
+            problems.append("Missing Brand")
 
         if ext_id:
+            resolved_job_name = job_name_text or _job_name_from_group_value(client_name, ext_id)
+            existing_job = {"id": existing_job_id} if existing_job_id else _existing_job_for_import(existing_jobs, ext_id, resolved_job_name, parent_job_number)
             job = jobs.setdefault(ext_id, {
                 "extId": ext_id,
-                "jobName": job_name_text or f"{client_name} {ext_id}",
+                "parentJobNumber": parent_job_number,
+                "jobName": resolved_job_name,
                 "due": job_due,
-                "notes": job_notes,
-                "output": output,
-                "existingId": existing_jobs.get(ext_id, {}).get("id"),
+                "existingId": existing_job.get("id"),
                 "rowCount": 0,
             })
             job["rowCount"] += 1
 
         existing_item = existing_items.get(identifier) if identifier else None
-        item_name = _mapped_value(row, mapping, "item_name") or _readable_item_name(brand, product, identifier)
         action = "skip" if problems else ("update" if existing_item else "create")
         if action == "create":
             items_to_create += 1
@@ -1135,16 +1579,21 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
             "rowNumber": index,
             "action": action,
             "extId": ext_id,
+            "existingJobId": existing_job_id,
             "id": identifier,
-            "jobName": job_name_text or (f"{client_name} {ext_id}" if ext_id else ""),
-            "itemName": item_name,
+            "jobName": job_name_text or _job_name_from_group_value(client_name, ext_id),
+            "itemName": item_name or _readable_item_name(brand, product, identifier),
             "product": product,
+            "itemJobNumber": item_job_number,
+            "description": description,
             "brand": brand,
             "category": category,
             "due": job_due,
             "output": output,
-            "jobNotes": job_notes,
+            "masterOrVariant": master_or_variant,
+            "pickupJobNumber": pickup_job_number,
             "notes": notes,
+            "referenceData": reference_data,
             "status": _default_item_status(row),
             "existingItemId": existing_item.get("id") if existing_item else None,
             "errors": problems,
@@ -1159,6 +1608,7 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
         "clientId": client_id,
         "clientName": client_name,
         "codeType": code_type,
+        "identifierLabel": identifier_label,
         "sheetNames": parsed.get("sheetNames", []),
         "selectedSheet": parsed.get("selectedSheet", ""),
         "totalRows": len(rows),
@@ -1195,8 +1645,11 @@ def _build_intake_plan_from_source_rows(client_id, filename, headers, source_row
 def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
     client_record = _client_record(client_id)
     client_name = _client_name(client_record)
-    code_type = client_record.get("fields", {}).get(C.F_CLIENT_CODE_TYPE, "")
-    existing_jobs = _existing_jobs_by_ext_id(client_id)
+    client_config = _shape_client(client_record)
+    code_type = client_config.get("codeType", "")
+    identifier_label = _identifier_label(client_config)
+    required_photo_fields = _normalized_required_fields(client_config)
+    existing_jobs = _existing_jobs_by_lookup(client_id)
     existing_items = _existing_items_by_identifier(client_id)
     seen_ids = {}
     row_results = []
@@ -1208,42 +1661,51 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
 
     for index, source in enumerate(rows, start=1):
         ext_id = str(source.get("extId", "") or "").strip()
+        existing_job_id = str(source.get("existingJobId", "") or "").strip()
         identifier = str(source.get("id", "") or "").strip()
         product = str(source.get("product", "") or "").strip()
+        item_job_number = _normalize_item_job_number(source.get("itemJobNumber"))
+        description = _normalize_description(source.get("description"))
+        parent_job_number = _normalize_item_job_number(source.get("parentJobNumber"))
         brand = str(source.get("brand", "") or "").strip()
         category = str(source.get("category", "") or "").strip()
         output = _normalize_output(str(source.get("output", "") or ""))
+        master_or_variant = _normalize_master_or_variant(source.get("masterOrVariant"))
+        pickup_job_number = _normalize_item_job_number(source.get("pickupJobNumber"))
         notes = str(source.get("notes", "") or "").strip()
         job_due = str(source.get("due", "") or "").strip()
-        job_notes = str(source.get("jobNotes", "") or "").strip()
+        reference_data = _normalize_reference_data(source.get("referenceData") or {})
         status = source.get("status") or "New"
-        item_name = str(source.get("itemName", "") or "").strip() or _readable_item_name(brand, product, identifier)
+        item_name = str(source.get("itemName", "") or "").strip()
         problems = []
         warnings = []
 
         if not ext_id:
-            problems.append("Missing Job ID")
+            problems.append("Missing Job")
         if not identifier:
-            problems.append("Missing Product ID")
+            problems.append(f"Missing {identifier_label}")
         if identifier:
-            validation_error = _validate_identifier(identifier, code_type)
+            validation_error = _validate_identifier(identifier, code_type, identifier_label)
             if validation_error:
                 problems.append(validation_error)
             if identifier in seen_ids:
-                warnings.append(f"Duplicate Product ID also appears on row {seen_ids[identifier]}")
+                warnings.append(f"Duplicate {identifier_label} also appears on row {seen_ids[identifier]}")
             else:
                 seen_ids[identifier] = index
-        if not product:
-            warnings.append("Blank Product Name/Description")
+        if "Product or File Name" in required_photo_fields and not product:
+            problems.append("Missing Product or File Name")
+        if "Brand" in required_photo_fields and not brand:
+            problems.append("Missing Brand")
 
         if ext_id:
+            resolved_job_name = source.get("jobName") or _job_name_from_group_value(client_name, ext_id)
+            existing_job = {"id": existing_job_id} if existing_job_id else _existing_job_for_import(existing_jobs, ext_id, resolved_job_name, parent_job_number)
             job = jobs.setdefault(ext_id, {
                 "extId": ext_id,
-                "jobName": source.get("jobName") or f"{client_name} {ext_id}",
+                "parentJobNumber": parent_job_number,
+                "jobName": resolved_job_name,
                 "due": job_due,
-                "notes": job_notes,
-                "output": output,
-                "existingId": existing_jobs.get(ext_id, {}).get("id"),
+                "existingId": existing_job.get("id"),
                 "rowCount": 0,
             })
             job["rowCount"] += 1
@@ -1260,16 +1722,21 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
             "rowNumber": source.get("rowNumber") or index,
             "action": action,
             "extId": ext_id,
+            "existingJobId": existing_job_id,
             "id": identifier,
-            "jobName": source.get("jobName") or (f"{client_name} {ext_id}" if ext_id else ""),
-            "itemName": item_name,
+            "jobName": source.get("jobName") or _job_name_from_group_value(client_name, ext_id),
+            "itemName": item_name or _readable_item_name(brand, product, identifier),
             "product": product,
+            "itemJobNumber": item_job_number,
+            "description": description,
             "brand": brand,
             "category": category,
             "due": job_due,
             "output": output,
-            "jobNotes": job_notes,
+            "masterOrVariant": master_or_variant,
+            "pickupJobNumber": pickup_job_number,
             "notes": notes,
+            "referenceData": reference_data,
             "status": status,
             "existingItemId": existing_item.get("id") if existing_item else None,
             "errors": problems,
@@ -1284,6 +1751,7 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
         "clientId": client_id,
         "clientName": client_name,
         "codeType": code_type,
+        "identifierLabel": identifier_label,
         "sheetNames": [],
         "selectedSheet": "",
         "totalRows": len(rows),
@@ -1310,14 +1778,12 @@ def _job_fields_from_plan(client_id, job):
     fields = {
         C.F_JOB_NAME: job["jobName"],
         C.F_JOB_CLIENT: [client_id],
-        C.F_JOB_EXT_ID: job["extId"],
-        C.F_JOB_OUTPUT: job.get("output") or DEFAULT_IMPORT_OUTPUT,
         C.F_JOB_STATUS: "Active",
     }
+    if job.get("parentJobNumber"):
+        fields[C.F_JOB_PARENT_NUMBER] = job["parentJobNumber"]
     if job.get("due"):
         fields[C.F_JOB_DUE] = job["due"]
-    if job.get("notes"):
-        fields[C.F_JOB_NOTES] = job["notes"]
     return fields
 
 
@@ -1328,14 +1794,26 @@ def _item_fields_from_row(client_id, job_id, row):
         C.F_ITEM_JOB: [job_id],
         C.F_ITEM_IDENTIFIER: row["id"],
         C.F_ITEM_PRODUCT: row["product"],
+        C.F_ITEM_OUTPUT: row.get("output") or DEFAULT_IMPORT_OUTPUT,
         C.F_ITEM_STATUS: row["status"],
     }
     if row.get("brand"):
         fields[C.F_ITEM_BRAND] = row["brand"]
+    if row.get("itemJobNumber"):
+        fields[C.F_ITEM_JOB_NUMBER] = row["itemJobNumber"]
+    if row.get("description"):
+        fields[C.F_ITEM_DESCRIPTION] = row["description"]
+    if row.get("masterOrVariant"):
+        fields[C.F_ITEM_MASTER_VARIANT] = row["masterOrVariant"]
+    if row.get("pickupJobNumber"):
+        fields[C.F_ITEM_PICKUP_JOB_NUMBER] = row["pickupJobNumber"]
     if row.get("category"):
         fields[C.F_ITEM_CATEGORY] = row["category"]
     if row.get("notes"):
         fields[C.F_ITEM_NOTES] = row["notes"]
+    reference_data = _reference_data_json(row.get("referenceData"))
+    if reference_data:
+        fields[C.F_ITEM_REFERENCE_DATA] = reference_data
     return fields
 
 
@@ -1495,11 +1973,10 @@ def create_job():
     body = request.get_json(silent=True) or {}
     client_id = body.get("clientId")
     job = (body.get("job") or body.get("name") or body.get("sgsJobNum") or "").strip()
-    ext_id = (body.get("extId") or body.get("jobId") or "").strip()
-    output = (body.get("output") or "").strip()
+    parent_job_number = (body.get("parentJobNumber") or body.get("extId") or body.get("jobNumber") or body.get("jobId") or "").strip()
+    period = (body.get("period") or "").strip()
     status = (body.get("status") or "").strip()
     due = body.get("due") or body.get("deadline") or ""
-    notes = (body.get("notes") or "").strip()
 
     if not client_id:
         return err("clientId is required")
@@ -1512,17 +1989,14 @@ def create_job():
         C.F_JOB_NAME: job,
         C.F_JOB_CLIENT: [client_id],
     }
-    if output:
-        fields[C.F_JOB_OUTPUT] = output
-    if ext_id:
-        fields[C.F_JOB_EXT_ID] = ext_id
+    if parent_job_number:
+        fields[C.F_JOB_PARENT_NUMBER] = parent_job_number
+    if period:
+        fields[C.F_JOB_PERIOD] = period
     if status:
         fields[C.F_JOB_STATUS] = status
     if due:
         fields[C.F_JOB_DUE] = due
-    if notes:
-        fields[C.F_JOB_NOTES] = notes
-
     data = airtable.create_record(C.JOBS_TABLE, fields, by_field_id=False)
     return jsonify(_shape_job(data)), 201
 
@@ -1538,11 +2012,12 @@ def update_job(record_id):
         "job": C.F_JOB_NAME,
         "name": C.F_JOB_NAME,
         "clientIds": C.F_JOB_CLIENT,
-        "extId": C.F_JOB_EXT_ID,
-        "output": C.F_JOB_OUTPUT,
+        "parentJobNumber": C.F_JOB_PARENT_NUMBER,
+        "jobNumber": C.F_JOB_PARENT_NUMBER,
+        "extId": C.F_JOB_PARENT_NUMBER,
+        "period": C.F_JOB_PERIOD,
         "status": C.F_JOB_STATUS,
         "due": C.F_JOB_DUE,
-        "notes": C.F_JOB_NOTES,
     }.items():
         if key in body and body[key] not in (None, ""):
             fields[field] = body[key]
@@ -1574,12 +2049,12 @@ def _shape_job(r):
         "name": f.get(C.F_JOB_NAME, ""),
         "job": f.get(C.F_JOB_NAME, ""),
         "clientIds": f.get(C.F_JOB_CLIENT, []),
-        "extId": f.get(C.F_JOB_EXT_ID, ""),
-        "output": f.get(C.F_JOB_OUTPUT, ""),
+        "parentJobNumber": f.get(C.F_JOB_PARENT_NUMBER, ""),
+        "extId": f.get(C.F_JOB_PARENT_NUMBER, ""),
+        "period": f.get(C.F_JOB_PERIOD, ""),
         "status": f.get(C.F_JOB_STATUS, ""),
         "due": f.get(C.F_JOB_DUE, ""),
         "deadline": f.get(C.F_JOB_DUE, ""),
-        "notes": f.get(C.F_JOB_NOTES, ""),
     }
 
 
@@ -1597,8 +2072,21 @@ def list_items():
     records = _filter_by_client_field(data.get("records", []), C.F_ITEM_CLIENT)
     if job_id:
         records = [record for record in records if job_id in (record.get("fields", {}).get(C.F_ITEM_JOB, []) or [])]
-    records = [_shape_item(r) for r in records]
+    clients_by_id = _clients_by_id()
+    issues_by_item_id = _issues_by_item_id()
+    records = [_shape_item(r, clients_by_id=clients_by_id, issues_by_item_id=issues_by_item_id) for r in records]
     return jsonify({"records": records})
+
+
+@api.get("/items/<record_id>")
+@api.get("/skus/<record_id>")
+def get_item(record_id):
+    record = airtable.get_record(C.ITEMS_TABLE, record_id, by_field_id=False)
+    if not _client_ids_permitted(record.get("fields", {}).get(C.F_ITEM_CLIENT, [])):
+        return _forbidden()
+    clients_by_id = _clients_by_id()
+    issues_by_item_id = _issues_by_item_id()
+    return jsonify({"record": _shape_item(record, clients_by_id=clients_by_id, issues_by_item_id=issues_by_item_id, readiness_full=True)})
 
 
 @api.post("/items")
@@ -1612,8 +2100,9 @@ def create_item():
     if job_id and not _client_ids_permitted(_job_client_ids(job_id)):
         return _forbidden()
     identifier = (body.get("productId") or body.get("id") or body.get("gtinUpc") or "").strip()
-    code_type = _client_code_type(client_id) if client_id else (body.get("codeType") or "")
-    validation_error = _validate_item_identifier(identifier, code_type)
+    client_config = _client_config(client_id) if client_id else {}
+    code_type = client_config.get("codeType") or body.get("codeType") or ""
+    validation_error = _validate_item_identifier(identifier, code_type, _identifier_label(client_config))
     if validation_error:
         return err(validation_error)
 
@@ -1636,7 +2125,7 @@ def create_item():
         job_ids=[job_id] if job_id else None,
         details=f"Item created: {fields.get(C.F_ITEM_NAME, item_id)}.",
     )
-    return jsonify(_shape_item(data)), 201
+    return jsonify(_shape_item(data, clients_by_id=_clients_by_id(), issues_by_item_id=_issues_by_item_id())), 201
 
 
 @api.patch("/items/<record_id>")
@@ -1648,9 +2137,10 @@ def update_item(record_id):
         return _forbidden()
     fields = {}
     identifier = body.get("productId") or body.get("id") or body.get("gtinUpc")
-    code_type = body.get("codeType") or (_client_code_type(body.get("clientId")) if body.get("clientId") else "")
+    client_config = _client_config(body.get("clientId")) if body.get("clientId") else {}
+    code_type = body.get("codeType") or client_config.get("codeType", "")
     if identifier is not None:
-        validation_error = _validate_item_identifier(identifier.strip(), code_type)
+        validation_error = _validate_item_identifier(identifier.strip(), code_type, _identifier_label(client_config))
         if validation_error:
             return err(validation_error)
         fields[C.F_ITEM_IDENTIFIER] = identifier.strip()
@@ -1668,35 +2158,74 @@ def update_item(record_id):
 
     data = airtable.update_record(C.ITEMS_TABLE, record_id, fields, by_field_id=False)
     _log_item_changes(record_id, previous, data, fields)
-    return jsonify(_shape_item(data))
+    return jsonify(_shape_item(data, clients_by_id=_clients_by_id(), issues_by_item_id=_issues_by_item_id()))
 
 
-def _shape_item(r):
+def _clients_by_id():
+    data = airtable.list_records(C.CLIENTS_TABLE, by_field_id=False)
+    return {record["id"]: _shape_client(record) for record in _permitted_client_records(data.get("records", []))}
+
+
+def _issues_by_item_id():
+    data = airtable.list_records(C.ISSUES_TABLE, by_field_id=False)
+    issues = {}
+    for record in _filter_indirect_client_records(data.get("records", []), _client_ids_for_issue):
+        shaped = _shape_issue(record)
+        for item_id in shaped.get("itemIds", []):
+            issues.setdefault(item_id, []).append(shaped)
+    return issues
+
+
+def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, readiness_full=False):
     f = r.get("fields", {})
-    code_type = f.get(C.F_ITEM_CODE_TYPE, "")
+    code_type = f.get(C.F_ITEM_IDENTIFIER_TYPE, "")
     if isinstance(code_type, list):
         code_type = code_type[0] if code_type else ""
-    return {
+    client_ids = f.get(C.F_ITEM_CLIENT, [])
+    client = (clients_by_id or {}).get(client_ids[0]) if client_ids else None
+    if client and not code_type:
+        code_type = client.get("codeType", "")
+    item = {
         "id": r["id"],
         "name": f.get(C.F_ITEM_NAME, ""),
-        "clientIds": f.get(C.F_ITEM_CLIENT, []),
+        "clientIds": client_ids,
         "jobIds": f.get(C.F_ITEM_JOB, []),
         "productId": f.get(C.F_ITEM_IDENTIFIER, ""),
         "identifier": f.get(C.F_ITEM_IDENTIFIER, ""),
         "gtinUpc": f.get(C.F_ITEM_IDENTIFIER, ""),
         "codeType": code_type,
+        "identifierLabel": _identifier_label(client),
         "product": f.get(C.F_ITEM_PRODUCT, ""),
+        "itemJobNumber": f.get(C.F_ITEM_JOB_NUMBER, ""),
+        "description": f.get(C.F_ITEM_DESCRIPTION, ""),
+        "output": f.get(C.F_ITEM_OUTPUT, ""),
+        "masterOrVariant": f.get(C.F_ITEM_MASTER_VARIANT, ""),
+        "pickupJobNumber": f.get(C.F_ITEM_PICKUP_JOB_NUMBER, ""),
         "brand": f.get(C.F_ITEM_BRAND, ""),
         "category": f.get(C.F_ITEM_CATEGORY, ""),
         "received": f.get(C.F_ITEM_RECEIVED, False),
         "merchVerified": f.get(C.F_ITEM_RECEIVED, False),
+        "receiptIds": f.get(C.F_ITEM_RECEIPTS, []) if isinstance(f.get(C.F_ITEM_RECEIPTS), list) else [],
+        "issueIds": f.get(C.F_ITEM_ISSUES, []) if isinstance(f.get(C.F_ITEM_ISSUES), list) else [],
+        "artworkReceived": f.get(C.F_ITEM_ARTWORK_RECEIVED, False),
         "recDate": f.get(C.F_ITEM_REC_DATE, ""),
         "location": "",
         "locationIds": f.get(C.F_ITEM_LOCATION, []) if isinstance(f.get(C.F_ITEM_LOCATION), list) else [],
         "condition": f.get(C.F_ITEM_CONDITION, ""),
         "status": f.get(C.F_ITEM_STATUS, ""),
         "notes": f.get(C.F_ITEM_NOTES, ""),
+        "photos": f.get(C.F_ITEM_PHOTOS, []) if isinstance(f.get(C.F_ITEM_PHOTOS), list) else [],
+        "photoMetadata": _photo_metadata_from_fields(f, C.F_ITEM_PHOTO_METADATA),
+        "referenceDataRaw": f.get(C.F_ITEM_REFERENCE_DATA, ""),
+        "referenceData": _parse_reference_data(f.get(C.F_ITEM_REFERENCE_DATA, "")),
     }
+    item["readiness"] = evaluate_photo_readiness(
+        item,
+        client=client,
+        issues=(issues_by_item_id or {}).get(r["id"], []),
+        full=readiness_full,
+    )
+    return item
 
 
 def _apply_item_fields(fields, body):
@@ -1712,10 +2241,27 @@ def _apply_item_fields(fields, body):
         "condition": C.F_ITEM_CONDITION,
         "status": C.F_ITEM_STATUS,
         "notes": C.F_ITEM_NOTES,
+        "artworkReceived": C.F_ITEM_ARTWORK_RECEIVED,
     }
     for key, field in mapping.items():
         if key in body and body[key] not in (None, ""):
             fields[field] = body[key]
+    if "itemJobNumber" in body and body["itemJobNumber"] not in (None, ""):
+        fields[C.F_ITEM_JOB_NUMBER] = _normalize_item_job_number(body.get("itemJobNumber"))
+    if "description" in body and body["description"] not in (None, ""):
+        fields[C.F_ITEM_DESCRIPTION] = _normalize_description(body.get("description"))
+    if "output" in body and body["output"] not in (None, ""):
+        fields[C.F_ITEM_OUTPUT] = _normalize_output(str(body.get("output") or ""))
+    if "masterOrVariant" in body and body["masterOrVariant"] not in (None, ""):
+        normalized = _normalize_master_or_variant(body.get("masterOrVariant"))
+        if normalized:
+            fields[C.F_ITEM_MASTER_VARIANT] = normalized
+    if "pickupJobNumber" in body and body["pickupJobNumber"] not in (None, ""):
+        fields[C.F_ITEM_PICKUP_JOB_NUMBER] = _normalize_item_job_number(body.get("pickupJobNumber"))
+    if "referenceData" in body:
+        fields[C.F_ITEM_REFERENCE_DATA] = _reference_data_json(body.get("referenceData"))
+    elif "referenceDataRaw" in body:
+        fields[C.F_ITEM_REFERENCE_DATA] = str(body.get("referenceDataRaw") or "")
 
 
 def _log_item_changes(record_id, previous, current, changed_fields):
@@ -1775,26 +2321,35 @@ def _client_code_type(client_id):
     data = airtable.list_records(C.CLIENTS_TABLE, by_field_id=False)
     for record in data.get("records", []):
         if record.get("id") == client_id:
-            return record.get("fields", {}).get(C.F_CLIENT_CODE_TYPE, "")
+            return record.get("fields", {}).get(C.F_CLIENT_IDENTIFIER_TYPE, "")
     return ""
 
 
-def _validate_item_identifier(identifier, code_type):
-    if code_type == "UPC-12" and not (identifier.isdigit() and len(identifier) == 12):
-        return "Product ID must be exactly 12 digits for UPC-12."
-    if code_type == "GTIN-14" and not (identifier.isdigit() and len(identifier) == 14):
-        return "Product ID must be exactly 14 digits for GTIN-14."
-    if code_type == "Item #" and not identifier:
-        return "Product ID is required for Item #."
-    return ""
+def _client_config(client_id):
+    if not client_id:
+        return {}
+    try:
+        return _shape_client(airtable.get_record(C.CLIENTS_TABLE, client_id, by_field_id=False))
+    except requests.HTTPError:
+        return {}
+
+
+def _validate_item_identifier(identifier, code_type, label="Identifier"):
+    return _validate_identifier_value(identifier, code_type, label)
 
 
 def _item_match_score(item, query):
+    reference_data = item.get("referenceData") or {}
+    reference_values = reference_data.values() if isinstance(reference_data, dict) else []
     haystack = " ".join([
         item.get("identifier", ""),
         item.get("name", ""),
         item.get("product", ""),
+        item.get("itemJobNumber", ""),
+        item.get("description", ""),
         item.get("brand", ""),
+        item.get("referenceDataRaw", ""),
+        *[str(value) for value in reference_values],
     ]).lower()
     exact_values = {
         item.get("identifier", "").lower(),
@@ -1807,7 +2362,7 @@ def _item_match_score(item, query):
     return 0
 
 
-def _find_matching_skus(query):
+def _find_matching_skus(query, *, client_id=""):
     cleaned = (query or "").strip().lower()
     if len(cleaned) < 3:
         return []
@@ -1815,6 +2370,8 @@ def _find_matching_skus(query):
     data = airtable.list_records(C.ITEMS_TABLE, params={"sort[0][field]": C.F_ITEM_NAME, "sort[0][direction]": "asc"}, by_field_id=False)
     matches = []
     for record in _filter_by_client_field(data.get("records", []), C.F_ITEM_CLIENT):
+        if client_id and client_id not in _as_list(record.get("fields", {}).get(C.F_ITEM_CLIENT, [])):
+            continue
         sku = _shape_item(record)
         score = _item_match_score(sku, cleaned)
         if score:
@@ -2050,56 +2607,456 @@ def list_receipts():
     except requests.HTTPError as error:
         return airtable_err(error)
 
-    records = _filter_by_client_field(data.get("records", []), C.F_RECEIPT_CLIENT)
-    records = [_shape_receipt(record) for record in records]
+    records = _filter_receipts_by_access(data.get("records", []))
+    review_status = (request.args.get("reviewStatus") or "").strip()
+    client_id = (request.args.get("clientId") or "").strip()
+    unassigned_client = (request.args.get("unassignedClient") or "").strip().lower() in {"1", "true", "yes"}
+    if review_status:
+        records = [record for record in records if record.get("fields", {}).get(C.F_RECEIPT_REVIEW_STATUS) == review_status]
+    if client_id:
+        if not _client_permitted(client_id):
+            return _forbidden()
+        records = [record for record in records if client_id in _as_list(record.get("fields", {}).get(C.F_RECEIPT_CLIENT, []))]
+    if unassigned_client:
+        records = [record for record in records if not _as_list(record.get("fields", {}).get(C.F_RECEIPT_CLIENT, []))]
+    entries_by_receipt = _receipt_entries_by_receipt_id([record["id"] for record in records])
+    records = [_shape_receipt(record, entries_by_receipt=entries_by_receipt) for record in records]
     return jsonify({"records": records})
 
 
-@api.get("/receiving/matches")
-def receiving_matches():
-    query = request.args.get("q", "")
+# ── Verification ──────────────────────────────────────────────────────────────
+
+@api.get("/verification/entries")
+def list_verification_entries():
     try:
-        matches = _find_matching_skus(query)
+        entries = _list_all_records(C.RECEIPT_ENTRIES_TABLE)
+        receipts = _list_all_records(C.RECEIPTS_TABLE)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    receipts_by_id = {record["id"]: record for record in _filter_receipts_by_access(receipts)}
+    records = []
+    for entry in entries:
+        linked_receipts = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+        receipt = next((receipts_by_id.get(receipt_id) for receipt_id in linked_receipts if receipt_id in receipts_by_id), None)
+        if linked_receipts and receipt is None:
+            continue
+        shaped = _shape_verification_entry(entry, receipt)
+        if shaped["verificationStatus"] != "Verified":
+            records.append(shaped)
+    records.sort(key=lambda record: (record.get("received") or "", record.get("name") or ""), reverse=True)
+    return jsonify({"records": records})
+
+
+@api.get("/verification/items")
+def verification_items():
+    query = request.args.get("q", "")
+    client_id = (request.args.get("clientId") or "").strip()
+    if client_id and not _client_permitted(client_id):
+        return _forbidden()
+    try:
+        matches = _find_matching_skus(query, client_id=client_id)
     except requests.HTTPError as error:
         return airtable_err(error)
     return jsonify({"records": matches})
+
+
+@api.post("/verification/entries/<entry_id>/match")
+def match_verification_entry(entry_id):
+    body = request.get_json(silent=True) or {}
+    item_id = (body.get("itemId") or "").strip()
+    if not item_id:
+        return err("itemId is required")
+
+    try:
+        entry = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, entry_id, by_field_id=False)
+        item = airtable.get_record(C.ITEMS_TABLE, item_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    linked_receipts = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+    receipt = _first_permitted_receipt(linked_receipts)
+    if linked_receipts and receipt is None:
+        return _forbidden()
+    item_client_ids = _as_list(item.get("fields", {}).get(C.F_ITEM_CLIENT, []))
+    if not _client_ids_permitted(item_client_ids):
+        return _forbidden()
+    receipt_client_ids = _as_list(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])) if receipt else []
+    if receipt_client_ids and item_client_ids and not (set(receipt_client_ids) & set(item_client_ids)):
+        return err("Item does not belong to this receipt client.", 403)
+
+    try:
+        updated_item = _merge_receipt_entry_photos_into_item(entry, item)
+        updated = airtable.update_record(
+            C.RECEIPT_ENTRIES_TABLE,
+            entry_id,
+            {
+                C.F_RECEIPT_ENTRY_ITEM: [item_id],
+                C.F_RECEIPT_ENTRY_VERIFICATION_STATUS: "Verified",
+            },
+            by_field_id=False,
+        )
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify(_shape_verification_entry(updated, receipt, item_record=updated_item or item))
+
+
+def _attachment_url(attachment):
+    if not isinstance(attachment, dict):
+        return ""
+    return attachment.get("url") or attachment.get("public_url") or attachment.get("publicUrl") or ""
+
+
+def _merge_receipt_entry_photos_into_item(entry_record, item_record):
+    entry_fields = entry_record.get("fields", {})
+    item_fields = item_record.get("fields", {})
+    entry_attachments = entry_fields.get(C.F_RECEIPT_ENTRY_PHOTOS, []) or []
+    entry_metadata = _photo_metadata_from_entry(entry_fields)
+    if not entry_attachments and not entry_metadata:
+        return item_record
+
+    existing_item_attachments = item_fields.get(C.F_ITEM_PHOTOS, []) or []
+    existing_urls = {_attachment_url(photo) for photo in existing_item_attachments if _attachment_url(photo)}
+    merged_attachments = list(existing_item_attachments)
+    for attachment in entry_attachments:
+        url = _attachment_url(attachment)
+        if not url or url in existing_urls:
+            continue
+        merged_attachments.append({"url": url})
+        existing_urls.add(url)
+
+    existing_item_metadata = _photo_metadata_from_fields(item_fields, C.F_ITEM_PHOTO_METADATA)
+    existing_keys = {
+        item.get("object_key") or item.get("public_url") or item.get("url")
+        for item in existing_item_metadata
+        if isinstance(item, dict)
+    }
+    merged_metadata = list(existing_item_metadata)
+    for item in entry_metadata:
+        if not isinstance(item, dict):
+            continue
+        key = item.get("object_key") or item.get("public_url") or item.get("url")
+        if key and key in existing_keys:
+            continue
+        merged_metadata.append(item)
+        if key:
+            existing_keys.add(key)
+
+    update_fields = {}
+    if len(merged_attachments) != len(existing_item_attachments):
+        update_fields[C.F_ITEM_PHOTOS] = merged_attachments
+    if len(merged_metadata) != len(existing_item_metadata):
+        update_fields[C.F_ITEM_PHOTO_METADATA] = json.dumps(merged_metadata)
+    if not update_fields:
+        return item_record
+    try:
+        return airtable.update_record(C.ITEMS_TABLE, item_record["id"], update_fields, by_field_id=False)
+    except requests.HTTPError as error:
+        if _is_unknown_field_error(error, C.F_ITEM_PHOTOS) or _is_unknown_field_error(error, C.F_ITEM_PHOTO_METADATA):
+            return item_record
+        raise
+
+
+@api.post("/receiving/photos")
+def upload_receiving_photos():
+    receipt_id = (request.form.get("receiptId") or "").strip()
+    receipt_entry_id = (request.form.get("receiptEntryId") or request.form.get("entryId") or "").strip()
+    if receipt_id and receipt_entry_id:
+        return _upload_receiving_entry_photos(receipt_id, receipt_entry_id)
+
+    storage = _photo_storage()
+    if storage.mode == "r2":
+        return err("Create the receipt entry before uploading permanent photos.", 409)
+    files = request.files.getlist("photos")
+    if not files:
+        return err("Add at least one photo.")
+    photos = []
+    for uploaded in files:
+        if not uploaded or not uploaded.filename:
+            continue
+        try:
+            photo = storage.upload_photo(uploaded, "unsaved", uuid.uuid4().hex)
+        except ReceivingPhotoValidationError as error:
+            return err(str(error))
+        except ReceivingPhotoConfigError as error:
+            return err(str(error), 500)
+        except ReceivingPhotoStorageError:
+            return err("Photo could not be uploaded.", 502)
+        photo["url"] = f"{request.host_url.rstrip('/')}/api/receiving/photos/{photo['object_key']}"
+        photo["public_url"] = photo["url"]
+        photos.append(photo)
+    if not photos:
+        return err("Add at least one photo.")
+    return jsonify({"photos": photos})
+
+
+@api.get("/receiving/photo-storage/status")
+def receiving_photo_storage_status():
+    storage = _photo_storage()
+    required = {
+        "R2_ACCOUNT_ID": bool(C.R2_ACCOUNT_ID),
+        "R2_ACCESS_KEY_ID": bool(C.R2_ACCESS_KEY_ID),
+        "R2_SECRET_ACCESS_KEY": bool(C.R2_SECRET_ACCESS_KEY),
+        "R2_BUCKET_NAME": bool(C.R2_BUCKET_NAME),
+        "R2_PUBLIC_BASE_URL": bool(C.R2_PUBLIC_BASE_URL),
+    }
+    return jsonify({
+        "mode": storage.mode,
+        "bucketName": C.R2_BUCKET_NAME or "",
+        "publicBaseUrlConfigured": bool(C.R2_PUBLIC_BASE_URL),
+        "requiredVariables": required,
+        "ready": storage.mode == "local" or all(required.values()),
+    })
+
+
+@api.get("/receiving/photos/<path:filename>")
+def receiving_photo(filename):
+    return send_from_directory(C.RECEIVING_PHOTO_LOCAL_DIR, filename)
+
+
+@api.post("/receiving/<receipt_id>/entries/<receipt_entry_id>/photos")
+def upload_receiving_entry_photos(receipt_id, receipt_entry_id):
+    return _upload_receiving_entry_photos(receipt_id, receipt_entry_id)
+
+
+@api.delete("/receiving/photos")
+def delete_receiving_photo():
+    body = request.get_json(silent=True) or {}
+    object_key = (body.get("objectKey") or body.get("object_key") or "").strip()
+    try:
+        result = _photo_storage().delete_photo(object_key)
+    except ReceivingPhotoValidationError as error:
+        return err(str(error))
+    except ReceivingPhotoConfigError as error:
+        return err(str(error), 500)
+    except ReceivingPhotoStorageError:
+        return err("Photo could not be deleted.", 502)
+    return jsonify(result)
+
+
+def _upload_receiving_entry_photos(receipt_id, receipt_entry_id):
+    files = request.files.getlist("photos")
+    if not files:
+        return err("Add at least one photo.")
+    try:
+        receipt = airtable.get_record(C.RECEIPTS_TABLE, receipt_id, by_field_id=False)
+        entry_record = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, receipt_entry_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    if not _receipt_client_permitted(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
+        return _forbidden()
+    linked_receipts = _as_list(entry_record.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+    if receipt_id not in linked_receipts:
+        return err("Receipt entry does not belong to this receipt.", 404)
+
+    storage = _photo_storage()
+    uploaded_photos = []
+    receipt_name = receipt.get("fields", {}).get(C.F_RECEIPT_NAME) or receipt_id
+    entry_name = (
+        entry_record.get("fields", {}).get(C.F_RECEIPT_ENTRY_NAME)
+        or entry_record.get("fields", {}).get(C.F_RECEIPT_ENTRY_LEGACY_NAME)
+        or receipt_entry_id
+    )
+    for uploaded in files:
+        if not uploaded or not uploaded.filename:
+            continue
+        try:
+            uploaded_photos.append(
+                storage.upload_photo(
+                    uploaded,
+                    receipt_id,
+                    receipt_entry_id,
+                    receipt_name=receipt_name,
+                    receipt_entry_name=entry_name,
+                )
+            )
+        except ReceivingPhotoValidationError as error:
+            return err(str(error))
+        except ReceivingPhotoConfigError as error:
+            return err(str(error), 500)
+        except ReceivingPhotoStorageError:
+            return err("Photo could not be uploaded.", 502)
+    if not uploaded_photos:
+        return err("Add at least one photo.")
+
+    current_fields = entry_record.get("fields", {})
+    current_attachments = current_fields.get(C.F_RECEIPT_ENTRY_PHOTOS, []) or []
+    attachment_payload = current_attachments + [{"url": photo["public_url"]} for photo in uploaded_photos]
+    metadata_payload = _photo_metadata_from_entry(current_fields) + uploaded_photos
+    try:
+        updated = airtable.update_record(
+            C.RECEIPT_ENTRIES_TABLE,
+            receipt_entry_id,
+            {C.F_RECEIPT_ENTRY_PHOTOS: attachment_payload},
+            by_field_id=False,
+        )
+        try:
+            updated = airtable.update_record(
+                C.RECEIPT_ENTRIES_TABLE,
+                receipt_entry_id,
+                {C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps(metadata_payload)},
+                by_field_id=False,
+            )
+        except requests.HTTPError as metadata_error:
+            if _is_unknown_field_error(metadata_error, C.F_RECEIPT_ENTRY_PHOTO_METADATA):
+                shaped = _shape_receipt_entry(updated)
+                if not shaped.get("photos"):
+                    shaped["photos"] = attachment_payload
+                shaped["photoMetadata"] = metadata_payload
+                return err("Airtable Receipt Entries table is missing the Photo Metadata long-text field.", 500)
+            raise
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    shaped = _shape_receipt_entry(updated)
+    if not shaped.get("photos"):
+        shaped["photos"] = attachment_payload
+    shaped["photoMetadata"] = metadata_payload
+    return jsonify({"photos": uploaded_photos, "entry": shaped})
+
+
+@api.get("/receiving/<record_id>")
+def get_receiving_session(record_id):
+    try:
+        record = airtable.get_record(C.RECEIPTS_TABLE, record_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    if not _receipt_client_permitted(record.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
+        return _forbidden()
+    entries_by_receipt = _receipt_entries_by_receipt_id([record_id])
+    return jsonify(_shape_receipt(record, entries_by_receipt=entries_by_receipt))
+
+
+@api.post("/receiving/sessions")
+def create_receiving_session():
+    body = request.get_json(silent=True) or {}
+    fields_or_error = _receipt_fields_from_body(body)
+    if isinstance(fields_or_error, tuple):
+        return fields_or_error
+    try:
+        data = airtable.create_record(C.RECEIPTS_TABLE, fields_or_error, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    receipt_fields = data.get("fields", {})
+    _create_history_event(
+        "Receiving Logged",
+        "Receiving Logged",
+        user_ids=receipt_fields.get(C.F_RECEIPT_RECEIVER),
+        details=f"Receiving session started: {receipt_fields.get(C.F_RECEIPT_NAME, data['id'])}.",
+    )
+    return jsonify(_shape_receipt(data, entries_by_receipt={data["id"]: []})), 201
+
+
+@api.post("/receiving/<record_id>/entries")
+def create_receiving_entry(record_id):
+    body = request.get_json(silent=True) or {}
+    try:
+        receipt = airtable.get_record(C.RECEIPTS_TABLE, record_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    if not _receipt_client_permitted(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
+        return _forbidden()
+    errors = _validate_receipt_entries([body])
+    if errors:
+        return err(errors[0])
+    receipt_name = receipt.get("fields", {}).get(C.F_RECEIPT_NAME) or record_id
+    existing_entries = _receipt_entries_by_receipt_id([record_id]).get(record_id, [])
+    try:
+        entry_fields = _receipt_entry_fields(body, record_id, len(existing_entries) + 1, receipt_name)
+        entry_data = _create_receipt_entry_record(entry_fields)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify(_shape_receipt_entry(entry_data)), 201
 
 
 @api.post("/receipts")
 @api.post("/receiving")
 def create_receipt():
     body = request.get_json(silent=True) or {}
-    fields = {}
+    entries = body.get("entries") or []
 
+    if not isinstance(entries, list) or not entries:
+        return err("Add at least one merchandise entry.")
+    entry_errors = _validate_receipt_entries(entries)
+    if entry_errors:
+        return err(entry_errors[0])
+    fields_or_error = _receipt_fields_from_body(body)
+    if isinstance(fields_or_error, tuple):
+        return fields_or_error
+
+    created_entry_ids = []
+    try:
+        data = airtable.create_record(C.RECEIPTS_TABLE, fields_or_error, by_field_id=False)
+        receipt_name = data.get("fields", {}).get(C.F_RECEIPT_NAME) or data["id"]
+        shaped_entries = []
+        for index, entry in enumerate(entries, start=1):
+            entry_fields = _receipt_entry_fields(entry, data["id"], index, receipt_name)
+            entry_data = _create_receipt_entry_record(entry_fields)
+            created_entry_ids.append(entry_data["id"])
+            shaped_entries.append(_shape_receipt_entry(entry_data))
+    except requests.HTTPError as error:
+        if created_entry_ids:
+            try:
+                airtable.delete_records(C.RECEIPT_ENTRIES_TABLE, created_entry_ids)
+            except requests.HTTPError:
+                pass
+        if "data" in locals() and data.get("id"):
+            try:
+                airtable.delete_record(C.RECEIPTS_TABLE, data["id"])
+            except requests.HTTPError:
+                pass
+        return airtable_err(error)
+
+    receipt_fields = data.get("fields", {})
+    _create_history_event(
+        "Receiving Logged",
+        "Receiving Logged",
+        user_ids=receipt_fields.get(C.F_RECEIPT_RECEIVER),
+        details=f"Receiving session logged: {receipt_fields.get(C.F_RECEIPT_NAME, data['id'])}.",
+    )
+    entries_by_receipt = {data["id"]: shaped_entries}
+    return jsonify(_shape_receipt(data, entries_by_receipt=entries_by_receipt)), 201
+
+
+def _receipt_fields_from_body(body):
+    fields = {}
     receipt = (body.get("receipt") or body.get("name") or "").strip()
     client_id = (body.get("clientId") or "").strip()
-    item_ids = body.get("itemIds") or body.get("items") or []
-    carrier = (body.get("carrier") or "").strip()
+    try:
+        carrier = _normalize_receipt_carrier(body.get("carrier"))
+    except ValueError as error:
+        return err(str(error))
     tracking = (body.get("tracking") or body.get("identifier") or "").strip()
+    box_quantity = body.get("boxQuantity", body.get("box_quantity"))
     received = (body.get("received") or body.get("receivedDate") or "").strip()
     receiver_ids = body.get("receiverIds") or body.get("receiverId") or []
     location_ids = body.get("locationIds") or body.get("locationId") or []
     photos = body.get("photos") or []
     notes = (body.get("notes") or "").strip()
+    try:
+        box_quantity_number = int(box_quantity)
+    except (TypeError, ValueError):
+        return err("Box Quantity must be at least 1.")
+    if box_quantity_number < 1:
+        return err("Box Quantity must be at least 1.")
 
-    if receipt:
-        fields[C.F_RECEIPT_NAME] = receipt
     if client_id:
         if not _client_permitted(client_id):
             return _forbidden()
         fields[C.F_RECEIPT_CLIENT] = [client_id]
-    if isinstance(item_ids, str):
-        item_ids = [item_ids]
-    if item_ids:
-        if not _all_linked_records_permitted(C.ITEMS_TABLE, item_ids):
-            return _forbidden()
-        fields[C.F_RECEIPT_ITEMS] = item_ids
+    if receipt:
+        fields[C.F_RECEIPT_NAME] = receipt
+    else:
+        fields[C.F_RECEIPT_NAME] = _receipt_name_for_create(client_id, received)
     if carrier:
         fields[C.F_RECEIPT_CARRIER] = carrier
     if tracking:
         fields[C.F_RECEIPT_TRACKING] = tracking
-    if received:
-        fields[C.F_RECEIPT_RECEIVED] = received
+    fields[C.F_RECEIPT_BOX_QUANTITY] = box_quantity_number
+    fields[C.F_RECEIPT_RECEIVED] = received or _now_iso()
+    if not receiver_ids:
+        current_user_id = _current_user_id()
+        if current_user_id:
+            receiver_ids = [current_user_id]
     if receiver_ids:
         fields[C.F_RECEIPT_RECEIVER] = receiver_ids if isinstance(receiver_ids, list) else [receiver_ids]
     if location_ids:
@@ -2108,26 +3065,179 @@ def create_receipt():
         fields[C.F_RECEIPT_PHOTOS] = photos
     if notes:
         fields[C.F_RECEIPT_NOTES] = notes
+    fields[C.F_RECEIPT_REVIEW_STATUS] = "Needs Review"
+    return fields
 
-    if not fields:
-        return err("Add at least one receipt detail.")
 
+def _receipt_name_for_create(client_id, received):
+    client_name = "Unknown"
+    if client_id:
+        try:
+            client_name = _client_name(_client_record(client_id)) or client_name
+        except requests.HTTPError:
+            pass
+    timestamp = _format_receipt_name_time(received)
+    return f"{client_name} • {timestamp}"
+
+
+def _format_receipt_name_time(value):
+    parsed = None
+    raw = (value or "").strip()
+    if raw:
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            parsed = None
+    if parsed is None:
+        parsed = datetime.now()
+    hour = parsed.hour % 12 or 12
+    return f"{parsed.month}/{parsed.day}/{parsed.strftime('%y')} • {hour}:{parsed.strftime('%M %p')}"
+
+
+def _validate_receipt_entries(entries):
+    errors = []
+    for index, entry in enumerate(entries, start=1):
+        quantity = entry.get("quantity", 1) if isinstance(entry, dict) else None
+        try:
+            quantity_number = int(quantity)
+        except (TypeError, ValueError):
+            errors.append(f"Entry {index} quantity must be at least 1.")
+            continue
+        if quantity_number < 1:
+            errors.append(f"Entry {index} quantity must be at least 1.")
+    return errors
+
+
+RECEIPT_CARRIER_OPTIONS = {
+    "ups": "UPS",
+    "u.p.s.": "UPS",
+    "fedex": "FedEx",
+    "fed ex": "FedEx",
+    "federal express": "FedEx",
+    "usps": "USPS",
+    "u.s.p.s.": "USPS",
+    "dhl": "DHL",
+    "courier": "Courier",
+    "freight": "Freight",
+    "hand delivery": "Hand Delivery",
+    "hand-delivery": "Hand Delivery",
+    "internal": "Internal",
+    "other": "Other",
+}
+
+
+def _normalize_receipt_carrier(value):
+    carrier = (value or "").strip()
+    if not carrier:
+        return ""
+    normalized = RECEIPT_CARRIER_OPTIONS.get(re.sub(r"\s+", " ", carrier.lower()))
+    if normalized:
+        return normalized
+    allowed = ", ".join(sorted(set(RECEIPT_CARRIER_OPTIONS.values())))
+    raise ValueError(f"Carrier must be one of: {allowed}.")
+
+
+def _receipt_entry_fields(entry, receipt_id, index, receipt_name):
+    entry = entry if isinstance(entry, dict) else {}
+    quantity = int(entry.get("quantity") or 1)
+    product_name = (
+        entry.get("productName")
+        or entry.get("product_name")
+        or entry.get("name")
+        or ""
+    ).strip()
+    sku_id = (
+        entry.get("skuId")
+        or entry.get("sku_id")
+        or entry.get("observedIdentifier")
+        or entry.get("identifier")
+        or ""
+    ).strip()
+    fields = {
+        C.F_RECEIPT_ENTRY_NAME: product_name or "Unnamed Product",
+        C.F_RECEIPT_ENTRY_RECEIPT: [receipt_id],
+        C.F_RECEIPT_ENTRY_QUANTITY: quantity,
+        C.F_RECEIPT_ENTRY_VERIFICATION_STATUS: "Needs Review",
+    }
+    location_ids = entry.get("locationIds") or entry.get("locationId") or []
+    condition = (entry.get("condition") or "").strip()
+    description = (entry.get("description") or "").strip()
+    notes = (entry.get("notes") or "").strip()
+    photos = entry.get("photos") or []
+    if sku_id:
+        fields[C.F_RECEIPT_ENTRY_SKU_ID] = sku_id
+    if location_ids:
+        fields[C.F_RECEIPT_ENTRY_LOCATION] = location_ids if isinstance(location_ids, list) else [location_ids]
+    if condition:
+        fields[C.F_RECEIPT_ENTRY_CONDITION] = condition
+    if description:
+        fields[C.F_RECEIPT_ENTRY_DESCRIPTION] = description
+    if notes:
+        fields[C.F_RECEIPT_ENTRY_NOTES] = notes
+    if photos:
+        fields[C.F_RECEIPT_ENTRY_PHOTOS] = photos
+    return fields
+
+
+def _legacy_receipt_entry_fields(fields):
+    legacy = dict(fields)
+    if C.F_RECEIPT_ENTRY_NAME in legacy:
+        legacy[C.F_RECEIPT_ENTRY_LEGACY_NAME] = legacy.pop(C.F_RECEIPT_ENTRY_NAME)
+    if C.F_RECEIPT_ENTRY_SKU_ID in legacy:
+        legacy[C.F_RECEIPT_ENTRY_LEGACY_OBSERVED_IDENTIFIER] = legacy.pop(C.F_RECEIPT_ENTRY_SKU_ID)
+    return legacy
+
+
+def _receipt_entry_field_variants(fields):
+    variants = [dict(fields)]
+    if C.F_RECEIPT_ENTRY_SKU_ID in fields:
+        sku_legacy = dict(fields)
+        sku_legacy[C.F_RECEIPT_ENTRY_LEGACY_OBSERVED_IDENTIFIER] = sku_legacy.pop(C.F_RECEIPT_ENTRY_SKU_ID)
+        variants.append(sku_legacy)
+    if C.F_RECEIPT_ENTRY_NAME in fields:
+        name_legacy = dict(fields)
+        name_legacy[C.F_RECEIPT_ENTRY_LEGACY_NAME] = name_legacy.pop(C.F_RECEIPT_ENTRY_NAME)
+        variants.append(name_legacy)
+        if C.F_RECEIPT_ENTRY_SKU_ID in fields:
+            variants.append(_legacy_receipt_entry_fields(fields))
+    unique = []
+    seen = set()
+    for variant in variants:
+        signature = tuple(sorted(variant.keys()))
+        if signature in seen:
+            continue
+        seen.add(signature)
+        unique.append(variant)
+    return unique
+
+
+def _create_receipt_entry_record(fields):
+    first_error = None
+    for variant in _receipt_entry_field_variants(fields):
+        try:
+            return airtable.create_record(C.RECEIPT_ENTRIES_TABLE, variant, by_field_id=False)
+        except requests.HTTPError as error:
+            if first_error is None:
+                first_error = error
+    if first_error is not None:
+        raise first_error
+    return airtable.create_record(C.RECEIPT_ENTRIES_TABLE, fields, by_field_id=False)
+
+
+def _receipt_entries_by_receipt_id(receipt_ids):
+    receipt_ids = set(receipt_ids or [])
+    grouped = {receipt_id: [] for receipt_id in receipt_ids}
+    if not receipt_ids:
+        return grouped
     try:
-        data = airtable.create_record(C.RECEIPTS_TABLE, fields, by_field_id=False)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-
-    receipt_fields = data.get("fields", {})
-    receipt_item_ids = receipt_fields.get(C.F_RECEIPT_ITEMS, [])
-    _create_history_event(
-        "Merch Received",
-        "Merch Received",
-        item_ids=receipt_item_ids,
-        job_ids=_job_ids_for_items(receipt_item_ids),
-        user_ids=receipt_fields.get(C.F_RECEIPT_RECEIVER),
-        details=f"Receipt created: {receipt_fields.get(C.F_RECEIPT_NAME, data['id'])}.",
-    )
-    return jsonify(_shape_receipt(data)), 201
+        entries = _list_all_records(C.RECEIPT_ENTRIES_TABLE)
+    except requests.HTTPError:
+        return grouped
+    for entry in entries:
+        linked_receipts = set(_as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, [])))
+        for receipt_id in linked_receipts & receipt_ids:
+            grouped.setdefault(receipt_id, []).append(_shape_receipt_entry(entry))
+    return grouped
 
 
 def _job_ids_for_items(item_ids):
@@ -2143,17 +3253,19 @@ def _job_ids_for_items(item_ids):
     return job_ids
 
 
-def _shape_receipt(r):
+def _shape_receipt(r, *, entries_by_receipt=None):
     f = r.get("fields", {})
+    entries_by_receipt = entries_by_receipt or {}
     return {
         "id": r["id"],
         "name": f.get(C.F_RECEIPT_NAME, ""),
         "receipt": f.get(C.F_RECEIPT_NAME, ""),
         "clientIds": f.get(C.F_RECEIPT_CLIENT, []),
-        "itemIds": f.get(C.F_RECEIPT_ITEMS, []),
-        "skuIds": f.get(C.F_RECEIPT_ITEMS, []),
+        "itemIds": [],
+        "skuIds": [],
         "carrier": f.get(C.F_RECEIPT_CARRIER, ""),
         "tracking": f.get(C.F_RECEIPT_TRACKING, ""),
+        "boxQuantity": f.get(C.F_RECEIPT_BOX_QUANTITY, 1),
         "received": f.get(C.F_RECEIPT_RECEIVED, ""),
         "receivedDate": f.get(C.F_RECEIPT_RECEIVED, ""),
         "receiver": "",
@@ -2162,7 +3274,348 @@ def _shape_receipt(r):
         "locationIds": f.get(C.F_RECEIPT_LOCATION, []) if isinstance(f.get(C.F_RECEIPT_LOCATION), list) else [],
         "photos": f.get(C.F_RECEIPT_PHOTOS, []),
         "notes": f.get(C.F_RECEIPT_NOTES, ""),
+        "reviewStatus": f.get(C.F_RECEIPT_REVIEW_STATUS, ""),
+        "entries": entries_by_receipt.get(r["id"], []),
     }
+
+
+def _shape_receipt_entry(r):
+    f = r.get("fields", {})
+    verification_status_raw = f.get(C.F_RECEIPT_ENTRY_VERIFICATION_STATUS, "")
+    product_name = f.get(C.F_RECEIPT_ENTRY_NAME) or f.get(C.F_RECEIPT_ENTRY_LEGACY_NAME, "")
+    sku_id = f.get(C.F_RECEIPT_ENTRY_SKU_ID) or f.get(C.F_RECEIPT_ENTRY_LEGACY_OBSERVED_IDENTIFIER, "")
+    return {
+        "id": r["id"],
+        "name": product_name,
+        "productName": product_name,
+        "receiptIds": f.get(C.F_RECEIPT_ENTRY_RECEIPT, []),
+        "skuId": sku_id,
+        "observedIdentifier": sku_id,
+        "quantity": f.get(C.F_RECEIPT_ENTRY_QUANTITY, 0),
+        "locationIds": f.get(C.F_RECEIPT_ENTRY_LOCATION, []) if isinstance(f.get(C.F_RECEIPT_ENTRY_LOCATION), list) else [],
+        "condition": f.get(C.F_RECEIPT_ENTRY_CONDITION, ""),
+        "description": f.get(C.F_RECEIPT_ENTRY_DESCRIPTION, ""),
+        "notes": f.get(C.F_RECEIPT_ENTRY_NOTES, ""),
+        "photos": f.get(C.F_RECEIPT_ENTRY_PHOTOS, []),
+        "photoMetadata": _photo_metadata_from_entry(f),
+        "itemIds": f.get(C.F_RECEIPT_ENTRY_ITEM, []) if isinstance(f.get(C.F_RECEIPT_ENTRY_ITEM), list) else [],
+        "verificationStatus": _verification_status_label(verification_status_raw),
+        "verificationStatusRaw": verification_status_raw,
+    }
+
+
+VERIFICATION_STATUS_LABELS = {
+    "Needs Review": "Awaiting Verification",
+    "Verified": "Verified",
+    "Issue": "Awaiting Item Import",
+}
+
+
+def _verification_status_label(status):
+    return VERIFICATION_STATUS_LABELS.get(status or "", status or "Awaiting Verification")
+
+
+def _first_permitted_receipt(receipt_ids):
+    for receipt_id in _as_list(receipt_ids):
+        try:
+            receipt = airtable.get_record(C.RECEIPTS_TABLE, receipt_id, by_field_id=False)
+        except requests.HTTPError:
+            continue
+        if _receipt_client_permitted(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
+            return receipt
+    return None
+
+
+def _shape_verification_entry(entry, receipt=None, *, item_record=None):
+    shaped = _shape_receipt_entry(entry)
+    entry_fields = entry.get("fields", {})
+    receipt_fields = receipt.get("fields", {}) if receipt else {}
+    client_ids = receipt_fields.get(C.F_RECEIPT_CLIENT, []) if isinstance(receipt_fields.get(C.F_RECEIPT_CLIENT, []), list) else []
+    location_ids = shaped.get("locationIds", [])
+    item_ids = shaped.get("itemIds", [])
+    linked_item = None
+    if item_record is None and item_ids:
+        try:
+            item_record = airtable.get_record(C.ITEMS_TABLE, item_ids[0], by_field_id=False)
+        except requests.HTTPError:
+            item_record = None
+    if item_record:
+        linked_item = _shape_item(item_record, clients_by_id=_clients_by_id())
+    return {
+        **shaped,
+        "receipt": {
+            "id": receipt.get("id") if receipt else "",
+            "name": receipt_fields.get(C.F_RECEIPT_NAME, "") if receipt else "",
+            "clientIds": client_ids,
+            "carrier": receipt_fields.get(C.F_RECEIPT_CARRIER, "") if receipt else "",
+            "tracking": receipt_fields.get(C.F_RECEIPT_TRACKING, "") if receipt else "",
+            "boxQuantity": receipt_fields.get(C.F_RECEIPT_BOX_QUANTITY, 1) if receipt else 1,
+            "received": receipt_fields.get(C.F_RECEIPT_RECEIVED, "") if receipt else "",
+        },
+        "clientIds": client_ids,
+        "locationId": location_ids[0] if location_ids else "",
+        "productName": shaped.get("productName") or shaped.get("description", ""),
+        "skuId": shaped.get("skuId", ""),
+        "brand": entry_fields.get("Brand", ""),
+        "packageSize": entry_fields.get("Package Size", ""),
+        "linkedItem": linked_item,
+        "received": receipt_fields.get(C.F_RECEIPT_RECEIVED, "") if receipt else "",
+    }
+
+
+def _photo_metadata_from_entry(fields):
+    return _photo_metadata_from_fields(fields, C.F_RECEIPT_ENTRY_PHOTO_METADATA)
+
+
+def _photo_metadata_from_fields(fields, field_name):
+    value = fields.get(field_name, "")
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [value]
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+# ── Development tools ─────────────────────────────────────────────────────────
+
+def _is_development_mode():
+    return C.FLASK_ENV == "development" or C.FLASK_DEBUG
+
+
+def _demo_date(days_ago):
+    value = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    return value.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _demo_identifier(code_type, index):
+    code_type = code_type or "Text"
+    if code_type in {"UPC-12", "GTIN-12"}:
+        return f"036800{index % 1000000:06d}"[-12:]
+    if code_type == "GTIN-14":
+        return f"00036800{index % 1000000:06d}"[-14:]
+    if code_type == "GTIN-13":
+        return f"0036800{index % 1000000:06d}"[-13:]
+    if code_type == "GTIN-8":
+        return f"{index % 100000000:08d}"
+    if code_type == "Numeric":
+        return f"{index:06d}"
+    return f"DEMO-{index:04d}"
+
+
+def _item_client_id(record):
+    client_ids = record.get("fields", {}).get(C.F_ITEM_CLIENT, []) or []
+    return client_ids[0] if client_ids else ""
+
+
+def _item_receipt_ids(record):
+    receipts = record.get("fields", {}).get(C.F_ITEM_RECEIPTS, [])
+    return receipts if isinstance(receipts, list) else []
+
+
+def _issue_item_ids(record):
+    item_ids = record.get("fields", {}).get(C.F_ISSUE_ITEM, [])
+    return item_ids if isinstance(item_ids, list) else []
+
+
+def _demo_item_payload(record, client, queue_id, index):
+    client = client or {}
+    valid_identifier = _demo_identifier(client.get("codeType"), index)
+    base = {
+        C.F_ITEM_IDENTIFIER: valid_identifier,
+        C.F_ITEM_PRODUCT: record.get("fields", {}).get(C.F_ITEM_PRODUCT) or f"Demo Product {index}",
+        C.F_ITEM_BRAND: record.get("fields", {}).get(C.F_ITEM_BRAND) or "Demo Brand",
+        C.F_ITEM_CONDITION: "Good",
+        C.F_ITEM_STATUS: "New",
+        C.F_ITEM_RECEIVED: True,
+        C.F_ITEM_REC_DATE: _demo_date(21 - (index % 14)),
+        C.F_ITEM_ARTWORK_RECEIVED: True,
+    }
+    if queue_id == "waiting_merchandise":
+        base.update({
+            C.F_ITEM_RECEIVED: False,
+            C.F_ITEM_REC_DATE: None,
+            C.F_ITEM_ARTWORK_RECEIVED: True,
+        })
+    elif queue_id == "merchandise_issues":
+        base.update({
+            C.F_ITEM_RECEIVED: True,
+            C.F_ITEM_ARTWORK_RECEIVED: True,
+        })
+    elif queue_id == "missing_data":
+        base.update({
+            C.F_ITEM_PRODUCT: "",
+            C.F_ITEM_RECEIVED: True,
+            C.F_ITEM_ARTWORK_RECEIVED: True,
+        })
+    elif queue_id == "missing_artwork":
+        base.update({
+            C.F_ITEM_RECEIVED: True,
+            C.F_ITEM_ARTWORK_RECEIVED: False,
+        })
+    elif queue_id == "ready_for_photo":
+        base.update({
+            C.F_ITEM_RECEIVED: True,
+            C.F_ITEM_ARTWORK_RECEIVED: True,
+        })
+    elif queue_id == "in_creative_force":
+        base.update({
+            C.F_ITEM_STATUS: "Production",
+            C.F_ITEM_RECEIVED: True,
+            C.F_ITEM_ARTWORK_RECEIVED: True,
+        })
+    elif queue_id == "completed":
+        base.update({
+            C.F_ITEM_STATUS: "Complete",
+            C.F_ITEM_RECEIVED: True,
+            C.F_ITEM_ARTWORK_RECEIVED: True,
+        })
+    return base
+
+
+def _queue_assignment(records, issues_by_item):
+    shuffled = list(records)
+    random.shuffle(shuffled)
+    used = set()
+    assignments = {}
+
+    def take(queue_id, predicate=lambda record: True):
+        for record in shuffled:
+            if record["id"] not in used and predicate(record):
+                used.add(record["id"])
+                assignments[queue_id] = record
+                return record
+        return None
+
+    take("waiting_merchandise", lambda record: not _item_receipt_ids(record))
+    take("merchandise_issues", lambda record: bool(issues_by_item.get(record["id"])))
+    take("missing_data")
+    take("missing_artwork")
+    take("ready_for_photo")
+    take("in_creative_force")
+    take("completed")
+    return assignments
+
+
+@api.post("/dev/randomize-demo-data")
+def randomize_demo_data():
+    if not _is_development_mode():
+        return err("Developer tools are only available in development mode.", 404)
+
+    clients_data = airtable.list_records(C.CLIENTS_TABLE, by_field_id=False).get("records", [])
+    clients_by_id = {record["id"]: _shape_client(record) for record in clients_data}
+    items = airtable.list_records(C.ITEMS_TABLE, by_field_id=False).get("records", [])
+    issues = airtable.list_records(C.ISSUES_TABLE, by_field_id=False).get("records", [])
+    issues_by_item = {}
+    for issue in issues:
+        for item_id in _issue_item_ids(issue):
+            issues_by_item.setdefault(item_id, []).append(issue)
+
+    if not items:
+        return jsonify({"summary": {"itemsUpdated": 0, "issuesUpdated": 0, "clientsUpdated": 0, "warnings": ["No Items records exist to randomize."]}})
+
+    assignments = _queue_assignment(items, issues_by_item)
+    item_queue_by_id = {record["id"]: queue_id for queue_id, record in assignments.items() if record}
+    queue_counts = {
+        "waiting_merchandise": 0,
+        "merchandise_issues": 0,
+        "missing_data": 0,
+        "missing_artwork": 0,
+        "ready_for_photo": 0,
+        "in_creative_force": 0,
+        "completed": 0,
+    }
+    queue_cycle = ["ready_for_photo", "waiting_merchandise", "missing_data", "in_creative_force", "completed"]
+    warnings = []
+    updated_items = 0
+    updated_issues = 0
+    updated_clients = 0
+
+    if not assignments.get("waiting_merchandise"):
+        warnings.append("No unreceived/unlinked Item was available for Waiting for Merchandise without changing relationships.")
+    if not assignments.get("merchandise_issues"):
+        warnings.append("No existing Issue linked to an Item was available for Merchandise Issues.")
+
+    artwork_client_ids = {
+        _item_client_id(assignments["missing_artwork"])
+    } if assignments.get("missing_artwork") and _item_client_id(assignments["missing_artwork"]) else set()
+
+    for client_record in clients_data:
+        client_id = client_record["id"]
+        target_artwork = "Required" if client_id in artwork_client_ids else "Optional"
+        fields = {
+            C.F_CLIENT_REQUIRED_PHOTO_FIELDS: ["Identifier", "Product Name"],
+            C.F_CLIENT_ARTWORK_REQUIREMENT: target_artwork,
+            C.F_CLIENT_MERCHANDISE_REQUIRED: True,
+        }
+        airtable.update_record(C.CLIENTS_TABLE, client_id, fields, by_field_id=False)
+        updated_clients += 1
+
+    for index, item in enumerate(items, start=1):
+        queue_id = item_queue_by_id.get(item["id"]) or queue_cycle[index % len(queue_cycle)]
+        if queue_id == "waiting_merchandise" and _item_receipt_ids(item):
+            queue_id = "ready_for_photo"
+        if queue_id == "merchandise_issues" and not issues_by_item.get(item["id"]):
+            queue_id = "ready_for_photo"
+        client = clients_by_id.get(_item_client_id(item), {})
+        fields = _demo_item_payload(item, client, queue_id, index)
+        airtable.update_record(C.ITEMS_TABLE, item["id"], fields, by_field_id=False)
+        queue_counts[queue_id] = queue_counts.get(queue_id, 0) + 1
+        updated_items += 1
+
+    merchandise_issue_item_id = assignments.get("merchandise_issues", {}).get("id") if assignments.get("merchandise_issues") else ""
+    for index, issue in enumerate(issues, start=1):
+        item_ids = _issue_item_ids(issue)
+        should_block = merchandise_issue_item_id and merchandise_issue_item_id in item_ids
+        fields = {
+            C.F_ISSUE_TYPE: "Damaged" if should_block else issue.get("fields", {}).get(C.F_ISSUE_TYPE, "Other"),
+            C.F_ISSUE_STATUS: "Open" if should_block else "Resolved",
+            C.F_ISSUE_PRIORITY: "High" if should_block else issue.get("fields", {}).get(C.F_ISSUE_PRIORITY, "Normal"),
+            C.F_ISSUE_OPENED: _demo_date(14 + index),
+            C.F_ISSUE_CLOSED: None if should_block else _demo_date(2 + (index % 5)),
+        }
+        airtable.update_record(C.ISSUES_TABLE, issue["id"], fields, by_field_id=False)
+        updated_issues += 1
+
+    return jsonify({
+        "summary": {
+            "itemsUpdated": updated_items,
+            "issuesUpdated": updated_issues,
+            "clientsUpdated": updated_clients,
+            "queues": queue_counts,
+            "warnings": warnings,
+        }
+    })
+
+
+@api.post("/dev/clear-core-tables")
+def clear_core_tables():
+    if not _is_development_mode():
+        return err("Developer tools are only available in development mode.", 404)
+
+    tables = [
+        ("items", C.ITEMS_TABLE),
+        ("history", C.HISTORY_TABLE),
+        ("jobs", C.JOBS_TABLE),
+        ("imports", C.IMPORTS_TABLE),
+    ]
+    summary = {}
+    try:
+        for key, table_name in tables:
+            record_ids = _list_all_record_ids(table_name)
+            summary[key] = {
+                "table": table_name,
+                "deleted": _delete_records_in_batches(table_name, record_ids),
+            }
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    return jsonify({"summary": summary})
 
 
 # ── Settings ──────────────────────────────────────────────────────────────────
@@ -2172,6 +3625,8 @@ def settings():
     return jsonify({
         "settings": {
             "airtableConfigured": C.airtable_ready(),
+            "environment": C.FLASK_ENV,
+            "development": _is_development_mode(),
             "base": C.AIRTABLE_BASE_ID,
             "tables": {
                 "clients": C.CLIENTS_TABLE,
