@@ -79,7 +79,13 @@ https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com
 Uploaded receipt-entry photos use this object-key format:
 
 ```text
-receiving/<receipt-name-and-id>/<receipt-entry-name>/<uuid>-<sanitized-filename>
+receiving/<Client>-<YYYY-MM-DD>-<HH-mm>/<Client>-<YYYY-MM-DD>-<HH-mm>-<sequence>.<ext>
+```
+
+For example:
+
+```text
+receiving/Smithfield-2026-07-12-16-11/Smithfield-2026-07-12-16-11-1.jpg
 ```
 
 `R2_PUBLIC_BASE_URL` must be publicly reachable without authentication because Airtable stores attachment references from public URLs. The R2 bucket or custom domain should allow public reads for the uploaded receiving path. Browser CORS does not need direct R2 write access because uploads go through the backend, but the public asset domain should allow normal image reads from the app origin.

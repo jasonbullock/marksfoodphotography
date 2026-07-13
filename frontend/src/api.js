@@ -268,9 +268,8 @@ api.listItems = api.listSkus;
 api.createItem = api.createSku;
 api.updateItem = api.updateSku;
 
-api.listReceipts = async ({ reviewStatus, clientId, unassignedClient } = {}) => {
+api.listReceipts = async ({ clientId, unassignedClient } = {}) => {
   const params = new URLSearchParams();
-  if (reviewStatus) params.set('reviewStatus', reviewStatus);
   if (clientId) params.set('clientId', clientId);
   if (unassignedClient) params.set('unassignedClient', 'true');
   return backend('GET', `/receipts${params.toString() ? `?${params.toString()}` : ''}`);
@@ -279,7 +278,10 @@ api.listReceipts = async ({ reviewStatus, clientId, unassignedClient } = {}) => 
 api.createReceipt = async (payload) => backend('POST', '/receiving', payload);
 api.startReceivingSession = async (payload) => backend('POST', '/receiving/sessions', payload);
 api.getReceivingSession = async (id) => backend('GET', `/receiving/${id}`);
+api.updateReceivingSession = async (id, payload) => backend('PATCH', `/receiving/${id}`, payload);
 api.createReceiptEntry = async (receiptId, payload) => backend('POST', `/receiving/${receiptId}/entries`, payload);
+api.updateReceiptEntry = async (receiptId, entryId, payload) => backend('PATCH', `/receiving/${receiptId}/entries/${entryId}`, payload);
+api.deleteReceiptEntry = async (receiptId, entryId) => backend('DELETE', `/receiving/${receiptId}/entries/${entryId}`);
 api.uploadReceivingPhotos = async (files, { receiptId, receiptEntryId } = {}) => {
   const form = new FormData();
   Array.from(files || []).forEach(file => form.append('photos', file));
@@ -289,13 +291,15 @@ api.uploadReceivingPhotos = async (files, { receiptId, receiptEntryId } = {}) =>
 };
 api.receivingPhotoStorageStatus = async () => backend('GET', '/receiving/photo-storage/status');
 api.listVerificationEntries = async () => backend('GET', '/verification/entries');
-api.searchVerificationItems = async ({ q, clientId } = {}) => {
+api.searchVerificationItems = async ({ q, clientId, includeItemId } = {}) => {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (clientId) params.set('clientId', clientId);
+  if (includeItemId) params.set('includeItemId', includeItemId);
   return backend('GET', `/verification/items${params.toString() ? `?${params.toString()}` : ''}`);
 };
 api.matchVerificationEntry = async (entryId, itemId) => backend('POST', `/verification/entries/${entryId}/match`, { itemId });
+api.validateVerificationEntry = async (entryId, status) => backend('POST', `/verification/entries/${entryId}/validate`, { status });
 api.listLocations = async () => backend('GET', '/locations');
 
 api.airtableSingleSelectOptions = async ({ tableName, fieldName }) => {

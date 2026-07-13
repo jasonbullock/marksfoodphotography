@@ -68,14 +68,11 @@ class Config:
     F_RECEIPT_LOCATION = "Location"
     F_RECEIPT_PHOTOS = "Photos"
     F_RECEIPT_NOTES = "Notes"
-    F_RECEIPT_REVIEW_STATUS = "Review Status"
 
     # Field names — Receipt Entries
     F_RECEIPT_ENTRY_NAME = "Product Name"
-    F_RECEIPT_ENTRY_LEGACY_NAME = "Receipt Entry"
     F_RECEIPT_ENTRY_RECEIPT = "Receipt"
     F_RECEIPT_ENTRY_SKU_ID = "SKU / ID"
-    F_RECEIPT_ENTRY_LEGACY_OBSERVED_IDENTIFIER = "Observed Identifier"
     F_RECEIPT_ENTRY_QUANTITY = "Quantity"
     F_RECEIPT_ENTRY_LOCATION = "Location"
     F_RECEIPT_ENTRY_CONDITION = "Condition"
@@ -84,7 +81,7 @@ class Config:
     F_RECEIPT_ENTRY_PHOTOS = "Photos"
     F_RECEIPT_ENTRY_PHOTO_METADATA = "Photo Metadata"
     F_RECEIPT_ENTRY_ITEM = "Item"
-    F_RECEIPT_ENTRY_VERIFICATION_STATUS = "Verification Status"
+    F_RECEIPT_ENTRY_MERCH_STATUS = "Merch Status"
 
     # Field names — Clients
     F_CLIENT_NAME = "Client"

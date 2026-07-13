@@ -1,7 +1,6 @@
 import io
 import os
 import re
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,6 +26,10 @@ class ReceivingPhotoConfigError(ReceivingPhotoStorageError):
 
 
 class ReceivingPhotoValidationError(ReceivingPhotoStorageError):
+    pass
+
+
+class ReceivingPhotoCollisionError(ReceivingPhotoStorageError):
     pass
 
 
@@ -99,6 +102,17 @@ def _convert_heic_to_jpeg(data):
         raise ReceivingPhotoValidationError("Malformed HEIC/HEIF image file.") from exc
 
 
+def _conditional_put_unsupported(error):
+    error_type = type(error).__name__
+    if error_type == "ParamValidationError" and "IfNoneMatch" in str(error):
+        return True
+    response = getattr(error, "response", None)
+    if not isinstance(response, dict):
+        return False
+    code = str((response.get("Error") or {}).get("Code") or "")
+    return code in {"InvalidArgument", "NotImplemented", "NotSupported", "XNotImplemented"}
+
+
 class ReceivingPhotoStorage:
     def __init__(self, config, local_dir=None, s3_client=None, now_func=None):
         self.config = config
@@ -132,15 +146,14 @@ class ReceivingPhotoStorage:
             base_url = base_url or "/api/receiving/photos"
         return f"{base_url}/{object_key}"
 
-    def object_key(self, receipt_id, receipt_entry_id, stored_filename, *, receipt_name="", receipt_entry_name=""):
-        receipt_segment = sanitize_path_segment(receipt_name or receipt_id, "receipt")
-        entry_segment = sanitize_path_segment(receipt_entry_name or receipt_entry_id, "entry")
-        receipt_suffix = sanitize_path_segment(str(receipt_id or "")[-8:], "")
-        if receipt_suffix and receipt_suffix not in receipt_segment:
-            receipt_segment = f"{receipt_segment}-{receipt_suffix}"
-        return f"receiving/{receipt_segment}/{entry_segment}/{stored_filename}"
+    def object_key(self, delivery_folder, sequence_number, extension):
+        folder = sanitize_path_segment(delivery_folder, "Unknown")
+        number = int(sequence_number)
+        ext = re.sub(r"[^A-Za-z0-9]+", "", str(extension or "jpg")).lower() or "jpg"
+        stored_filename = f"{folder}-{number}.{ext}"
+        return f"receiving/{folder}/{stored_filename}", stored_filename
 
-    def upload_photo(self, file_storage, receipt_id, receipt_entry_id, *, receipt_name="", receipt_entry_name=""):
+    def upload_photo(self, file_storage, receipt_id, receipt_entry_id, *, delivery_folder="Unknown", sequence_number=1, existing_keys=None):
         self.validate_configuration()
         original_filename = file_storage.filename or "receiving-photo"
         data = file_storage.read()
@@ -158,15 +171,6 @@ class ReceivingPhotoStorage:
         else:
             _assert_image_decodable(data, mime_type)
             extension = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[mime_type]
-        stem, _ = sanitize_filename(original_filename)
-        stored_filename = f"{uuid.uuid4().hex}-{stem}.{extension}"
-        object_key = self.object_key(
-            receipt_id,
-            receipt_entry_id,
-            stored_filename,
-            receipt_name=receipt_name,
-            receipt_entry_name=receipt_entry_name,
-        )
         uploaded_at = self.now_func().isoformat(timespec="seconds").replace("+00:00", "Z")
         metadata = {
             "original-filename": _safe_metadata_value(original_filename),
@@ -174,21 +178,33 @@ class ReceivingPhotoStorage:
             "receipt-entry-id": _safe_metadata_value(receipt_entry_id),
             "uploaded-at": uploaded_at,
         }
-        try:
-            self._put_object(object_key, data, mime_type, metadata)
-        except Exception as exc:
-            raise ReceivingPhotoStorageError("Photo could not be uploaded.") from exc
-        return {
-            "object_key": object_key,
-            "public_url": self.public_url(object_key),
-            "url": self.public_url(object_key),
-            "original_filename": original_filename,
-            "filename": original_filename,
-            "stored_filename": stored_filename,
-            "mime_type": mime_type,
-            "size_bytes": len(data),
-            "uploaded_at": uploaded_at,
-        }
+        existing = set(existing_keys or [])
+        next_number = max(1, int(sequence_number or 1))
+        for _ in range(1000):
+            object_key, stored_filename = self.object_key(delivery_folder, next_number, extension)
+            if object_key in existing or self.object_exists(object_key):
+                next_number += 1
+                continue
+            try:
+                self._put_object(object_key, data, mime_type, metadata)
+            except ReceivingPhotoCollisionError:
+                existing.add(object_key)
+                next_number += 1
+                continue
+            except Exception as exc:
+                raise ReceivingPhotoStorageError("Photo could not be uploaded.") from exc
+            return {
+                "object_key": object_key,
+                "public_url": self.public_url(object_key),
+                "url": self.public_url(object_key),
+                "original_filename": original_filename,
+                "filename": original_filename,
+                "stored_filename": stored_filename,
+                "mime_type": mime_type,
+                "size_bytes": len(data),
+                "uploaded_at": uploaded_at,
+            }
+        raise ReceivingPhotoStorageError("Photo could not be uploaded without overwriting an existing object.")
 
     def delete_photo(self, object_key):
         self.validate_configuration()
@@ -204,19 +220,100 @@ class ReceivingPhotoStorage:
         self._client().delete_object(Bucket=self.config.R2_BUCKET_NAME, Key=object_key)
         return {"deleted": True, "object_key": object_key}
 
+    def list_object_keys(self, prefix):
+        self.validate_configuration()
+        prefix = str(prefix or "")
+        if not prefix or ".." in prefix or prefix.startswith("/"):
+            raise ReceivingPhotoValidationError("Invalid photo object prefix.")
+        if self.mode == "local":
+            base = (self.local_dir / prefix).resolve()
+            if self.local_dir.resolve() not in base.parents and base != self.local_dir.resolve():
+                raise ReceivingPhotoValidationError("Invalid photo object prefix.")
+            if not base.exists():
+                return []
+            return sorted(str(path.relative_to(self.local_dir)) for path in base.rglob("*") if path.is_file())
+
+        client = self._client()
+        keys = []
+        paginator = getattr(client, "get_paginator", None)
+        if paginator:
+            for page in client.get_paginator("list_objects_v2").paginate(Bucket=self.config.R2_BUCKET_NAME, Prefix=prefix):
+                keys.extend(item.get("Key") for item in page.get("Contents", []) if item.get("Key"))
+            return sorted(keys)
+        response = client.list_objects_v2(Bucket=self.config.R2_BUCKET_NAME, Prefix=prefix)
+        return sorted(item.get("Key") for item in response.get("Contents", []) if item.get("Key"))
+
+    def delete_prefix(self, prefix):
+        keys = self.list_object_keys(prefix)
+        deleted = []
+        for key in keys:
+            self.delete_photo(key)
+            deleted.append(key)
+        return deleted
+
+    def object_exists(self, object_key):
+        if not object_key:
+            return False
+        if self.mode == "local":
+            return (self.local_dir / object_key).exists()
+        try:
+            self._client().head_object(Bucket=self.config.R2_BUCKET_NAME, Key=object_key)
+            return True
+        except Exception as exc:
+            code = ""
+            response = getattr(exc, "response", None)
+            if isinstance(response, dict):
+                code = str((response.get("Error") or {}).get("Code") or "")
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                return False
+            return False
+
     def _put_object(self, object_key, data, mime_type, metadata):
         if self.mode == "local":
             path = self.local_dir / object_key
             path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists():
+                raise ReceivingPhotoCollisionError("Photo object already exists.")
             path.write_bytes(data)
             return
-        self._client().put_object(
-            Bucket=self.config.R2_BUCKET_NAME,
-            Key=object_key,
-            Body=data,
-            ContentType=mime_type,
-            Metadata=metadata,
-        )
+        try:
+            self._client().put_object(
+                Bucket=self.config.R2_BUCKET_NAME,
+                Key=object_key,
+                Body=data,
+                ContentType=mime_type,
+                Metadata=metadata,
+                IfNoneMatch="*",
+            )
+        except TypeError:
+            if self.object_exists(object_key):
+                raise ReceivingPhotoCollisionError("Photo object already exists.")
+            self._client().put_object(
+                Bucket=self.config.R2_BUCKET_NAME,
+                Key=object_key,
+                Body=data,
+                ContentType=mime_type,
+                Metadata=metadata,
+            )
+        except Exception as exc:
+            code = ""
+            response = getattr(exc, "response", None)
+            if isinstance(response, dict):
+                code = str((response.get("Error") or {}).get("Code") or "")
+            if code in {"PreconditionFailed", "412"}:
+                raise ReceivingPhotoCollisionError("Photo object already exists.") from exc
+            if _conditional_put_unsupported(exc):
+                if self.object_exists(object_key):
+                    raise ReceivingPhotoCollisionError("Photo object already exists.") from exc
+                self._client().put_object(
+                    Bucket=self.config.R2_BUCKET_NAME,
+                    Key=object_key,
+                    Body=data,
+                    ContentType=mime_type,
+                    Metadata=metadata,
+                )
+                return
+            raise
 
     def _client(self):
         if self.s3_client is not None:

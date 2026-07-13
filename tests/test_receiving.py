@@ -51,6 +51,14 @@ def r2_config(**overrides):
     return SimpleNamespace(**values)
 
 
+def mock_s3_client():
+    s3 = Mock()
+    s3.head_object.side_effect = Exception("not found")
+    s3.list_objects_v2.return_value = {"Contents": []}
+    s3.get_paginator = None
+    return s3
+
+
 class ReceivingTests(unittest.TestCase):
     def setUp(self):
         self.app = create_app().test_client()
@@ -208,8 +216,8 @@ class ReceivingTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 201)
         fields = create_record.call_args.args[1]
-        self.assertEqual(fields[C.F_RECEIPT_NAME], "Bimbo • 7/12/26 • 9:55 AM")
-        self.assertEqual(response.get_json()["receipt"], "Bimbo • 7/12/26 • 9:55 AM")
+        self.assertEqual(fields[C.F_RECEIPT_NAME], "Bimbo - 2026-07-12 09:55")
+        self.assertEqual(response.get_json()["receipt"], "Bimbo - 2026-07-12 09:55")
         history.assert_called_once()
 
     @patch("routes._create_history_event")
@@ -286,6 +294,133 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(payload["skuId"], "BOX-7")
         self.assertEqual(payload["photos"], [{"url": "https://example.com/photo.jpg"}])
         self.assertEqual(payload["itemIds"], [])
+
+    @patch("routes.airtable.create_record")
+    @patch("routes.airtable.list_records")
+    @patch("routes.airtable.get_record")
+    def test_mobile_receiving_can_link_obvious_item_match_without_validating_merchandise(self, get_record, list_records, create_record):
+        receipt_record = {
+            "id": "recReceipt",
+            "fields": {
+                C.F_RECEIPT_CLIENT: ["recClient"],
+                C.F_RECEIPT_REVIEW_STATUS: "Needs Review",
+            },
+        }
+        item_record = {
+            "id": "recItem",
+            "fields": {
+                C.F_ITEM_CLIENT: ["recClient"],
+                C.F_ITEM_NAME: "Ham Roast Unsliced",
+            },
+        }
+        get_record.side_effect = [receipt_record, item_record]
+        list_records.return_value = {"records": []}
+        create_record.side_effect = lambda table, fields, by_field_id=False: {"id": "recEntry", "fields": fields}
+
+        response = self.app.post("/api/receiving/recReceipt/entries", json={
+            "productName": "Ham Roast Unsliced",
+            "skuId": "BOX-7",
+            "quantity": 2,
+            "itemId": "recItem",
+            "matchStatus": "Matched",
+        })
+
+        self.assertEqual(response.status_code, 201)
+        fields = create_record.call_args.args[1]
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_ITEM], ["recItem"])
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MATCH_STATUS], "Matched")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_VALIDATION_STATUS], "Pending")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_VERIFICATION_STATUS], "Needs Review")
+        payload = response.get_json()
+        self.assertEqual(payload["itemIds"], ["recItem"])
+        self.assertEqual(payload["matchStatus"], "Matched")
+        self.assertEqual(payload["merchValidationStatus"], "Pending")
+
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.list_records")
+    @patch("routes.airtable.get_record")
+    def test_receiving_session_update_only_writes_editable_header_fields(self, get_record, list_records, update_record):
+        receipt_record = {
+            "id": "recReceipt",
+            "fields": {
+                C.F_RECEIPT_CLIENT: ["recClient"],
+                C.F_RECEIPT_REVIEW_STATUS: "Needs Review",
+            },
+        }
+        get_record.return_value = receipt_record
+        list_records.return_value = {"records": []}
+        update_record.return_value = {
+            "id": "recReceipt",
+            "fields": {
+                **receipt_record["fields"],
+                C.F_RECEIPT_CARRIER: "UPS",
+                C.F_RECEIPT_TRACKING: "TRACK-2",
+                C.F_RECEIPT_BOX_QUANTITY: 4,
+            },
+        }
+
+        response = self.app.patch("/api/receiving/recReceipt", json={
+            "carrier": "UPS",
+            "tracking": "TRACK-2",
+            "boxQuantity": 4,
+            "reviewStatus": "Verified",
+            "itemIds": ["recItem"],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        update_fields = update_record.call_args.args[2]
+        self.assertEqual(update_fields[C.F_RECEIPT_CARRIER], "UPS")
+        self.assertEqual(update_fields[C.F_RECEIPT_TRACKING], "TRACK-2")
+        self.assertEqual(update_fields[C.F_RECEIPT_BOX_QUANTITY], 4)
+        self.assertNotIn(C.F_RECEIPT_REVIEW_STATUS, update_fields)
+        self.assertNotIn(C.F_RECEIPT_ITEMS, update_fields)
+
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_receiving_entry_update_preserves_match_status_and_photo_metadata(self, get_record, update_record):
+        receipt_record = {
+            "id": "recReceipt",
+            "fields": {
+                C.F_RECEIPT_CLIENT: ["recClient"],
+            },
+        }
+        entry_record = {
+            "id": "recEntry",
+            "fields": {
+                C.F_RECEIPT_ENTRY_RECEIPT: ["recReceipt"],
+                C.F_RECEIPT_ENTRY_ITEM: ["recItem"],
+                C.F_RECEIPT_ENTRY_VERIFICATION_STATUS: "Verified",
+                C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps([{"object_key": "receiving/x/x-1.jpg"}]),
+            },
+        }
+        get_record.side_effect = [receipt_record, entry_record]
+        update_record.return_value = {
+            "id": "recEntry",
+            "fields": {
+                **entry_record["fields"],
+                C.F_RECEIPT_ENTRY_NAME: "New Product",
+                C.F_RECEIPT_ENTRY_SKU_ID: "SKU-2",
+                C.F_RECEIPT_ENTRY_QUANTITY: 3,
+            },
+        }
+
+        response = self.app.patch("/api/receiving/recReceipt/entries/recEntry", json={
+            "productName": "New Product",
+            "skuId": "SKU-2",
+            "quantity": 3,
+            "itemIds": [],
+            "verificationStatus": "Needs Review",
+            "photoMetadata": [],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        update_fields = update_record.call_args.args[2]
+        self.assertEqual(update_fields[C.F_RECEIPT_ENTRY_NAME], "New Product")
+        self.assertEqual(update_fields[C.F_RECEIPT_ENTRY_SKU_ID], "SKU-2")
+        self.assertEqual(update_fields[C.F_RECEIPT_ENTRY_QUANTITY], 3)
+        self.assertNotIn(C.F_RECEIPT_ENTRY_ITEM, update_fields)
+        self.assertNotIn(C.F_RECEIPT_ENTRY_VERIFICATION_STATUS, update_fields)
+        self.assertNotIn(C.F_RECEIPT_ENTRY_PHOTO_METADATA, update_fields)
 
     @patch("routes.airtable.list_records")
     def test_verification_lists_receipt_entries_with_mapped_status(self, list_records):
@@ -370,6 +505,8 @@ class ReceivingTests(unittest.TestCase):
             "recEntry",
             {
                 C.F_RECEIPT_ENTRY_ITEM: ["recItem"],
+                C.F_RECEIPT_ENTRY_MATCH_STATUS: "Matched",
+                C.F_RECEIPT_ENTRY_MERCH_VALIDATION_STATUS: "Approved",
                 C.F_RECEIPT_ENTRY_VERIFICATION_STATUS: "Verified",
             },
             by_field_id=False,
@@ -394,7 +531,7 @@ class ReceivingTests(unittest.TestCase):
             self.assertTrue(any(Path(temp_dir).rglob("*.*")))
 
     def test_receiving_photo_storage_uploads_jpeg_to_mocked_r2(self):
-        s3 = Mock()
+        s3 = mock_s3_client()
         storage = ReceivingPhotoStorage(
             r2_config(),
             s3_client=s3,
@@ -405,46 +542,150 @@ class ReceivingTests(unittest.TestCase):
             Mock(filename="../Carton Shot.JPG", read=Mock(return_value=JPEG_BYTES)),
             "recReceiptABC12345",
             "recEntry",
-            receipt_name="Bimbo • 7/12/26 • 9:55 AM",
-            receipt_entry_name="Kroger Baking Powder",
+            delivery_folder="Bimbo-2026-07-12-09-55",
+            sequence_number=1,
         )
 
         self.assertRegex(
             photo["object_key"],
-            r"^receiving/Bimbo-7.12.26-9.55-AM-ABC12345/Kroger-Baking-Powder/[a-f0-9]{32}-Carton_Shot\.jpg$",
+            r"^receiving/Bimbo-2026-07-12-09-55/Bimbo-2026-07-12-09-55-1\.jpg$",
         )
         self.assertEqual(photo["public_url"], f"https://assets.example.com/{photo['object_key']}")
+        self.assertEqual(photo["stored_filename"], "Bimbo-2026-07-12-09-55-1.jpg")
+        self.assertEqual(photo["original_filename"], "../Carton Shot.JPG")
         self.assertEqual(photo["mime_type"], "image/jpeg")
         put_kwargs = s3.put_object.call_args.kwargs
         self.assertEqual(put_kwargs["Bucket"], "marks-receiving")
         self.assertEqual(put_kwargs["ContentType"], "image/jpeg")
         self.assertEqual(put_kwargs["Metadata"]["receipt-id"], "recReceiptABC12345")
+        self.assertEqual(put_kwargs["IfNoneMatch"], "*")
         self.assertNotIn("secret", str(photo).lower())
 
     def test_receiving_photo_storage_supports_png_and_webp(self):
-        s3 = Mock()
+        s3 = mock_s3_client()
         storage = ReceivingPhotoStorage(r2_config(), s3_client=s3)
 
-        png = storage.upload_photo(Mock(filename="one.png", read=Mock(return_value=PNG_BYTES)), "recR", "recE")
-        webp = storage.upload_photo(Mock(filename="two.webp", read=Mock(return_value=WEBP_BYTES)), "recR", "recE")
+        png = storage.upload_photo(Mock(filename="one.png", read=Mock(return_value=PNG_BYTES)), "recR", "recE", delivery_folder="Unknown-2026-07-12-16-11", sequence_number=1)
+        webp = storage.upload_photo(Mock(filename="two.webp", read=Mock(return_value=WEBP_BYTES)), "recR", "recE", delivery_folder="Unknown-2026-07-12-16-11", sequence_number=2)
 
         self.assertEqual(png["mime_type"], "image/png")
-        self.assertTrue(png["stored_filename"].endswith(".png"))
+        self.assertEqual(png["stored_filename"], "Unknown-2026-07-12-16-11-1.png")
         self.assertEqual(webp["mime_type"], "image/webp")
-        self.assertTrue(webp["stored_filename"].endswith(".webp"))
+        self.assertEqual(webp["stored_filename"], "Unknown-2026-07-12-16-11-2.webp")
         self.assertEqual(s3.put_object.call_count, 2)
 
     def test_receiving_photo_storage_converts_heic_to_jpeg(self):
-        s3 = Mock()
+        s3 = mock_s3_client()
         storage = ReceivingPhotoStorage(r2_config(), s3_client=s3)
         with patch("receiving_photo_storage._convert_heic_to_jpeg", return_value=JPEG_BYTES):
-            photo = storage.upload_photo(Mock(filename="phone.heic", read=Mock(return_value=HEIC_BYTES)), "recR", "recE")
+            photo = storage.upload_photo(Mock(filename="phone.heic", read=Mock(return_value=HEIC_BYTES)), "recR", "recE", delivery_folder="Unknown-2026-07-12-16-11", sequence_number=7)
 
         self.assertEqual(photo["mime_type"], "image/jpeg")
-        self.assertTrue(photo["stored_filename"].endswith(".jpg"))
+        self.assertEqual(photo["stored_filename"], "Unknown-2026-07-12-16-11-7.jpg")
+
+    def test_receiving_photo_storage_skips_existing_numbers(self):
+        s3 = mock_s3_client()
+        storage = ReceivingPhotoStorage(r2_config(), s3_client=s3)
+
+        photo = storage.upload_photo(
+            Mock(filename="front.jpg", read=Mock(return_value=JPEG_BYTES)),
+            "recR",
+            "recE",
+            delivery_folder="Kroger-2026-07-12-16-11",
+            sequence_number=1,
+            existing_keys={
+                "receiving/Kroger-2026-07-12-16-11/Kroger-2026-07-12-16-11-1.jpg",
+                "receiving/Kroger-2026-07-12-16-11/Kroger-2026-07-12-16-11-2.jpg",
+            },
+        )
+
+        self.assertEqual(photo["object_key"], "receiving/Kroger-2026-07-12-16-11/Kroger-2026-07-12-16-11-3.jpg")
+        self.assertEqual(photo["stored_filename"], "Kroger-2026-07-12-16-11-3.jpg")
+
+    def test_receiving_photo_storage_falls_back_when_conditional_put_is_unsupported(self):
+        class FakeClientError(Exception):
+            response = {"Error": {"Code": "NotImplemented"}}
+
+        s3 = mock_s3_client()
+        s3.put_object.side_effect = [FakeClientError("unsupported"), {"ETag": "ok"}]
+        storage = ReceivingPhotoStorage(r2_config(), s3_client=s3)
+
+        photo = storage.upload_photo(
+            Mock(filename="front.jpg", read=Mock(return_value=JPEG_BYTES)),
+            "recR",
+            "recE",
+            delivery_folder="Kroger-2026-07-12-16-11",
+            sequence_number=1,
+        )
+
+        self.assertEqual(photo["object_key"], "receiving/Kroger-2026-07-12-16-11/Kroger-2026-07-12-16-11-1.jpg")
+        self.assertEqual(s3.put_object.call_count, 2)
+        self.assertIn("IfNoneMatch", s3.put_object.call_args_list[0].kwargs)
+        self.assertNotIn("IfNoneMatch", s3.put_object.call_args_list[1].kwargs)
+
+    def test_receiving_photo_storage_falls_back_when_botocore_rejects_if_none_match(self):
+        ParamValidationError = type("ParamValidationError", (Exception,), {})
+        s3 = mock_s3_client()
+        s3.put_object.side_effect = [ParamValidationError("Unknown parameter in input: IfNoneMatch"), {"ETag": "ok"}]
+        storage = ReceivingPhotoStorage(r2_config(), s3_client=s3)
+
+        photo = storage.upload_photo(
+            Mock(filename="front.jpg", read=Mock(return_value=JPEG_BYTES)),
+            "recR",
+            "recE",
+            delivery_folder="Kroger-2026-07-12-16-11",
+            sequence_number=1,
+        )
+
+        self.assertEqual(photo["object_key"], "receiving/Kroger-2026-07-12-16-11/Kroger-2026-07-12-16-11-1.jpg")
+        self.assertEqual(s3.put_object.call_count, 2)
+        self.assertIn("IfNoneMatch", s3.put_object.call_args_list[0].kwargs)
+        self.assertNotIn("IfNoneMatch", s3.put_object.call_args_list[1].kwargs)
+
+    def test_receiving_delivery_folder_sanitizes_client_and_unknown(self):
+        from routes import _delivery_folder_base
+
+        self.assertEqual(
+            _delivery_folder_base("Smithfield & Sons / Retail", "2026-07-12T16:11:00"),
+            "Smithfield-Sons-Retail-2026-07-12-16-11",
+        )
+        self.assertEqual(
+            _delivery_folder_base("", "2026-07-12T04:05:00"),
+            "Unknown-2026-07-12-04-05",
+        )
+
+    def test_receiving_delivery_folder_adds_suffix_only_for_same_minute_collision(self):
+        from routes import _delivery_folder_for_receipt
+
+        first = {
+            "id": "recFirst",
+            "fields": {
+                C.F_RECEIPT_CLIENT: ["recClient"],
+                C.F_RECEIPT_RECEIVED: "2026-07-12T16:11:00",
+            },
+        }
+        second = {
+            "id": "recSecond",
+            "fields": {
+                C.F_RECEIPT_CLIENT: ["recClient"],
+                C.F_RECEIPT_RECEIVED: "2026-07-12T16:11:25",
+            },
+        }
+        later = {
+            "id": "recLater",
+            "fields": {
+                C.F_RECEIPT_CLIENT: ["recClient"],
+                C.F_RECEIPT_RECEIVED: "2026-07-12T16:12:00",
+            },
+        }
+
+        with patch("routes._list_all_records", return_value=[first, second, later]), patch("routes._receipt_client_name", return_value="Smithfield"):
+            self.assertEqual(_delivery_folder_for_receipt(first), "Smithfield-2026-07-12-16-11")
+            self.assertEqual(_delivery_folder_for_receipt(second), "Smithfield-2026-07-12-16-11-2")
+            self.assertEqual(_delivery_folder_for_receipt(later), "Smithfield-2026-07-12-16-12")
 
     def test_receiving_photo_storage_rejects_bad_files(self):
-        storage = ReceivingPhotoStorage(r2_config(), s3_client=Mock())
+        storage = ReceivingPhotoStorage(r2_config(), s3_client=mock_s3_client())
 
         with self.assertRaises(ReceivingPhotoValidationError):
             storage.upload_photo(Mock(filename="empty.jpg", read=Mock(return_value=b"")), "recR", "recE")
@@ -454,30 +695,57 @@ class ReceivingTests(unittest.TestCase):
             storage.upload_photo(Mock(filename="bad.gif", read=Mock(return_value=b"GIF89a")), "recR", "recE")
 
     def test_receiving_photo_storage_fails_clear_when_r2_config_missing(self):
-        storage = ReceivingPhotoStorage(r2_config(R2_BUCKET_NAME=""), s3_client=Mock())
+        storage = ReceivingPhotoStorage(r2_config(R2_BUCKET_NAME=""), s3_client=mock_s3_client())
 
         with self.assertRaises(ReceivingPhotoConfigError):
             storage.upload_photo(Mock(filename="carton.jpg", read=Mock(return_value=JPEG_BYTES)), "recR", "recE")
 
     @patch("routes.airtable.update_record")
+    @patch("routes.airtable.list_records")
     @patch("routes.airtable.get_record")
-    def test_receiving_entry_photo_upload_updates_airtable_with_public_url_and_metadata(self, get_record, update_record):
-        s3 = Mock()
+    def test_receiving_entry_photo_upload_updates_airtable_with_public_url_and_metadata(self, get_record, list_records, update_record):
+        s3 = mock_s3_client()
         storage = ReceivingPhotoStorage(
             r2_config(),
             s3_client=s3,
             now_func=lambda: datetime(2026, 7, 11, tzinfo=timezone.utc),
         )
-        get_record.side_effect = [
-            {"id": "recReceipt", "fields": {C.F_RECEIPT_NAME: "Kroger • 7/12/26 • 9:55 AM"}},
-            {
-                "id": "recEntry",
-                "fields": {
-                    C.F_RECEIPT_ENTRY_NAME: "Kroger Baking Powder",
-                    C.F_RECEIPT_ENTRY_RECEIPT: ["recReceipt"],
-                },
+        receipt_record = {
+            "id": "recReceipt",
+            "fields": {
+                C.F_RECEIPT_NAME: "Kroger • 7/12/26 • 4:11 PM",
+                C.F_RECEIPT_CLIENT: ["recClient"],
+                C.F_RECEIPT_RECEIVED: "2026-07-12T16:11:00",
             },
-        ]
+        }
+        entry_record = {
+            "id": "recEntry",
+            "fields": {
+                C.F_RECEIPT_ENTRY_NAME: "Kroger Baking Powder",
+                C.F_RECEIPT_ENTRY_RECEIPT: ["recReceipt"],
+            },
+        }
+        client_record = {"id": "recClient", "fields": {C.F_CLIENT_NAME: "Kroger"}}
+
+        def get_record_side_effect(table, record_id, by_field_id=False):
+            if table == C.RECEIPTS_TABLE:
+                return receipt_record
+            if table == C.RECEIPT_ENTRIES_TABLE:
+                return entry_record
+            if table == C.CLIENTS_TABLE:
+                return client_record
+            self.fail(f"Unexpected get table: {table}")
+
+        get_record.side_effect = get_record_side_effect
+
+        def list_records_side_effect(table, params=None, by_field_id=False):
+            if table == C.RECEIPTS_TABLE:
+                return {"records": [receipt_record]}
+            if table == C.RECEIPT_ENTRIES_TABLE:
+                return {"records": [entry_record]}
+            self.fail(f"Unexpected list table: {table}")
+
+        list_records.side_effect = list_records_side_effect
 
         def update_side_effect(table, record_id, fields, by_field_id=False):
             merged = {
@@ -509,9 +777,14 @@ class ReceivingTests(unittest.TestCase):
         attachments = attachment_fields[C.F_RECEIPT_ENTRY_PHOTOS]
         metadata = metadata_fields[C.F_RECEIPT_ENTRY_PHOTO_METADATA]
         self.assertEqual(len(attachments), 2)
-        self.assertTrue(all(item["url"].startswith("https://assets.example.com/receiving/Kroger-7-12-26-9-55-AM-cReceipt/Kroger-Baking-Powder/") for item in attachments))
+        self.assertEqual(attachments[0]["url"], "https://assets.example.com/receiving/Kroger-2026-07-12-16-11/Kroger-2026-07-12-16-11-1.jpg")
+        self.assertEqual(attachments[1]["url"], "https://assets.example.com/receiving/Kroger-2026-07-12-16-11/Kroger-2026-07-12-16-11-2.png")
         metadata_items = json.loads(metadata)
-        self.assertIn("object_key", metadata)
+        self.assertEqual(metadata_items[0]["stored_filename"], "Kroger-2026-07-12-16-11-1.jpg")
+        self.assertEqual(metadata_items[0]["original_filename"], "front.jpg")
+        self.assertNotIn("recReceipt", metadata_items[0]["object_key"])
+        self.assertNotIn("recEntry", metadata_items[0]["object_key"])
+        self.assertNotIn("Kroger-Baking-Powder", metadata_items[0]["object_key"])
         self.assertTrue(all(".." not in item["object_key"] for item in metadata_items))
         self.assertTrue(all("/" not in item["stored_filename"] for item in metadata_items))
         payload = response.get_json()
@@ -519,20 +792,98 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(payload["entry"]["photoMetadata"][0]["public_url"], attachments[0]["url"])
 
     @patch("routes.airtable.update_record")
+    @patch("routes.airtable.list_records")
     @patch("routes.airtable.get_record")
-    def test_receiving_entry_photo_upload_reports_missing_metadata_field(self, get_record, update_record):
-        s3 = Mock()
+    def test_receiving_entry_photo_upload_continues_numbering_across_entries(self, get_record, list_records, update_record):
+        s3 = mock_s3_client()
         storage = ReceivingPhotoStorage(r2_config(), s3_client=s3)
-        get_record.side_effect = [
-            {"id": "recReceipt", "fields": {C.F_RECEIPT_NAME: "Kroger • 7/12/26 • 9:55 AM"}},
-            {
+        receipt_record = {
+            "id": "recReceipt",
+            "fields": {
+                C.F_RECEIPT_CLIENT: ["recClient"],
+                C.F_RECEIPT_RECEIVED: "2026-07-12T16:11:00",
+            },
+        }
+        current_entry = {
+            "id": "recEntry2",
+            "fields": {
+                C.F_RECEIPT_ENTRY_NAME: "Current Product",
+                C.F_RECEIPT_ENTRY_RECEIPT: ["recReceipt"],
+            },
+        }
+        prior_entry = {
+            "id": "recEntry1",
+            "fields": {
+                C.F_RECEIPT_ENTRY_NAME: "Prior Product",
+                C.F_RECEIPT_ENTRY_RECEIPT: ["recReceipt"],
+                C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps([
+                    {
+                        "object_key": "receiving/Smithfield-2026-07-12-16-11/Smithfield-2026-07-12-16-11-1.jpg",
+                        "stored_filename": "Smithfield-2026-07-12-16-11-1.jpg",
+                    },
+                    {
+                        "object_key": "receiving/Smithfield-2026-07-12-16-11/Smithfield-2026-07-12-16-11-2.jpg",
+                        "stored_filename": "Smithfield-2026-07-12-16-11-2.jpg",
+                    },
+                ]),
+            },
+        }
+        client_record = {"id": "recClient", "fields": {C.F_CLIENT_NAME: "Smithfield"}}
+
+        def get_record_side_effect(table, record_id, by_field_id=False):
+            if table == C.RECEIPTS_TABLE:
+                return receipt_record
+            if table == C.RECEIPT_ENTRIES_TABLE:
+                return current_entry
+            if table == C.CLIENTS_TABLE:
+                return client_record
+            self.fail(f"Unexpected get table: {table}")
+
+        get_record.side_effect = get_record_side_effect
+        list_records.side_effect = lambda table, params=None, by_field_id=False: {
+            "records": [receipt_record] if table == C.RECEIPTS_TABLE else [prior_entry, current_entry]
+        }
+
+        def update_side_effect(table, record_id, fields, by_field_id=False):
+            return {
                 "id": "recEntry",
                 "fields": {
-                    C.F_RECEIPT_ENTRY_NAME: "Kroger Baking Powder",
                     C.F_RECEIPT_ENTRY_RECEIPT: ["recReceipt"],
+                    **fields,
                 },
+            }
+
+        update_record.side_effect = update_side_effect
+        with patch("routes._photo_storage", return_value=storage):
+            response = self.app.post(
+                "/api/receiving/recReceipt/entries/recEntry2/photos",
+                data={"photos": upload_file(JPEG_BYTES, "front.jpg")},
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        metadata_fields = update_record.call_args_list[1].args[2]
+        metadata_items = json.loads(metadata_fields[C.F_RECEIPT_ENTRY_PHOTO_METADATA])
+        self.assertEqual(metadata_items[-1]["object_key"], "receiving/Smithfield-2026-07-12-16-11/Smithfield-2026-07-12-16-11-3.jpg")
+
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.list_records")
+    @patch("routes.airtable.get_record")
+    def test_receiving_entry_photo_upload_reports_missing_metadata_field(self, get_record, list_records, update_record):
+        s3 = mock_s3_client()
+        storage = ReceivingPhotoStorage(r2_config(), s3_client=s3)
+        receipt_record = {"id": "recReceipt", "fields": {C.F_RECEIPT_NAME: "Kroger • 7/12/26 • 9:55 AM"}}
+        entry_record = {
+            "id": "recEntry",
+            "fields": {
+                C.F_RECEIPT_ENTRY_NAME: "Kroger Baking Powder",
+                C.F_RECEIPT_ENTRY_RECEIPT: ["recReceipt"],
             },
-        ]
+        }
+        get_record.side_effect = [receipt_record, entry_record]
+        list_records.side_effect = lambda table, params=None, by_field_id=False: {
+            "records": [receipt_record] if table == C.RECEIPTS_TABLE else [entry_record]
+        }
 
         class FakeResponse:
             status_code = 422
@@ -567,15 +918,21 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(update_record.call_count, 2)
 
     @patch("routes.airtable.update_record")
+    @patch("routes.airtable.list_records")
     @patch("routes.airtable.get_record")
-    def test_r2_upload_failure_does_not_update_airtable(self, get_record, update_record):
+    def test_r2_upload_failure_does_not_update_airtable(self, get_record, list_records, update_record):
         s3 = Mock()
+        s3.get_paginator = None
+        s3.head_object.side_effect = Exception("not found")
+        s3.list_objects_v2.return_value = {"Contents": []}
         s3.put_object.side_effect = RuntimeError("boom")
         storage = ReceivingPhotoStorage(r2_config(), s3_client=s3)
-        get_record.side_effect = [
-            {"id": "recReceipt", "fields": {}},
-            {"id": "recEntry", "fields": {C.F_RECEIPT_ENTRY_RECEIPT: ["recReceipt"]}},
-        ]
+        receipt_record = {"id": "recReceipt", "fields": {}}
+        entry_record = {"id": "recEntry", "fields": {C.F_RECEIPT_ENTRY_RECEIPT: ["recReceipt"]}}
+        get_record.side_effect = [receipt_record, entry_record]
+        list_records.side_effect = lambda table, params=None, by_field_id=False: {
+            "records": [receipt_record] if table == C.RECEIPTS_TABLE else [entry_record]
+        }
 
         with patch("routes._photo_storage", return_value=storage):
             response = self.app.post(
