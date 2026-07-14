@@ -21,7 +21,7 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("<Routes>", self.source)
 
     def test_navigation_renames_intake_to_imports(self):
-        self.assertIn("label: 'Imports'", self.source)
+        self.assertIn("label: 'Import'", self.source)
         self.assertNotRegex(self.source, r"label:\s*'Intake'")
         self.assertNotIn(">New Intake<", self.source)
 

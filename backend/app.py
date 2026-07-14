@@ -9,7 +9,7 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    CORS(app, origins=Config.cors_origins())
+    CORS(app, origins=Config.cors_origins(), supports_credentials=True)
     app.register_blueprint(api, url_prefix="/api")
 
     @app.route("/")

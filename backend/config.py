@@ -13,6 +13,10 @@ class Config:
     FLASK_DEBUG = os.getenv("FLASK_DEBUG", "true").lower() == "true"
     PORT = int(os.getenv("PORT", "5057"))
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:5175")
+    SECRET_KEY = os.getenv("SECRET_KEY", os.getenv("FLASK_SECRET_KEY", "marks-dev-secret-change-me"))
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true" or FLASK_ENV == "production"
 
     AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY", "")
     AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID", "")

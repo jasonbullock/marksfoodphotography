@@ -105,6 +105,7 @@ async function backend(method, path, body) {
     res = await fetch(`${BACKEND_API_URL}${path}`, {
       method,
       headers: isFormData ? undefined : { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: body ? (isFormData ? body : JSON.stringify(body)) : undefined,
     });
   } catch (e) {
@@ -305,7 +306,11 @@ api.validateVerificationEntry = async (entryId, status) => backend('POST', `/ver
 api.listLocations = async () => backend('GET', '/locations');
 
 api.listUsers = async () => backend('GET', '/users');
+api.listLoginUsers = async () => backend('GET', '/auth/users');
 api.loginUser = async (userId, pin) => backend('POST', '/auth/login', { userId, pin });
+api.currentUser = async () => backend('GET', '/auth/me');
+api.updateCurrentUser = async (data) => backend('PUT', '/auth/me', data);
+api.logoutUser = async () => backend('POST', '/auth/logout');
 api.createUser = async (data) => backend('POST', '/users', data);
 api.updateUser = async (id, data) => backend('PUT', `/users/${id}`, data);
 

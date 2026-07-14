@@ -3533,7 +3533,7 @@ function LoginScreen({ onLogin }) {
   const pinRef = useRef(null);
 
   useEffect(() => {
-    api.listUsers().then(d => {
+    api.listLoginUsers().then(d => {
       setUsers((d.records || []).filter(u => u.active));
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -3630,7 +3630,7 @@ function ProfileModal({ onClose }) {
   async function saveProfile() {
     setSaving(true);
     try {
-      const data = await api.updateUser(auth.id, { avatar, displayName });
+      const data = await api.updateCurrentUser({ avatar, displayName });
       const updated = { ...auth, ...data.user };
       saveAuth(updated);
       setAuth(updated);
@@ -3644,14 +3644,19 @@ function ProfileModal({ onClose }) {
     if (pin1 !== pin2) { setPinError('PINs do not match'); return; }
     setSaving(true); setPinError('');
     try {
-      await api.updateUser(auth.id, { pin: pin1 });
+      await api.updateCurrentUser({ pin: pin1 });
       setPin1(''); setPin2('');
       setSaved('PIN updated!');
       setTimeout(() => setSaved(''), 2000);
     } catch { setPinError('Failed to save PIN'); } finally { setSaving(false); }
   }
 
-  function logout() { clearAuth(); setAuth(null); onClose(); }
+  async function logout() {
+    try { await api.logoutUser(); } catch { /* session may already be gone */ }
+    clearAuth();
+    setAuth(null);
+    onClose();
+  }
 
   return createPortal(
     <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -4169,7 +4174,32 @@ function AppLayout() {
 }
 
 export default function App() {
-  const [auth, setAuth] = useState(loadAuth);
+  const [auth, setAuth] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.currentUser()
+      .then(data => {
+        if (cancelled) return;
+        saveAuth(data.user);
+        setAuth(data.user);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        clearAuth();
+        setAuth(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAuthReady(true);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!authReady) {
+    return null;
+  }
+
   return (
     <AuthContext.Provider value={{ auth, setAuth }}>
       <BrowserRouter>

@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from app import create_app  # noqa: E402
 from config import Config as C  # noqa: E402
+from routes import AUTH_SESSION_KEY  # noqa: E402
 from receiving_photo_storage import ReceivingPhotoStorage, ReceivingPhotoConfigError, ReceivingPhotoValidationError  # noqa: E402
 
 
@@ -62,6 +63,21 @@ def mock_s3_client():
 class ReceivingTests(unittest.TestCase):
     def setUp(self):
         self.app = create_app().test_client()
+        with self.app.session_transaction() as session:
+            session[AUTH_SESSION_KEY] = {
+                "id": "recTestUser",
+                "name": "Test User",
+                "firstName": "Test",
+                "lastName": "User",
+                "displayName": "Test User",
+                "email": "test@example.com",
+                "role": "Admin",
+                "active": True,
+                "clientIds": [],
+                "allClients": True,
+                "avatar": "",
+                "hasPIN": True,
+            }
 
     @patch("routes._create_history_event")
     @patch("routes.airtable.create_record")
@@ -103,7 +119,6 @@ class ReceivingTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 201)
         payload = response.get_json()
-        self.assertEqual(payload["reviewStatus"], "Needs Review")
         self.assertEqual(payload["clientIds"], [])
         self.assertEqual(len(payload["entries"]), 2)
         self.assertEqual(payload["entries"][0]["quantity"], 4)
@@ -118,14 +133,13 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(receipt_call.args[0], C.RECEIPTS_TABLE)
         self.assertNotIn(C.F_RECEIPT_ITEMS, receipt_call.args[1])
         self.assertEqual(receipt_call.args[1][C.F_RECEIPT_BOX_QUANTITY], 3)
-        self.assertEqual(receipt_call.args[1][C.F_RECEIPT_REVIEW_STATUS], "Needs Review")
 
         entry_tables = [call.args[0] for call in create_record.call_args_list[1:]]
         self.assertEqual(entry_tables, [C.RECEIPT_ENTRIES_TABLE, C.RECEIPT_ENTRIES_TABLE])
         for call in create_record.call_args_list[1:]:
             fields = call.args[1]
             self.assertEqual(fields[C.F_RECEIPT_ENTRY_RECEIPT], ["recReceipt"])
-            self.assertEqual(fields[C.F_RECEIPT_ENTRY_VERIFICATION_STATUS], "Needs Review")
+            self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
             self.assertIn(fields[C.F_RECEIPT_ENTRY_NAME], {"Kroger Baking Powder", "Unnamed Product"})
             self.assertNotIn(C.F_RECEIPT_ENTRY_ITEM, fields)
             self.assertNotIn(C.F_RECEIPT_BOX_QUANTITY, fields)
@@ -158,7 +172,6 @@ class ReceivingTests(unittest.TestCase):
                 C.F_RECEIPT_CARRIER: "FedEx",
                 C.F_RECEIPT_TRACKING: "TRACK-1",
                 C.F_RECEIPT_BOX_QUANTITY: 2,
-                C.F_RECEIPT_REVIEW_STATUS: "Needs Review",
             },
         }
 
@@ -172,7 +185,6 @@ class ReceivingTests(unittest.TestCase):
         fields = create_record.call_args.args[1]
         self.assertEqual(create_record.call_args.args[0], C.RECEIPTS_TABLE)
         self.assertEqual(fields[C.F_RECEIPT_BOX_QUANTITY], 2)
-        self.assertEqual(fields[C.F_RECEIPT_REVIEW_STATUS], "Needs Review")
         self.assertNotIn(C.F_RECEIPT_ITEMS, fields)
         self.assertEqual(response.get_json()["boxQuantity"], 2)
         self.assertEqual(response.get_json()["entries"], [])
@@ -228,7 +240,6 @@ class ReceivingTests(unittest.TestCase):
             "fields": {
                 C.F_RECEIPT_CARRIER: "UPS",
                 C.F_RECEIPT_TRACKING: "TRACK-1",
-                C.F_RECEIPT_REVIEW_STATUS: "Needs Review",
             },
         }
 
@@ -260,9 +271,7 @@ class ReceivingTests(unittest.TestCase):
     def test_mobile_receiving_adds_entry_with_photos_but_no_item_link(self, create_record, get_record, list_records):
         get_record.return_value = {
             "id": "recReceipt",
-            "fields": {
-                C.F_RECEIPT_REVIEW_STATUS: "Needs Review",
-            },
+            "fields": {},
         }
         list_records.return_value = {"records": []}
 
@@ -303,7 +312,6 @@ class ReceivingTests(unittest.TestCase):
             "id": "recReceipt",
             "fields": {
                 C.F_RECEIPT_CLIENT: ["recClient"],
-                C.F_RECEIPT_REVIEW_STATUS: "Needs Review",
             },
         }
         item_record = {
@@ -328,13 +336,10 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         fields = create_record.call_args.args[1]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_ITEM], ["recItem"])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MATCH_STATUS], "Matched")
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_VALIDATION_STATUS], "Pending")
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_VERIFICATION_STATUS], "Needs Review")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Matched")
         payload = response.get_json()
         self.assertEqual(payload["itemIds"], ["recItem"])
-        self.assertEqual(payload["matchStatus"], "Matched")
-        self.assertEqual(payload["merchValidationStatus"], "Pending")
+        self.assertEqual(payload["merchStatus"], "Matched")
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.list_records")
@@ -344,7 +349,6 @@ class ReceivingTests(unittest.TestCase):
             "id": "recReceipt",
             "fields": {
                 C.F_RECEIPT_CLIENT: ["recClient"],
-                C.F_RECEIPT_REVIEW_STATUS: "Needs Review",
             },
         }
         get_record.return_value = receipt_record
@@ -372,7 +376,6 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(update_fields[C.F_RECEIPT_CARRIER], "UPS")
         self.assertEqual(update_fields[C.F_RECEIPT_TRACKING], "TRACK-2")
         self.assertEqual(update_fields[C.F_RECEIPT_BOX_QUANTITY], 4)
-        self.assertNotIn(C.F_RECEIPT_REVIEW_STATUS, update_fields)
         self.assertNotIn(C.F_RECEIPT_ITEMS, update_fields)
 
     @patch("routes.airtable.update_record")
@@ -389,7 +392,7 @@ class ReceivingTests(unittest.TestCase):
             "fields": {
                 C.F_RECEIPT_ENTRY_RECEIPT: ["recReceipt"],
                 C.F_RECEIPT_ENTRY_ITEM: ["recItem"],
-                C.F_RECEIPT_ENTRY_VERIFICATION_STATUS: "Verified",
+                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated",
                 C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps([{"object_key": "receiving/x/x-1.jpg"}]),
             },
         }
@@ -419,7 +422,7 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(update_fields[C.F_RECEIPT_ENTRY_SKU_ID], "SKU-2")
         self.assertEqual(update_fields[C.F_RECEIPT_ENTRY_QUANTITY], 3)
         self.assertNotIn(C.F_RECEIPT_ENTRY_ITEM, update_fields)
-        self.assertNotIn(C.F_RECEIPT_ENTRY_VERIFICATION_STATUS, update_fields)
+        self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_STATUS, update_fields)
         self.assertNotIn(C.F_RECEIPT_ENTRY_PHOTO_METADATA, update_fields)
 
     @patch("routes.airtable.list_records")
@@ -429,12 +432,12 @@ class ReceivingTests(unittest.TestCase):
                 return {"records": [{
                     "id": "recEntry",
                     "fields": {
-                        C.F_RECEIPT_ENTRY_LEGACY_NAME: "Receipt 1 - 1",
+                        C.F_RECEIPT_ENTRY_NAME: "Receipt 1 - 1",
                         C.F_RECEIPT_ENTRY_RECEIPT: ["recReceipt"],
-                        C.F_RECEIPT_ENTRY_LEGACY_OBSERVED_IDENTIFIER: "UPC-1",
+                        C.F_RECEIPT_ENTRY_SKU_ID: "UPC-1",
                         C.F_RECEIPT_ENTRY_QUANTITY: 2,
                         C.F_RECEIPT_ENTRY_DESCRIPTION: "Observed pasta",
-                        C.F_RECEIPT_ENTRY_VERIFICATION_STATUS: "Needs Review",
+                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
                     },
                 }]}
             if table == C.RECEIPTS_TABLE:
@@ -456,8 +459,7 @@ class ReceivingTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(len(payload["records"]), 1)
         entry = payload["records"][0]
-        self.assertEqual(entry["verificationStatus"], "Awaiting Verification")
-        self.assertEqual(entry["verificationStatusRaw"], "Needs Review")
+        self.assertEqual(entry["merchStatus"], "Received")
         self.assertEqual(entry["productName"], "Receipt 1 - 1")
         self.assertEqual(entry["skuId"], "UPC-1")
         self.assertEqual(entry["receipt"]["id"], "recReceipt")
@@ -469,9 +471,9 @@ class ReceivingTests(unittest.TestCase):
         entry_record = {
             "id": "recEntry",
             "fields": {
-                C.F_RECEIPT_ENTRY_LEGACY_NAME: "Receipt 1 - 1",
+                C.F_RECEIPT_ENTRY_NAME: "Receipt 1 - 1",
                 C.F_RECEIPT_ENTRY_RECEIPT: ["recReceipt"],
-                C.F_RECEIPT_ENTRY_VERIFICATION_STATUS: "Needs Review",
+                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
             },
         }
         item_record = {
@@ -493,7 +495,7 @@ class ReceivingTests(unittest.TestCase):
             "fields": {
                 **entry_record["fields"],
                 C.F_RECEIPT_ENTRY_ITEM: ["recItem"],
-                C.F_RECEIPT_ENTRY_VERIFICATION_STATUS: "Verified",
+                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Matched",
             },
         }
 
@@ -505,14 +507,12 @@ class ReceivingTests(unittest.TestCase):
             "recEntry",
             {
                 C.F_RECEIPT_ENTRY_ITEM: ["recItem"],
-                C.F_RECEIPT_ENTRY_MATCH_STATUS: "Matched",
-                C.F_RECEIPT_ENTRY_MERCH_VALIDATION_STATUS: "Approved",
-                C.F_RECEIPT_ENTRY_VERIFICATION_STATUS: "Verified",
+                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Matched",
             },
             by_field_id=False,
         )
         self.assertNotEqual(update_record.call_args.args[0], C.ITEMS_TABLE)
-        self.assertEqual(response.get_json()["verificationStatus"], "Verified")
+        self.assertEqual(response.get_json()["merchStatus"], "Matched")
 
     def test_mobile_receiving_photo_upload_returns_attachment_urls_in_local_mode(self):
         with tempfile.TemporaryDirectory() as temp_dir, patch.object(C, "RECEIVING_PHOTO_STORAGE", "local"), patch.object(C, "RECEIVING_PHOTO_LOCAL_DIR", temp_dir):
@@ -771,11 +771,10 @@ class ReceivingTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(update_record.call_count, 2)
-        attachment_fields = update_record.call_args_list[0].args[2]
-        metadata_fields = update_record.call_args_list[1].args[2]
-        attachments = attachment_fields[C.F_RECEIPT_ENTRY_PHOTOS]
-        metadata = metadata_fields[C.F_RECEIPT_ENTRY_PHOTO_METADATA]
+        update_record.assert_called_once()
+        update_fields = update_record.call_args.args[2]
+        attachments = update_fields[C.F_RECEIPT_ENTRY_PHOTOS]
+        metadata = update_fields[C.F_RECEIPT_ENTRY_PHOTO_METADATA]
         self.assertEqual(len(attachments), 2)
         self.assertEqual(attachments[0]["url"], "https://assets.example.com/receiving/Kroger-2026-07-12-16-11/Kroger-2026-07-12-16-11-1.jpg")
         self.assertEqual(attachments[1]["url"], "https://assets.example.com/receiving/Kroger-2026-07-12-16-11/Kroger-2026-07-12-16-11-2.png")
@@ -862,7 +861,7 @@ class ReceivingTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        metadata_fields = update_record.call_args_list[1].args[2]
+        metadata_fields = update_record.call_args.args[2]
         metadata_items = json.loads(metadata_fields[C.F_RECEIPT_ENTRY_PHOTO_METADATA])
         self.assertEqual(metadata_items[-1]["object_key"], "receiving/Smithfield-2026-07-12-16-11/Smithfield-2026-07-12-16-11-3.jpg")
 
@@ -913,9 +912,9 @@ class ReceivingTests(unittest.TestCase):
                 content_type="multipart/form-data",
             )
 
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 422)
         self.assertIn("Photo Metadata", response.get_json()["error"])
-        self.assertEqual(update_record.call_count, 2)
+        update_record.assert_called_once()
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.list_records")

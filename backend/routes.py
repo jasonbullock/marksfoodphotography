@@ -13,7 +13,7 @@ from xml.etree import ElementTree
 
 import requests
 
-from flask import Blueprint, jsonify, request, send_from_directory
+from flask import Blueprint, jsonify, request, send_from_directory, session
 
 from airtable import airtable
 from config import Config
@@ -29,6 +29,16 @@ api = Blueprint("api", __name__)
 
 C = Config  # shorthand
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads" / "receiving"
+AUTH_SESSION_KEY = "marks_auth"
+PUBLIC_ENDPOINTS = {
+    "api.health",
+    "api.airtable_status",
+    "api.auth_login",
+    "api.auth_me",
+    "api.auth_logout",
+    "api.auth_users",
+    "api.receiving_photo",
+}
 
 
 def err(msg, status=400):
@@ -49,6 +59,17 @@ def airtable_err(error):
     except ValueError:
         pass
     return err(message, status)
+
+
+@api.before_request
+def require_authenticated_session():
+    if request.method == "OPTIONS":
+        return None
+    if request.endpoint in PUBLIC_ENDPOINTS:
+        return None
+    if not _session_user():
+        return err("Authentication required", 401)
+    return None
 
 
 def _photo_storage():
@@ -85,31 +106,21 @@ def _first_link(record, field):
 
 
 def _current_user():
-    user_id = (request.headers.get("X-User-Id") or request.args.get("userId") or "").strip()
-    email = (request.headers.get("X-User-Email") or request.args.get("userEmail") or "").strip().lower()
-    if not user_id and not email:
+    user = _session_user()
+    if not user:
         return None
-    try:
-        if user_id:
-            return airtable.get_record(C.USERS_TABLE, user_id, by_field_id=False)
-        data = airtable.list_records(C.USERS_TABLE, params={"sort[0][field]": C.F_USER_NAME, "sort[0][direction]": "asc"}, by_field_id=False)
-    except requests.HTTPError:
-        return None
-    for record in data.get("records", []):
-        if (record.get("fields", {}).get(C.F_USER_EMAIL, "") or "").lower() == email:
-            return record
-    return None
+    return _record_from_shaped_user(user)
 
 
 def _current_user_id():
-    user = _current_user()
+    user = _session_user()
     return user.get("id") if user else None
 
 
 def _permission_context():
     user = _current_user()
     if user is None:
-        return {"all": True, "client_ids": None}
+        return {"all": False, "client_ids": set()}
     fields = user.get("fields", {})
     if fields.get(C.F_USER_ALL_CLIENTS):
         return {"all": True, "client_ids": None}
@@ -1924,6 +1935,9 @@ def _shape_location(r):
 
 @api.get("/users")
 def list_users():
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
     data = airtable.list_records(
         C.USERS_TABLE,
         params={"sort[0][field]": C.F_USER_NAME, "sort[0][direction]": "asc"},
@@ -1951,6 +1965,74 @@ def _shape_user(r):
     }
 
 
+def _shape_login_user(r):
+    user = _shape_user(r)
+    return {
+        "id": user["id"],
+        "name": user["name"],
+        "displayName": user["displayName"],
+        "avatar": user["avatar"],
+        "active": user["active"],
+    }
+
+
+def _record_from_shaped_user(user):
+    return {
+        "id": user.get("id", ""),
+        "fields": {
+            C.F_USER_NAME: user.get("name", ""),
+            C.F_USER_FIRST_NAME: user.get("firstName", ""),
+            C.F_USER_LAST_NAME: user.get("lastName", ""),
+            C.F_USER_DISPLAY_NAME: user.get("displayName", ""),
+            C.F_USER_EMAIL: user.get("email", ""),
+            C.F_USER_ROLE: user.get("role", ""),
+            C.F_USER_ACTIVE: user.get("active", False),
+            C.F_USER_CLIENTS: user.get("clientIds", []) or [],
+            C.F_USER_ALL_CLIENTS: user.get("allClients", False),
+            C.F_USER_AVATAR: user.get("avatar", ""),
+        },
+    }
+
+
+def _session_user():
+    user = session.get(AUTH_SESSION_KEY)
+    return user if isinstance(user, dict) and user.get("id") else None
+
+
+def _set_session_user(record):
+    user = _shape_user(record)
+    session.clear()
+    session[AUTH_SESSION_KEY] = user
+    session.permanent = True
+    return user
+
+
+def _refresh_session_user():
+    user = _session_user()
+    if not user:
+        return None
+    try:
+        record = airtable.get_record(C.USERS_TABLE, user["id"], by_field_id=False)
+    except requests.HTTPError:
+        session.clear()
+        return None
+    if not record.get("fields", {}).get(C.F_USER_ACTIVE, False):
+        session.clear()
+        return None
+    return _set_session_user(record)
+
+
+def _is_admin(user=None):
+    user = user or _session_user()
+    return (user or {}).get("role") in {"Admin", "Administrator"}
+
+
+def _require_admin():
+    if not _is_admin():
+        return err("Administrator access required", 403)
+    return None
+
+
 def _hash_pin(user_id, pin):
     return hashlib.sha256(f"{user_id}:{pin}".encode()).hexdigest()
 
@@ -1976,16 +2058,69 @@ def auth_login():
         return err("Invalid credentials", 401)
     # If no PIN hash set, accept any PIN and save it as the new hash
     if not stored_hash:
-        airtable.update_record(
+        record = airtable.update_record(
             C.USERS_TABLE, user_id,
             {C.F_USER_PIN_HASH: _hash_pin(user_id, pin)},
             by_field_id=False,
         )
-    return jsonify({"user": _shape_user(record)})
+    return jsonify({"user": _set_session_user(record)})
+
+
+@api.get("/auth/me")
+def auth_me():
+    user = _refresh_session_user()
+    if not user:
+        return err("Authentication required", 401)
+    return jsonify({"user": user})
+
+
+@api.put("/auth/me")
+def update_auth_me():
+    user = _session_user()
+    if not user:
+        return err("Authentication required", 401)
+    body = request.get_json(silent=True) or {}
+    fields = {}
+    for key, const in [
+        ("firstName", C.F_USER_FIRST_NAME),
+        ("lastName", C.F_USER_LAST_NAME),
+        ("displayName", C.F_USER_DISPLAY_NAME),
+        ("email", C.F_USER_EMAIL),
+        ("avatar", C.F_USER_AVATAR),
+    ]:
+        if key in body:
+            fields[const] = (body[key] or "").strip()
+    if body.get("pin"):
+        fields[C.F_USER_PIN_HASH] = _hash_pin(user["id"], str(body["pin"]))
+    try:
+        record = airtable.update_record(C.USERS_TABLE, user["id"], fields, by_field_id=False) if fields else _record_from_shaped_user(user)
+    except requests.HTTPError as e:
+        return airtable_err(e)
+    return jsonify({"user": _set_session_user(record)})
+
+
+@api.post("/auth/logout")
+def auth_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@api.get("/auth/users")
+def auth_users():
+    data = airtable.list_records(
+        C.USERS_TABLE,
+        params={"sort[0][field]": C.F_USER_NAME, "sort[0][direction]": "asc"},
+        by_field_id=False,
+    )
+    records = [_shape_login_user(r) for r in data.get("records", [])]
+    return jsonify({"records": records})
 
 
 @api.post("/users")
 def create_user():
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
     body = request.get_json(silent=True) or {}
     name = (body.get("name") or "").strip()
     if not name:
@@ -2029,6 +2164,9 @@ def create_user():
 
 @api.put("/users/<user_id>")
 def update_user(user_id):
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
     body = request.get_json(silent=True) or {}
     fields = {}
     for key, const in [
@@ -3222,11 +3360,19 @@ def _upload_receiving_entry_photos(receipt_id, receipt_entry_id):
 
     current_fields = entry_record.get("fields", {})
     metadata_payload = _photo_metadata_from_entry(current_fields) + uploaded_photos
+    attachment_payload = [
+        {"url": photo["public_url"]}
+        for photo in uploaded_photos
+        if photo.get("public_url")
+    ]
     try:
         updated = airtable.update_record(
             C.RECEIPT_ENTRIES_TABLE,
             receipt_entry_id,
-            {C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps(metadata_payload)},
+            {
+                C.F_RECEIPT_ENTRY_PHOTOS: (current_fields.get(C.F_RECEIPT_ENTRY_PHOTOS, []) or []) + attachment_payload,
+                C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps(metadata_payload),
+            },
             by_field_id=False,
         )
     except requests.HTTPError as error:
