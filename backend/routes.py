@@ -382,7 +382,15 @@ def list_clients():
         params={"sort[0][field]": C.F_CLIENT_NAME, "sort[0][direction]": "asc"},
         by_field_id=False,
     )
-    records = [_shape_client(r) for r in _permitted_client_records(data.get("records", []))]
+    raw_records = data.get("records", [])
+    if request.args.get("all") == "1":
+        admin_error = _require_admin()
+        if admin_error:
+            return admin_error
+        permitted = raw_records
+    else:
+        permitted = _permitted_client_records(raw_records)
+    records = [_shape_client(r) for r in permitted]
     clients = [{"id": r["id"], "client": r["name"]} for r in records]
     return jsonify({"records": records, "clients": clients})
 
@@ -2142,8 +2150,10 @@ def create_user():
             fields[const] = val
     if "allClients" in body:
         fields[C.F_USER_ALL_CLIENTS] = bool(body["allClients"])
+    if "clientIds" in body:
+        fields[C.F_USER_CLIENTS] = body["clientIds"] or []
     try:
-        record = airtable.create_record(C.USERS_TABLE, fields, by_field_id=False)
+        record = airtable.create_record(C.USERS_TABLE, fields, by_field_id=False, typecast=True)
     except requests.HTTPError as e:
         return airtable_err(e)
     user_id = record["id"]
@@ -2151,12 +2161,6 @@ def create_user():
         airtable.update_record(
             C.USERS_TABLE, user_id,
             {C.F_USER_PIN_HASH: _hash_pin(user_id, str(body["pin"]))},
-            by_field_id=False,
-        )
-    if body.get("clientIds"):
-        record = airtable.update_record(
-            C.USERS_TABLE, user_id,
-            {C.F_USER_CLIENTS: body["clientIds"]},
             by_field_id=False,
         )
     return jsonify({"user": _shape_user(record)}), 201
@@ -2184,19 +2188,15 @@ def update_user(user_id):
         fields[C.F_USER_ACTIVE] = bool(body["active"])
     if "allClients" in body:
         fields[C.F_USER_ALL_CLIENTS] = bool(body["allClients"])
+    if "clientIds" in body:
+        fields[C.F_USER_CLIENTS] = body["clientIds"] or []
     if body.get("pin"):
         fields[C.F_USER_PIN_HASH] = _hash_pin(user_id, str(body["pin"]))
     try:
         if fields:
-            record = airtable.update_record(C.USERS_TABLE, user_id, fields, by_field_id=False)
+            record = airtable.update_record(C.USERS_TABLE, user_id, fields, by_field_id=False, typecast=True)
         else:
             record = airtable.get_record(C.USERS_TABLE, user_id, by_field_id=False)
-        if "clientIds" in body:
-            record = airtable.update_record(
-                C.USERS_TABLE, user_id,
-                {C.F_USER_CLIENTS: body["clientIds"]},
-                by_field_id=False,
-            )
     except requests.HTTPError as e:
         return airtable_err(e)
     return jsonify({"user": _shape_user(record)})

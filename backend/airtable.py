@@ -58,22 +58,22 @@ class AirtableClient:
         params = self._field_id_params() if by_field_id else {}
         return self._request("GET", f"{table_name}/{record_id}", params=params)
 
-    def create_record(self, table_name, fields, by_field_id=True):
+    def create_record(self, table_name, fields, by_field_id=True, typecast=False):
         params = self._field_id_params() if by_field_id else {}
         return self._request(
             "POST",
             table_name,
             params=params,
-            json={"fields": fields},
+            json={"fields": fields, **({"typecast": True} if typecast else {})},
         )
 
-    def update_record(self, table_name, record_id, fields, by_field_id=True):
+    def update_record(self, table_name, record_id, fields, by_field_id=True, typecast=False):
         params = self._field_id_params() if by_field_id else {}
         return self._request(
             "PATCH",
             f"{table_name}/{record_id}",
             params=params,
-            json={"fields": fields},
+            json={"fields": fields, **({"typecast": True} if typecast else {})},
         )
 
     def delete_record(self, table_name, record_id):

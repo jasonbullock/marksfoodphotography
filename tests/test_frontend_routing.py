@@ -36,6 +36,7 @@ class FrontendRoutingTests(unittest.TestCase):
             'path="/jobs"',
             'path="/clients"',
             'path="/settings"',
+            'path="/administration"',
         ]:
             self.assertIn(route, self.source)
 

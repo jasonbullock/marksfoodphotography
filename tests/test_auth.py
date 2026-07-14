@@ -183,6 +183,47 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["records"][0]["role"], "Admin")
 
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.create_record")
+    def test_admin_user_can_create_user_with_typecast_role(self, create_record, update_record):
+        self.authenticate(user_record(role="Admin", all_clients=True))
+        create_record.return_value = user_record(user_id="recNew", role="Merch", pin="")
+        update_record.return_value = user_record(user_id="recNew", role="Merch", pin="1234")
+
+        response = self.client.post("/api/users", json={
+            "name": "Merch User",
+            "firstName": "Merch",
+            "lastName": "User",
+            "email": "merch@example.com",
+            "role": "Merch",
+            "pin": "1234",
+            "allClients": False,
+            "clientIds": [],
+        })
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["user"]["role"], "Merch")
+        self.assertTrue(create_record.call_args.kwargs["typecast"])
+
+    @patch("routes.airtable.update_record")
+    def test_admin_user_can_update_user_with_typecast_role(self, update_record):
+        self.authenticate(user_record(role="Admin", all_clients=True))
+        update_record.return_value = user_record(user_id="recExisting", role="User")
+
+        response = self.client.put("/api/users/recExisting", json={
+            "name": "Existing User",
+            "firstName": "Existing",
+            "lastName": "User",
+            "email": "existing@example.com",
+            "role": "User",
+            "allClients": True,
+            "clientIds": [],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["user"]["role"], "User")
+        self.assertTrue(update_record.call_args_list[0].kwargs["typecast"])
+
     def test_missing_authentication_no_longer_grants_all_client_access(self):
         response = self.client.get("/api/clients")
 
@@ -202,6 +243,21 @@ class AuthTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual([record["id"] for record in response.get_json()["records"]], ["recAllowed"])
+
+    @patch("routes.airtable.list_records")
+    def test_admin_can_request_all_clients_for_user_assignment(self, list_records):
+        self.authenticate(user_record(role="Admin", all_clients=False, client_ids=["recAllowed"]))
+        list_records.return_value = {
+            "records": [
+                {"id": "recAllowed", "fields": {C.F_CLIENT_NAME: "Allowed Client"}},
+                {"id": "recOther", "fields": {C.F_CLIENT_NAME: "Other Client"}},
+            ],
+        }
+
+        response = self.client.get("/api/clients?all=1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([record["id"] for record in response.get_json()["records"]], ["recAllowed", "recOther"])
 
 
 if __name__ == "__main__":

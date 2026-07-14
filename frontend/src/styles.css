@@ -247,17 +247,24 @@ code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: v
   text-align: center;
 }
 
-.sidebar-footer {
+.sidebar-bottom {
   margin-top: auto;
-  padding: 10px 14px;
   border-top: 1px solid rgba(255,255,255,0.07);
+  padding: 8px;
+}
+
+.sidebar-admin-link {
+  margin-bottom: 6px;
+}
+
+.sidebar-footer {
+  padding: 8px 6px;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   background: none;
-  border-left: none;
-  border-right: none;
-  border-bottom: none;
+  border: 0;
+  border-radius: 6px;
   width: 100%;
   text-align: left;
   cursor: pointer;
@@ -268,15 +275,15 @@ code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: v
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
 .status-label { font-size: 11px; color: rgba(255,255,255,0.3); }
 .sidebar-user-avatar {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
-  flex: 0 0 28px;
-  border-radius: 8px;
+  flex: 0 0 34px;
+  border-radius: 10px;
   background: rgba(255,255,255,0.1);
   color: #fff;
-  font-size: 16px;
+  font-size: 19px;
   font-weight: 900;
   line-height: 1;
 }
@@ -7419,81 +7426,417 @@ select.intake-choice-control {
   margin-top: 4px;
 }
 
+.profile-readonly-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.profile-readonly-grid div {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.profile-readonly-grid span {
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.profile-readonly-grid strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
 /* ── Users admin section ───────────────────────────────────────────────────── */
 
 .users-section {
   padding: 16px 20px;
+  width: 100%;
 }
 
 .users-section-header {
   display: flex;
-  justify-content: flex-end;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   margin-bottom: 14px;
 }
 
-.users-table-wrap {
-  overflow-x: auto;
+.users-section-header h3 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: -0.01em;
 }
 
-.users-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.users-table th {
-  text-align: left;
-  font-size: 11px;
-  font-weight: 600;
+.users-section-header p {
+  margin: 3px 0 0;
   color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border);
+  font-size: 12px;
 }
 
-.users-table td {
-  padding: 10px 10px;
-  border-bottom: 1px solid var(--border);
-  vertical-align: middle;
-}
-
-.user-inactive td {
-  opacity: 0.5;
-}
-
-.users-table-user {
-  display: flex;
-  align-items: center;
+.users-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 10px;
 }
 
-.users-table-avatar {
-  font-size: 20px;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--surface-2);
-  display: flex;
+.user-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
 }
 
-.users-table-user div {
+.user-card:hover,
+.user-card:focus-visible {
+  border-color: var(--blue-border);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  transform: translateY(-1px);
+}
+
+.user-card.is-inactive {
+  opacity: 0.62;
+}
+
+.user-card-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.user-card-main {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  min-width: 0;
 }
 
-.users-table-user small {
-  font-size: 11px;
+.user-card-main strong,
+.user-card-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-card-main strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.user-card-main small,
+.user-card-meta {
   color: var(--text-3);
+  font-size: 12px;
 }
 
-.users-table-actions {
+.user-card-meta {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
   gap: 6px;
+  grid-column: 2 / 4;
+  grid-row: 2;
+}
+
+.user-card > .badge {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
+}
+
+.user-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  grid-column: 1 / 4;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.user-form-panel {
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.05);
+  max-width: 680px;
+  overflow: hidden;
+}
+
+.user-form-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.user-form-panel-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.user-form-panel-header p {
+  margin: 3px 0 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.user-form-body.user-form-body-inline {
+  padding: 14px 16px 16px;
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 12px 14px;
+  align-items: start;
+}
+
+.user-form-body-inline .user-form-avatar-row {
+  grid-column: 1;
+  grid-row: 1;
+  justify-content: flex-start;
+}
+
+.user-form-body-inline .profile-avatar-preview {
+  width: 50px;
+  height: 50px;
+  font-size: 32px;
+}
+
+.user-form-body-inline .profile-avatar-grid {
+  grid-column: 1;
+  grid-row: 2 / span 4;
+  display: grid;
+  grid-template-columns: repeat(2, 30px);
+  gap: 6px;
+  justify-content: flex-start;
+  align-content: flex-start;
+  max-height: 245px;
+  overflow-y: auto;
+}
+
+.user-form-body-inline .profile-avatar-btn {
+  width: 30px;
+  height: 30px;
+  font-size: 17px;
+}
+
+.user-form-body-inline .user-form-grid {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.user-form-panel .profile-field label {
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.user-form-panel .form-input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text);
+  padding: 0 11px;
+  font-size: 13px;
+  line-height: 38px;
+  outline: none;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+  transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
+}
+
+.user-form-panel select.form-input {
+  appearance: none;
+  padding-right: 34px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-2) 50%),
+    linear-gradient(135deg, var(--text-2) 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) 16px,
+    calc(100% - 12px) 16px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.user-form-panel .form-input:hover {
+  border-color: var(--border-mid);
+}
+
+.user-form-panel .form-input:focus {
+  border-color: var(--blue);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.user-form-body-inline .permission-preview {
+  grid-column: 2;
+  grid-row: 2;
+  gap: 8px;
+  padding: 10px;
+}
+
+.user-form-body-inline > .profile-field,
+.user-form-body-inline > .user-form-error,
+.user-form-body-inline > .profile-actions {
+  grid-column: 2;
+}
+
+.administration-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
+.admin-hero {
+  padding: 18px 20px 4px;
+  width: 100%;
+}
+
+.admin-hero h2 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -0.03em;
+}
+
+.roles-section {
+  padding: 16px 20px 24px;
+  width: 100%;
+}
+
+.role-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.role-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.035);
+}
+
+.role-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.role-edit-block {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.role-toggle-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.role-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.role-toggle:has(input:checked) {
+  border-color: var(--blue-border);
+  background: var(--blue-bg);
+  color: var(--blue-dark);
+}
+
+.role-toggle input {
+  margin: 0;
+  width: 13px;
+  height: 13px;
+}
+
+.role-toggle.is-readonly {
+  color: var(--green-dark);
+  border-color: var(--green-border);
+  background: var(--green-bg);
+  cursor: default;
+}
+
+.permission-preview {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.permission-preview-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.permission-chip-row,
+.permission-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.permission-chip,
+.permission-list span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+}
+
+.permission-preview p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
 }
 
 .btn-sm {
@@ -7535,9 +7878,47 @@ select.intake-choice-control {
   cursor: pointer;
 }
 
+.user-form-panel .user-form-check input[type="checkbox"] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  border: 1px solid var(--border-mid);
+  border-radius: 4px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  margin: 0;
+}
+
+.user-form-panel .user-form-check input[type="checkbox"]::after {
+  content: "";
+  width: 8px;
+  height: 5px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(-45deg) scale(0);
+  transform-origin: center;
+  transition: transform 0.1s;
+}
+
+.user-form-panel .user-form-check input[type="checkbox"]:checked {
+  border-color: var(--blue);
+  background: var(--blue);
+}
+
+.user-form-panel .user-form-check input[type="checkbox"]:checked::after {
+  transform: rotate(-45deg) scale(1);
+}
+
+.user-form-panel .user-form-check input[type="checkbox"]:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.16);
+  outline-offset: 2px;
+}
+
 .user-form-clients {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
   gap: 6px;
   max-height: 160px;
   overflow-y: auto;
@@ -7545,4 +7926,55 @@ select.intake-choice-control {
   background: var(--surface-2);
   border-radius: 6px;
   border: 1px solid var(--border);
+}
+
+.user-form-clients .user-form-check {
+  min-height: 30px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.user-form-clients .user-form-check:has(input:checked) {
+  border-color: var(--blue-border);
+  background: var(--blue-bg);
+  color: var(--blue-dark);
+}
+
+.user-form-error {
+  margin: 0;
+}
+
+@media (max-width: 1100px) {
+  .user-form-body.user-form-body-inline {
+    grid-template-columns: 82px minmax(0, 1fr);
+  }
+
+  .user-form-body-inline .permission-preview,
+  .user-form-body-inline > .profile-field,
+  .user-form-body-inline > .user-form-error,
+  .user-form-body-inline > .profile-actions {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 760px) {
+  .user-form-body.user-form-body-inline {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .user-form-body-inline .profile-avatar-grid {
+    max-height: none;
+    display: flex;
+  }
+
+  .user-form-grid {
+    grid-template-columns: 1fr;
+  }
 }

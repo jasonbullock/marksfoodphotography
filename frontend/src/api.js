@@ -224,8 +224,10 @@ function validateItemIdentifier(identifier, codeType, label = 'Identifier') {
 }
 
 export const api = {
-  listClients: async () => {
-    return backend('GET', '/clients');
+  listClients: async (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.all) params.set('all', '1');
+    return backend('GET', `/clients${params.toString() ? `?${params.toString()}` : ''}`);
   },
 
   listJobs: async (clientId) => {

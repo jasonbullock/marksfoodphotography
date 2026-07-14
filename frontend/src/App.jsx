@@ -1104,7 +1104,7 @@ function QuickReceivingCapture({ locationList }) {
 }
 
 function ReceivingPage() {
-  const clients = useResource(() => api.listClients());
+  const clients = useResource(() => api.listClients({ all: true }));
   const locations = useResource(() => api.listLocations());
   const carrierOptions = useResource(() => api.airtableSingleSelectOptions({ tableName: 'Receipts', fieldName: 'Carrier' }));
   const allReceipts = useResource(() => api.listReceipts());
@@ -2369,7 +2369,6 @@ function AddSkuForm({ jobId, onSaved, onCancel, identifierLabel = 'Identifier' }
 
 // ── Settings page ─────────────────────────────────────────────────────────────
 function SettingsPage() {
-  const { auth } = useAuth();
   const { data, loading, error } = useResource(() => api.settings());
   const clients = useResource(() => api.listClients());
   const s = data?.settings;
@@ -2519,12 +2518,6 @@ function SettingsPage() {
           </table>
         </div>}
       </div>
-      {auth?.role === 'Admin' && (
-        <div className="panel">
-          <SectionHeader id="users" title="Users" />
-          {sectionOpen('users') && <UsersSection />}
-        </div>
-      )}
       {s?.development && (
         <div className="panel">
           <SectionHeader id="developer" title="Developer Tools" />
@@ -3498,6 +3491,7 @@ function VerificationPage() {
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 const AUTH_STORAGE_KEY = 'marks:auth';
+const ROLE_PERMISSION_STORAGE_KEY = 'marks:role-permissions';
 const AVATARS = ['🦁','🐯','🦊','🐺','🐻','🐼','🦝','🦉','🦅','🦋','🐙','🦈','🐬','🦒','🦓','🦄','🐉','🌟','🎸','🍕'];
 
 function loadAuth() {
@@ -3513,14 +3507,57 @@ const ROLE_NAV = {
   Admin:        ['/dashboard', '/imports', '/receiving', '/verification', '/items', '/jobs', '/settings'],
   Producer:     ['/dashboard', '/imports', '/receiving', '/verification', '/items', '/jobs'],
   Merch:        ['/receiving'],
+  'Merch Receiver': ['/receiving'],
   Receiver:     ['/receiving'],
-  User:         ['/dashboard', '/items', '/jobs'],
+  User:         ['/dashboard', '/receiving', '/verification', '/items', '/jobs'],
   PM:           ['/dashboard', '/items', '/jobs'],
   Photographer: ['/dashboard', '/items', '/jobs'],
   Retoucher:    ['/dashboard', '/items', '/jobs'],
   Viewer:       ['/dashboard', '/items'],
 };
-function allowedPaths(role) { return ROLE_NAV[role] || ROLE_NAV.User; }
+const ROLES = ['Admin', 'Producer', 'Merch', 'User', 'Viewer'];
+const ROLE_ACTION_OPTIONS = [
+  'Import products',
+  'Receive merchandise',
+  'Verify merchandise',
+  'Manage jobs and items',
+  'View dashboard and items',
+  'Manage users',
+  'Assign roles',
+  'Access system settings',
+];
+const DEFAULT_ROLE_ACTIONS = {
+  Admin: ['Manage users', 'Assign roles', 'Access system settings', 'Import products', 'Receive merchandise', 'Verify merchandise', 'Manage jobs and items'],
+  Producer: ['Import products', 'Receive merchandise', 'Verify merchandise', 'Manage jobs and items'],
+  Merch: ['Receive merchandise'],
+  User: ['Receive merchandise', 'Verify merchandise', 'Manage jobs and items'],
+  Viewer: ['View dashboard and items'],
+};
+function defaultRolePermissions() {
+  return Object.fromEntries(ROLES.map(role => [role, {
+    paths: ROLE_NAV[role] || ROLE_NAV.User,
+    actions: DEFAULT_ROLE_ACTIONS[role] || [],
+  }]));
+}
+function loadRolePermissions() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ROLE_PERMISSION_STORAGE_KEY));
+    return { ...defaultRolePermissions(), ...(saved || {}) };
+  } catch {
+    return defaultRolePermissions();
+  }
+}
+function saveRolePermissions(value) { localStorage.setItem(ROLE_PERMISSION_STORAGE_KEY, JSON.stringify(value)); }
+function allowedPaths(role, rolePermissions) {
+  return rolePermissions?.[role]?.paths || ROLE_NAV[role] || ROLE_NAV.User;
+}
+function isAdminRole(role) { return ['Admin', 'Administrator'].includes(role); }
+function userDisplayName(user) {
+  return user?.displayName || [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.name || user?.email || 'User';
+}
+function userFullName(user) {
+  return [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.name || userDisplayName(user);
+}
 
 // ── Login screen ─────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
@@ -3621,6 +3658,9 @@ function ProfileModal({ onClose }) {
   const [tab, setTab] = useState('profile');
   const [avatar, setAvatar] = useState(auth.avatar || '');
   const [displayName, setDisplayName] = useState(auth.displayName || auth.name || '');
+  const [firstName, setFirstName] = useState(auth.firstName || '');
+  const [lastName, setLastName] = useState(auth.lastName || '');
+  const [email, setEmail] = useState(auth.email || '');
   const [pin1, setPin1] = useState('');
   const [pin2, setPin2] = useState('');
   const [saving, setSaving] = useState(false);
@@ -3630,7 +3670,7 @@ function ProfileModal({ onClose }) {
   async function saveProfile() {
     setSaving(true);
     try {
-      const data = await api.updateCurrentUser({ avatar, displayName });
+      const data = await api.updateCurrentUser({ avatar, displayName, firstName, lastName, email });
       const updated = { ...auth, ...data.user };
       saveAuth(updated);
       setAuth(updated);
@@ -3684,6 +3724,30 @@ function ProfileModal({ onClose }) {
               <label>Display Name</label>
               <input value={displayName} onChange={e => setDisplayName(e.target.value)} className="form-input" placeholder={auth.name} />
             </div>
+            <div className="user-form-grid">
+              <div className="profile-field">
+                <label>First Name</label>
+                <input value={firstName} onChange={e => setFirstName(e.target.value)} className="form-input" placeholder="First name" />
+              </div>
+              <div className="profile-field">
+                <label>Last Name</label>
+                <input value={lastName} onChange={e => setLastName(e.target.value)} className="form-input" placeholder="Last name" />
+              </div>
+            </div>
+            <div className="profile-field">
+              <label>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="form-input" placeholder="email@example.com" />
+            </div>
+            <div className="profile-readonly-grid">
+              <div>
+                <span>Role</span>
+                <strong>{auth.role || 'No role'}</strong>
+              </div>
+              <div>
+                <span>Clients</span>
+                <strong>{auth.allClients ? 'All clients' : auth.clientIds?.length ? `${auth.clientIds.length} assigned` : 'None assigned'}</strong>
+              </div>
+            </div>
             <div className="profile-actions">
               <button className="btn btn-primary" onClick={saveProfile} disabled={saving}>
                 {saved || (saving ? 'Saving…' : 'Save')}
@@ -3720,17 +3784,53 @@ function ProfileModal({ onClose }) {
   );
 }
 
-// ── User management (admin) ───────────────────────────────────────────────────
-const ROLES = ['Admin', 'Producer', 'Merch', 'User'];
+function clientAccessLabel(user, clients = []) {
+  if (user?.allClients) return 'All clients';
+  const ids = user?.clientIds || [];
+  if (!ids.length) return 'No clients assigned';
+  const names = ids.map(id => clients.find(client => client.id === id)?.name).filter(Boolean);
+  if (!names.length) return `${ids.length} client${ids.length !== 1 ? 's' : ''}`;
+  if (names.length <= 2) return names.join(', ');
+  return `${names.slice(0, 2).join(', ')} +${names.length - 2}`;
+}
+
+function PermissionPreview({ role, allClients, clientIds, clients = [], showClients = true }) {
+  const { rolePermissions } = useAuth();
+  const visible = NAV_ITEMS.filter(item => allowedPaths(role, rolePermissions).includes(item.path));
+  const actions = rolePermissions?.[role]?.actions || DEFAULT_ROLE_ACTIONS[role] || [];
+  return (
+    <div className="permission-preview">
+      <div>
+        <span className="permission-preview-label">Visible navigation</span>
+        <div className="permission-chip-row">
+          {visible.map(item => <span key={item.path} className="permission-chip">{item.label}</span>)}
+          {isAdminRole(role) && <span className="permission-chip">Administration</span>}
+        </div>
+      </div>
+      <div>
+        <span className="permission-preview-label">Allowed actions</span>
+        <div className="permission-list">
+          {actions.map(action => <span key={action}>{action}</span>)}
+        </div>
+      </div>
+      {showClients && (
+        <div>
+          <span className="permission-preview-label">Accessible clients</span>
+          <p>{allClients ? 'All clients' : clientAccessLabel({ clientIds }, clients)}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function UserFormModal({ user, clients, onSave, onClose }) {
   const isNew = !user;
-  const [name, setName] = useState(user?.name || '');
-  const [firstName, setFirstName] = useState(user?.firstName || '');
-  const [lastName, setLastName] = useState(user?.lastName || '');
+  const nameParts = (user?.name || '').trim().split(/\s+/).filter(Boolean);
+  const [firstName, setFirstName] = useState(user?.firstName || nameParts[0] || '');
+  const [lastName, setLastName] = useState(user?.lastName || nameParts.slice(1).join(' ') || '');
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [email, setEmail] = useState(user?.email || '');
-  const [role, setRole] = useState(user?.role || 'User');
+  const [role, setRole] = useState(ROLES.includes(user?.role) ? user.role : 'Viewer');
   const [avatar, setAvatar] = useState(user?.avatar || '');
   const [pin, setPin] = useState('');
   const [allClients, setAllClients] = useState(user?.allClients ?? false);
@@ -3740,93 +3840,101 @@ function UserFormModal({ user, clients, onSave, onClose }) {
 
   async function submit(e) {
     e.preventDefault();
-    if (!name.trim()) { setError('Name is required'); return; }
+    if (isNew && !firstName.trim()) { setError('First Name is required'); return; }
+    if (isNew && !lastName.trim()) { setError('Last Name is required'); return; }
+    if (isNew && pin.length < 4) { setError('Initial PIN is required'); return; }
     setSaving(true); setError('');
     try {
-      const payload = { name: name.trim(), firstName: firstName.trim(), lastName: lastName.trim(),
+      const name = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ') || displayName.trim() || email.trim();
+      const payload = { name, firstName: firstName.trim(), lastName: lastName.trim(),
         displayName: displayName.trim(), email: email.trim(), role, avatar, allClients, clientIds };
       if (pin) payload.pin = pin;
       const data = isNew ? await api.createUser(payload) : await api.updateUser(user.id, payload);
       onSave(data.user);
-    } catch (e) { setError(e.message || 'Failed to save'); } finally { setSaving(false); }
+    } catch (e) { setError(e.message || 'Failed to save user.'); } finally { setSaving(false); }
   }
 
   function toggleClient(id) {
     setClientIds(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
   }
 
-  return createPortal(
-    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal user-form-modal">
-        <div className="modal-header">
-          <span className="modal-title">{isNew ? 'Add User' : 'Edit User'}</span>
-          <button className="modal-close" onClick={onClose}>×</button>
+  return (
+    <section className="user-form-panel">
+      <div className="user-form-panel-header">
+        <div>
+          <h3>{isNew ? 'Add User' : 'Edit User'}</h3>
+          <p>{isNew ? 'Create a user, assign a role, and set their initial PIN.' : 'Update profile details, role, clients, or reset their PIN.'}</p>
         </div>
-        <form className="user-form-body" onSubmit={submit}>
-          <div className="user-form-avatar-row">
-            <span className="profile-avatar-preview">{avatar || (name||'?')[0]}</span>
-          </div>
-          <div className="profile-avatar-grid">
-            {AVATARS.map(a => (
-              <button type="button" key={a} className={`profile-avatar-btn${a===avatar?' selected':''}`} onClick={() => setAvatar(a)}>{a}</button>
-            ))}
-          </div>
-          <div className="user-form-grid">
-            <div className="profile-field">
-              <label>Full Name *</label>
-              <input value={name} onChange={e => setName(e.target.value)} className="form-input" placeholder="Full name" required />
-            </div>
-            <div className="profile-field">
-              <label>Display Name</label>
-              <input value={displayName} onChange={e => setDisplayName(e.target.value)} className="form-input" placeholder="Nickname or short name" />
-            </div>
-            <div className="profile-field">
-              <label>Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="form-input" placeholder="email@example.com" />
-            </div>
-            <div className="profile-field">
-              <label>Role</label>
-              <select value={role} onChange={e => setRole(e.target.value)} className="form-input">
-                {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </div>
-            <div className="profile-field">
-              <label>{isNew ? 'Initial PIN (4 digits)' : 'Reset PIN (leave blank to keep)'}</label>
-              <input type="password" inputMode="numeric" maxLength={4} value={pin}
-                onChange={e => setPin(e.target.value.replace(/\D/g,'').slice(0,4))}
-                className="form-input" placeholder="••••" />
-            </div>
-          </div>
-          <div className="profile-field" style={{marginTop:12}}>
-            <label className="user-form-check">
-              <input type="checkbox" checked={allClients} onChange={e => setAllClients(e.target.checked)} />
-              Access all clients
-            </label>
-          </div>
-          {!allClients && clients.length > 0 && (
-            <div className="profile-field">
-              <label>Client Access</label>
-              <div className="user-form-clients">
-                {clients.map(c => (
-                  <label key={c.id} className="user-form-check">
-                    <input type="checkbox" checked={clientIds.includes(c.id)} onChange={() => toggleClient(c.id)} />
-                    {c.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-          {error && <p className="login-error">{error}</p>}
-          <div className="profile-actions">
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Saving…' : isNew ? 'Add User' : 'Save Changes'}
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          </div>
-        </form>
+        <button className="btn btn-ghost btn-sm" type="button" onClick={onClose}>Close</button>
       </div>
-    </div>,
-    document.body
+      <form className="user-form-body user-form-body-inline" onSubmit={submit}>
+        <div className="user-form-avatar-row">
+          <span className="profile-avatar-preview">{avatar || (displayName || firstName || email || '?')[0]}</span>
+        </div>
+        <div className="profile-avatar-grid">
+          {AVATARS.map(a => (
+            <button type="button" key={a} className={`profile-avatar-btn${a===avatar?' selected':''}`} onClick={() => setAvatar(a)}>{a}</button>
+          ))}
+        </div>
+        <div className="user-form-grid">
+          <div className="profile-field">
+            <label>First Name *</label>
+            <input value={firstName} onChange={e => setFirstName(e.target.value)} className="form-input" placeholder="First name" required={isNew} />
+          </div>
+          <div className="profile-field">
+            <label>Last Name *</label>
+            <input value={lastName} onChange={e => setLastName(e.target.value)} className="form-input" placeholder="Last name" required={isNew} />
+          </div>
+          <div className="profile-field">
+            <label>Display Name</label>
+            <input value={displayName} onChange={e => setDisplayName(e.target.value)} className="form-input" placeholder="Nickname or short name" />
+          </div>
+          <div className="profile-field">
+            <label>Email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="form-input" placeholder="email@example.com" />
+          </div>
+          <div className="profile-field">
+            <label>Role</label>
+            <select value={role} onChange={e => setRole(e.target.value)} className="form-input">
+              {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div className="profile-field">
+            <label>{isNew ? 'Initial PIN (4 digits)' : 'Reset PIN (leave blank to keep)'}</label>
+            <input type="password" inputMode="numeric" maxLength={4} value={pin}
+              onChange={e => setPin(e.target.value.replace(/\D/g,'').slice(0,4))}
+              className="form-input" placeholder="••••" />
+          </div>
+        </div>
+        <PermissionPreview role={role} allClients={allClients} clientIds={clientIds} clients={clients} />
+        <div className="profile-field" style={{marginTop:12}}>
+          <label className="user-form-check">
+            <input type="checkbox" checked={allClients} onChange={e => setAllClients(e.target.checked)} />
+            Access all clients
+          </label>
+        </div>
+        {!allClients && clients.length > 0 && (
+          <div className="profile-field">
+            <label>Client Access</label>
+            <div className="user-form-clients">
+              {clients.map(c => (
+                <label key={c.id} className="user-form-check">
+                  <input type="checkbox" checked={clientIds.includes(c.id)} onChange={() => toggleClient(c.id)} />
+                  {c.name}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+        {error && <div className="error-state user-form-error">{error}</div>}
+        <div className="profile-actions">
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? 'Saving…' : isNew ? 'Add User' : 'Save Changes'}
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -3860,55 +3968,13 @@ function UsersSection() {
   return (
     <div className="users-section">
       <div className="users-section-header">
+        <div>
+          <h3>Users</h3>
+          <p>Manage team access, role assignments, client visibility, and PIN resets.</p>
+        </div>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Add User</button>
       </div>
       {loading && <div className="empty-state">Loading users…</div>}
-      {!loading && (
-        <div className="users-table-wrap">
-          <table className="users-table">
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Role</th>
-                <th>Clients</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(u => (
-                <tr key={u.id} className={u.active ? '' : 'user-inactive'}>
-                  <td>
-                    <div className="users-table-user">
-                      <span className="users-table-avatar">{u.avatar || (u.displayName||u.name||'?')[0]}</span>
-                      <div>
-                        <strong>{u.displayName || u.name}</strong>
-                        {u.displayName && u.displayName !== u.name && <small>{u.name}</small>}
-                        {u.email && <small>{u.email}</small>}
-                      </div>
-                    </div>
-                  </td>
-                  <td><span className="badge badge-neutral">{u.role || '—'}</span></td>
-                  <td><span style={{fontSize:12,color:'var(--text-3)'}}>{u.allClients ? 'All clients' : u.clientIds?.length ? `${u.clientIds.length} client${u.clientIds.length!==1?'s':''}` : 'None'}</span></td>
-                  <td>
-                    <span className={`badge ${u.active ? 'badge-green' : 'badge-neutral'}`}>
-                      {u.active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="users-table-actions">
-                      <button className="btn btn-ghost btn-sm" onClick={() => setEditing(u)}>Edit</button>
-                      <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(u)}>
-                        {u.active ? 'Deactivate' : 'Activate'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
       {editing && (
         <UserFormModal
           user={editing === 'new' ? null : editing}
@@ -3917,6 +3983,143 @@ function UsersSection() {
           onClose={() => setEditing(null)}
         />
       )}
+      {!loading && (
+        <div className="users-card-grid">
+          {users.map(u => (
+            <article
+              key={u.id}
+              className={`user-card ${u.active ? '' : 'is-inactive'}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => setEditing(u)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setEditing(u);
+                }
+              }}
+            >
+              <span className="user-card-avatar">{u.avatar || userDisplayName(u)[0]}</span>
+              <span className="user-card-main">
+                <strong>{userDisplayName(u)}</strong>
+                <small>{u.email || userFullName(u)}</small>
+              </span>
+              <span className="user-card-meta">
+                <span className="badge badge-neutral">{u.role || 'No role'}</span>
+                <span>{clientAccessLabel(u, clientList)}</span>
+              </span>
+              <span className={`badge ${u.active ? 'badge-green' : 'badge-neutral'}`}>{u.active ? 'Active' : 'Inactive'}</span>
+              <span className="user-card-actions" onClick={event => event.stopPropagation()}>
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEditing(u)}>Edit</button>
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => toggleActive(u)}>
+                  {u.active ? 'Deactivate' : 'Activate'}
+                </button>
+              </span>
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RolesSection() {
+  const { rolePermissions, setRolePermissions } = useAuth();
+  function updateRole(role, updater) {
+    setRolePermissions(current => {
+      const base = current || defaultRolePermissions();
+      const nextRole = updater(base[role] || { paths: [], actions: [] });
+      const next = { ...base, [role]: nextRole };
+      saveRolePermissions(next);
+      return next;
+    });
+  }
+  function togglePath(role, path) {
+    updateRole(role, config => {
+      const paths = config.paths || [];
+      const nextPaths = paths.includes(path) ? paths.filter(item => item !== path) : [...paths, path];
+      return { ...config, paths: nextPaths };
+    });
+  }
+  function toggleAction(role, action) {
+    updateRole(role, config => {
+      const actions = config.actions || [];
+      const nextActions = actions.includes(action) ? actions.filter(item => item !== action) : [...actions, action];
+      return { ...config, actions: nextActions };
+    });
+  }
+  return (
+    <section className="roles-section">
+      <div className="users-section-header">
+        <div>
+          <h3>Roles</h3>
+          <p>Current role permissions are based on existing navigation and backend authorization checks.</p>
+        </div>
+      </div>
+      <div className="role-card-grid">
+        {ROLES.map(role => (
+          <article key={role} className="role-card">
+            <div className="role-card-header">
+              <strong>{role}</strong>
+              {isAdminRole(role) && <span className="badge badge-green">Administration</span>}
+            </div>
+            <div className="role-edit-block">
+              <span className="permission-preview-label">Can see</span>
+              <div className="role-toggle-grid">
+                {NAV_ITEMS.map(item => (
+                  <label key={item.path} className="role-toggle">
+                    <input
+                      type="checkbox"
+                      checked={allowedPaths(role, rolePermissions).includes(item.path)}
+                      onChange={() => togglePath(role, item.path)}
+                      disabled={isAdminRole(role) && item.path === '/settings'}
+                    />
+                    {item.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="role-edit-block">
+              <span className="permission-preview-label">Can do</span>
+              <div className="role-toggle-grid">
+                {ROLE_ACTION_OPTIONS.map(action => (
+                  <label key={action} className="role-toggle">
+                    <input
+                      type="checkbox"
+                      checked={(rolePermissions?.[role]?.actions || []).includes(action)}
+                      onChange={() => toggleAction(role, action)}
+                    />
+                    {action}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AdministrationPage() {
+  const { auth } = useAuth();
+  if (!isAdminRole(auth?.role)) {
+    return (
+      <div className="empty-state">
+        Administrator access required.
+      </div>
+    );
+  }
+  return (
+    <div className="administration-page">
+      <div className="admin-hero">
+        <div>
+          <p className="eyebrow">Administration</p>
+          <h2>Users & Roles</h2>
+        </div>
+      </div>
+      <UsersSection />
+      <RolesSection />
     </div>
   );
 }
@@ -3952,7 +4155,8 @@ function routeForPage(page, params = {}) {
     'new-job': '/jobs/new',
     clients: '/clients',
     settings: '/settings',
-    admin: '/settings',
+    admin: '/administration',
+    administration: '/administration',
   };
   return routes[page] || '/dashboard';
 }
@@ -3966,6 +4170,7 @@ function pageTitleForPath(pathname) {
   if (pathname === '/jobs/new') return 'New Job';
   if (pathname.startsWith('/jobs')) return 'Jobs';
   if (pathname.startsWith('/clients')) return 'Clients';
+  if (pathname.startsWith('/administration')) return 'Administration';
   if (pathname.startsWith('/settings')) return 'Settings';
   if (pathname.startsWith('/dashboard')) return 'Dashboard';
   return 'Not Found';
@@ -3996,7 +4201,7 @@ function NotFound() {
 }
 
 function AppLayout() {
-  const { auth } = useAuth();
+  const { auth, rolePermissions } = useAuth();
   const location = useLocation();
   const routerNavigate = useNavigate();
   const navigate = (page, params = {}) => routerNavigate(routeForPage(page, params));
@@ -4009,7 +4214,7 @@ function AppLayout() {
   const mobileDrawerRef = useRef(null);
   const workspaceRoute = location.pathname.startsWith('/receiving') || location.pathname.startsWith('/verification');
   const sidebarCollapsed = false; // always expanded — toggle removed
-  const allowed = auth ? allowedPaths(auth.role) : allowedPaths('User');
+  const allowed = auth ? allowedPaths(auth.role, rolePermissions) : allowedPaths('User', rolePermissions);
   const visibleNav = NAV_ITEMS.filter(item => allowed.includes(item.path));
 
   // Alert count for sidebar badge
@@ -4110,15 +4315,27 @@ function AppLayout() {
           </ul>
         </nav>
 
-        <button className="sidebar-footer" onClick={() => setProfileOpen(true)} title="Your profile">
-          <span className="sidebar-user-avatar" aria-hidden="true">
-            {auth?.avatar || (auth?.displayName || auth?.name || 'M')[0]}
-          </span>
-          <span className="sidebar-user-copy">
-            <strong>{auth?.displayName || auth?.name || 'Marks User'}</strong>
-            <small>{auth?.role || (skus.loading ? 'Loading…' : skus.error ? 'Connection error' : 'Live')}</small>
-          </span>
-        </button>
+        <div className="sidebar-bottom">
+          {isAdminRole(auth?.role) && (
+            <NavLink
+              to="/administration"
+              className={({ isActive }) => `nav-item sidebar-admin-link ${isActive ? 'active' : ''}`}
+              onClick={() => setMobileNavOpen(false)}
+            >
+              <Icon.Settings />
+              <span className="nav-label">Administration</span>
+            </NavLink>
+          )}
+          <button className="sidebar-footer" onClick={() => setProfileOpen(true)} title="Your profile">
+            <span className="sidebar-user-avatar" aria-hidden="true">
+              {auth?.avatar || userDisplayName(auth)[0] || 'M'}
+            </span>
+            <span className="sidebar-user-copy">
+              <strong>{userDisplayName(auth)}</strong>
+              <small>{auth?.role || (skus.loading ? 'Loading…' : skus.error ? 'Connection error' : 'Live')}</small>
+            </span>
+          </button>
+        </div>
         {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
       </aside>
 
@@ -4163,6 +4380,7 @@ function AppLayout() {
             <Route path="/jobs/new" element={<NewJobPage navigate={navigate} />} />
             <Route path="/clients" element={<Navigate to="/settings" replace />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/administration" element={<AdministrationPage />} />
             <Route path="/intake" element={<Navigate to="/imports" replace />} />
             <Route path="/intake/import-history" element={<Navigate to="/imports/history" replace />} />
             <Route path="*" element={<NotFound />} />
@@ -4176,6 +4394,7 @@ function AppLayout() {
 export default function App() {
   const [auth, setAuth] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [rolePermissions, setRolePermissions] = useState(loadRolePermissions);
 
   useEffect(() => {
     let cancelled = false;
@@ -4201,7 +4420,7 @@ export default function App() {
   }
 
   return (
-    <AuthContext.Provider value={{ auth, setAuth }}>
+    <AuthContext.Provider value={{ auth, setAuth, rolePermissions, setRolePermissions }}>
       <BrowserRouter>
         {auth ? <AppLayout /> : <LoginScreen onLogin={setAuth} />}
       </BrowserRouter>
