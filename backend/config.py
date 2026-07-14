@@ -50,11 +50,16 @@ class Config:
 
     # Field names — Users
     F_USER_NAME = "User"
+    F_USER_FIRST_NAME = "First Name"
+    F_USER_LAST_NAME = "Last Name"
+    F_USER_DISPLAY_NAME = "Display Name"
     F_USER_EMAIL = "Email"
     F_USER_ROLE = "Role"
     F_USER_ACTIVE = "Active"
     F_USER_CLIENTS = "Clients"
     F_USER_ALL_CLIENTS = "All Clients"
+    F_USER_AVATAR = "Avatar"
+    F_USER_PIN_HASH = "PIN Hash"
 
     # Field names — Receipts
     F_RECEIPT_NAME = "Receipt"

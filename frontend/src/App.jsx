@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
+import { createPortal } from 'react-dom';
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { api } from './api';
@@ -639,6 +640,7 @@ const emptyReceiptEntry = () => ({
   condition: 'Good',
   description: '',
   notes: '',
+  jobId: '',
 });
 
 function defaultReceivingMode() {
@@ -764,7 +766,7 @@ function QuickReceivingCapture({ locationList }) {
   });
   const [entry, setEntryState] = useState(() => ({
     ...emptyReceiptEntry(),
-    locationId: loadRecentReceivingLocations()[0] || '',
+    locationId: '',
   }));
   const [entryPhotos, setEntryPhotos] = useState([]);
   const [entryCount, setEntryCount] = useState(0);
@@ -794,7 +796,7 @@ function QuickReceivingCapture({ locationList }) {
     });
     setEntryState({
       ...emptyReceiptEntry(),
-      locationId: defaultLocationId || loadRecentReceivingLocations()[0] || '',
+      locationId: defaultLocationId || '',
     });
     setTimeout(() => productNameRef.current?.focus(), 0);
   }
@@ -808,7 +810,17 @@ function QuickReceivingCapture({ locationList }) {
   function removeEntryPhoto(photoId) {
     setEntryPhotos(prev => {
       const photo = prev.find(item => item.id === photoId);
-      if (photo) URL.revokeObjectURL(photo.previewUrl);
+      if (!photo) return prev;
+      if (photo.isExisting && photo.objectKey) {
+        // Delete from R2 + update Airtable metadata immediately
+        const rId = receipt?.id;
+        const eId = editingEntryId;
+        if (rId && eId) {
+          api.deleteReceivingEntryPhoto(rId, eId, photo.objectKey).catch(() => {});
+        }
+      } else {
+        URL.revokeObjectURL(photo.previewUrl);
+      }
       return prev.filter(item => item.id !== photoId);
     });
   }
@@ -938,7 +950,7 @@ function QuickReceivingCapture({ locationList }) {
     setSelectedReceiptId('');
     setEntryCount(0);
     setSession({ carrier: '', tracking: '', boxQuantity: 1, received: toDatetimeLocal(), photos: [] });
-    resetEntry(loadRecentReceivingLocations()[0] || '');
+    resetEntry('');
   }
 
   return (
@@ -1095,15 +1107,25 @@ function ReceivingPage() {
   const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
   const carrierOptions = useResource(() => api.airtableSingleSelectOptions({ tableName: 'Receipts', fieldName: 'Carrier' }));
+  const allReceipts = useResource(() => api.listReceipts());
+
   const [receipt, setReceipt] = useState(null);
-  const [session, setSession] = useState({ clientId: '', carrier: '', tracking: '', boxQuantity: 1, received: toDatetimeLocal() });
+  const [session, setSession] = useState({ clientId: '', carrier: '', tracking: '', boxQuantity: 1, received: toDatetimeLocal(), notes: '' });
+
+  const _jobClientId = receipt?.clientIds?.[0] || session.clientId || '';
+  const jobsResource = useResource(
+    () => _jobClientId ? api.listJobs(_jobClientId) : Promise.resolve({ records: [] }),
+    [_jobClientId]
+  );
+
+  const [savedEntries, setSavedEntries] = useState([]);
+
   const [entry, setEntryState] = useState(() => ({
     ...emptyReceiptEntry(),
-    locationId: loadRecentReceivingLocations()[0] || '',
+    locationId: '',
   }));
   const [entryPhotos, setEntryPhotos] = useState([]);
-  const [savedEntries, setSavedEntries] = useState([]);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [recentEntryIds, setRecentEntryIds] = useState([]);
@@ -1115,37 +1137,51 @@ function ReceivingPage() {
   const [matchLoading, setMatchLoading] = useState(false);
   const [matchChoice, setMatchChoice] = useState({ status: 'none', item: null });
   const [prevMatchedItemId, setPrevMatchedItemId] = useState('');
-  const [deliveryHeaderOpen, setDeliveryHeaderOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [clientFilter, setClientFilter] = useState('');
+  const [tab, setTab] = useState('new'); // 'new' | 'all'
+
   const cameraInputRef = useRef(null);
   const libraryInputRef = useRef(null);
   const productNameRef = useRef(null);
 
-  const clientList = (clients.data?.records ?? []).filter(client => client.active !== false);
-  const locationList = (locations.data?.records ?? []).filter(location => location.active !== false);
+  const clientList = (clients.data?.records ?? []).filter(c => c.active !== false);
+  const locationList = (locations.data?.records ?? []).filter(l => l.active !== false);
   const carrierList = carrierOptions.data?.options ?? [];
   const carrierSelectOptions = session.carrier && !carrierList.includes(session.carrier)
     ? [session.carrier, ...carrierList]
     : carrierList;
+  const locationNameById = Object.fromEntries(locationList.map(l => [l.id, l.name]));
+  const clientNameById = Object.fromEntries(clientList.map(c => [c.id, c.name]));
+  const receiptList = allReceipts.data?.records ?? [];
+  const [allReceiptsView, setAllReceiptsView] = useState('receipts'); // 'receipts' | 'items'
+  const twoDaysAgo = Date.now() - 5 * 24 * 60 * 60 * 1000;
+  const isSearching = search.trim().length > 0;
+  const filteredReceipts = receiptList.filter(r => {
+    const hay = [r.name, r.receipt, r.carrier, r.tracking,
+      (r.clientIds || []).map(id => clientNameById[id]).join(' ')].join(' ').toLowerCase();
+    const matchesSearch = !isSearching || hay.includes(search.trim().toLowerCase());
+    const matchesClient = !clientFilter || (r.clientIds || []).includes(clientFilter);
+    const isRecent = !r.received || new Date(r.received).getTime() >= twoDaysAgo;
+    return matchesSearch && matchesClient && (isSearching || isRecent);
+  });
+
+  const activeClientId = receipt?.clientIds?.[0] || session.clientId || '';
+  const jobList = jobsResource.data?.records ?? [];
+  const matchQuery = [entry.skuId, entry.productName].map(v => String(v || '').trim()).filter(Boolean).join(' ');
+  const showMatchSuggestions = matchChoice.status !== 'matched'
+    && matchChoice.status !== 'needs'
+    && matchQuery.replace(/[^a-z0-9]+/gi, '').length >= 3;
   const entryCount = savedEntries.length;
-  const entryCountLabel = `${entryCount} Received Item${entryCount === 1 ? '' : 's'}`;
-  const locationNameById = Object.fromEntries(locationList.map(location => [location.id, location.name]));
-  const activeClient = clientList.find(client => client.id === (receipt?.clientIds?.[0] || session.clientId));
-  const headerClientName = activeClient?.name || 'Unknown';
   const headerReceived = receipt?.received || session.received;
   const headerReceivedLabel = headerReceived
     ? new Date(headerReceived).toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' })
     : '';
-  const receivingHeaderMeta = [headerClientName, headerReceivedLabel, entryCountLabel].filter(Boolean).join(' · ');
-  const activeClientId = receipt?.clientIds?.[0] || session.clientId || '';
-  const matchQuery = [entry.skuId, entry.productName].map(value => String(value || '').trim()).filter(Boolean).join(' ');
-  const showMatchSuggestions = matchChoice.status !== 'matched'
-    && matchChoice.status !== 'needs'
-    && matchQuery.replace(/[^a-z0-9]+/gi, '').length >= 3;
 
   useEffect(() => {
     if (!toast) return undefined;
-    const timeout = window.setTimeout(() => setToast(''), 1200);
-    return () => window.clearTimeout(timeout);
+    const t = window.setTimeout(() => setToast(''), 1200);
+    return () => window.clearTimeout(t);
   }, [toast]);
 
   useEffect(() => {
@@ -1156,7 +1192,7 @@ function ReceivingPage() {
       return () => { active = false; };
     }
     setMatchLoading(true);
-    const timeout = window.setTimeout(async () => {
+    const t = window.setTimeout(async () => {
       try {
         const data = await api.searchVerificationItems({ q: matchQuery, clientId: activeClientId, includeItemId: prevMatchedItemId });
         if (active) setItemMatches(data.records ?? []);
@@ -1166,14 +1202,30 @@ function ReceivingPage() {
         if (active) setMatchLoading(false);
       }
     }, 220);
-    return () => {
-      active = false;
-      window.clearTimeout(timeout);
-    };
+    return () => { active = false; window.clearTimeout(t); };
   }, [showMatchSuggestions, matchQuery, activeClientId, prevMatchedItemId]);
 
   function setSessionField(field, value) {
     setSession(prev => ({ ...prev, [field]: value }));
+  }
+
+  async function autoSaveReceiptHeader(overrides = {}) {
+    if (!receipt) return;
+    try {
+      const updated = await api.updateReceivingSession(receipt.id, {
+        clientId: session.clientId,
+        carrier: session.carrier,
+        tracking: session.tracking,
+        boxQuantity: Number(session.boxQuantity || 1),
+        received: session.received,
+        notes: session.notes || '',
+        ...overrides,
+      });
+      setReceipt(updated);
+      allReceipts.reload();
+    } catch {
+      // silent — don't interrupt the user
+    }
   }
 
   function setEntry(field, value) {
@@ -1191,23 +1243,31 @@ function ReceivingPage() {
   }
 
   function removeEntryPhoto(photoId) {
-    setEntryPhotos(prev => {
-      const photo = prev.find(item => item.id === photoId);
-      if (photo) URL.revokeObjectURL(photo.previewUrl);
-      return prev.filter(item => item.id !== photoId);
-    });
+    const photo = entryPhotos.find(p => p.id === photoId);
+    if (!photo) return;
+    if (photo.isExisting && photo.objectKey) {
+      const rId = receipt?.id;
+      const eId = editingEntryId;
+      if (rId && eId) {
+        api.deleteReceivingEntryPhoto(rId, eId, photo.objectKey).catch(() => {});
+      }
+    } else if (photo.previewUrl) {
+      URL.revokeObjectURL(photo.previewUrl);
+    }
+    setEntryPhotos(prev => prev.filter(p => p.id !== photoId));
   }
 
   function resetActiveEntry(defaultLocationId = entry.locationId, defaultCondition = entry.condition || 'Good') {
     setEntryPhotos(prev => {
-      prev.forEach(photo => URL.revokeObjectURL(photo.previewUrl));
+      prev.forEach(p => { if (!p.isExisting) URL.revokeObjectURL(p.previewUrl); });
       return [];
     });
     setPendingCopyEntry(null);
     setEntryState({
       ...emptyReceiptEntry(),
-      locationId: defaultLocationId || loadRecentReceivingLocations()[0] || '',
+      locationId: defaultLocationId || '',
       condition: defaultCondition || 'Good',
+      jobId: entry.jobId || '',
     });
     setItemMatches([]);
     setMatchChoice({ status: 'none', item: null });
@@ -1215,14 +1275,23 @@ function ReceivingPage() {
     setTimeout(() => productNameRef.current?.focus(), 0);
   }
 
+  async function createDelivery() {
+    setError('');
+    setSaving('create');
+    try {
+      await ensureDeliveryReceipt();
+      setTimeout(() => productNameRef.current?.focus(), 80);
+    } catch (err) {
+      setError(err.message || 'Could not create receipt.');
+    } finally {
+      setSaving('');
+    }
+  }
+
   async function ensureDeliveryReceipt() {
-    if (receipt) {
-      return receipt;
-    }
+    if (receipt) return receipt;
     const boxQuantity = Number(session.boxQuantity);
-    if (!Number.isFinite(boxQuantity) || boxQuantity < 1) {
-      throw new Error('Box Quantity must be at least 1.');
-    }
+    if (!Number.isFinite(boxQuantity) || boxQuantity < 1) throw new Error('Box Quantity must be at least 1.');
     const created = await api.startReceivingSession({
       clientId: session.clientId,
       carrier: session.carrier.trim(),
@@ -1232,6 +1301,7 @@ function ReceivingPage() {
     });
     setReceipt(created);
     setSavedEntries(created.entries || []);
+    allReceipts.reload();
     return created;
   }
 
@@ -1247,7 +1317,7 @@ function ReceivingPage() {
       setError('Quantity must be at least 1.');
       return;
     }
-    setSaving(true);
+    setSaving('entry');
     let uploadDelay;
     try {
       const activeReceipt = await ensureDeliveryReceipt();
@@ -1257,6 +1327,7 @@ function ReceivingPage() {
         matchPayload.itemId = matchChoice.item?.id || '';
         matchPayload.matchStatus = 'Matched';
         matchPayload.noClearMatch = false;
+        if (entry.jobId) matchPayload.jobId = entry.jobId;
       } else if (matchChoice.status === 'needs' || !editingEntryId) {
         matchPayload.itemId = '';
         matchPayload.matchStatus = 'Needs Match';
@@ -1277,10 +1348,11 @@ function ReceivingPage() {
       } else {
         saved = await api.createReceiptEntry(activeReceipt.id, entryPayload);
       }
-      if (entryPhotos.length > 0) {
+      const newPhotos = entryPhotos.filter(p => p.file);
+      if (newPhotos.length > 0) {
         try {
           uploadDelay = window.setTimeout(() => setShowUploadProgress(true), 1000);
-          const uploaded = await api.uploadReceivingPhotos(entryPhotos.map(photo => photo.file), {
+          const uploaded = await api.uploadReceivingPhotos(newPhotos.map(p => p.file), {
             receiptId: activeReceipt.id,
             receiptEntryId: saved.id,
           });
@@ -1297,33 +1369,87 @@ function ReceivingPage() {
         ? prev.map(item => item.id === saved.id ? saved : item)
         : [...prev, saved]);
       setRecentEntryIds(saved.id ? [saved.id] : []);
-      window.setTimeout(() => setRecentEntryIds(current => current.includes(saved.id) ? [] : current), 3200);
+      window.setTimeout(() => setRecentEntryIds(cur => cur.includes(saved.id) ? [] : cur), 3200);
       setEditingEntryId('');
       resetActiveEntry(entry.locationId, entry.condition || 'Good');
-      if (!entryPhotos.length || saved.photos?.length || saved.photoMetadata?.length) {
-        setToast(editingEntryId ? 'Received item updated' : 'Entry Saved');
+      if (!newPhotos.length || saved.photos?.length || saved.photoMetadata?.length) {
+        setToast(editingEntryId ? 'Item updated' : 'Entry saved');
       }
     } catch (err) {
       if (uploadDelay) window.clearTimeout(uploadDelay);
       setShowUploadProgress(false);
       setError(err.message || 'Could not save entry.');
     } finally {
-      setSaving(false);
+      setSaving('');
     }
   }
 
-  function finishDelivery() {
+  function startNewSession() {
     setReceipt(null);
     setSavedEntries([]);
-    setSession({ clientId: '', carrier: '', tracking: '', boxQuantity: 1, received: toDatetimeLocal() });
+    setSession({ clientId: '', carrier: '', tracking: '', boxQuantity: 1, received: toDatetimeLocal(), notes: '' });
     setEditingEntryId('');
-    resetActiveEntry(loadRecentReceivingLocations()[0] || '', 'Good');
+    setError('');
+    resetActiveEntry('', 'Good');
+  }
+
+  async function selectReceipt(receiptId) {
+    if (receipt?.id === receiptId) return;
+    setError('');
+    try {
+      const data = await api.getReceivingSession(receiptId);
+      setReceipt(data);
+      setSession({
+        clientId: data.clientIds?.[0] || '',
+        carrier: data.carrier || '',
+        tracking: data.tracking || '',
+        boxQuantity: data.boxQuantity || 1,
+        received: data.received ? toDatetimeLocal(data.received) : toDatetimeLocal(),
+        notes: data.notes || '',
+      });
+      setSavedEntries(data.entries || []);
+      setEditingEntryId('');
+      resetActiveEntry('', 'Good');
+    } catch (err) {
+      setError(err.message || 'Could not load receipt.');
+    }
+  }
+
+  async function saveReceiptHeader() {
+    if (!receipt) return;
+    setSaving('header');
+    setError('');
+    try {
+      const updated = await api.updateReceivingSession(receipt.id, {
+        clientId: session.clientId,
+        carrier: session.carrier,
+        tracking: session.tracking,
+        boxQuantity: Number(session.boxQuantity || 1),
+        received: session.received,
+        notes: session.notes || '',
+      });
+      setReceipt(updated);
+      setToast('Delivery info saved.');
+      allReceipts.reload();
+    } catch (err) {
+      setError(err.message || 'Could not save delivery info.');
+    } finally {
+      setSaving('');
+    }
   }
 
   function populateEntryFromSaved(saved) {
     setEntryPhotos(prev => {
-      prev.forEach(photo => URL.revokeObjectURL(photo.previewUrl));
-      return [];
+      prev.forEach(p => { if (!p.isExisting) URL.revokeObjectURL(p.previewUrl); });
+      // Load existing saved photos so they show as thumbnails in the edit modal
+      const existingPhotos = (saved.photoMetadata || []).map(p => ({
+        id: p.object_key || p.objectKey || p.url || p.public_url,
+        previewUrl: p.public_url || p.url || '',
+        objectKey: p.object_key || p.objectKey || '',
+        name: p.original_filename || p.filename || '',
+        isExisting: true,
+      })).filter(p => p.previewUrl);
+      return existingPhotos;
     });
     setEntryState({
       ...emptyReceiptEntry(),
@@ -1335,10 +1461,27 @@ function ReceivingPage() {
       condition: saved.condition || 'Good',
       notes: saved.notes || '',
     });
-    setMatchChoice({ status: 'none', item: null });
+    // Restore match state so editing a matched item shows the match, not suggestions
+    // API returns `merchStatus` (not matchStatus), fall back to inferring from itemIds
+    const effectiveStatus = saved.matchStatus || saved.merchStatus || ((saved.itemIds || []).length ? 'Matched' : '');
+    const isMatched = effectiveStatus === 'Matched' || effectiveStatus === 'Validated';
+    const needsMatch = effectiveStatus === 'Needs Match' || saved.noClearMatch;
+    if (isMatched && (saved.itemIds || []).length > 0) {
+      setMatchChoice({
+        status: 'matched',
+        item: {
+          id: saved.itemIds[0],
+          name: saved.productName || saved.name || 'Matched Item',
+          identifier: receivingEntrySku(saved),
+        },
+      });
+    } else if (needsMatch) {
+      setMatchChoice({ status: 'needs', item: null });
+    } else {
+      setMatchChoice({ status: 'none', item: null });
+    }
     setItemMatches([]);
     setPendingCopyEntry(null);
-    setToast('Entry copied. Edit and save as a new entry.');
     setTimeout(() => productNameRef.current?.focus(), 0);
   }
 
@@ -1350,9 +1493,8 @@ function ReceivingPage() {
 
   async function removeReceivedItem(saved) {
     if (!receipt || !saved?.id) return;
-    const confirmed = window.confirm(`Remove ${receivingEntryLabel(saved)} from this delivery?`);
-    if (!confirmed) return;
-    setSaving(true);
+    if (!window.confirm(`Remove ${receivingEntryLabel(saved)} from this delivery?`)) return;
+    setSaving('remove');
     setError('');
     try {
       await api.deleteReceiptEntry(receipt.id, saved.id);
@@ -1361,11 +1503,11 @@ function ReceivingPage() {
         setEditingEntryId('');
         resetActiveEntry(entry.locationId, entry.condition || 'Good');
       }
-      setToast('Received item removed.');
+      setToast('Item removed.');
     } catch (err) {
-      setError(err.message || 'Could not remove received item.');
+      setError(err.message || 'Could not remove item.');
     } finally {
-      setSaving(false);
+      setSaving('');
     }
   }
 
@@ -1385,547 +1527,440 @@ function ReceivingPage() {
   if (clients.error || locations.error) return <div className="error-state">{clients.error || locations.error}</div>;
 
   return (
-    <div className="recv-shell">
-      {toast && <div className={`receiving-toast ${toast === 'Entry Saved' ? 'is-success' : ''}`} role="status">✓ {toast}</div>}
+    <div className="recv-page">
+      {toast && <div className={`receiving-toast ${toast === 'Entry saved' ? 'is-success' : ''}`} role="status">✓ {toast}</div>}
       {previewPhoto && (
         <button type="button" className="receiving-photo-preview" onClick={() => setPreviewPhoto(null)}>
           <img src={previewPhoto.url} alt={previewPhoto.name || 'photo'} />
         </button>
       )}
 
-      {/* Always-visible session header */}
-      <div className="recv-header">
-        <div className="recv-header-field">
-          <label>Client</label>
-          <select value={session.clientId} onChange={e => setSessionField('clientId', e.target.value)} disabled={Boolean(receipt)}>
-            <option value="">Unknown / walk-in</option>
-            {clientList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-        <div className="recv-header-field">
-          <label>Carrier</label>
-          <select value={session.carrier} onChange={e => setSessionField('carrier', e.target.value)} disabled={Boolean(receipt)}>
-            <option value="">—</option>
-            {carrierSelectOptions.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        <div className="recv-header-field">
-          <label>Tracking</label>
-          <input value={session.tracking} onChange={e => setSessionField('tracking', e.target.value)} placeholder="Optional" disabled={Boolean(receipt)} />
-        </div>
+      {/* Sub-page tab bar */}
+      <div className="recv-tabs">
+        <button
+          type="button"
+          className={`recv-tab ${tab === 'new' ? 'is-active' : ''}`}
+          onClick={() => { if (tab === 'new' && receipt) { startNewSession(); } else { setTab('new'); } }}
+        >
+          {receipt ? 'Edit Receipt' : 'New Receipt'}
+        </button>
         {receipt && (
-          <div className="recv-header-status">
-            <span className="recv-session-badge">{entryCount} item{entryCount !== 1 ? 's' : ''} received</span>
-            {headerReceivedLabel && <span className="recv-session-time">{headerReceivedLabel}</span>}
-          </div>
+          <button
+            type="button"
+            className="recv-tab-new-btn"
+            onClick={() => { startNewSession(); setTab('new'); }}
+            title="Start a new receipt"
+          >
+            + New
+          </button>
         )}
+        <button
+          type="button"
+          className={`recv-tab ${tab === 'all' ? 'is-active' : ''}`}
+          onClick={() => setTab('all')}
+        >
+          All Receipts
+          {receiptList.length > 0 && <span className="recv-tab-count">{receiptList.length}</span>}
+        </button>
       </div>
 
-      {/* Two-column workspace */}
-      <div className="recv-two-col">
+      {tab === 'new' ? (
+        /* ── Three-panel receipt entry layout ── */
+        <div className="recv-three-col">
 
-        {/* LEFT: Entry form */}
-        <div className="recv-form">
-          {pendingCopyEntry && (
-            <div className="receiving-copy-confirm">
-              <span>Replace unsaved entry with this copy?</span>
-              <button type="button" className="btn btn-alt" onClick={() => setPendingCopyEntry(null)}>Cancel</button>
-              <button type="button" className="btn btn-primary" onClick={() => populateEntryFromSaved(pendingCopyEntry)}>Replace</button>
+          {/* Panel 1: Receipt Details */}
+          <div className="recv-receipt-panel">
+            <div className="recv-panel-head">
+              <span className="recv-panel-step">1</span>
+              <strong className="recv-panel-title">Receipt Details</strong>
             </div>
-          )}
-          {editingEntryId && (
-            <div className="receiving-copy-confirm">
-              <span>Editing received item</span>
-              <button type="button" className="btn btn-alt" onClick={() => { setEditingEntryId(''); resetActiveEntry(entry.locationId, entry.condition || 'Good'); }}>Cancel Edit</button>
-            </div>
-          )}
-
-          {/* Photo */}
-          <div className="recv-photo-row">
-            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" multiple hidden onChange={e => { addEntryPhotos(e.target.files); e.target.value = ''; }} />
-            <input ref={libraryInputRef} type="file" accept="image/*" multiple hidden onChange={e => { addEntryPhotos(e.target.files); e.target.value = ''; }} />
-            {entryPhotos.length > 0 ? (
-              <div className="recv-photo-thumbs">
-                {entryPhotos.map(photo => (
-                  <button type="button" className={`mobile-thumb ${showUploadProgress ? 'is-uploading' : ''}`} key={photo.id} onClick={() => setPreviewPhoto({ url: photo.previewUrl, name: photo.name })}>
-                    <img src={photo.previewUrl} alt="" />
-                    <span role="button" tabIndex={0} onClick={e => { e.stopPropagation(); removeEntryPhoto(photo.id); }} onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); removeEntryPhoto(photo.id); } }}>×</span>
-                  </button>
-                ))}
-                <button type="button" className="recv-add-photo-btn" onClick={() => cameraInputRef.current?.click()}>+ Photo</button>
-              </div>
-            ) : (
-              <div className="recv-photo-btns">
-                <button type="button" className="recv-camera-btn" onClick={() => cameraInputRef.current?.click()}>📷 Take Photo</button>
-                <button type="button" className="recv-library-btn" onClick={() => libraryInputRef.current?.click()}>Library</button>
-              </div>
-            )}
-            {showUploadProgress && <div className="receiving-upload-progress" role="status"><span />Uploading...</div>}
-          </div>
-
-          {/* Product name — largest input */}
-          <div className="recv-field recv-field-product">
-            <label>Product Name</label>
-            <input ref={productNameRef} value={entry.productName} onChange={e => { setEntry('productName', e.target.value); if (error) setError(''); }} placeholder="Name printed on package" autoComplete="off" />
-          </div>
-
-          {/* SKU / Identifier — always visible, triggers match alongside product name */}
-          <div className="recv-field">
-            <label>SKU / Identifier</label>
-            <input value={entry.skuId} onChange={e => setEntry('skuId', e.target.value)} placeholder="Optional" autoComplete="off" />
-          </div>
-
-          {/* Item match — appears after product name / SKU */}
-          <div className="receiving-match-field">
-            {matchChoice.status === 'matched' && matchChoice.item ? (
-              <div className="receiving-match-selected">
-                <span>
-                  <strong>{itemMatchTitle(matchChoice.item)}</strong>
-                  <small>{[itemMatchIdentifier(matchChoice.item), matchChoice.item.brand, matchChoice.item.parentJobNumber ? `Job ${matchChoice.item.parentJobNumber}` : ''].filter(Boolean).join(' · ')}</small>
-                </span>
-                <button type="button" onClick={() => { setPrevMatchedItemId(matchChoice.item?.id || ''); setMatchChoice({ status: 'none', item: null }); }}>Change</button>
-              </div>
-            ) : matchChoice.status === 'needs' ? (
-              <div className="receiving-match-selected is-unmatched">
-                <span><strong>No Clear Match</strong><small>Will go to PM verification.</small></span>
-                <button type="button" onClick={() => setMatchChoice({ status: 'none', item: null })}>Change</button>
-              </div>
-            ) : showMatchSuggestions ? (
-              <div className="receiving-match-panel">
-                <div className="receiving-match-panel-head">
-                  <span>{matchLoading ? 'Searching Items...' : itemMatches.length ? 'Suggested matches' : 'No matches found'}</span>
-                  <button type="button" onClick={() => setMatchChoice({ status: 'needs', item: null })}>No Clear Match</button>
-                </div>
-                {itemMatches.length > 0 && (
-                  <div className="receiving-match-list">
-                    {itemMatches.slice(0, 5).map((item, i) => (
-                      <button type="button" className={`receiving-match-option ${i === 0 ? 'is-best' : ''}`} key={item.id} onClick={() => setMatchChoice({ status: 'matched', item })}>
-                        <span>
-                          <strong>{itemMatchTitle(item)}</strong>
-                          <small>{[itemMatchIdentifier(item), item.brand, item.parentJobNumber ? `Job ${item.parentJobNumber}` : ''].filter(Boolean).join(' · ')}</small>
-                        </span>
-                        {i === 0 && <em>Best</em>}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : null}
-          </div>
-
-          {/* Qty + Location */}
-          <div className="recv-row">
-            <div className="recv-field recv-field-qty">
-              <label>Qty</label>
-              <div className="recv-stepper">
-                <button type="button" onClick={() => setEntry('quantity', Math.max(1, Number(entry.quantity || 1) - 1))}>−</button>
-                <input type="number" min="1" inputMode="numeric" value={entry.quantity} onChange={e => setEntry('quantity', e.target.value)} />
-                <button type="button" onClick={() => setEntry('quantity', Number(entry.quantity || 0) + 1)}>+</button>
-              </div>
-            </div>
-            <div className="recv-field recv-field-location">
-              <label>Storage Location</label>
-              <select value={entry.locationId} onChange={e => setEntry('locationId', e.target.value)}>
-                <option value="">Select location…</option>
-                {locationList.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* Optional fields behind disclosure */}
-          <details className="recv-more">
-            <summary>More options</summary>
-            <div className="recv-more-fields">
+            <div className="recv-panel-body">
               <div className="recv-field">
-                <label>Condition</label>
-                <select value={entry.condition} onChange={e => setEntry('condition', e.target.value)}>
-                  <option>Good</option>
-                  <option>Damaged</option>
-                  <option>Unknown</option>
+                <label>Client</label>
+                <select value={session.clientId} onChange={e => setSessionField('clientId', e.target.value)} onBlur={e => autoSaveReceiptHeader({ clientId: e.target.value })}>
+                  <option value="">Unknown</option>
+                  {clientList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
               <div className="recv-field">
-                <label>Description</label>
-                <input value={entry.description} onChange={e => setEntry('description', e.target.value)} placeholder="Flavor, size, damage detail…" />
+                <label>Carrier</label>
+                <select value={session.carrier} onChange={e => setSessionField('carrier', e.target.value)} onBlur={e => autoSaveReceiptHeader({ carrier: e.target.value })}>
+                  <option value="">Unknown</option>
+                  {carrierSelectOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="recv-field">
+                <label>Tracking Number</label>
+                <input value={session.tracking} onChange={e => setSessionField('tracking', e.target.value)} onBlur={e => autoSaveReceiptHeader({ tracking: e.target.value })} placeholder="Optional" />
+              </div>
+              <div className="recv-field">
+                <label>Box Quantity</label>
+                <input type="number" min="1" inputMode="numeric" value={session.boxQuantity} onChange={e => setSessionField('boxQuantity', e.target.value)} onBlur={e => autoSaveReceiptHeader({ boxQuantity: Number(e.target.value || 1) })} />
+              </div>
+              <div className="recv-field">
+                <label>Date Received</label>
+                <input type="datetime-local" value={session.received} onChange={e => setSessionField('received', e.target.value)} onBlur={e => autoSaveReceiptHeader({ received: e.target.value })} />
               </div>
               <div className="recv-field">
                 <label>Notes</label>
-                <textarea value={entry.notes} onChange={e => setEntry('notes', e.target.value)} rows="2" placeholder="Optional" />
+                <textarea value={session.notes} onChange={e => setSessionField('notes', e.target.value)} onBlur={e => autoSaveReceiptHeader({ notes: e.target.value })} rows="2" placeholder="Optional" />
               </div>
             </div>
-          </details>
-
-          {error && <div className="recv-field-error">{error}</div>}
-          <button type="button" className="recv-save-btn" onClick={saveNext} disabled={saving}>
-            {saving ? 'Saving…' : editingEntryId ? 'Update Item' : 'Save & Next →'}
-          </button>
-        </div>
-
-        {/* RIGHT: Session list */}
-        <div className="recv-list">
-          <div className="recv-list-header">
-            <strong>{entryCount} item{entryCount !== 1 ? 's' : ''} this session</strong>
-            {activeClient && <span>{activeClient.name}</span>}
-          </div>
-          <div className="recv-list-items">
-            {savedEntries.length === 0 ? (
-              <div className="receiving-current-empty">No items logged yet — save the first one to begin.</div>
-            ) : [...savedEntries].reverse().map((saved, index) => {
-              const locationId = saved.locationIds?.[0] || saved.locationId;
-              const locationName = locationNameById[locationId] || '';
-              const merchStatus = receivedItemMerchStatus(saved);
-              const statusClass = merchStatus === 'Validated' ? 'is-ok' : merchStatus === 'Matched' ? 'is-ok' : 'is-warn';
-              const statusIcon = (merchStatus === 'Matched' || merchStatus === 'Validated') ? '✓' : '!';
-              return (
-                <div
-                  key={saved.id || index}
-                  className={`receiving-current-row ${recentEntryIds.includes(saved.id) ? 'is-recent' : ''} ${editingEntryId === saved.id ? 'is-editing' : ''}`}
-                  role="button" tabIndex={0}
-                  onClick={() => editReceivedItem(saved)}
-                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); editReceivedItem(saved); } }}
-                >
-                  <RecordThumbnail record={saved} className="receiving-current-thumb" />
-                  <span className="receiving-current-copy">
-                    <strong>{receivingEntryLabel(saved)}</strong>
-                    <small>Qty {saved.quantity || 1}{locationName ? ` · ${locationName}` : ''}</small>
-                    <small className="receiving-status-line">
-                      <span className={statusClass}>{statusIcon} {merchStatus}</span>
-                    </small>
-                  </span>
-                  <span className="receiving-current-actions">
-                    <button type="button" className="receiving-current-copy-button is-danger" onClick={e => { e.stopPropagation(); removeReceivedItem(saved); }}>×</button>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <button type="button" className="recv-finish-btn" onClick={finishDelivery} disabled={saving || (!receipt && entryCount === 0)}>
-            {receipt ? '✓ Finish & Submit Delivery' : 'Cancel'}
-          </button>
-        </div>
-
-      </div>
-    </div>
-  );
-}
-
-function EditReceiptsPage() {
-  const clients = useResource(() => api.listClients());
-  const locations = useResource(() => api.listLocations());
-  const receipts = useResource(() => api.listReceipts());
-  const [search, setSearch] = useState('');
-  const [clientFilter, setClientFilter] = useState('');
-  const [dateFilter, setDateFilter] = useState('');
-
-  const [selectedReceipt, setSelectedReceipt] = useState(null);
-  const [receiptDraft, setReceiptDraft] = useState(null);
-  const [entryDrafts, setEntryDrafts] = useState({});
-  const [saving, setSaving] = useState('');
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-
-  const clientList = clients.data?.records ?? [];
-  const locationList = locations.data?.records ?? [];
-  const clientNameById = Object.fromEntries(clientList.map(client => [client.id, client.name]));
-  const locationNameById = Object.fromEntries(locationList.map(location => [location.id, location.name]));
-  const receiptList = receipts.data?.records ?? [];
-  const filteredReceipts = receiptList.filter(receipt => {
-    const haystack = [
-      receipt.name,
-      receipt.receipt,
-      receipt.carrier,
-      receipt.tracking,
-      receipt.receiver,
-      (receipt.clientIds || []).map(id => clientNameById[id]).join(' '),
-    ].join(' ').toLowerCase();
-    const receivedDay = receipt.received ? receipt.received.slice(0, 10) : '';
-    return (!search.trim() || haystack.includes(search.trim().toLowerCase()))
-      && (!clientFilter || (receipt.clientIds || []).includes(clientFilter))
-      && (!dateFilter || receivedDay === dateFilter);
-  });
-
-  async function openReceipt(receiptId) {
-    setError('');
-    setNotice('');
-    try {
-      const data = await api.getReceivingSession(receiptId);
-      setSelectedReceipt(data);
-      setReceiptDraft({
-        clientId: data.clientIds?.[0] || '',
-        carrier: data.carrier || '',
-        tracking: data.tracking || '',
-        boxQuantity: data.boxQuantity || 1,
-        received: data.received ? toDatetimeLocal(data.received) : '',
-        notes: data.notes || '',
-      });
-      setEntryDrafts(Object.fromEntries((data.entries || []).map(entry => [entry.id, {
-        productName: entry.productName || '',
-        skuId: receivingEntrySku(entry),
-        description: entry.description || '',
-        quantity: entry.quantity || 1,
-        locationId: receivingEntryLocationId(entry),
-        condition: entry.condition || 'Good',
-        notes: entry.notes || '',
-      }])));
-    } catch (err) {
-      setError(err.message || 'Could not open receipt.');
-    }
-  }
-
-  function setReceiptField(field, value) {
-    setReceiptDraft(prev => ({ ...(prev || {}), [field]: value }));
-  }
-
-  function setEntryField(entryId, field, value) {
-    setEntryDrafts(prev => ({
-      ...prev,
-      [entryId]: { ...(prev[entryId] || {}), [field]: value },
-    }));
-  }
-
-  async function saveReceiptHeader() {
-    if (!selectedReceipt || !receiptDraft) return;
-    setSaving('receipt');
-    setError('');
-    setNotice('');
-    try {
-      const updated = await api.updateReceivingSession(selectedReceipt.id, receiptDraft);
-      setSelectedReceipt(updated);
-      setNotice('Receipt saved.');
-    } catch (err) {
-      setError(err.message || 'Could not save receipt.');
-    } finally {
-      setSaving('');
-    }
-  }
-
-  async function saveReceiptEntry(entryId) {
-    if (!selectedReceipt || !entryDrafts[entryId]) return;
-    setSaving(entryId);
-    setError('');
-    setNotice('');
-    try {
-      const updated = await api.updateReceiptEntry(selectedReceipt.id, entryId, entryDrafts[entryId]);
-      setSelectedReceipt(prev => ({
-        ...prev,
-        entries: (prev?.entries || []).map(entry => entry.id === entryId ? updated : entry),
-      }));
-      setNotice('Received item saved.');
-    } catch (err) {
-      setError(err.message || 'Could not save received item.');
-    } finally {
-      setSaving('');
-    }
-  }
-
-  async function addPhotosToReceiptEntry(entryId, files) {
-    const uploadFiles = Array.from(files || []);
-    if (!selectedReceipt || !uploadFiles.length) return;
-    setSaving(`photos-${entryId}`);
-    setError('');
-    setNotice('');
-    try {
-      const uploaded = await api.uploadReceivingPhotos(uploadFiles, {
-        receiptId: selectedReceipt.id,
-        receiptEntryId: entryId,
-      });
-      const updated = uploaded.entry;
-      if (updated) {
-        setSelectedReceipt(prev => ({
-          ...prev,
-          entries: (prev?.entries || []).map(entry => entry.id === entryId ? updated : entry),
-        }));
-      }
-      setNotice('Photos added.');
-    } catch (err) {
-      setError(err.message || 'Could not add photos.');
-    } finally {
-      setSaving('');
-    }
-  }
-
-  return (
-    <div className="receipt-editor-page">
-      <div className="receipt-editor-head">
-        <h2>Edit Receipts</h2>
-        <span>{filteredReceipts.length} receipt{filteredReceipts.length === 1 ? '' : 's'}</span>
-      </div>
-      {error && <div className="error-state">{error}</div>}
-      {notice && <div className="notice-state">{notice}</div>}
-
-      <div className="receipt-editor-filters">
-        <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search receipts..." />
-        <select value={clientFilter} onChange={event => setClientFilter(event.target.value)}>
-          <option value="">All clients</option>
-          {clientList.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
-        </select>
-        <input type="date" value={dateFilter} onChange={event => setDateFilter(event.target.value)} />
-      </div>
-
-      <div className="receipt-editor-layout">
-        <section className="receipt-card-list" aria-label="Recent receipts">
-          {filteredReceipts.map(receipt => {
-            const clientName = (receipt.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown';
-            const thumbEntries = (receipt.entries || []).filter(entry => recordPhotoUrl(entry)).slice(0, 3);
-            return (
-              <button
-                type="button"
-                className={`receipt-card ${selectedReceipt?.id === receipt.id ? 'is-selected' : ''}`}
-                key={receipt.id}
-                onClick={() => openReceipt(receipt.id)}
-              >
-                <span className="receipt-card-main">
-                  <strong>{receipt.name || receipt.receipt || receipt.tracking || 'Unnamed receipt'}</strong>
-                  <small>{clientName} · {receipt.received ? new Date(receipt.received).toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' }) : 'No received date'}</small>
-                  <em>{receipt.carrier || 'No carrier'}{receipt.tracking ? ` · ${receipt.tracking}` : ''}</em>
-                </span>
-                <span className="receipt-card-meta">
-                  <span>{receipt.entries?.length || 0} entries</span>
-                  <span>{receipt.receiver || 'No receiver'}</span>
-                </span>
-                {thumbEntries.length > 0 && (
-                  <span className="receipt-card-thumbs">
-                    {thumbEntries.map(entry => <RecordThumbnail record={entry} key={entry.id} />)}
-                  </span>
-                )}
+            {!receipt && error && <div className="recv-field-error" style={{ margin: '0 0 8px' }}>{error}</div>}
+            {!receipt ? (
+              <button type="button" className="recv-create-btn" onClick={createDelivery} disabled={Boolean(saving)}>
+                {saving === 'create' ? 'Creating…' : 'Create Receipt →'}
               </button>
-            );
-          })}
-          {!filteredReceipts.length && <div className="receiving-current-empty">No receipts match these filters.</div>}
-        </section>
-
-        <section className="receipt-detail-editor">
-          {!selectedReceipt || !receiptDraft ? (
-            <div className="receipt-detail-empty">Open a receipt to edit its delivery details and merchandise entries.</div>
-          ) : (
-            <>
-              <div className="receipt-detail-title">
-                <div>
-                  <h3>{selectedReceipt.name || selectedReceipt.receipt || 'Receipt'}</h3>
-                  <span>{selectedReceipt.entries?.length || 0} receipt entr{selectedReceipt.entries?.length === 1 ? 'y' : 'ies'}</span>
+            ) : (
+              <div className="recv-panel-footer">
+                <div className="recv-panel-created">
+                  <span>✓ Receipt saved</span>
+                  <span className="recv-session-badge">{entryCount} item{entryCount !== 1 ? 's' : ''}</span>
                 </div>
-                <button type="button" className="btn btn-primary" onClick={saveReceiptHeader} disabled={saving === 'receipt'}>
-                  {saving === 'receipt' ? 'Saving...' : 'Save Receipt'}
-                </button>
+                {headerReceivedLabel && <span className="recv-session-time">{headerReceivedLabel}</span>}
               </div>
+            )}
+          </div>
 
-              <div className="receipt-header-grid">
-                <label>
-                  Client
-                  <select value={receiptDraft.clientId} onChange={event => setReceiptField('clientId', event.target.value)}>
-                    <option value="">Unknown</option>
-                    {clientList.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
-                  </select>
-                </label>
-                <label>
-                  Carrier
-                  <input value={receiptDraft.carrier} onChange={event => setReceiptField('carrier', event.target.value)} />
-                </label>
-                <label>
-                  Tracking
-                  <input value={receiptDraft.tracking} onChange={event => setReceiptField('tracking', event.target.value)} />
-                </label>
-                <label>
-                  Boxes
-                  <input type="number" min="1" value={receiptDraft.boxQuantity} onChange={event => setReceiptField('boxQuantity', event.target.value)} />
-                </label>
-                <label>
-                  Received
-                  <input type="datetime-local" value={receiptDraft.received} onChange={event => setReceiptField('received', event.target.value)} />
-                </label>
-                <label className="is-wide">
-                  Notes
-                  <textarea rows="2" value={receiptDraft.notes} onChange={event => setReceiptField('notes', event.target.value)} />
-                </label>
+          {/* Panel 2: Add Item */}
+          <div className="recv-item-panel">
+            <div className="recv-panel-head">
+              <span className={`recv-panel-step${!receipt ? ' is-inactive' : ''}`}>2</span>
+              <strong className="recv-panel-title">Add Item</strong>
+            </div>
+            {!receipt ? (
+              <div className="recv-panel-locked">
+                <span>Create a receipt first to start adding items.</span>
               </div>
-
-              <div className="receipt-entry-editor-list">
-                {(selectedReceipt.entries || []).map(entry => {
-                  const draft = entryDrafts[entry.id] || {};
-                  const locationName = locationNameById[draft.locationId] || '';
-                  return (
-                    <article className="receipt-entry-editor" key={entry.id}>
-                      <div className="receipt-entry-editor-head">
-                        <RecordThumbnail record={entry} className="receipt-entry-editor-thumb" />
-                        <div>
-                          <strong>{receivingEntryLabel(entry)}</strong>
-                          <span>{draft.skuId || 'No SKU / ID'}{locationName ? ` · ${locationName}` : ''}</span>
-                        </div>
-                        <label className="btn btn-alt receipt-entry-photo-button">
-                          {saving === `photos-${entry.id}` ? 'Uploading...' : 'Add Photos'}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            hidden
-                            onChange={event => {
-                              addPhotosToReceiptEntry(entry.id, event.target.files);
-                              event.target.value = '';
-                            }}
-                          />
-                        </label>
-                        <button type="button" className="btn btn-alt" onClick={() => saveReceiptEntry(entry.id)} disabled={saving === entry.id}>
-                          {saving === entry.id ? 'Saving...' : 'Save Entry'}
-                        </button>
+            ) : (
+              <>
+                {editingEntryId && createPortal(
+                  <div
+                    className="recv-edit-backdrop"
+                    onClick={() => { setEditingEntryId(''); resetActiveEntry('', entry.condition || 'Good'); }}
+                  />,
+                  document.body
+                )}
+                <div className={`recv-form${editingEntryId ? ' is-editing' : ''}`}>
+                  {editingEntryId && (
+                    <div className="recv-edit-modal-header">
+                      <span className="recv-edit-modal-title">Edit item</span>
+                      <button
+                        type="button"
+                        className="recv-edit-modal-close"
+                        onClick={() => { setEditingEntryId(''); resetActiveEntry('', entry.condition || 'Good'); }}
+                      >✕</button>
+                    </div>
+                  )}
+                  <div className="recv-form-content">
+                    {pendingCopyEntry && (
+                      <div className="receiving-copy-confirm">
+                        <span>Replace unsaved entry with this copy?</span>
+                        <button type="button" className="btn btn-alt" onClick={() => setPendingCopyEntry(null)}>Cancel</button>
+                        <button type="button" className="btn btn-primary" onClick={() => populateEntryFromSaved(pendingCopyEntry)}>Replace</button>
                       </div>
-                      {(entry.photos?.length || entry.photoMetadata?.length) ? (
-                        <div className="receipt-entry-photo-strip">
-                          {[...(entry.photos || []), ...(entry.photoMetadata || [])].slice(0, 6).map((photo, photoIndex) => {
-                            const url = receivingPhotoUrl(photo);
-                            return url ? <img src={url} alt="" key={`${entry.id}-photo-${photoIndex}`} loading="lazy" /> : null;
-                          })}
+                    )}
+                    <div className="recv-photo-row">
+                      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" multiple hidden onChange={e => { addEntryPhotos(e.target.files); e.target.value = ''; }} />
+                      <input ref={libraryInputRef} type="file" accept="image/*" multiple hidden onChange={e => { addEntryPhotos(e.target.files); e.target.value = ''; }} />
+                      {entryPhotos.length > 0 && (
+                        <div className="recv-photo-thumbs">
+                          {entryPhotos.map(photo => (
+                            <button type="button" className={`mobile-thumb ${showUploadProgress ? 'is-uploading' : ''}`} key={photo.id} onClick={() => setPreviewPhoto({ url: photo.previewUrl, name: photo.name })}>
+                              <img src={photo.previewUrl} alt="" />
+                              <span role="button" tabIndex={0} onClick={e => { e.stopPropagation(); removeEntryPhoto(photo.id); }} onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); removeEntryPhoto(photo.id); } }}>×</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="recv-photo-btns">
+                        <button type="button" className="recv-camera-btn" onClick={() => cameraInputRef.current?.click()}>📷 Take Photo</button>
+                        <button type="button" className="recv-library-btn" onClick={() => libraryInputRef.current?.click()}>🖼 Library</button>
+                      </div>
+                      {showUploadProgress && <div className="receiving-upload-progress" role="status"><span />Uploading...</div>}
+                    </div>
+                    <div className="recv-field recv-field-product">
+                      <label>Product Name</label>
+                      <input ref={productNameRef} value={entry.productName} onChange={e => { setEntry('productName', e.target.value); if (error) setError(''); }} placeholder="Name printed on package" autoComplete="off" />
+                    </div>
+                    <div className="recv-field">
+                      <label>SKU / Identifier</label>
+                      <input value={entry.skuId} onChange={e => setEntry('skuId', e.target.value)} placeholder="Optional" autoComplete="off" />
+                    </div>
+                    <div className="receiving-match-field">
+                      {matchChoice.status === 'matched' && matchChoice.item ? (
+                        <div className="receiving-match-selected">
+                          <span>
+                            <strong>
+                              {itemMatchTitle(matchChoice.item)}
+                              <button
+                                type="button"
+                                className="recv-copy-name-btn"
+                                title="Copy product name"
+                                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(itemMatchTitle(matchChoice.item)); }}
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                </svg>
+                              </button>
+                            </strong>
+                            <small>{[itemMatchIdentifier(matchChoice.item), matchChoice.item.brand, matchChoice.item.parentJobNumber ? `Job ${matchChoice.item.parentJobNumber}` : ''].filter(Boolean).join(' · ')}</small>
+                          </span>
+                          <button type="button" onClick={() => { setPrevMatchedItemId(matchChoice.item?.id || ''); setMatchChoice({ status: 'none', item: null }); }}>Change</button>
+                        </div>
+                      ) : matchChoice.status === 'needs' ? (
+                        <div className="receiving-match-selected is-unmatched">
+                          <span><strong>No Clear Match</strong><small>Will go to PM verification.</small></span>
+                          <button type="button" onClick={() => setMatchChoice({ status: 'none', item: null })}>Change</button>
+                        </div>
+                      ) : showMatchSuggestions ? (
+                        <div className="receiving-match-panel">
+                          <div className="receiving-match-panel-head">
+                            <span>{matchLoading ? 'Searching items…' : itemMatches.length ? 'Suggested matches' : 'No matches found'}</span>
+                            <button type="button" onClick={() => setMatchChoice({ status: 'needs', item: null })}>No clear match</button>
+                          </div>
+                          {itemMatches.length > 0 && (
+                            <div className="receiving-match-list">
+                              {itemMatches.slice(0, 5).map((item, i) => (
+                                <button type="button" className={`receiving-match-option ${i === 0 ? 'is-best' : ''}`} key={item.id} onClick={() => setMatchChoice({ status: 'matched', item })}>
+                                  <span>
+                                    <strong>{itemMatchTitle(item)}</strong>
+                                    <small>{[itemMatchIdentifier(item), item.brand, item.parentJobNumber ? `Job ${item.parentJobNumber}` : ''].filter(Boolean).join(' · ')}</small>
+                                  </span>
+                                  {i === 0 && <em>Best</em>}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ) : null}
-                      <div className="receipt-entry-editor-grid">
-                        <label>
-                          Product Name
-                          <input value={draft.productName || ''} onChange={event => setEntryField(entry.id, 'productName', event.target.value)} />
-                        </label>
-                        <label>
-                          SKU / ID
-                          <input value={draft.skuId || ''} onChange={event => setEntryField(entry.id, 'skuId', event.target.value)} />
-                        </label>
-                        <label>
-                          Qty
-                          <input type="number" min="1" value={draft.quantity || 1} onChange={event => setEntryField(entry.id, 'quantity', event.target.value)} />
-                        </label>
-                        <label>
-                          Storage Location
-                          <select value={draft.locationId || ''} onChange={event => setEntryField(entry.id, 'locationId', event.target.value)}>
-                            <option value="">Select location...</option>
-                            {locationList.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
-                          </select>
-                        </label>
-                        <label>
-                          Condition
-                          <select value={draft.condition || 'Good'} onChange={event => setEntryField(entry.id, 'condition', event.target.value)}>
+                    </div>
+                    <div className="recv-row">
+                      <div className="recv-field recv-field-qty">
+                        <label>Qty</label>
+                        <div className="recv-stepper">
+                          <button type="button" onClick={() => setEntry('quantity', Math.max(1, Number(entry.quantity || 1) - 1))}>−</button>
+                          <input type="number" min="1" inputMode="numeric" value={entry.quantity} onChange={e => setEntry('quantity', e.target.value)} />
+                          <button type="button" onClick={() => setEntry('quantity', Number(entry.quantity || 0) + 1)}>+</button>
+                        </div>
+                      </div>
+                      <div className="recv-field recv-field-location">
+                        <label>Storage Location</label>
+                        <select value={entry.locationId} onChange={e => setEntry('locationId', e.target.value)}>
+                          <option value="">Select location…</option>
+                          {locationList.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <details className="recv-more">
+                      <summary>More options</summary>
+                      <div className="recv-more-fields">
+                        <div className="recv-field">
+                          <label>Condition</label>
+                          <select value={entry.condition} onChange={e => setEntry('condition', e.target.value)}>
                             <option>Good</option>
                             <option>Damaged</option>
                             <option>Unknown</option>
                           </select>
-                        </label>
-                        <label className="is-wide">
-                          Description
-                          <input value={draft.description || ''} onChange={event => setEntryField(entry.id, 'description', event.target.value)} />
-                        </label>
-                        <label className="is-wide">
-                          Notes
-                          <textarea rows="2" value={draft.notes || ''} onChange={event => setEntryField(entry.id, 'notes', event.target.value)} />
-                        </label>
+                        </div>
+                        <div className="recv-field">
+                          <label>Description</label>
+                          <input value={entry.description} onChange={e => setEntry('description', e.target.value)} placeholder="Flavor, size, damage detail…" />
+                        </div>
+                        <div className="recv-field">
+                          <label>Notes</label>
+                          <textarea value={entry.notes} onChange={e => setEntry('notes', e.target.value)} rows="2" placeholder="Optional" />
+                        </div>
                       </div>
-                    </article>
-                  );
-                })}
-              </div>
-            </>
+                    </details>
+                    {error && <div className="recv-field-error">{error}</div>}
+                    <button type="button" className="recv-save-btn" onClick={saveNext} disabled={Boolean(saving)}>
+                      {saving === 'entry' ? 'Saving…' : editingEntryId ? 'Update item' : 'Save & next →'}
+                    </button>
+                  </div>{/* end recv-form-content */}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Panel 3: Items Logged */}
+          <div className="recv-list">
+            <div className="recv-panel-head">
+              <span className={`recv-panel-step${!receipt ? ' is-inactive' : ''}`}>3</span>
+              <strong className="recv-panel-title">{entryCount} Item{entryCount !== 1 ? 's' : ''} Logged</strong>
+            </div>
+            <div className="recv-list-items">
+              {savedEntries.length === 0 ? (
+                <div className="receiving-current-empty">Items you log will appear here.</div>
+              ) : [...savedEntries].reverse().map((saved, index) => {
+                const locationId = saved.locationIds?.[0] || saved.locationId;
+                const locationName = locationNameById[locationId] || '';
+                const merchStatus = receivedItemMerchStatus(saved);
+                const statusClass = (merchStatus === 'Matched' || merchStatus === 'Validated') ? 'is-ok' : 'is-warn';
+                const statusIcon = (merchStatus === 'Matched' || merchStatus === 'Validated') ? '✓' : '!';
+                return (
+                  <div
+                    key={saved.id || index}
+                    className={`receiving-current-row ${recentEntryIds.includes(saved.id) ? 'is-recent' : ''} ${editingEntryId === saved.id ? 'is-editing' : ''}`}
+                    role="button" tabIndex={0}
+                    onClick={() => editReceivedItem(saved)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); editReceivedItem(saved); } }}
+                  >
+                    <RecordThumbnail record={saved} className="receiving-current-thumb" />
+                    <span className="receiving-current-copy">
+                      <strong>{receivingEntryLabel(saved)}</strong>
+                      <small>Qty {saved.quantity || 1}{locationName ? ` · ${locationName}` : ''}</small>
+                      <small className="receiving-status-line">
+                        <span className={statusClass}>{statusIcon} {merchStatus}</span>
+                      </small>
+                    </span>
+                    <span className="receiving-current-actions">
+                      <button type="button" className="receiving-current-copy-button is-danger" onClick={e => { e.stopPropagation(); removeReceivedItem(saved); }}>×</button>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+        </div>
+      ) : (
+        /* ── All Receipts view ── */
+        <div className="recv-all-view">
+          <div className="recv-all-toolbar">
+            <input
+              className="recv-all-search"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search receipts by client, carrier, tracking…"
+              autoFocus
+            />
+            <div className="recv-all-view-toggle">
+              <button type="button" className={`recv-all-view-btn${allReceiptsView === 'receipts' ? ' is-active' : ''}`} onClick={() => setAllReceiptsView('receipts')}>By Receipt</button>
+              <button type="button" className={`recv-all-view-btn${allReceiptsView === 'items' ? ' is-active' : ''}`} onClick={() => setAllReceiptsView('items')}>By Item</button>
+            </div>
+          </div>
+          {isSearching && (
+            <div className="recv-all-scope-note">{filteredReceipts.length} receipt{filteredReceipts.length !== 1 ? 's' : ''} found · <button type="button" className="recv-all-scope-search" onClick={() => setSearch('')}>Clear</button></div>
           )}
-        </section>
-      </div>
+          <div className="recv-cal-grid">
+            {allReceipts.loading && <div className="empty-state" style={{gridColumn:'1/-1'}}>Loading…</div>}
+            {!allReceipts.loading && (() => {
+              // Build the 5 day columns (today and 4 prior days)
+              const today = new Date(); today.setHours(0,0,0,0);
+              const cols = Array.from({ length: 5 }, (_, i) => {
+                const d = new Date(today); d.setDate(today.getDate() - (4 - i));
+                return d;
+              });
+              function sameDay(d1, d2) {
+                return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+              }
+              function colLabel(d) {
+                if (sameDay(d, today)) return { day: 'Today', num: d.getDate(), isToday: true };
+                const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+                if (sameDay(d, yesterday)) return { day: 'Yesterday', num: d.getDate(), isToday: false };
+                return { day: d.toLocaleDateString([], { weekday: 'short' }), num: d.getDate(), isToday: false };
+              }
+              // When searching, fall back to day-grouped list instead of columns
+              if (isSearching) {
+                const grouped = {};
+                filteredReceipts.forEach(r => {
+                  const key = r.received ? new Date(r.received).toDateString() : 'Unknown';
+                  if (!grouped[key]) grouped[key] = [];
+                  grouped[key].push(r);
+                });
+                if (filteredReceipts.length === 0) return <div className="empty-state" style={{gridColumn:'1/-1'}}>No receipts match that search.</div>;
+                return (
+                  <div className="recv-search-results">
+                    {Object.entries(grouped).map(([dateStr, receipts]) => (
+                      <div key={dateStr} className="recv-search-day">
+                        <div className="recv-search-day-label">{dateStr === 'Unknown' ? 'Unknown date' : new Date(dateStr).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</div>
+                        {receipts.map(r => {
+                          const clientName = (r.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown';
+                          const entries = r.entries || [];
+                          const matchedCount = entries.filter(e => e.merchStatus === 'Matched' || e.merchStatus === 'Validated').length;
+                          const pendingCount = entries.length - matchedCount;
+                          return (
+                            <button key={r.id} type="button" className="recv-search-row" onClick={() => { selectReceipt(r.id); setTab('new'); }}>
+                              <div className="recv-day-row-main"><strong>{clientName}</strong><span>{[r.carrier, r.tracking].filter(Boolean).join(' · ')}</span></div>
+                              <div className="recv-day-row-right">
+                                {matchedCount > 0 && <span className="recv-sidebar-badge is-ok">{matchedCount} matched</span>}
+                                {pendingCount > 0 && <span className="recv-sidebar-badge is-warn">{pendingCount} unmatched</span>}
+                                <span className="recv-all-item-edit">Open →</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                );
+              }
+              // Normal 5-column calendar view
+              return cols.map(colDate => {
+                const { day, num, isToday } = colLabel(colDate);
+                const colReceipts = allReceiptsView === 'receipts'
+                  ? receiptList.filter(r => r.received && sameDay(new Date(r.received), colDate))
+                  : [];
+                const colItems = allReceiptsView === 'items'
+                  ? receiptList.filter(r => r.received && sameDay(new Date(r.received), colDate))
+                      .flatMap(r => {
+                        const clientName = (r.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown';
+                        return (r.entries || []).map(e => ({ ...e, _clientName: clientName, _receiptId: r.id }));
+                      })
+                  : [];
+                const cards = allReceiptsView === 'receipts' ? colReceipts : colItems;
+                return (
+                  <div key={colDate.toISOString()} className={`recv-cal-col${isToday ? ' is-today' : ''}`}>
+                    <div className="recv-cal-col-head">
+                      <span className="recv-cal-day-name">{day}</span>
+                      <span className={`recv-cal-day-num${isToday ? ' is-today' : ''}`}>{num}</span>
+                    </div>
+                    <div className="recv-cal-col-body">
+                      {cards.length === 0 && <div className="recv-cal-empty">—</div>}
+                      {allReceiptsView === 'receipts' && colReceipts.map(r => {
+                        const clientName = (r.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown';
+                        const entries = r.entries || [];
+                        const matchedCount = entries.filter(e => e.merchStatus === 'Matched' || e.merchStatus === 'Validated').length;
+                        const pendingCount = entries.length - matchedCount;
+                        return (
+                          <button key={r.id} type="button" className="recv-cal-card" onClick={() => { selectReceipt(r.id); setTab('new'); }}>
+                            <strong className="recv-cal-card-client">{clientName}</strong>
+                            {r.carrier && <span className="recv-cal-card-meta">{[r.carrier, r.tracking].filter(Boolean).join(' · ')}</span>}
+                            <div className="recv-cal-card-badges">
+                              {matchedCount > 0 && <span className="recv-sidebar-badge is-ok">{matchedCount} matched</span>}
+                              {pendingCount > 0 && <span className="recv-sidebar-badge is-warn">{pendingCount} unmatched</span>}
+                            </div>
+                          </button>
+                        );
+                      })}
+                      {allReceiptsView === 'items' && colItems.map((item, i) => {
+                        const isMatched = item.merchStatus === 'Matched' || (item.itemIds || []).length > 0;
+                        return (
+                          <div key={item.id || i} className={`recv-cal-card recv-cal-card--item${isMatched ? ' is-matched' : ''}`}>
+                            <strong className="recv-cal-card-client">{item.productName || item.name || '—'}</strong>
+                            <span className="recv-cal-card-meta">{item._clientName}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+          {!isSearching && (
+            <div className="recv-all-scope-note" style={{marginTop: 8}}>
+              <button type="button" className="recv-all-scope-search" onClick={() => setSearch(' ')}>Search all history</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Jobs page ─────────────────────────────────────────────────────────────────
 function JobsPage({ navigate }) {
   const clients = useResource(() => api.listClients());
   const [clientFilter, setClientFilter] = useState('');
@@ -2334,6 +2369,7 @@ function AddSkuForm({ jobId, onSaved, onCancel, identifierLabel = 'Identifier' }
 
 // ── Settings page ─────────────────────────────────────────────────────────────
 function SettingsPage() {
+  const { auth } = useAuth();
   const { data, loading, error } = useResource(() => api.settings());
   const clients = useResource(() => api.listClients());
   const s = data?.settings;
@@ -2483,6 +2519,12 @@ function SettingsPage() {
           </table>
         </div>}
       </div>
+      {auth?.role === 'Admin' && (
+        <div className="panel">
+          <SectionHeader id="users" title="Users" />
+          {sectionOpen('users') && <UsersSection />}
+        </div>
+      )}
       {s?.development && (
         <div className="panel">
           <SectionHeader id="developer" title="Developer Tools" />
@@ -3294,20 +3336,20 @@ function VerificationPage() {
   return (
     <div className="verification-page workspace-layout validation-workspace">
       {error && <div className="error-state">{error}</div>}
-      <WorkspacePanel id="validation-queue" title="Validation Queue" meta={`${queueRecords.length} active`} defaultWidth={360} minWidth={300} className="verification-queue">
+      <WorkspacePanel id="validation-queue" title="Verification" meta={`${queueRecords.length} to review`} defaultWidth={360} minWidth={300} className="verification-queue">
         <input
           className="verification-queue-search"
           value={queueSearch}
           onChange={event => setQueueSearch(event.target.value)}
-          placeholder="Search queue"
+          placeholder="Search received items…"
         />
         <div className="verification-tabs" role="tablist" aria-label="Verification queues">
           <button type="button" className={queueTab === 'verify' ? 'is-active' : ''} onClick={() => setQueueTab('verify')}>
-            <span>To Verify</span>
+            <span>Needs a Match</span>
             <strong>{toVerifyRecords.length}</strong>
           </button>
           <button type="button" className={queueTab === 'waiting' ? 'is-active' : ''} onClick={() => setQueueTab('waiting')}>
-            <span>Waiting for Import</span>
+            <span>Ready to Approve</span>
             <strong>{waitingRecords.length}</strong>
           </button>
         </div>
@@ -3382,10 +3424,10 @@ function VerificationPage() {
             </div>
           </WorkspacePanel>
 
-          <WorkspacePanel id="validation-details" title="Validation Details" meta={selected.merchStatus} defaultWidth={390} minWidth={320} className="verification-match-card">
+          <WorkspacePanel id="validation-details" title="Link to Item" meta={selected.merchStatus} defaultWidth={390} minWidth={320} className="verification-match-card">
           <div className="verification-card-head">
             <div>
-              <span>Matched Item</span>
+              <span>Received merchandise</span>
               <h2>{selected.productName || 'Unnamed Product'}</h2>
             </div>
           </div>
@@ -3401,18 +3443,18 @@ function VerificationPage() {
             className="verification-search"
             value={query}
             onChange={event => setQuery(event.target.value)}
-            placeholder="Search imported Items"
+            placeholder="Search items to link…"
           />
           <div className="verification-results">
-            {searching && <div className="verification-muted">Searching Items…</div>}
+            {searching && <div className="verification-muted">Searching…</div>}
             {!searching && query.trim().length >= 3 && matches.length === 0 && (
               <div className="verification-muted">
                 <strong>No matching item found.</strong>
-                <span>This merchandise will remain in Waiting for Import until the Item is imported.</span>
+                <span>The item may not be imported yet. It will stay in the queue until a match is available.</span>
               </div>
             )}
             {!searching && query.trim().length < 3 && (
-              <div className="verification-muted">Type at least 3 characters to search imported Items.</div>
+              <div className="verification-muted">Search by product name, SKU, or brand to find the matching item.</div>
             )}
             {matches.map(item => (
               <div className="verification-match-row" key={item.id}>
@@ -3433,10 +3475,10 @@ function VerificationPage() {
           </div>
           <div className="validation-action-stack">
             <button type="button" className="btn btn-primary" onClick={() => validateEntry('Validated')} disabled={Boolean(validating) || selected.merchStatus === 'Validated'}>
-              {validating === 'Validated' ? 'Approving…' : 'Approve Merchandise'}
+              {validating === 'Validated' ? 'Approving…' : '✓ Approve & move to production'}
             </button>
             <button type="button" className="btn btn-alt" onClick={() => validateEntry('Issue')} disabled={Boolean(validating)}>
-              {validating === 'Issue' ? 'Flagging…' : 'Raise Issue'}
+              {validating === 'Issue' ? 'Flagging…' : 'Flag an issue'}
             </button>
           </div>
           <div className="context-card">
@@ -3454,19 +3496,431 @@ function VerificationPage() {
   );
 }
 
+// ── Auth ─────────────────────────────────────────────────────────────────────
+const AUTH_STORAGE_KEY = 'marks:auth';
+const AVATARS = ['🦁','🐯','🦊','🐺','🐻','🐼','🦝','🦉','🦅','🦋','🐙','🦈','🐬','🦒','🦓','🦄','🐉','🌟','🎸','🍕'];
+
+function loadAuth() {
+  try { return JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY)); } catch { return null; }
+}
+function saveAuth(u) { localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(u)); }
+function clearAuth() { localStorage.removeItem(AUTH_STORAGE_KEY); }
+
+const AuthContext = createContext(null);
+function useAuth() { return useContext(AuthContext); }
+
+const ROLE_NAV = {
+  Admin:        ['/dashboard', '/imports', '/receiving', '/verification', '/items', '/jobs', '/settings'],
+  Producer:     ['/dashboard', '/imports', '/receiving', '/verification', '/items', '/jobs'],
+  Merch:        ['/receiving'],
+  Receiver:     ['/receiving'],
+  User:         ['/dashboard', '/items', '/jobs'],
+  PM:           ['/dashboard', '/items', '/jobs'],
+  Photographer: ['/dashboard', '/items', '/jobs'],
+  Retoucher:    ['/dashboard', '/items', '/jobs'],
+  Viewer:       ['/dashboard', '/items'],
+};
+function allowedPaths(role) { return ROLE_NAV[role] || ROLE_NAV.User; }
+
+// ── Login screen ─────────────────────────────────────────────────────────────
+function LoginScreen({ onLogin }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const pinRef = useRef(null);
+
+  useEffect(() => {
+    api.listUsers().then(d => {
+      setUsers((d.records || []).filter(u => u.active));
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (selected) { setPin(''); setError(''); setTimeout(() => pinRef.current?.focus(), 60); }
+  }, [selected]);
+
+  async function attemptLogin(userId, pinVal) {
+    setSubmitting(true);
+    setError('');
+    try {
+      const data = await api.loginUser(userId, pinVal);
+      saveAuth(data.user);
+      onLogin(data.user);
+    } catch {
+      setError('Incorrect PIN. Try again.');
+      setPin('');
+      setTimeout(() => pinRef.current?.focus(), 60);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function pressDigit(d) {
+    if (submitting) return;
+    if (d === '⌫') { setPin(p => p.slice(0, -1)); return; }
+    const next = pin + d;
+    if (next.length > 4) return;
+    setPin(next);
+    if (next.length === 4) setTimeout(() => attemptLogin(selected.id, next), 120);
+  }
+
+  return (
+    <div className="login-screen">
+      <div className="login-brand">
+        <img src="/marks-logo.png" alt="Marks Photo" className="login-logo" />
+        <span className="login-title">Marks Photo</span>
+      </div>
+      {!selected ? (
+        <div className="login-users">
+          <p className="login-prompt">Who's working today?</p>
+          {loading && <div className="login-loading">Loading…</div>}
+          <div className="login-user-grid">
+            {users.map(u => (
+              <button key={u.id} className="login-user-card" onClick={() => setSelected(u)}>
+                <span className="login-avatar">{u.avatar || (u.displayName || u.name || '?')[0]}</span>
+                <span className="login-user-name">{u.displayName || u.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="login-pin-panel">
+          <button className="login-back" onClick={() => setSelected(null)}>← Back</button>
+          <span className="login-avatar login-avatar-lg">{selected.avatar || (selected.displayName || selected.name || '?')[0]}</span>
+          <p className="login-pin-name">{selected.displayName || selected.name}</p>
+          <p className="login-prompt">Enter your PIN</p>
+          <div className="login-pin-dots">
+            {[0,1,2,3].map(i => <span key={i} className={`login-pin-dot ${pin.length > i ? 'filled' : ''}`} />)}
+          </div>
+          {error && <p className="login-error">{error}</p>}
+          <input ref={pinRef} type="password" inputMode="numeric" maxLength={4} value={pin}
+            onChange={e => { const v = e.target.value.replace(/\D/g,'').slice(0,4); setPin(v); if (v.length===4) setTimeout(() => attemptLogin(selected.id, v), 120); }}
+            className="login-pin-hidden" disabled={submitting} aria-label="PIN" />
+          <div className="login-numpad">
+            {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((d, i) => (
+              <button key={i} className={`login-numpad-btn${!d ? ' login-numpad-empty' : ''}`}
+                onClick={() => d && pressDigit(d)} disabled={submitting || !d} tabIndex={-1}>
+                {d}
+              </button>
+            ))}
+          </div>
+          {submitting && <p className="login-signing-in">Signing in…</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Profile modal ─────────────────────────────────────────────────────────────
+function ProfileModal({ onClose }) {
+  const { auth, setAuth } = useAuth();
+  const [tab, setTab] = useState('profile');
+  const [avatar, setAvatar] = useState(auth.avatar || '');
+  const [displayName, setDisplayName] = useState(auth.displayName || auth.name || '');
+  const [pin1, setPin1] = useState('');
+  const [pin2, setPin2] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [pinError, setPinError] = useState('');
+  const [saved, setSaved] = useState('');
+
+  async function saveProfile() {
+    setSaving(true);
+    try {
+      const data = await api.updateUser(auth.id, { avatar, displayName });
+      const updated = { ...auth, ...data.user };
+      saveAuth(updated);
+      setAuth(updated);
+      setSaved('Saved!');
+      setTimeout(() => setSaved(''), 2000);
+    } catch { /* ignore */ } finally { setSaving(false); }
+  }
+
+  async function savePin() {
+    if (pin1.length < 4) { setPinError('PIN must be 4 digits'); return; }
+    if (pin1 !== pin2) { setPinError('PINs do not match'); return; }
+    setSaving(true); setPinError('');
+    try {
+      await api.updateUser(auth.id, { pin: pin1 });
+      setPin1(''); setPin2('');
+      setSaved('PIN updated!');
+      setTimeout(() => setSaved(''), 2000);
+    } catch { setPinError('Failed to save PIN'); } finally { setSaving(false); }
+  }
+
+  function logout() { clearAuth(); setAuth(null); onClose(); }
+
+  return createPortal(
+    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal profile-modal">
+        <div className="modal-header">
+          <span className="modal-title">My Profile</span>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="profile-tabs">
+          <button className={`profile-tab${tab==='profile'?' active':''}`} onClick={() => setTab('profile')}>Profile</button>
+          <button className={`profile-tab${tab==='pin'?' active':''}`} onClick={() => setTab('pin')}>Change PIN</button>
+        </div>
+        {tab === 'profile' && (
+          <div className="profile-body">
+            <div className="profile-avatar-row">
+              <span className="profile-avatar-preview">{avatar || (auth.displayName||auth.name||'?')[0]}</span>
+            </div>
+            <p className="profile-avatar-label">Pick an avatar</p>
+            <div className="profile-avatar-grid">
+              {AVATARS.map(a => (
+                <button key={a} className={`profile-avatar-btn${a===avatar?' selected':''}`} onClick={() => setAvatar(a)}>{a}</button>
+              ))}
+            </div>
+            <div className="profile-field">
+              <label>Display Name</label>
+              <input value={displayName} onChange={e => setDisplayName(e.target.value)} className="form-input" placeholder={auth.name} />
+            </div>
+            <div className="profile-actions">
+              <button className="btn btn-primary" onClick={saveProfile} disabled={saving}>
+                {saved || (saving ? 'Saving…' : 'Save')}
+              </button>
+              <button className="btn btn-ghost" onClick={logout}>Sign out</button>
+            </div>
+          </div>
+        )}
+        {tab === 'pin' && (
+          <div className="profile-body">
+            <div className="profile-field">
+              <label>New PIN (4 digits)</label>
+              <input type="password" inputMode="numeric" maxLength={4} value={pin1}
+                onChange={e => setPin1(e.target.value.replace(/\D/g,'').slice(0,4))}
+                className="form-input" placeholder="••••" />
+            </div>
+            <div className="profile-field">
+              <label>Confirm PIN</label>
+              <input type="password" inputMode="numeric" maxLength={4} value={pin2}
+                onChange={e => setPin2(e.target.value.replace(/\D/g,'').slice(0,4))}
+                className="form-input" placeholder="••••" />
+            </div>
+            {pinError && <p className="login-error">{pinError}</p>}
+            <div className="profile-actions">
+              <button className="btn btn-primary" onClick={savePin} disabled={saving}>
+                {saved || (saving ? 'Saving…' : 'Update PIN')}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ── User management (admin) ───────────────────────────────────────────────────
+const ROLES = ['Admin', 'Producer', 'Merch', 'User'];
+
+function UserFormModal({ user, clients, onSave, onClose }) {
+  const isNew = !user;
+  const [name, setName] = useState(user?.name || '');
+  const [firstName, setFirstName] = useState(user?.firstName || '');
+  const [lastName, setLastName] = useState(user?.lastName || '');
+  const [displayName, setDisplayName] = useState(user?.displayName || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [role, setRole] = useState(user?.role || 'User');
+  const [avatar, setAvatar] = useState(user?.avatar || '');
+  const [pin, setPin] = useState('');
+  const [allClients, setAllClients] = useState(user?.allClients ?? false);
+  const [clientIds, setClientIds] = useState(user?.clientIds || []);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!name.trim()) { setError('Name is required'); return; }
+    setSaving(true); setError('');
+    try {
+      const payload = { name: name.trim(), firstName: firstName.trim(), lastName: lastName.trim(),
+        displayName: displayName.trim(), email: email.trim(), role, avatar, allClients, clientIds };
+      if (pin) payload.pin = pin;
+      const data = isNew ? await api.createUser(payload) : await api.updateUser(user.id, payload);
+      onSave(data.user);
+    } catch (e) { setError(e.message || 'Failed to save'); } finally { setSaving(false); }
+  }
+
+  function toggleClient(id) {
+    setClientIds(prev => prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]);
+  }
+
+  return createPortal(
+    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal user-form-modal">
+        <div className="modal-header">
+          <span className="modal-title">{isNew ? 'Add User' : 'Edit User'}</span>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <form className="user-form-body" onSubmit={submit}>
+          <div className="user-form-avatar-row">
+            <span className="profile-avatar-preview">{avatar || (name||'?')[0]}</span>
+          </div>
+          <div className="profile-avatar-grid">
+            {AVATARS.map(a => (
+              <button type="button" key={a} className={`profile-avatar-btn${a===avatar?' selected':''}`} onClick={() => setAvatar(a)}>{a}</button>
+            ))}
+          </div>
+          <div className="user-form-grid">
+            <div className="profile-field">
+              <label>Full Name *</label>
+              <input value={name} onChange={e => setName(e.target.value)} className="form-input" placeholder="Full name" required />
+            </div>
+            <div className="profile-field">
+              <label>Display Name</label>
+              <input value={displayName} onChange={e => setDisplayName(e.target.value)} className="form-input" placeholder="Nickname or short name" />
+            </div>
+            <div className="profile-field">
+              <label>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="form-input" placeholder="email@example.com" />
+            </div>
+            <div className="profile-field">
+              <label>Role</label>
+              <select value={role} onChange={e => setRole(e.target.value)} className="form-input">
+                {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="profile-field">
+              <label>{isNew ? 'Initial PIN (4 digits)' : 'Reset PIN (leave blank to keep)'}</label>
+              <input type="password" inputMode="numeric" maxLength={4} value={pin}
+                onChange={e => setPin(e.target.value.replace(/\D/g,'').slice(0,4))}
+                className="form-input" placeholder="••••" />
+            </div>
+          </div>
+          <div className="profile-field" style={{marginTop:12}}>
+            <label className="user-form-check">
+              <input type="checkbox" checked={allClients} onChange={e => setAllClients(e.target.checked)} />
+              Access all clients
+            </label>
+          </div>
+          {!allClients && clients.length > 0 && (
+            <div className="profile-field">
+              <label>Client Access</label>
+              <div className="user-form-clients">
+                {clients.map(c => (
+                  <label key={c.id} className="user-form-check">
+                    <input type="checkbox" checked={clientIds.includes(c.id)} onChange={() => toggleClient(c.id)} />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          {error && <p className="login-error">{error}</p>}
+          <div className="profile-actions">
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : isNew ? 'Add User' : 'Save Changes'}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function UsersSection() {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null); // null | 'new' | user object
+  const clients = useResource(() => api.listClients());
+  const clientList = clients.data?.records ?? [];
+
+  useEffect(() => {
+    api.listUsers().then(d => { setUsers(d.records || []); setLoading(false); }).catch(() => setLoading(false));
+  }, []);
+
+  async function toggleActive(user) {
+    try {
+      const data = await api.updateUser(user.id, { active: !user.active });
+      setUsers(prev => prev.map(u => u.id === user.id ? data.user : u));
+    } catch { /* ignore */ }
+  }
+
+  function onSaveUser(savedUser) {
+    setUsers(prev => {
+      const idx = prev.findIndex(u => u.id === savedUser.id);
+      if (idx >= 0) { const next = [...prev]; next[idx] = savedUser; return next; }
+      return [...prev, savedUser];
+    });
+    setEditing(null);
+  }
+
+  return (
+    <div className="users-section">
+      <div className="users-section-header">
+        <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Add User</button>
+      </div>
+      {loading && <div className="empty-state">Loading users…</div>}
+      {!loading && (
+        <div className="users-table-wrap">
+          <table className="users-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Clients</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.id} className={u.active ? '' : 'user-inactive'}>
+                  <td>
+                    <div className="users-table-user">
+                      <span className="users-table-avatar">{u.avatar || (u.displayName||u.name||'?')[0]}</span>
+                      <div>
+                        <strong>{u.displayName || u.name}</strong>
+                        {u.displayName && u.displayName !== u.name && <small>{u.name}</small>}
+                        {u.email && <small>{u.email}</small>}
+                      </div>
+                    </div>
+                  </td>
+                  <td><span className="badge badge-neutral">{u.role || '—'}</span></td>
+                  <td><span style={{fontSize:12,color:'var(--text-3)'}}>{u.allClients ? 'All clients' : u.clientIds?.length ? `${u.clientIds.length} client${u.clientIds.length!==1?'s':''}` : 'None'}</span></td>
+                  <td>
+                    <span className={`badge ${u.active ? 'badge-green' : 'badge-neutral'}`}>
+                      {u.active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="users-table-actions">
+                      <button className="btn btn-ghost btn-sm" onClick={() => setEditing(u)}>Edit</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => toggleActive(u)}>
+                        {u.active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {editing && (
+        <UserFormModal
+          user={editing === 'new' ? null : editing}
+          clients={clientList}
+          onSave={onSaveUser}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── App shell ─────────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: <Icon.Dashboard /> },
   { path: '/imports', label: 'Import', icon: <Icon.Add /> },
-  {
-    path: '/receiving',
-    label: 'Receiving',
-    icon: <Icon.Upload />,
-    children: [
-      { path: '/receiving', label: 'Quick Capture' },
-      { path: '/receiving/receipts', label: 'Edit Receipts' },
-    ],
-  },
+  { path: '/receiving', label: 'Receiving', icon: <Icon.Upload /> },
   { path: '/verification', label: 'Verification', icon: <Icon.ChevronRight /> },
   { path: '/items', label: 'Items', icon: <Icon.SKUs /> },
   { path: '/jobs', label: 'Jobs', icon: <Icon.Jobs /> },
@@ -3501,7 +3955,6 @@ function routeForPage(page, params = {}) {
 function pageTitleForPath(pathname) {
   if (pathname === '/imports/history') return 'Import History';
   if (pathname.startsWith('/imports')) return 'Import';
-  if (pathname === '/receiving/receipts') return 'Edit Receipts';
   if (pathname.startsWith('/receiving')) return 'Receiving';
   if (pathname.startsWith('/verification')) return 'Verification';
   if (pathname.startsWith('/items')) return 'Items';
@@ -3538,17 +3991,21 @@ function NotFound() {
 }
 
 function AppLayout() {
+  const { auth } = useAuth();
   const location = useLocation();
   const routerNavigate = useNavigate();
   const navigate = (page, params = {}) => routerNavigate(routeForPage(page, params));
   const pageTitle = pageTitleForPath(location.pathname);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [, setSidebarMode] = useStoredState('shell:sidebar:mode', 'expanded');
   const mobileMenuButtonRef = useRef(null);
   const mobileCloseButtonRef = useRef(null);
   const mobileDrawerRef = useRef(null);
   const workspaceRoute = location.pathname.startsWith('/receiving') || location.pathname.startsWith('/verification');
   const sidebarCollapsed = false; // always expanded — toggle removed
+  const allowed = auth ? allowedPaths(auth.role) : allowedPaths('User');
+  const visibleNav = NAV_ITEMS.filter(item => allowed.includes(item.path));
 
   // Alert count for sidebar badge
   const skus = useResource(() => api.listSkus());
@@ -3613,11 +4070,11 @@ function AppLayout() {
 
         <nav className="nav-section" aria-label="Primary">
           <ul className="nav-list" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {NAV_ITEMS.map(item => (
+            {visibleNav.map(item => (
               <li key={item.path}>
                 <NavLink
                   to={item.path}
-                  className={({ isActive }) => `nav-item ${isActive || (item.path === '/imports' && location.pathname.startsWith('/imports/')) || (item.path === '/receiving' && location.pathname.startsWith('/receiving/')) ? 'active' : ''}`}
+                  className={({ isActive }) => `nav-item ${isActive || (item.path === '/imports' && location.pathname.startsWith('/imports/')) ? 'active' : ''}`}
                   end={item.path === '/dashboard'}
                   onClick={() => setMobileNavOpen(false)}
 	                >
@@ -3648,13 +4105,16 @@ function AppLayout() {
           </ul>
         </nav>
 
-        <div className="sidebar-footer">
-          <span className="sidebar-user-avatar" aria-hidden="true">M</span>
-          <span className="sidebar-user-copy">
-            <strong>Marks User</strong>
-            <small>{skus.loading ? 'Loading…' : skus.error ? 'Connection error' : 'Live'}</small>
+        <button className="sidebar-footer" onClick={() => setProfileOpen(true)} title="Your profile">
+          <span className="sidebar-user-avatar" aria-hidden="true">
+            {auth?.avatar || (auth?.displayName || auth?.name || 'M')[0]}
           </span>
-        </div>
+          <span className="sidebar-user-copy">
+            <strong>{auth?.displayName || auth?.name || 'Marks User'}</strong>
+            <small>{auth?.role || (skus.loading ? 'Loading…' : skus.error ? 'Connection error' : 'Live')}</small>
+          </span>
+        </button>
+        {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
       </aside>
 
       <main className="main">
@@ -3692,7 +4152,6 @@ function AppLayout() {
             <Route path="/imports" element={<IntakePage navigate={navigate} />} />
             <Route path="/imports/history" element={<RouteImportHistoryPage />} />
             <Route path="/receiving" element={<ReceivingPage />} />
-            <Route path="/receiving/receipts" element={<EditReceiptsPage />} />
             <Route path="/verification" element={<VerificationPage />} />
             <Route path="/items" element={<RouteItemsPage navigate={navigate} />} />
             <Route path="/jobs" element={<JobsPage navigate={navigate} />} />
@@ -3710,9 +4169,12 @@ function AppLayout() {
 }
 
 export default function App() {
+  const [auth, setAuth] = useState(loadAuth);
   return (
-    <BrowserRouter>
-      <AppLayout />
-    </BrowserRouter>
+    <AuthContext.Provider value={{ auth, setAuth }}>
+      <BrowserRouter>
+        {auth ? <AppLayout /> : <LoginScreen onLogin={setAuth} />}
+      </BrowserRouter>
+    </AuthContext.Provider>
   );
 }

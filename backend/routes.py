@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import json
 import os
@@ -1937,12 +1938,130 @@ def _shape_user(r):
     return {
         "id": r["id"],
         "name": f.get(C.F_USER_NAME, ""),
+        "firstName": f.get(C.F_USER_FIRST_NAME, ""),
+        "lastName": f.get(C.F_USER_LAST_NAME, ""),
+        "displayName": f.get(C.F_USER_DISPLAY_NAME, ""),
         "email": f.get(C.F_USER_EMAIL, ""),
         "role": f.get(C.F_USER_ROLE, ""),
         "active": f.get(C.F_USER_ACTIVE, False),
-        "clientIds": f.get(C.F_USER_CLIENTS, []),
+        "clientIds": f.get(C.F_USER_CLIENTS, []) or [],
         "allClients": f.get(C.F_USER_ALL_CLIENTS, False),
+        "avatar": f.get(C.F_USER_AVATAR, ""),
+        "hasPIN": bool(f.get(C.F_USER_PIN_HASH, "")),
     }
+
+
+def _hash_pin(user_id, pin):
+    return hashlib.sha256(f"{user_id}:{pin}".encode()).hexdigest()
+
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+@api.post("/auth/login")
+def auth_login():
+    body = request.get_json(silent=True) or {}
+    user_id = (body.get("userId") or "").strip()
+    pin = str(body.get("pin") or "").strip()
+    if not user_id or not pin:
+        return err("userId and pin are required")
+    try:
+        record = airtable.get_record(C.USERS_TABLE, user_id, by_field_id=False)
+    except requests.HTTPError:
+        return err("Invalid credentials", 401)
+    fields = record.get("fields", {})
+    if not fields.get(C.F_USER_ACTIVE, False):
+        return err("Account is not active", 403)
+    stored_hash = fields.get(C.F_USER_PIN_HASH, "")
+    if stored_hash and _hash_pin(user_id, pin) != stored_hash:
+        return err("Invalid credentials", 401)
+    # If no PIN hash set, accept any PIN and save it as the new hash
+    if not stored_hash:
+        airtable.update_record(
+            C.USERS_TABLE, user_id,
+            {C.F_USER_PIN_HASH: _hash_pin(user_id, pin)},
+            by_field_id=False,
+        )
+    return jsonify({"user": _shape_user(record)})
+
+
+@api.post("/users")
+def create_user():
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return err("name is required")
+    fields = {
+        C.F_USER_NAME: name,
+        C.F_USER_ACTIVE: True,
+    }
+    for key, const in [
+        ("firstName", C.F_USER_FIRST_NAME),
+        ("lastName", C.F_USER_LAST_NAME),
+        ("displayName", C.F_USER_DISPLAY_NAME),
+        ("email", C.F_USER_EMAIL),
+        ("role", C.F_USER_ROLE),
+        ("avatar", C.F_USER_AVATAR),
+    ]:
+        val = (body.get(key) or "").strip()
+        if val:
+            fields[const] = val
+    if "allClients" in body:
+        fields[C.F_USER_ALL_CLIENTS] = bool(body["allClients"])
+    try:
+        record = airtable.create_record(C.USERS_TABLE, fields, by_field_id=False)
+    except requests.HTTPError as e:
+        return airtable_err(e)
+    user_id = record["id"]
+    if body.get("pin"):
+        airtable.update_record(
+            C.USERS_TABLE, user_id,
+            {C.F_USER_PIN_HASH: _hash_pin(user_id, str(body["pin"]))},
+            by_field_id=False,
+        )
+    if body.get("clientIds"):
+        record = airtable.update_record(
+            C.USERS_TABLE, user_id,
+            {C.F_USER_CLIENTS: body["clientIds"]},
+            by_field_id=False,
+        )
+    return jsonify({"user": _shape_user(record)}), 201
+
+
+@api.put("/users/<user_id>")
+def update_user(user_id):
+    body = request.get_json(silent=True) or {}
+    fields = {}
+    for key, const in [
+        ("name", C.F_USER_NAME),
+        ("firstName", C.F_USER_FIRST_NAME),
+        ("lastName", C.F_USER_LAST_NAME),
+        ("displayName", C.F_USER_DISPLAY_NAME),
+        ("email", C.F_USER_EMAIL),
+        ("role", C.F_USER_ROLE),
+        ("avatar", C.F_USER_AVATAR),
+    ]:
+        if key in body:
+            fields[const] = (body[key] or "").strip()
+    if "active" in body:
+        fields[C.F_USER_ACTIVE] = bool(body["active"])
+    if "allClients" in body:
+        fields[C.F_USER_ALL_CLIENTS] = bool(body["allClients"])
+    if body.get("pin"):
+        fields[C.F_USER_PIN_HASH] = _hash_pin(user_id, str(body["pin"]))
+    try:
+        if fields:
+            record = airtable.update_record(C.USERS_TABLE, user_id, fields, by_field_id=False)
+        else:
+            record = airtable.get_record(C.USERS_TABLE, user_id, by_field_id=False)
+        if "clientIds" in body:
+            record = airtable.update_record(
+                C.USERS_TABLE, user_id,
+                {C.F_USER_CLIENTS: body["clientIds"]},
+                by_field_id=False,
+            )
+    except requests.HTTPError as e:
+        return airtable_err(e)
+    return jsonify({"user": _shape_user(record)})
 
 
 # ── Jobs ──────────────────────────────────────────────────────────────────────
@@ -2389,6 +2508,13 @@ def _item_match_score(item, query):
     overlap = query_tokens & detail_tokens
     if overlap:
         return 48 + min(18, len(overlap) * 6)
+    # Prefix / partial-word matching: "smit" matches "smithfield", "000368" matches "000368abc"
+    prefix_matches = sum(
+        1 for qt in query_tokens
+        if len(qt) >= 3 and any(dt.startswith(qt) for dt in detail_tokens)
+    )
+    if prefix_matches:
+        return 36 + min(16, prefix_matches * 8)
     return 0
 
 
@@ -2903,6 +3029,50 @@ def delete_receiving_photo():
     return jsonify(result)
 
 
+@api.delete("/receiving/<record_id>/entries/<entry_id>/photos")
+def delete_receiving_entry_photo(record_id, entry_id):
+    """Delete a single photo from a receipt entry: removes from R2 and updates Airtable metadata."""
+    body = request.get_json(silent=True) or {}
+    object_key = (body.get("objectKey") or body.get("object_key") or "").strip()
+    if not object_key:
+        return err("objectKey is required.")
+    try:
+        entry = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, entry_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    # Verify the entry belongs to this receipt
+    linked_receipts = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+    if record_id not in linked_receipts:
+        return _forbidden()
+    # Delete from R2
+    try:
+        _photo_storage().delete_photo(object_key)
+    except ReceivingPhotoValidationError as error:
+        return err(str(error))
+    except ReceivingPhotoConfigError as error:
+        return err(str(error), 500)
+    except ReceivingPhotoStorageError:
+        return err("Photo could not be deleted.", 502)
+    # Update Airtable metadata to remove this photo
+    current_metadata = _photo_metadata_from_entry(entry.get("fields", {}))
+    updated_metadata = [
+        p for p in current_metadata
+        if (p.get("object_key") or p.get("objectKey") or "") != object_key
+    ]
+    try:
+        updated = airtable.update_record(
+            C.RECEIPT_ENTRIES_TABLE,
+            entry_id,
+            {C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps(updated_metadata)},
+            by_field_id=False,
+        )
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    shaped = _shape_receipt_entry(updated)
+    shaped["photoMetadata"] = updated_metadata
+    return jsonify({"deleted": True, "objectKey": object_key, "entry": shaped})
+
+
 def _local_received_datetime(value):
     raw = (value or "").strip()
     parsed = None
@@ -3051,36 +3221,17 @@ def _upload_receiving_entry_photos(receipt_id, receipt_entry_id):
         return err("Add at least one photo.")
 
     current_fields = entry_record.get("fields", {})
-    current_attachments = current_fields.get(C.F_RECEIPT_ENTRY_PHOTOS, []) or []
-    attachment_payload = current_attachments + [{"url": photo["public_url"]} for photo in uploaded_photos]
     metadata_payload = _photo_metadata_from_entry(current_fields) + uploaded_photos
     try:
         updated = airtable.update_record(
             C.RECEIPT_ENTRIES_TABLE,
             receipt_entry_id,
-            {C.F_RECEIPT_ENTRY_PHOTOS: attachment_payload},
+            {C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps(metadata_payload)},
             by_field_id=False,
         )
-        try:
-            updated = airtable.update_record(
-                C.RECEIPT_ENTRIES_TABLE,
-                receipt_entry_id,
-                {C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps(metadata_payload)},
-                by_field_id=False,
-            )
-        except requests.HTTPError as metadata_error:
-            if _is_unknown_field_error(metadata_error, C.F_RECEIPT_ENTRY_PHOTO_METADATA):
-                shaped = _shape_receipt_entry(updated)
-                if not shaped.get("photos"):
-                    shaped["photos"] = attachment_payload
-                shaped["photoMetadata"] = metadata_payload
-                return err("Airtable Receipt Entries table is missing the Photo Metadata long-text field.", 500)
-            raise
     except requests.HTTPError as error:
         return airtable_err(error)
     shaped = _shape_receipt_entry(updated)
-    if not shaped.get("photos"):
-        shaped["photos"] = attachment_payload
     shaped["photoMetadata"] = metadata_payload
     return jsonify({"photos": uploaded_photos, "entry": shaped})
 
@@ -3471,6 +3622,7 @@ def _receipt_entry_match_fields(body, receipt):
     fields = {}
     item_ids = _as_list(body.get("itemIds") or body.get("itemId"))
     item_id = item_ids[0] if item_ids else ""
+    job_id = (body.get("jobId") or "").strip()
     match_status = (body.get("matchStatus") or "").strip()
     if item_id:
         try:
@@ -3485,6 +3637,11 @@ def _receipt_entry_match_fields(body, receipt):
             return err("Item does not belong to this receipt client.", 403)
         fields[C.F_RECEIPT_ENTRY_ITEM] = [item_id]
         fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Matched"
+        if job_id:
+            try:
+                airtable.update_record(C.ITEMS_TABLE, item_id, {C.F_ITEM_JOB: [job_id]}, by_field_id=False)
+            except Exception:
+                pass  # don't fail the entry save if batch assignment fails
     elif body.get("noClearMatch") or match_status in {"Needs Match", "No Clear Match"}:
         fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Received"
     elif match_status == "Matched":

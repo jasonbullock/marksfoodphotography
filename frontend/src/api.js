@@ -289,6 +289,8 @@ api.uploadReceivingPhotos = async (files, { receiptId, receiptEntryId } = {}) =>
   if (receiptEntryId) form.append('receiptEntryId', receiptEntryId);
   return backend('POST', '/receiving/photos', form);
 };
+api.deleteReceivingPhoto = async (objectKey) => backend('DELETE', '/receiving/photos', { objectKey });
+api.deleteReceivingEntryPhoto = async (receiptId, entryId, objectKey) => backend('DELETE', `/receiving/${receiptId}/entries/${entryId}/photos`, { objectKey });
 api.receivingPhotoStorageStatus = async () => backend('GET', '/receiving/photo-storage/status');
 api.listVerificationEntries = async () => backend('GET', '/verification/entries');
 api.searchVerificationItems = async ({ q, clientId, includeItemId } = {}) => {
@@ -301,6 +303,11 @@ api.searchVerificationItems = async ({ q, clientId, includeItemId } = {}) => {
 api.matchVerificationEntry = async (entryId, itemId) => backend('POST', `/verification/entries/${entryId}/match`, { itemId });
 api.validateVerificationEntry = async (entryId, status) => backend('POST', `/verification/entries/${entryId}/validate`, { status });
 api.listLocations = async () => backend('GET', '/locations');
+
+api.listUsers = async () => backend('GET', '/users');
+api.loginUser = async (userId, pin) => backend('POST', '/auth/login', { userId, pin });
+api.createUser = async (data) => backend('POST', '/users', data);
+api.updateUser = async (id, data) => backend('PUT', `/users/${id}`, data);
 
 api.airtableSingleSelectOptions = async ({ tableName, fieldName }) => {
   try {
