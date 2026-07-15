@@ -43,6 +43,12 @@ const Icon = {
       <path d="M3 11v2a1 1 0 001 1h8a1 1 0 001-1v-2"/>
     </svg>
   ),
+  Verify: () => (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="8" r="6"/>
+      <path d="M5 8.3l2 2 4-4"/>
+    </svg>
+  ),
   Settings: () => (
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
       <circle cx="8" cy="8" r="2"/>
@@ -684,9 +690,17 @@ function itemMatchTitle(item) {
 }
 
 function itemMatchIdentifier(item) {
+  const value = itemMatchIdentifierValue(item);
+  return value ? `${itemMatchIdentifierLabel(item)}: ${value}` : '';
+}
+
+function itemMatchIdentifierLabel(item) {
   const label = item?.identifierLabel || item?.codeType || 'Identifier';
-  const value = item?.identifier || item?.productId || item?.gtinUpc || '';
-  return value ? `${label}: ${value}` : '';
+  return label;
+}
+
+function itemMatchIdentifierValue(item) {
+  return item?.identifier || item?.productId || item?.gtinUpc || '';
 }
 
 function receiptEntryHasUnsavedValues(entry, photos = []) {
@@ -1104,7 +1118,7 @@ function QuickReceivingCapture({ locationList }) {
 }
 
 function ReceivingPage() {
-  const clients = useResource(() => api.listClients({ all: true }));
+  const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
   const carrierOptions = useResource(() => api.airtableSingleSelectOptions({ tableName: 'Receipts', fieldName: 'Carrier' }));
   const allReceipts = useResource(() => api.listReceipts());
@@ -1307,6 +1321,10 @@ function ReceivingPage() {
 
   async function saveNext() {
     setError('');
+    if (entryPhotos.length === 0) {
+      setError('Add at least one photo before saving.');
+      return;
+    }
     if (!entry.productName.trim()) {
       setError('Product name is required.');
       productNameRef.current?.focus();
@@ -1705,7 +1723,28 @@ function ReceivingPage() {
                                 </svg>
                               </button>
                             </strong>
-                            <small>{[itemMatchIdentifier(matchChoice.item), matchChoice.item.brand, matchChoice.item.parentJobNumber ? `Job ${matchChoice.item.parentJobNumber}` : ''].filter(Boolean).join(' · ')}</small>
+                            <small className="receiving-match-meta">
+                              {itemMatchIdentifierValue(matchChoice.item) && (
+                                <span className="receiving-match-identifier-copy">
+                                  {itemMatchIdentifierLabel(matchChoice.item)}: {itemMatchIdentifierValue(matchChoice.item)}
+                                  <button
+                                    type="button"
+                                    className="recv-copy-name-btn"
+                                    title="Copy identifier"
+                                    aria-label="Copy matched identifier"
+                                    onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(itemMatchIdentifierValue(matchChoice.item)); }}
+                                  >
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                    </svg>
+                                  </button>
+                                </span>
+                              )}
+                              {[matchChoice.item.brand, matchChoice.item.parentJobNumber ? `Job ${matchChoice.item.parentJobNumber}` : ''].filter(Boolean).map(value => (
+                                <span key={value}>{value}</span>
+                              ))}
+                            </small>
                           </span>
                           <button type="button" onClick={() => { setPrevMatchedItemId(matchChoice.item?.id || ''); setMatchChoice({ status: 'none', item: null }); }}>Change</button>
                         </div>
@@ -1775,7 +1814,7 @@ function ReceivingPage() {
                       </div>
                     </details>
                     {error && <div className="recv-field-error">{error}</div>}
-                    <button type="button" className="recv-save-btn" onClick={saveNext} disabled={Boolean(saving)}>
+                    <button type="button" className="recv-save-btn" onClick={saveNext} disabled={Boolean(saving) || entryPhotos.length === 0}>
                       {saving === 'entry' ? 'Saving…' : editingEntryId ? 'Update item' : 'Save & next →'}
                     </button>
                   </div>{/* end recv-form-content */}
@@ -2368,9 +2407,9 @@ function AddSkuForm({ jobId, onSaved, onCancel, identifierLabel = 'Identifier' }
 }
 
 // ── Settings page ─────────────────────────────────────────────────────────────
-function SettingsPage() {
+function SettingsPage({ cards = null } = {}) {
   const { data, loading, error } = useResource(() => api.settings());
-  const clients = useResource(() => api.listClients());
+  const clients = useResource(() => api.listClients({ all: true }));
   const s = data?.settings;
   const clientList = clients.data?.records ?? [];
   const [randomizing, setRandomizing] = useState(false);
@@ -2380,6 +2419,7 @@ function SettingsPage() {
   const [clearSummary, setClearSummary] = useState(null);
   const [clearError, setClearError] = useState('');
   const [collapsedSections, setCollapsedSections] = useState({});
+  const hasCard = id => !cards || cards.includes(id);
   const sectionOpen = key => !collapsedSections[key];
   const toggleSection = key => setCollapsedSections(sections => ({ ...sections, [key]: !sections[key] }));
 
@@ -2411,7 +2451,7 @@ function SettingsPage() {
   }
 
   async function clearCoreTables() {
-    const typed = window.prompt('This will delete all rows from Airtable tables Items, History, Jobs, and Imports. Type DELETE to continue.');
+    const typed = window.prompt('This will delete all rows from Airtable tables Receipt Entries, Receipts, Items, History, Jobs, and Imports. Type DELETE to continue.');
     if (typed !== 'DELETE') return;
     setClearing(true);
     setClearError('');
@@ -2429,8 +2469,8 @@ function SettingsPage() {
   return (
     <div className="page-stack">
       {error && <div className="error-state">{error}</div>}
-      <div className="panel">
-        <SectionHeader id="airtable" title="Airtable connection" />
+      {hasCard('system') && <div className="panel">
+        <SectionHeader id="airtable" title="System Settings" />
         {sectionOpen('airtable') && <div className="settings-list">
           <div className="setting-row">
             <span className="setting-key">Status</span>
@@ -2469,11 +2509,10 @@ function SettingsPage() {
             </div>
           )}
         </div>}
-      </div>
-      <div className="panel requirements-panel">
-        <SectionHeader id="requirements" title="Photography Requirements" />
+      </div>}
+      {hasCard('clients') && <div className="panel requirements-panel">
         {clients.error && <div className="error-state">{clients.error}</div>}
-        {sectionOpen('requirements') && <div className="table-wrap requirements-table">
+        <div className="table-wrap requirements-table">
           <table>
             <thead>
               <tr>
@@ -2516,9 +2555,9 @@ function SettingsPage() {
               ))}
             </tbody>
           </table>
-        </div>}
-      </div>
-      {s?.development && (
+        </div>
+      </div>}
+      {hasCard('developer') && s?.development && (
         <div className="panel">
           <SectionHeader id="developer" title="Developer Tools" />
           {sectionOpen('developer') && <>
@@ -2532,7 +2571,7 @@ function SettingsPage() {
             </div>
             <div className="setting-row setting-row-danger">
               <span className="setting-key">Clear Core Tables</span>
-              <span className="setting-val">Delete all rows from Items, History, Jobs, and Imports.</span>
+              <span className="setting-val">Delete all rows from Receipt Entries, Receipts, Items, History, Jobs, and Imports.</span>
               <button className="btn btn-danger" type="button" onClick={clearCoreTables} disabled={clearing}>
                 {clearing ? 'Deleting…' : 'Delete Rows'}
               </button>
@@ -3492,6 +3531,8 @@ function VerificationPage() {
 // ── Auth ─────────────────────────────────────────────────────────────────────
 const AUTH_STORAGE_KEY = 'marks:auth';
 const ROLE_PERMISSION_STORAGE_KEY = 'marks:role-permissions';
+const ADMINISTRATION_PATH = '/administration';
+const ADMINISTRATION_DEFAULT_PATH = '/administration/users';
 const AVATARS = ['🦁','🐯','🦊','🐺','🐻','🐼','🦝','🦉','🦅','🦋','🐙','🦈','🐬','🦒','🦓','🦄','🐉','🌟','🎸','🍕'];
 
 function loadAuth() {
@@ -3504,7 +3545,7 @@ const AuthContext = createContext(null);
 function useAuth() { return useContext(AuthContext); }
 
 const ROLE_NAV = {
-  Admin:        ['/dashboard', '/imports', '/receiving', '/verification', '/items', '/jobs', '/settings'],
+  Admin:        ['/dashboard', '/imports', '/receiving', '/verification', '/items', '/jobs'],
   Producer:     ['/dashboard', '/imports', '/receiving', '/verification', '/items', '/jobs'],
   Merch:        ['/receiving'],
   'Merch Receiver': ['/receiving'],
@@ -3516,40 +3557,71 @@ const ROLE_NAV = {
   Viewer:       ['/dashboard', '/items'],
 };
 const ROLES = ['Admin', 'Producer', 'Merch', 'User', 'Viewer'];
-const ROLE_ACTION_OPTIONS = [
-  'Import products',
-  'Receive merchandise',
-  'Verify merchandise',
-  'Manage jobs and items',
-  'View dashboard and items',
-  'Manage users',
-  'Assign roles',
-  'Access system settings',
+const ADMIN_CARD_OPTIONS = [
+  { id: 'users', label: 'Users', icon: '👤', description: 'Manage users, PINs, and client access.' },
+  { id: 'roles', label: 'Roles', icon: '🔐', description: 'Manage role permissions and admin access.' },
+  { id: 'system', label: 'System', icon: '⚙️', description: 'Review Airtable connection and backend configuration.' },
+  { id: 'clients', label: 'Client Settings', icon: '🏷️', description: 'Review client defaults, identifiers, and requirements.' },
+  { id: 'developer', label: 'Developer Tools', icon: '🛠️', description: 'Run local utilities and maintenance tools.' },
 ];
-const DEFAULT_ROLE_ACTIONS = {
-  Admin: ['Manage users', 'Assign roles', 'Access system settings', 'Import products', 'Receive merchandise', 'Verify merchandise', 'Manage jobs and items'],
-  Producer: ['Import products', 'Receive merchandise', 'Verify merchandise', 'Manage jobs and items'],
-  Merch: ['Receive merchandise'],
-  User: ['Receive merchandise', 'Verify merchandise', 'Manage jobs and items'],
-  Viewer: ['View dashboard and items'],
+const DEFAULT_ADMIN_CARDS = {
+  Admin: ADMIN_CARD_OPTIONS.map(card => card.id),
 };
 function defaultRolePermissions() {
   return Object.fromEntries(ROLES.map(role => [role, {
     paths: ROLE_NAV[role] || ROLE_NAV.User,
-    actions: DEFAULT_ROLE_ACTIONS[role] || [],
+    adminCards: DEFAULT_ADMIN_CARDS[role] || [],
   }]));
+}
+function normalizeRolePermission(role, config, defaults) {
+  if (isAdminRole(role)) {
+    return {
+      paths: ROLE_NAV.Admin,
+      adminCards: DEFAULT_ADMIN_CARDS.Admin,
+    };
+  }
+  return {
+    ...defaults[role],
+    ...(config || {}),
+    paths: (config?.paths || defaults[role].paths)
+      .map(path => path === '/settings' ? ADMINISTRATION_PATH : path)
+      .filter(path => path !== ADMINISTRATION_PATH)
+      .filter((path, index, paths) => paths.indexOf(path) === index),
+    adminCards: normalizeAdminCards(config?.adminCards || defaults[role].adminCards),
+  };
+}
+function normalizeAdminCards(cards = []) {
+  const next = new Set();
+  cards.forEach(card => {
+    if (card === 'users-roles') {
+      next.add('users');
+      next.add('roles');
+      return;
+    }
+    next.add(card);
+  });
+  return ADMIN_CARD_OPTIONS.filter(card => next.has(card.id)).map(card => card.id);
 }
 function loadRolePermissions() {
   try {
     const saved = JSON.parse(localStorage.getItem(ROLE_PERMISSION_STORAGE_KEY));
-    return { ...defaultRolePermissions(), ...(saved || {}) };
+    const defaults = defaultRolePermissions();
+    return Object.fromEntries(ROLES.map(role => [role, normalizeRolePermission(role, saved?.[role], defaults)]));
   } catch {
     return defaultRolePermissions();
   }
 }
 function saveRolePermissions(value) { localStorage.setItem(ROLE_PERMISSION_STORAGE_KEY, JSON.stringify(value)); }
+function adminCardsForRole(role, rolePermissions) {
+  if (isAdminRole(role)) return DEFAULT_ADMIN_CARDS.Admin;
+  return normalizeAdminCards(rolePermissions?.[role]?.adminCards || DEFAULT_ADMIN_CARDS[role] || []);
+}
+function roleHasAdminAccess(role, rolePermissions) {
+  return adminCardsForRole(role, rolePermissions).length > 0;
+}
 function allowedPaths(role, rolePermissions) {
-  return rolePermissions?.[role]?.paths || ROLE_NAV[role] || ROLE_NAV.User;
+  const paths = isAdminRole(role) ? ROLE_NAV.Admin : rolePermissions?.[role]?.paths || ROLE_NAV[role] || ROLE_NAV.User;
+  return paths.filter(path => path !== ADMINISTRATION_PATH);
 }
 function isAdminRole(role) { return ['Admin', 'Administrator'].includes(role); }
 function userDisplayName(user) {
@@ -3626,7 +3698,6 @@ function LoginScreen({ onLogin }) {
         </div>
       ) : (
         <div className="login-pin-panel">
-          <button className="login-back" onClick={() => setSelected(null)}>← Back</button>
           <span className="login-avatar login-avatar-lg">{selected.avatar || (selected.displayName || selected.name || '?')[0]}</span>
           <p className="login-pin-name">{selected.displayName || selected.name}</p>
           <p className="login-prompt">Enter your PIN</p>
@@ -3645,6 +3716,7 @@ function LoginScreen({ onLogin }) {
               </button>
             ))}
           </div>
+          <button className="login-back" onClick={() => setSelected(null)}>← Back</button>
           {submitting && <p className="login-signing-in">Signing in…</p>}
         </div>
       )}
@@ -3797,22 +3869,23 @@ function clientAccessLabel(user, clients = []) {
 function PermissionPreview({ role, allClients, clientIds, clients = [], showClients = true }) {
   const { rolePermissions } = useAuth();
   const visible = NAV_ITEMS.filter(item => allowedPaths(role, rolePermissions).includes(item.path));
-  const actions = rolePermissions?.[role]?.actions || DEFAULT_ROLE_ACTIONS[role] || [];
+  const adminCards = adminCardsForRole(role, rolePermissions);
   return (
     <div className="permission-preview">
       <div>
         <span className="permission-preview-label">Visible navigation</span>
         <div className="permission-chip-row">
           {visible.map(item => <span key={item.path} className="permission-chip">{item.label}</span>)}
-          {isAdminRole(role) && <span className="permission-chip">Administration</span>}
         </div>
       </div>
-      <div>
-        <span className="permission-preview-label">Allowed actions</span>
-        <div className="permission-list">
-          {actions.map(action => <span key={action}>{action}</span>)}
+      {adminCards.length > 0 && (
+        <div>
+          <span className="permission-preview-label">Admin access</span>
+          <div className="permission-list">
+            {adminCards.map(cardId => <span key={cardId}>{ADMIN_CARD_OPTIONS.find(card => card.id === cardId)?.label || cardId}</span>)}
+          </div>
         </div>
-      </div>
+      )}
       {showClients && (
         <div>
           <span className="permission-preview-label">Accessible clients</span>
@@ -3868,70 +3941,74 @@ function UserFormModal({ user, clients, onSave, onClose }) {
         <button className="btn btn-ghost btn-sm" type="button" onClick={onClose}>Close</button>
       </div>
       <form className="user-form-body user-form-body-inline" onSubmit={submit}>
-        <div className="user-form-avatar-row">
-          <span className="profile-avatar-preview">{avatar || (displayName || firstName || email || '?')[0]}</span>
-        </div>
-        <div className="profile-avatar-grid">
-          {AVATARS.map(a => (
-            <button type="button" key={a} className={`profile-avatar-btn${a===avatar?' selected':''}`} onClick={() => setAvatar(a)}>{a}</button>
-          ))}
-        </div>
-        <div className="user-form-grid">
-          <div className="profile-field">
-            <label>First Name *</label>
-            <input value={firstName} onChange={e => setFirstName(e.target.value)} className="form-input" placeholder="First name" required={isNew} />
+        <div className="user-form-avatar-panel">
+          <div className="user-form-avatar-row">
+            <span className="profile-avatar-preview">{avatar || (displayName || firstName || email || '?')[0]}</span>
           </div>
-          <div className="profile-field">
-            <label>Last Name *</label>
-            <input value={lastName} onChange={e => setLastName(e.target.value)} className="form-input" placeholder="Last name" required={isNew} />
-          </div>
-          <div className="profile-field">
-            <label>Display Name</label>
-            <input value={displayName} onChange={e => setDisplayName(e.target.value)} className="form-input" placeholder="Nickname or short name" />
-          </div>
-          <div className="profile-field">
-            <label>Email</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="form-input" placeholder="email@example.com" />
-          </div>
-          <div className="profile-field">
-            <label>Role</label>
-            <select value={role} onChange={e => setRole(e.target.value)} className="form-input">
-              {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
-          </div>
-          <div className="profile-field">
-            <label>{isNew ? 'Initial PIN (4 digits)' : 'Reset PIN (leave blank to keep)'}</label>
-            <input type="password" inputMode="numeric" maxLength={4} value={pin}
-              onChange={e => setPin(e.target.value.replace(/\D/g,'').slice(0,4))}
-              className="form-input" placeholder="••••" />
+          <div className="profile-avatar-grid">
+            {AVATARS.map(a => (
+              <button type="button" key={a} className={`profile-avatar-btn${a===avatar?' selected':''}`} onClick={() => setAvatar(a)}>{a}</button>
+            ))}
           </div>
         </div>
-        <PermissionPreview role={role} allClients={allClients} clientIds={clientIds} clients={clients} />
-        <div className="profile-field" style={{marginTop:12}}>
-          <label className="user-form-check">
-            <input type="checkbox" checked={allClients} onChange={e => setAllClients(e.target.checked)} />
-            Access all clients
-          </label>
-        </div>
-        {!allClients && clients.length > 0 && (
-          <div className="profile-field">
-            <label>Client Access</label>
-            <div className="user-form-clients">
-              {clients.map(c => (
-                <label key={c.id} className="user-form-check">
-                  <input type="checkbox" checked={clientIds.includes(c.id)} onChange={() => toggleClient(c.id)} />
-                  {c.name}
-                </label>
-              ))}
+        <div className="user-form-main">
+          <div className="user-form-grid">
+            <div className="profile-field">
+              <label>First Name *</label>
+              <input value={firstName} onChange={e => setFirstName(e.target.value)} className="form-input" placeholder="First name" required={isNew} />
+            </div>
+            <div className="profile-field">
+              <label>Last Name *</label>
+              <input value={lastName} onChange={e => setLastName(e.target.value)} className="form-input" placeholder="Last name" required={isNew} />
+            </div>
+            <div className="profile-field">
+              <label>Display Name</label>
+              <input value={displayName} onChange={e => setDisplayName(e.target.value)} className="form-input" placeholder="Nickname or short name" />
+            </div>
+            <div className="profile-field">
+              <label>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="form-input" placeholder="email@example.com" />
+            </div>
+            <div className="profile-field">
+              <label>Role</label>
+              <select value={role} onChange={e => setRole(e.target.value)} className="form-input">
+                {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="profile-field">
+              <label>{isNew ? 'Initial PIN (4 digits)' : 'Reset PIN (leave blank to keep)'}</label>
+              <input type="password" inputMode="numeric" maxLength={4} value={pin}
+                onChange={e => setPin(e.target.value.replace(/\D/g,'').slice(0,4))}
+                className="form-input" placeholder="••••" />
             </div>
           </div>
-        )}
-        {error && <div className="error-state user-form-error">{error}</div>}
-        <div className="profile-actions">
-          <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving ? 'Saving…' : isNew ? 'Add User' : 'Save Changes'}
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <PermissionPreview role={role} allClients={allClients} clientIds={clientIds} clients={clients} />
+          <div className="profile-field">
+            <label className="user-form-check">
+              <input type="checkbox" checked={allClients} onChange={e => setAllClients(e.target.checked)} />
+              Access all clients
+            </label>
+          </div>
+          {!allClients && clients.length > 0 && (
+            <div className="profile-field">
+              <label>Client Access</label>
+              <div className="user-form-clients">
+                {clients.map(c => (
+                  <label key={c.id} className="user-form-check">
+                    <input type="checkbox" checked={clientIds.includes(c.id)} onChange={() => toggleClient(c.id)} />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+          {error && <div className="error-state user-form-error">{error}</div>}
+          <div className="profile-actions">
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Saving…' : isNew ? 'Add User' : 'Save Changes'}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          </div>
         </div>
       </form>
     </section>
@@ -3942,7 +4019,8 @@ function UsersSection() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null); // null | 'new' | user object
-  const clients = useResource(() => api.listClients());
+  const [viewMode, setViewMode] = useState('cards');
+  const clients = useResource(() => api.listClients({ all: true }));
   const clientList = clients.data?.records ?? [];
 
   useEffect(() => {
@@ -3970,9 +4048,26 @@ function UsersSection() {
       <div className="users-section-header">
         <div>
           <h3>Users</h3>
-          <p>Manage team access, role assignments, client visibility, and PIN resets.</p>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Add User</button>
+        <div className="users-section-actions">
+          <div className="view-toggle" aria-label="User view">
+            <button
+              type="button"
+              className={viewMode === 'cards' ? 'is-active' : ''}
+              onClick={() => setViewMode('cards')}
+            >
+              Cards
+            </button>
+            <button
+              type="button"
+              className={viewMode === 'list' ? 'is-active' : ''}
+              onClick={() => setViewMode('list')}
+            >
+              List
+            </button>
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Add User</button>
+        </div>
       </div>
       {loading && <div className="empty-state">Loading users…</div>}
       {editing && (
@@ -3983,7 +4078,7 @@ function UsersSection() {
           onClose={() => setEditing(null)}
         />
       )}
-      {!loading && (
+      {!loading && viewMode === 'cards' && (
         <div className="users-card-grid">
           {users.map(u => (
             <article
@@ -4019,6 +4114,47 @@ function UsersSection() {
           ))}
         </div>
       )}
+      {!loading && viewMode === 'list' && (
+        <div className="table-wrap users-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Clients</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.id}>
+                  <td>
+                    <button className="user-list-person" type="button" onClick={() => setEditing(u)}>
+                      <span className="user-card-avatar">{u.avatar || userDisplayName(u)[0]}</span>
+                      <span>
+                        <strong>{userDisplayName(u)}</strong>
+                        <small>{u.email || userFullName(u)}</small>
+                      </span>
+                    </button>
+                  </td>
+                  <td><span className="badge badge-neutral">{u.role || 'No role'}</span></td>
+                  <td>{clientAccessLabel(u, clientList)}</td>
+                  <td><span className={`badge ${u.active ? 'badge-green' : 'badge-neutral'}`}>{u.active ? 'Active' : 'Inactive'}</span></td>
+                  <td>
+                    <div className="user-list-actions">
+                      <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEditing(u)}>Edit</button>
+                      <button className="btn btn-ghost btn-sm" type="button" onClick={() => toggleActive(u)}>
+                        {u.active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -4026,9 +4162,10 @@ function UsersSection() {
 function RolesSection() {
   const { rolePermissions, setRolePermissions } = useAuth();
   function updateRole(role, updater) {
+    if (isAdminRole(role)) return;
     setRolePermissions(current => {
       const base = current || defaultRolePermissions();
-      const nextRole = updater(base[role] || { paths: [], actions: [] });
+      const nextRole = updater(base[role] || { paths: [], adminCards: [] });
       const next = { ...base, [role]: nextRole };
       saveRolePermissions(next);
       return next;
@@ -4041,11 +4178,13 @@ function RolesSection() {
       return { ...config, paths: nextPaths };
     });
   }
-  function toggleAction(role, action) {
+  function toggleAdminCard(role, cardId) {
     updateRole(role, config => {
-      const actions = config.actions || [];
-      const nextActions = actions.includes(action) ? actions.filter(item => item !== action) : [...actions, action];
-      return { ...config, actions: nextActions };
+      const adminCards = config.adminCards || [];
+      const nextAdminCards = adminCards.includes(cardId)
+        ? adminCards.filter(item => item !== cardId)
+        : [...adminCards, cardId];
+      return { ...config, adminCards: nextAdminCards };
     });
   }
   return (
@@ -4053,7 +4192,6 @@ function RolesSection() {
       <div className="users-section-header">
         <div>
           <h3>Roles</h3>
-          <p>Current role permissions are based on existing navigation and backend authorization checks.</p>
         </div>
       </div>
       <div className="role-card-grid">
@@ -4061,7 +4199,6 @@ function RolesSection() {
           <article key={role} className="role-card">
             <div className="role-card-header">
               <strong>{role}</strong>
-              {isAdminRole(role) && <span className="badge badge-green">Administration</span>}
             </div>
             <div className="role-edit-block">
               <span className="permission-preview-label">Can see</span>
@@ -4070,9 +4207,9 @@ function RolesSection() {
                   <label key={item.path} className="role-toggle">
                     <input
                       type="checkbox"
-                      checked={allowedPaths(role, rolePermissions).includes(item.path)}
+                      checked={isAdminRole(role) || allowedPaths(role, rolePermissions).includes(item.path)}
                       onChange={() => togglePath(role, item.path)}
-                      disabled={isAdminRole(role) && item.path === '/settings'}
+                      disabled={isAdminRole(role)}
                     />
                     {item.label}
                   </label>
@@ -4080,16 +4217,17 @@ function RolesSection() {
               </div>
             </div>
             <div className="role-edit-block">
-              <span className="permission-preview-label">Can do</span>
+              <span className="permission-preview-label">Admin access</span>
               <div className="role-toggle-grid">
-                {ROLE_ACTION_OPTIONS.map(action => (
-                  <label key={action} className="role-toggle">
+                {ADMIN_CARD_OPTIONS.map(card => (
+                  <label key={card.id} className="role-toggle">
                     <input
                       type="checkbox"
-                      checked={(rolePermissions?.[role]?.actions || []).includes(action)}
-                      onChange={() => toggleAction(role, action)}
+                      checked={isAdminRole(role) || (rolePermissions?.[role]?.adminCards || []).includes(card.id)}
+                      onChange={() => toggleAdminCard(role, card.id)}
+                      disabled={isAdminRole(role)}
                     />
-                    {action}
+                    {card.label}
                   </label>
                 ))}
               </div>
@@ -4102,24 +4240,54 @@ function RolesSection() {
 }
 
 function AdministrationPage() {
-  const { auth } = useAuth();
-  if (!isAdminRole(auth?.role)) {
+  const { auth, rolePermissions } = useAuth();
+  const location = useLocation();
+  const routerNavigate = useNavigate();
+  const adminCards = adminCardsForRole(auth?.role, rolePermissions);
+  const availableCards = ADMIN_CARD_OPTIONS.filter(card => adminCards.includes(card.id));
+  const sectionSlug = location.pathname.split('/')[2] || availableCards[0]?.id || 'users';
+  const activeCard = availableCards.find(card => card.id === sectionSlug) || availableCards[0];
+
+  useEffect(() => {
+    if (activeCard && sectionSlug !== activeCard.id) {
+      routerNavigate(`${ADMINISTRATION_PATH}/${activeCard.id}`, { replace: true });
+    }
+  }, [activeCard, routerNavigate, sectionSlug]);
+
+  function renderActiveCard() {
+    if (!activeCard) return <div className="empty-state">No Administration sections assigned.</div>;
+    if (activeCard.id === 'users') return <UsersSection />;
+    if (activeCard.id === 'roles') return <RolesSection />;
+    return <SettingsPage cards={[activeCard.id]} />;
+  }
+
+  if (!availableCards.length) {
     return (
       <div className="empty-state">
         Administrator access required.
       </div>
     );
   }
+
   return (
     <div className="administration-page">
-      <div className="admin-hero">
-        <div>
-          <p className="eyebrow">Administration</p>
-          <h2>Users & Roles</h2>
-        </div>
+      <div className="admin-section-nav" aria-label="Administration sections">
+        {availableCards.map(card => (
+          <button
+            type="button"
+            key={card.id}
+            className={`admin-section-tab ${activeCard?.id === card.id ? 'is-active' : ''}`}
+            onClick={() => routerNavigate(`${ADMINISTRATION_PATH}/${card.id}`)}
+          >
+            <span aria-hidden="true">{card.icon}</span>
+            {card.label}
+          </button>
+        ))}
       </div>
-      <UsersSection />
-      <RolesSection />
+
+      <div className="admin-active-section">
+        {renderActiveCard()}
+      </div>
     </div>
   );
 }
@@ -4129,10 +4297,9 @@ const NAV_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: <Icon.Dashboard /> },
   { path: '/imports', label: 'Import', icon: <Icon.Add /> },
   { path: '/receiving', label: 'Receiving', icon: <Icon.Upload /> },
-  { path: '/verification', label: 'Verification', icon: <Icon.ChevronRight /> },
-  { path: '/items', label: 'Items', icon: <Icon.SKUs /> },
-  { path: '/jobs', label: 'Jobs', icon: <Icon.Jobs /> },
-  { path: '/settings', label: 'Settings', icon: <Icon.Settings /> },
+  { path: '/verification', label: 'Verification', icon: <Icon.Verify /> },
+  { path: '/jobs', label: 'Jobs', icon: <Icon.SKUs /> },
+  { path: '/items', label: 'Items', icon: <Icon.Jobs /> },
 ];
 
 function routeForPage(page, params = {}) {
@@ -4153,10 +4320,10 @@ function routeForPage(page, params = {}) {
     skus: `/items${suffix}`,
     jobs: '/jobs',
     'new-job': '/jobs/new',
-    clients: '/clients',
-    settings: '/settings',
-    admin: '/administration',
-    administration: '/administration',
+    clients: ADMINISTRATION_DEFAULT_PATH,
+    settings: ADMINISTRATION_DEFAULT_PATH,
+    admin: ADMINISTRATION_DEFAULT_PATH,
+    administration: ADMINISTRATION_DEFAULT_PATH,
   };
   return routes[page] || '/dashboard';
 }
@@ -4171,7 +4338,7 @@ function pageTitleForPath(pathname) {
   if (pathname.startsWith('/jobs')) return 'Jobs';
   if (pathname.startsWith('/clients')) return 'Clients';
   if (pathname.startsWith('/administration')) return 'Administration';
-  if (pathname.startsWith('/settings')) return 'Settings';
+  if (pathname.startsWith('/settings')) return 'Administration';
   if (pathname.startsWith('/dashboard')) return 'Dashboard';
   return 'Not Found';
 }
@@ -4216,6 +4383,7 @@ function AppLayout() {
   const sidebarCollapsed = false; // always expanded — toggle removed
   const allowed = auth ? allowedPaths(auth.role, rolePermissions) : allowedPaths('User', rolePermissions);
   const visibleNav = NAV_ITEMS.filter(item => allowed.includes(item.path));
+  const hasAdminAccess = auth ? roleHasAdminAccess(auth.role, rolePermissions) : false;
 
   // Alert count for sidebar badge
   const skus = useResource(() => api.listSkus());
@@ -4315,10 +4483,10 @@ function AppLayout() {
           </ul>
         </nav>
 
-        <div className="sidebar-bottom">
-          {isAdminRole(auth?.role) && (
+        <div className={`sidebar-bottom ${hasAdminAccess ? 'has-admin-link' : ''}`}>
+          {hasAdminAccess && (
             <NavLink
-              to="/administration"
+              to={ADMINISTRATION_DEFAULT_PATH}
               className={({ isActive }) => `nav-item sidebar-admin-link ${isActive ? 'active' : ''}`}
               onClick={() => setMobileNavOpen(false)}
             >
@@ -4340,7 +4508,7 @@ function AppLayout() {
       </aside>
 
       <main className="main">
-        <header className="topbar">
+        <header className={`topbar ${location.pathname === '/dashboard' ? 'is-dashboard' : ''}`}>
           <div className="topbar-left">
             <button
               type="button"
@@ -4378,9 +4546,10 @@ function AppLayout() {
             <Route path="/items" element={<RouteItemsPage navigate={navigate} />} />
             <Route path="/jobs" element={<JobsPage navigate={navigate} />} />
             <Route path="/jobs/new" element={<NewJobPage navigate={navigate} />} />
-            <Route path="/clients" element={<Navigate to="/settings" replace />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/administration" element={<AdministrationPage />} />
+            <Route path="/clients" element={<Navigate to={ADMINISTRATION_DEFAULT_PATH} replace />} />
+            <Route path="/settings" element={<Navigate to={ADMINISTRATION_DEFAULT_PATH} replace />} />
+            <Route path="/administration" element={<Navigate to={ADMINISTRATION_DEFAULT_PATH} replace />} />
+            <Route path="/administration/:section" element={<AdministrationPage />} />
             <Route path="/intake" element={<Navigate to="/imports" replace />} />
             <Route path="/intake/import-history" element={<Navigate to="/imports/history" replace />} />
             <Route path="*" element={<NotFound />} />

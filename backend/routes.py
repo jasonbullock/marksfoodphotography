@@ -421,7 +421,7 @@ READINESS_LABELS = {
 }
 MERCHANDISE_ISSUE_TYPES = {"Missing Merch", "Wrong Merch", "Damaged", "Unknown Item"}
 RESOLVED_ISSUE_STATUSES = {"Resolved", "Cancelled"}
-PRODUCTION_LOCK_STATUSES = {"In Production", "Complete", "Cancelled"}
+PRODUCTION_LOCK_STATUSES = {"Production", "Complete", "Cancelled"}
 
 
 def _identifier_label(client):
@@ -4090,7 +4090,7 @@ def _demo_item_payload(record, client, queue_id, index):
         })
     elif queue_id == "in_creative_force":
         base.update({
-            C.F_ITEM_STATUS: "In Production",
+            C.F_ITEM_STATUS: "Production",
             C.F_ITEM_RECEIVED: True,
             C.F_ITEM_ARTWORK_RECEIVED: True,
         })
@@ -4224,6 +4224,8 @@ def clear_core_tables():
         return err("Developer tools are only available in development mode.", 404)
 
     tables = [
+        ("receiptEntries", C.RECEIPT_ENTRIES_TABLE),
+        ("receipts", C.RECEIPTS_TABLE),
         ("items", C.ITEMS_TABLE),
         ("history", C.HISTORY_TABLE),
         ("jobs", C.JOBS_TABLE),
