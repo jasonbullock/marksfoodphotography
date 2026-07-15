@@ -384,9 +384,9 @@ def list_clients():
     )
     raw_records = data.get("records", [])
     if request.args.get("all") == "1":
-        admin_error = _require_admin()
-        if admin_error:
-            return admin_error
+        management_error = _require_user_management()
+        if management_error:
+            return management_error
         permitted = raw_records
     else:
         permitted = _permitted_client_records(raw_records)
@@ -1943,15 +1943,18 @@ def _shape_location(r):
 
 @api.get("/users")
 def list_users():
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
+    management_error = _require_user_management()
+    if management_error:
+        return management_error
     data = airtable.list_records(
         C.USERS_TABLE,
         params={"sort[0][field]": C.F_USER_NAME, "sort[0][direction]": "asc"},
         by_field_id=False,
     )
-    records = [_shape_user(r) for r in data.get("records", [])]
+    records_data = data.get("records", [])
+    if not _is_admin():
+        records_data = [record for record in records_data if not _record_is_admin_user(record)]
+    records = [_shape_user(r) for r in records_data]
     return jsonify({"records": records})
 
 
@@ -2041,6 +2044,20 @@ def _require_admin():
     return None
 
 
+def _is_admin_role_value(role):
+    return str(role or "").strip() in {"Admin", "Administrator"}
+
+
+def _require_user_management():
+    if not _session_user():
+        return err("Authentication required", 401)
+    return None
+
+
+def _record_is_admin_user(record):
+    return _is_admin_role_value((record.get("fields", {}) if record else {}).get(C.F_USER_ROLE))
+
+
 def _hash_pin(user_id, pin):
     return hashlib.sha256(f"{user_id}:{pin}".encode()).hexdigest()
 
@@ -2126,10 +2143,12 @@ def auth_users():
 
 @api.post("/users")
 def create_user():
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
+    management_error = _require_user_management()
+    if management_error:
+        return management_error
     body = request.get_json(silent=True) or {}
+    if not _is_admin() and _is_admin_role_value(body.get("role")):
+        return err("Only administrators can create administrator users.", 403)
     name = (body.get("name") or "").strip()
     if not name:
         return err("name is required")
@@ -2168,10 +2187,19 @@ def create_user():
 
 @api.put("/users/<user_id>")
 def update_user(user_id):
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
+    management_error = _require_user_management()
+    if management_error:
+        return management_error
     body = request.get_json(silent=True) or {}
+    if not _is_admin():
+        if _is_admin_role_value(body.get("role")):
+            return err("Only administrators can assign administrator credentials.", 403)
+        try:
+            existing = airtable.get_record(C.USERS_TABLE, user_id, by_field_id=False)
+        except requests.HTTPError as e:
+            return airtable_err(e)
+        if _record_is_admin_user(existing):
+            return err("Only administrators can edit administrator users.", 403)
     fields = {}
     for key, const in [
         ("name", C.F_USER_NAME),

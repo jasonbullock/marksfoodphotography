@@ -43,6 +43,13 @@ const Icon = {
       <path d="M3 11v2a1 1 0 001 1h8a1 1 0 001-1v-2"/>
     </svg>
   ),
+  Download: () => (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M8 3v8"/>
+      <polyline points="4.5,7.5 8,11 11.5,7.5"/>
+      <path d="M3 11v2a1 1 0 001 1h8a1 1 0 001-1v-2"/>
+    </svg>
+  ),
   Verify: () => (
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
       <circle cx="8" cy="8" r="6"/>
@@ -3897,13 +3904,16 @@ function PermissionPreview({ role, allClients, clientIds, clients = [], showClie
 }
 
 function UserFormModal({ user, clients, onSave, onClose }) {
+  const { auth } = useAuth();
   const isNew = !user;
+  const canAssignAdmin = isAdminRole(auth?.role);
+  const roleOptions = canAssignAdmin ? ROLES : ROLES.filter(roleOption => !isAdminRole(roleOption));
   const nameParts = (user?.name || '').trim().split(/\s+/).filter(Boolean);
   const [firstName, setFirstName] = useState(user?.firstName || nameParts[0] || '');
   const [lastName, setLastName] = useState(user?.lastName || nameParts.slice(1).join(' ') || '');
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [email, setEmail] = useState(user?.email || '');
-  const [role, setRole] = useState(ROLES.includes(user?.role) ? user.role : 'Viewer');
+  const [role, setRole] = useState(roleOptions.includes(user?.role) ? user.role : 'Viewer');
   const [avatar, setAvatar] = useState(user?.avatar || '');
   const [pin, setPin] = useState('');
   const [allClients, setAllClients] = useState(user?.allClients ?? false);
@@ -3916,6 +3926,7 @@ function UserFormModal({ user, clients, onSave, onClose }) {
     if (isNew && !firstName.trim()) { setError('First Name is required'); return; }
     if (isNew && !lastName.trim()) { setError('Last Name is required'); return; }
     if (isNew && pin.length < 4) { setError('Initial PIN is required'); return; }
+    if (!canAssignAdmin && isAdminRole(role)) { setError('Only administrators can assign Admin access.'); return; }
     setSaving(true); setError('');
     try {
       const name = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ') || displayName.trim() || email.trim();
@@ -3972,7 +3983,7 @@ function UserFormModal({ user, clients, onSave, onClose }) {
             <div className="profile-field">
               <label>Role</label>
               <select value={role} onChange={e => setRole(e.target.value)} className="form-input">
-                {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                {roleOptions.map(r => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
             <div className="profile-field">
@@ -4219,14 +4230,14 @@ function RolesSection() {
             <div className="role-edit-block">
               <span className="permission-preview-label">Admin access</span>
               <div className="role-toggle-grid">
-                {ADMIN_CARD_OPTIONS.map(card => (
-                  <label key={card.id} className="role-toggle">
-                    <input
-                      type="checkbox"
-                      checked={isAdminRole(role) || (rolePermissions?.[role]?.adminCards || []).includes(card.id)}
-                      onChange={() => toggleAdminCard(role, card.id)}
-                      disabled={isAdminRole(role)}
-                    />
+                  {ADMIN_CARD_OPTIONS.map(card => (
+                    <label key={card.id} className="role-toggle">
+                      <input
+                        type="checkbox"
+                        checked={isAdminRole(role) || adminCardsForRole(role, rolePermissions).includes(card.id)}
+                        onChange={() => toggleAdminCard(role, card.id)}
+                        disabled={isAdminRole(role)}
+                      />
                     {card.label}
                   </label>
                 ))}
@@ -4296,7 +4307,7 @@ function AdministrationPage() {
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: <Icon.Dashboard /> },
   { path: '/imports', label: 'Import', icon: <Icon.Add /> },
-  { path: '/receiving', label: 'Receiving', icon: <Icon.Upload /> },
+  { path: '/receiving', label: 'Receiving', icon: <Icon.Download /> },
   { path: '/verification', label: 'Verification', icon: <Icon.Verify /> },
   { path: '/jobs', label: 'Jobs', icon: <Icon.SKUs /> },
   { path: '/items', label: 'Items', icon: <Icon.Jobs /> },

@@ -127,21 +127,28 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
 
     @patch("routes.airtable.list_records")
-    def test_non_admin_user_cannot_access_users(self, list_records):
+    def test_non_admin_user_can_access_non_admin_users(self, list_records):
         self.authenticate(user_record(role="Producer"))
+        list_records.return_value = {"records": [
+            user_record(user_id="recAdmin", role="Admin"),
+            user_record(user_id="recMerch", role="Merch"),
+        ]}
 
         response = self.client.get("/api/users")
 
-        self.assertEqual(response.status_code, 403)
-        list_records.assert_not_called()
+        self.assertEqual(response.status_code, 200)
+        roles = [record["role"] for record in response.get_json()["records"]]
+        self.assertEqual(roles, ["Merch"])
 
+    @patch("routes.airtable.get_record")
     @patch("routes.airtable.update_record")
-    def test_non_admin_user_cannot_update_users_endpoint(self, update_record):
+    def test_non_admin_user_cannot_assign_admin_role(self, update_record, get_record):
         self.authenticate(user_record(role="Producer"))
 
         response = self.client.put("/api/users/recUser", json={"role": "Admin", "allClients": True})
 
         self.assertEqual(response.status_code, 403)
+        get_record.assert_not_called()
         update_record.assert_not_called()
 
     @patch("routes.airtable.update_record")
@@ -206,6 +213,40 @@ class AuthTests(unittest.TestCase):
         self.assertTrue(create_record.call_args.kwargs["typecast"])
 
     @patch("routes.airtable.update_record")
+    @patch("routes.airtable.create_record")
+    def test_non_admin_user_can_create_non_admin_user(self, create_record, update_record):
+        self.authenticate(user_record(role="Producer"))
+        create_record.return_value = user_record(user_id="recNew", role="Viewer", pin="")
+        update_record.return_value = user_record(user_id="recNew", role="Viewer", pin="1234")
+
+        response = self.client.post("/api/users", json={
+            "name": "Viewer User",
+            "firstName": "Viewer",
+            "lastName": "User",
+            "email": "viewer@example.com",
+            "role": "Viewer",
+            "pin": "1234",
+            "allClients": False,
+            "clientIds": [],
+        })
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["user"]["role"], "Viewer")
+
+    @patch("routes.airtable.create_record")
+    def test_non_admin_user_cannot_create_admin_user(self, create_record):
+        self.authenticate(user_record(role="Producer"))
+
+        response = self.client.post("/api/users", json={
+            "name": "Admin User",
+            "role": "Admin",
+            "pin": "1234",
+        })
+
+        self.assertEqual(response.status_code, 403)
+        create_record.assert_not_called()
+
+    @patch("routes.airtable.update_record")
     def test_admin_user_can_update_user_with_typecast_role(self, update_record):
         self.authenticate(user_record(role="Admin", all_clients=True))
         update_record.return_value = user_record(user_id="recExisting", role="User")
@@ -223,6 +264,34 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["user"]["role"], "User")
         self.assertTrue(update_record.call_args_list[0].kwargs["typecast"])
+
+    @patch("routes.airtable.get_record")
+    @patch("routes.airtable.update_record")
+    def test_non_admin_user_can_update_non_admin_user(self, update_record, get_record):
+        self.authenticate(user_record(role="Producer"))
+        get_record.return_value = user_record(user_id="recExisting", role="Viewer")
+        update_record.return_value = user_record(user_id="recExisting", role="User")
+
+        response = self.client.put("/api/users/recExisting", json={
+            "name": "Existing User",
+            "role": "User",
+            "allClients": False,
+            "clientIds": [],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["user"]["role"], "User")
+
+    @patch("routes.airtable.get_record")
+    @patch("routes.airtable.update_record")
+    def test_non_admin_user_cannot_update_admin_user(self, update_record, get_record):
+        self.authenticate(user_record(role="Producer"))
+        get_record.return_value = user_record(user_id="recAdmin", role="Admin")
+
+        response = self.client.put("/api/users/recAdmin", json={"name": "Changed"})
+
+        self.assertEqual(response.status_code, 403)
+        update_record.assert_not_called()
 
     def test_missing_authentication_no_longer_grants_all_client_access(self):
         response = self.client.get("/api/clients")
