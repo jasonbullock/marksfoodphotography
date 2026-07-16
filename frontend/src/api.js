@@ -270,12 +270,24 @@ export const api = {
 api.listItems = api.listSkus;
 api.createItem = api.createSku;
 api.updateItem = api.updateSku;
+api.listProducts = async (jobId) => {
+  const params = new URLSearchParams();
+  if (jobId) params.set('jobId', jobId);
+  return backend('GET', `/products${params.toString() ? `?${params.toString()}` : ''}`);
+};
+api.getProduct = (id) => backend('GET', `/products/${id}`);
 
 api.listReceipts = async ({ clientId, unassignedClient } = {}) => {
   const params = new URLSearchParams();
   if (clientId) params.set('clientId', clientId);
   if (unassignedClient) params.set('unassignedClient', 'true');
   return backend('GET', `/receipts${params.toString() ? `?${params.toString()}` : ''}`);
+};
+api.listShipments = async ({ clientId, unassignedClient } = {}) => {
+  const params = new URLSearchParams();
+  if (clientId) params.set('clientId', clientId);
+  if (unassignedClient) params.set('unassignedClient', 'true');
+  return backend('GET', `/shipments${params.toString() ? `?${params.toString()}` : ''}`);
 };
 
 api.createReceipt = async (payload) => backend('POST', '/receiving', payload);
@@ -295,7 +307,9 @@ api.uploadReceivingPhotos = async (files, { receiptId, receiptEntryId } = {}) =>
 api.deleteReceivingPhoto = async (objectKey) => backend('DELETE', '/receiving/photos', { objectKey });
 api.deleteReceivingEntryPhoto = async (receiptId, entryId, objectKey) => backend('DELETE', `/receiving/${receiptId}/entries/${entryId}/photos`, { objectKey });
 api.receivingPhotoStorageStatus = async () => backend('GET', '/receiving/photo-storage/status');
+api.listMerchandise = async () => backend('GET', '/merchandise');
 api.listVerificationEntries = async () => backend('GET', '/verification/entries');
+api.listMerchandiseReviewEntries = async () => backend('GET', '/merchandise/review');
 api.searchVerificationItems = async ({ q, clientId, includeItemId } = {}) => {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
@@ -303,8 +317,20 @@ api.searchVerificationItems = async ({ q, clientId, includeItemId } = {}) => {
   if (includeItemId) params.set('includeItemId', includeItemId);
   return backend('GET', `/verification/items${params.toString() ? `?${params.toString()}` : ''}`);
 };
+api.searchMerchandiseReviewProducts = async ({ q, clientId, includeItemId } = {}) => {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (clientId) params.set('clientId', clientId);
+  if (includeItemId) params.set('includeItemId', includeItemId);
+  return backend('GET', `/merchandise/products${params.toString() ? `?${params.toString()}` : ''}`);
+};
 api.matchVerificationEntry = async (entryId, itemId) => backend('POST', `/verification/entries/${entryId}/match`, { itemId });
 api.validateVerificationEntry = async (entryId, status) => backend('POST', `/verification/entries/${entryId}/validate`, { status });
+api.matchMerchandiseReviewEntry = async (entryId, productId) => backend('POST', `/merchandise/review/${entryId}/match`, { itemId: productId });
+api.validateMerchandiseReviewEntry = async (entryId, status) => backend('POST', `/merchandise/review/${entryId}/validate`, { status });
+api.removeMerchandiseReviewMatch = async (entryId) => backend('POST', `/merchandise/review/${entryId}/remove-match`);
+api.markMerchandiseWaitingForProductData = async (entryId, payload = {}) => backend('POST', `/merchandise/review/${entryId}/waiting-product-data`, payload);
+api.createMerchandiseReviewIssue = async (entryId, payload = {}) => backend('POST', `/merchandise/review/${entryId}/issue`, payload);
 api.listLocations = async () => backend('GET', '/locations');
 
 api.listUsers = async () => backend('GET', '/users');

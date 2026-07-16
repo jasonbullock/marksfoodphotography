@@ -90,6 +90,10 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _now_utc():
+    return datetime.now(timezone.utc)
+
+
 def _as_list(value):
     if not value:
         return []
@@ -2351,6 +2355,7 @@ def _jobs_by_id():
 # ── Items ─────────────────────────────────────────────────────────────────────
 
 @api.get("/items")
+@api.get("/products")
 @api.get("/skus")
 def list_items():
     params = {
@@ -2369,6 +2374,7 @@ def list_items():
 
 
 @api.get("/items/<record_id>")
+@api.get("/products/<record_id>")
 @api.get("/skus/<record_id>")
 def get_item(record_id):
     record = airtable.get_record(C.ITEMS_TABLE, record_id, by_field_id=False)
@@ -2938,6 +2944,7 @@ def _set_link_field(fields, field, value):
 # ── Receipts ─────────────────────────────────────────────────────────────────
 
 @api.get("/receipts")
+@api.get("/shipments")
 @api.get("/receiving")
 def list_receipts():
     try:
@@ -2965,29 +2972,250 @@ def list_receipts():
 
 # ── Verification ──────────────────────────────────────────────────────────────
 
-@api.get("/verification/entries")
-def list_verification_entries():
+def _list_merchandise_review_records():
     try:
         entries = _list_all_records(C.RECEIPT_ENTRIES_TABLE)
         receipts = _list_all_records(C.RECEIPTS_TABLE)
+        issues = _list_all_records(C.ISSUES_TABLE)
     except requests.HTTPError as error:
-        return airtable_err(error)
+        raise error
 
     receipts_by_id = {record["id"]: record for record in _filter_receipts_by_access(receipts)}
+    issues_by_item = {}
+    for issue in _filter_indirect_client_records(issues, _client_ids_for_issue):
+        shaped_issue = _shape_issue(issue)
+        for item_id in shaped_issue.get("itemIds", []):
+            issues_by_item.setdefault(item_id, []).append(shaped_issue)
     records = []
     for entry in entries:
         linked_receipts = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
         receipt = next((receipts_by_id.get(receipt_id) for receipt_id in linked_receipts if receipt_id in receipts_by_id), None)
         if linked_receipts and receipt is None:
             continue
-        shaped = _shape_verification_entry(entry, receipt)
-        if shaped["merchStatus"] != "Validated":
-            records.append(shaped)
+        records.append(_shape_verification_entry(entry, receipt, issues_by_item_id=issues_by_item))
     records.sort(key=lambda record: (record.get("received") or "", record.get("name") or ""), reverse=True)
+    return records
+
+
+NON_INVENTORY_MERCH_STATUSES = {
+    "disposed",
+    "destroyed",
+    "removed",
+    "returned",
+    "shipped",
+    "shipped to thr3d",
+    "sent to thr3d",
+    "sent to thread",
+}
+NON_INVENTORY_PRODUCT_STATUSES = {"cancelled"}
+WAITING_FOR_PRODUCT_DATA_MARKER = "[Waiting for Product Data]"
+
+
+def _parse_airtable_datetime(value):
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _days_here_from_received(received, now=None):
+    parsed = _parse_airtable_datetime(received)
+    if not parsed:
+        return None
+    now = now or _now_utc()
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return max(0, (now.astimezone(timezone.utc).date() - parsed.date()).days)
+
+
+def _time_here_label(days_here):
+    if days_here is None:
+        return "Unknown"
+    if days_here == 0:
+        return "Today"
+    if days_here < 14 or days_here > 30:
+        return f"{days_here} day{'s' if days_here != 1 else ''}"
+    weeks = max(2, days_here // 7)
+    return f"{weeks} weeks"
+
+
+def _age_group_for_days(days_here):
+    if days_here is None:
+        return "unknown"
+    if days_here <= 7:
+        return "0-7"
+    if days_here <= 14:
+        return "8-14"
+    if days_here <= 30:
+        return "15-30"
+    return "30-plus"
+
+
+def _is_merchandise_physically_present(merch_status, product_status=""):
+    merch = str(merch_status or "").strip().lower()
+    product = str(product_status or "").strip().lower()
+    if merch in NON_INVENTORY_MERCH_STATUSES:
+        return False
+    if product in NON_INVENTORY_PRODUCT_STATUSES:
+        return False
+    return True
+
+
+def _derive_merchandise_inventory_status(entry, linked_product=None, client=None, days_here=None):
+    merch_status = str(entry.get("merchStatus") or "").strip()
+    product_status = str((linked_product or {}).get("status") or "").strip()
+    product_status_key = product_status.lower()
+
+    if merch_status == "Issue":
+        return "Issue"
+
+    dispo_days = (client or {}).get("dispoDays")
+    try:
+        dispo_days = int(dispo_days)
+    except (TypeError, ValueError):
+        dispo_days = None
+    if dispo_days and days_here is not None and days_here >= dispo_days:
+        return "Disposition Due"
+
+    if merch_status == "Received":
+        return "Needs Review"
+    if product_status_key in {"production", "in production"}:
+        return "In Production"
+    if product_status_key == "complete":
+        return "Complete"
+
+    readiness = (linked_product or {}).get("readiness") or {}
+    if readiness.get("state") == "ready_for_photo":
+        return "Ready for Photo"
+    if merch_status == "Validated":
+        return "Validated"
+    if merch_status == "Matched" or entry.get("itemIds"):
+        return "Matched"
+    return merch_status or "Received"
+
+
+def _shape_merchandise_inventory_entry(entry, *, receipts_by_id, products_by_id, clients_by_id, locations_by_id, now=None):
+    shaped = _shape_receipt_entry(entry)
+    receipt = next(
+        (receipts_by_id.get(receipt_id) for receipt_id in _as_list(shaped.get("receiptIds")) if receipts_by_id.get(receipt_id)),
+        None,
+    )
+    receipt_fields = receipt.get("fields", {}) if receipt else {}
+    product_record = next(
+        (products_by_id.get(product_id) for product_id in _as_list(shaped.get("itemIds")) if products_by_id.get(product_id)),
+        None,
+    )
+    linked_product = _shape_item(product_record, clients_by_id=clients_by_id, issues_by_item_id={}) if product_record else None
+    client_ids = _as_list(receipt_fields.get(C.F_RECEIPT_CLIENT, [])) or _as_list((linked_product or {}).get("clientIds", []))
+    client = clients_by_id.get(client_ids[0]) if client_ids else None
+    location_id = (_as_list(shaped.get("locationIds")) or _as_list(receipt_fields.get(C.F_RECEIPT_LOCATION, [])) or [""])[0]
+    location = locations_by_id.get(location_id, {})
+    received = receipt_fields.get(C.F_RECEIPT_RECEIVED, "")
+    days_here = _days_here_from_received(received, now=now)
+    status = _derive_merchandise_inventory_status(shaped, linked_product, client, days_here)
+    return {
+        **shaped,
+        "packageName": shaped.get("productName", ""),
+        "barcodeOrIdNumber": shaped.get("skuId", ""),
+        "client": client.get("name", "") if client else "",
+        "clientIds": client_ids,
+        "matchedProduct": {
+            "id": linked_product.get("id"),
+            "name": linked_product.get("name") or linked_product.get("product") or "",
+            "identifier": linked_product.get("identifier", ""),
+            "status": linked_product.get("status", ""),
+            "readiness": linked_product.get("readiness"),
+        } if linked_product else None,
+        "shipment": {
+            "id": receipt.get("id") if receipt else "",
+            "name": receipt_fields.get(C.F_RECEIPT_NAME, "") if receipt else "",
+            "carrier": receipt_fields.get(C.F_RECEIPT_CARRIER, "") if receipt else "",
+            "tracking": receipt_fields.get(C.F_RECEIPT_TRACKING, "") if receipt else "",
+            "received": received,
+        },
+        "storageLocation": location.get("name", "") if location else "",
+        "locationId": location_id,
+        "dateReceived": received,
+        "received": received,
+        "daysHere": days_here,
+        "timeHere": _time_here_label(days_here),
+        "ageGroup": _age_group_for_days(days_here),
+        "status": status,
+        "inventoryStatus": status,
+    }
+
+
+def _list_merchandise_inventory_records():
+    entries = _list_all_records(C.RECEIPT_ENTRIES_TABLE)
+    receipts = _filter_receipts_by_access(_list_all_records(C.RECEIPTS_TABLE))
+    products = _filter_by_client_field(_list_all_records(C.ITEMS_TABLE), C.F_ITEM_CLIENT)
+    clients = _permitted_client_records(_list_all_records(C.CLIENTS_TABLE))
+    locations = _filter_locations(_list_all_records(C.LOCATIONS_TABLE))
+
+    receipts_by_id = {record["id"]: record for record in receipts}
+    products_by_id = {record["id"]: record for record in products}
+    clients_by_id = {record["id"]: _shape_client(record) for record in clients}
+    locations_by_id = {record["id"]: _shape_location(record) for record in locations}
+    now = _now_utc()
+    records = []
+    for entry in entries:
+        shaped = _shape_receipt_entry(entry)
+        linked_receipt_ids = _as_list(shaped.get("receiptIds"))
+        if linked_receipt_ids and not any(receipt_id in receipts_by_id for receipt_id in linked_receipt_ids):
+            continue
+        linked_product = products_by_id.get((_as_list(shaped.get("itemIds")) or [""])[0])
+        if shaped.get("itemIds") and not linked_product:
+            continue
+        product_status = (linked_product or {}).get("fields", {}).get(C.F_ITEM_STATUS, "")
+        if not _is_merchandise_physically_present(shaped.get("merchStatus"), product_status):
+            continue
+        records.append(_shape_merchandise_inventory_entry(
+            entry,
+            receipts_by_id=receipts_by_id,
+            products_by_id=products_by_id,
+            clients_by_id=clients_by_id,
+            locations_by_id=locations_by_id,
+            now=now,
+        ))
+    records.sort(key=lambda record: (
+        record.get("daysHere") is None,
+        -(record.get("daysHere") or -1),
+        record.get("packageName") or "",
+    ))
+    return records
+
+
+@api.get("/merchandise")
+def list_merchandise_inventory():
+    try:
+        records = _list_merchandise_inventory_records()
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"records": records})
+
+
+@api.get("/verification/entries")
+@api.get("/merchandise/review")
+def list_verification_entries():
+    try:
+        records = _list_merchandise_review_records()
+    except requests.HTTPError as error:
+        return airtable_err(error)
     return jsonify({"records": records})
 
 
 @api.get("/verification/items")
+@api.get("/merchandise/products")
 def verification_items():
     query = request.args.get("q", "")
     client_id = (request.args.get("clientId") or "").strip()
@@ -3002,6 +3230,8 @@ def verification_items():
 
 
 @api.post("/verification/entries/<entry_id>/match")
+@api.post("/merchandise/<entry_id>/match")
+@api.post("/merchandise/review/<entry_id>/match")
 def match_verification_entry(entry_id):
     body = request.get_json(silent=True) or {}
     item_id = (body.get("itemId") or "").strip()
@@ -3037,6 +3267,8 @@ def match_verification_entry(entry_id):
 
 
 @api.post("/verification/entries/<entry_id>/validate")
+@api.post("/merchandise/<entry_id>/validate")
+@api.post("/merchandise/review/<entry_id>/validate")
 def validate_verification_entry(entry_id):
     body = request.get_json(silent=True) or {}
     status = (body.get("status") or "").strip()
@@ -3053,6 +3285,14 @@ def validate_verification_entry(entry_id):
     if linked_receipts and receipt is None:
         return _forbidden()
 
+    item_ids = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_ITEM, []))
+    if status == "Validated":
+        if not item_ids:
+            return err("A Product must be linked before Merchandise can be validated.", 400)
+        issues = _issues_by_item_id().get(item_ids[0], [])
+        if _blocking_merchandise_issues(issues):
+            return err("Resolve blocking Merchandise Issues before validation.", 400)
+
     update_fields = {C.F_RECEIPT_ENTRY_MERCH_STATUS: status}
 
     try:
@@ -3060,6 +3300,107 @@ def validate_verification_entry(entry_id):
     except requests.HTTPError as error:
         return airtable_err(error)
     return jsonify(_shape_verification_entry(updated, receipt))
+
+
+@api.post("/merchandise/review/<entry_id>/remove-match")
+def remove_merchandise_review_match(entry_id):
+    try:
+        entry = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, entry_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    linked_receipts = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+    receipt = _first_permitted_receipt(linked_receipts)
+    if linked_receipts and receipt is None:
+        return _forbidden()
+
+    try:
+        updated = _update_receipt_entry_record(entry_id, {
+            C.F_RECEIPT_ENTRY_ITEM: [],
+            C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
+        })
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify(_shape_verification_entry(updated, receipt))
+
+
+@api.post("/merchandise/review/<entry_id>/waiting-product-data")
+def mark_merchandise_waiting_for_product_data(entry_id):
+    body = request.get_json(silent=True) or {}
+    note = (body.get("note") or body.get("notes") or "").strip()
+    try:
+        entry = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, entry_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    linked_receipts = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+    receipt = _first_permitted_receipt(linked_receipts)
+    if linked_receipts and receipt is None:
+        return _forbidden()
+
+    existing_notes = entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_NOTES, "") or ""
+    marker_line = WAITING_FOR_PRODUCT_DATA_MARKER if not note else f"{WAITING_FOR_PRODUCT_DATA_MARKER} {note}"
+    next_notes = existing_notes
+    if WAITING_FOR_PRODUCT_DATA_MARKER not in existing_notes:
+        next_notes = f"{existing_notes}\n{marker_line}".strip()
+    elif note:
+        next_notes = f"{existing_notes}\n{note}".strip()
+
+    try:
+        updated = _update_receipt_entry_record(entry_id, {
+            C.F_RECEIPT_ENTRY_NOTES: next_notes,
+            C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
+        })
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify(_shape_verification_entry(updated, receipt))
+
+
+@api.post("/merchandise/review/<entry_id>/issue")
+def create_merchandise_review_issue(entry_id):
+    body = request.get_json(silent=True) or {}
+    issue_type = (body.get("type") or "Unknown Item").strip()
+    description = (body.get("description") or body.get("issue") or "Merchandise issue").strip()
+    notes = (body.get("notes") or "").strip()
+
+    try:
+        entry = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, entry_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    linked_receipts = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+    receipt = _first_permitted_receipt(linked_receipts)
+    if linked_receipts and receipt is None:
+        return _forbidden()
+
+    entry_fields = entry.get("fields", {})
+    item_ids = _as_list(entry_fields.get(C.F_RECEIPT_ENTRY_ITEM, []))
+    if item_ids and not _all_linked_records_permitted(C.ITEMS_TABLE, item_ids):
+        return _forbidden()
+
+    issue_fields = {
+        C.F_ISSUE_NAME: description,
+        C.F_ISSUE_TYPE: issue_type,
+        C.F_ISSUE_STATUS: body.get("status") or "Open",
+        C.F_ISSUE_PRIORITY: body.get("priority") or "Normal",
+        C.F_ISSUE_OPENED: body.get("opened") or _now_iso(),
+        C.F_ISSUE_NOTES: notes,
+    }
+    if item_ids:
+        issue_fields[C.F_ISSUE_ITEM] = item_ids
+    photos = entry_fields.get(C.F_RECEIPT_ENTRY_PHOTOS, []) or []
+    if photos:
+        issue_fields[C.F_ISSUE_PHOTOS] = photos
+
+    try:
+        issue = airtable.create_record(C.ISSUES_TABLE, issue_fields, by_field_id=False)
+        updated = _update_receipt_entry_record(entry_id, {C.F_RECEIPT_ENTRY_MERCH_STATUS: "Issue"})
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({
+        "issue": _shape_issue(issue),
+        "merchandise": _shape_verification_entry(updated, receipt, issues_by_item_id={item_ids[0]: [_shape_issue(issue)]} if item_ids else {}),
+    }), 201
 
 
 def _attachment_url(attachment):
@@ -3979,7 +4320,19 @@ def _first_permitted_receipt(receipt_ids):
     return None
 
 
-def _shape_verification_entry(entry, receipt=None, *, item_record=None):
+def _review_state_for_entry(shaped, linked_item=None, blocking_issues=None):
+    merch_status = shaped.get("merchStatus") or ""
+    notes = shaped.get("notes") or ""
+    if merch_status == "Issue" or blocking_issues:
+        return "Issue"
+    if merch_status == "Validated":
+        return "Validated"
+    if WAITING_FOR_PRODUCT_DATA_MARKER in notes:
+        return "Waiting for Product Data"
+    return "Needs Review"
+
+
+def _shape_verification_entry(entry, receipt=None, *, item_record=None, issues_by_item_id=None):
     shaped = _shape_receipt_entry(entry)
     entry_fields = entry.get("fields", {})
     receipt_fields = receipt.get("fields", {}) if receipt else {}
@@ -3994,6 +4347,10 @@ def _shape_verification_entry(entry, receipt=None, *, item_record=None):
             item_record = None
     if item_record:
         linked_item = _shape_item(item_record, clients_by_id=_clients_by_id())
+    blocking_issues = _blocking_merchandise_issues((issues_by_item_id or {}).get(item_ids[0], [])) if item_ids else []
+    received = receipt_fields.get(C.F_RECEIPT_RECEIVED, "") if receipt else ""
+    days_here = _days_here_from_received(received)
+    review_state = _review_state_for_entry(shaped, linked_item, blocking_issues)
     return {
         **shaped,
         "receipt": {
@@ -4012,7 +4369,14 @@ def _shape_verification_entry(entry, receipt=None, *, item_record=None):
         "brand": entry_fields.get("Brand", ""),
         "packageSize": entry_fields.get("Package Size", ""),
         "linkedItem": linked_item,
-        "received": receipt_fields.get(C.F_RECEIPT_RECEIVED, "") if receipt else "",
+        "blockingIssues": blocking_issues,
+        "reviewState": review_state,
+        "isUnidentified": not any([shaped.get("productName"), shaped.get("skuId"), shaped.get("description")]),
+        "received": received,
+        "dateReceived": received,
+        "daysHere": days_here,
+        "timeHere": _time_here_label(days_here),
+        "ageGroup": _age_group_for_days(days_here),
     }
 
 

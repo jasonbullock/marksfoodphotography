@@ -4,6 +4,8 @@ import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation, useNaviga
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { api } from './api';
 import { Select as FormSelect } from './design-system.jsx';
+import { DOMAIN_TERMS, getFieldLabel, technicalTableLabel } from './domainVocabulary';
+import { exportTableToXlsx, todayExportFilename } from './tableExport';
 import './styles.css';
 
 // ── Icons ────────────────────────────────────────────────────────────────────
@@ -105,6 +107,51 @@ function useResource(fn, deps = []) {
 
   useEffect(() => { load(); }, [load]);
   return { ...state, reload: load };
+}
+
+function valueForExport(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (Array.isArray(value)) return value.filter(Boolean).join(', ');
+  return String(value);
+}
+
+function ExcelExportButton({ filename, columns, rows, disabled, label = 'Export to Excel' }) {
+  return (
+    <button
+      type="button"
+      className="btn btn-ghost table-export-button"
+      disabled={disabled || !rows.length}
+      onClick={() => exportTableToXlsx({
+        filename,
+        rows,
+        columns: columns.map(column => ({
+          header: column.header,
+          key: column.key,
+          value: row => valueForExport(column.exportValue ? column.exportValue(row) : (column.value ? column.value(row) : row[column.key])),
+        })),
+      })}
+    >
+      <Icon.Download /> {label}
+    </button>
+  );
+}
+
+function ViewToggle({ value, onChange, label = 'View mode' }) {
+  return (
+    <div className="card-list-toggle" aria-label={label}>
+      <button type="button" className={value === 'cards' ? 'is-active' : ''} onClick={() => onChange('cards')}>
+        Cards
+      </button>
+      <button type="button" className={value === 'list' ? 'is-active' : ''} onClick={() => onChange('list')}>
+        List
+      </button>
+    </div>
+  );
+}
+
+function DataTableToolbar({ children }) {
+  return <div className="data-table-toolbar">{children}</div>;
 }
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
@@ -242,50 +289,50 @@ const DASHBOARD_QUEUES = [
   {
     id: 'waiting_merchandise',
     title: 'Waiting for Merchandise',
-    description: 'Items waiting for required merchandise to be received or matched.',
-    empty: 'No items waiting for merchandise.',
+    description: 'Products waiting for required merchandise to be received or matched.',
+    empty: 'No products waiting for merchandise.',
     matches: item => isOpenFoodHubItem(item) && item.readiness?.state === 'waiting_for_merchandise',
   },
   {
     id: 'merchandise_issues',
     title: 'Merchandise Issues',
-    description: 'Items blocked by unresolved merchandise issues.',
+    description: 'Products blocked by unresolved merchandise issues.',
     empty: 'No unresolved merchandise issues.',
     matches: item => isOpenFoodHubItem(item) && item.readiness?.state === 'merchandise_issue',
   },
   {
     id: 'missing_data',
     title: 'Missing Critical Data',
-    description: 'Items missing required client data for photography readiness.',
-    empty: 'No items missing critical data.',
+    description: 'Products missing required client data for photography readiness.',
+    empty: 'No products missing critical data.',
     matches: item => isOpenFoodHubItem(item) && item.readiness?.state === 'missing_data',
   },
   {
     id: 'missing_artwork',
     title: 'Missing Required Artwork',
-    description: 'Items waiting for artwork required by the client.',
-    empty: 'No items missing required artwork.',
+    description: 'Products waiting for artwork required by the client.',
+    empty: 'No products missing required artwork.',
     matches: item => isOpenFoodHubItem(item) && item.readiness?.state === 'missing_artwork',
   },
   {
     id: 'ready_for_photo',
     title: 'Ready for Photo',
-    description: 'Items ready to send to Creative Force.',
-    empty: 'No items ready for photo.',
+    description: 'Products ready to send to Creative Force.',
+    empty: 'No products ready for photo.',
     matches: item => isOpenFoodHubItem(item) && item.readiness?.state === 'ready_for_photo',
   },
   {
     id: 'in_creative_force',
     title: 'In Creative Force',
-    description: 'Items currently in Creative Force and read-only here.',
-    empty: 'No items currently in Creative Force.',
+    description: 'Products currently in Creative Force and read-only here.',
+    empty: 'No products currently in Creative Force.',
     matches: item => isItemInCreativeForce(item),
   },
   {
     id: 'completed',
     title: 'Completed',
-    description: 'Items completed by Walnut.',
-    empty: 'No completed items yet.',
+    description: 'Products completed by Walnut.',
+    empty: 'No completed products yet.',
     matches: item => isItemCompleted(item),
   },
 ];
@@ -389,8 +436,8 @@ const QUEUE_COLORS = {
 };
 
 function Dashboard({ navigate }) {
-  const skus = useResource(() => api.listSkus());
-  const receipts = useResource(() => api.listReceipts());
+  const skus = useResource(() => api.listProducts());
+  const receipts = useResource(() => api.listShipments());
   const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
   const skuList = skus.data?.records ?? [];
@@ -427,7 +474,7 @@ function Dashboard({ navigate }) {
     .sort((a, b) => b.daysWaiting - a.daysWaiting)
     .slice(0, 10);
 
-  // Receiving sessions logged by Receiving and awaiting Verification.
+  // Shipments logged by Receiving and awaiting Merchandise Review.
   const reviewReceipts = receiptList
     .filter(r => (r.entries ?? []).some(e => e.merchStatus !== 'Validated'))
     .map(r => ({
@@ -454,7 +501,7 @@ function Dashboard({ navigate }) {
       <div className="dash-kpi-row">
         <div className="dash-kpi-card">
           <div className="dash-kpi-num" style={{ color: '#60a5fa' }}>{totalActive}</div>
-          <div className="dash-kpi-lbl">Active Items</div>
+          <div className="dash-kpi-lbl">Active Products</div>
         </div>
         <div className="dash-kpi-card dash-kpi-clickable" onClick={() => navigate('skus')}>
           <div className="dash-kpi-num" style={{ color: '#f87171' }}>{bottlenecked}</div>
@@ -507,7 +554,7 @@ function Dashboard({ navigate }) {
             </span>
           </div>
           <div className="dash-aging-head" style={{ gridTemplateColumns: '36px 2fr 1fr 1fr 1fr' }}>
-            <span></span><span>Item</span><span>Brand</span><span>Job #</span><span>Client</span>
+            <span></span><span>Product</span><span>Brand</span><span>Job #</span><span>Client</span>
           </div>
           {skuList.filter(s => isOpenFoodHubItem(s) && s.readiness?.state === 'ready_for_photo').map(s => {
             const clientId = s.clientIds?.[0];
@@ -530,7 +577,7 @@ function Dashboard({ navigate }) {
       {/* Charts Row */}
       <div className="dash-mid-row">
         <div className="dash-card">
-          <div className="dash-card-title">Item Distribution</div>
+          <div className="dash-card-title">Product Distribution</div>
           <div className="dash-donut-wrap">
             <ResponsiveContainer width={152} height={152}>
               <PieChart>
@@ -567,11 +614,11 @@ function Dashboard({ navigate }) {
         </div>
       </div>
 
-      {/* Verification Queue */}
+      {/* Merchandise Review Queue */}
       {!receipts.loading && (
         <div className="dash-card">
           <div className="dash-card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span>Awaiting Verification</span>
+            <span>Awaiting Merchandise Review</span>
             {reviewReceipts.length > 0 && (
               <span style={{ background: '#ef4444', color: '#fff', borderRadius: 999, padding: '1px 8px', fontSize: '0.7rem', fontWeight: 700 }}>
                 {reviewReceipts.length}
@@ -580,12 +627,12 @@ function Dashboard({ navigate }) {
           </div>
           {reviewReceipts.length === 0 ? (
             <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.82rem', padding: '8px 0' }}>
-              No receiving sessions are awaiting verification.
+              No shipments have merchandise awaiting review.
             </div>
           ) : (
             <>
               <div className="dash-aging-head" style={{ gridTemplateColumns: '44px 1.2fr 1fr 2fr 80px 80px' }}>
-                <span></span><span>Receiving Logged</span><span>Client</span><span>Entries</span><span>Quantity</span><span>Days Ago</span>
+                <span></span><span>Receiving Logged</span><span>Client</span><span>Merchandise</span><span>Quantity</span><span>Days Ago</span>
               </div>
               {reviewReceipts.map(r => {
                 const thumb = r.photos?.[0]?.thumbnails?.small?.url || r.photos?.[0]?.url;
@@ -600,7 +647,7 @@ function Dashboard({ navigate }) {
                     </span>
                     <span className="dash-aging-name">{r.name || r.receipt || r.tracking || r.id}</span>
                     <span className="dash-aging-brand">{client?.name || 'Unassigned'}</span>
-                    <span className="dash-aging-brand">{r.entrySummary || `${r.entryCount} item${r.entryCount === 1 ? '' : 's'}`}</span>
+                    <span className="dash-aging-brand">{r.entrySummary || `${r.entryCount} merchandise record${r.entryCount === 1 ? '' : 's'}`}</span>
                     <span className="dash-aging-brand">{r.totalQuantity || '—'}</span>
                     <span className={`dash-age ${r.daysAgo > 7 ? 'dash-age-crit' : r.daysAgo > 3 ? 'dash-age-warn' : 'dash-age-ok'}`}>
                       {r.daysAgo !== null ? `${r.daysAgo}d` : '—'}
@@ -618,7 +665,7 @@ function Dashboard({ navigate }) {
         <div className="dash-card">
           <div className="dash-card-title">PM Verified Merchandise — Awaiting Photography</div>
           <div className="dash-aging-head">
-            <span>Item</span><span>Brand</span><span>State</span><span>Days Sitting</span>
+            <span>Product</span><span>Brand</span><span>State</span><span>Days Sitting</span>
           </div>
           {merchSitting.map(s => (
             <div key={s.id} className="dash-aging-row">
@@ -693,7 +740,7 @@ function receivingEntryLocationId(entry) {
 }
 
 function itemMatchTitle(item) {
-  return item?.name || item?.product || 'Unnamed Item';
+  return item?.name || item?.product || 'Unnamed Product';
 }
 
 function itemMatchIdentifier(item) {
@@ -775,7 +822,7 @@ function photoPayload(photos) {
 }
 
 function QuickReceivingCapture({ locationList }) {
-  const receiptList = useResource(() => api.listReceipts());
+  const receiptList = useResource(() => api.listShipments());
   const [receipt, setReceipt] = useState(null);
   const [selectedReceiptId, setSelectedReceiptId] = useState('');
   const [session, setSession] = useState({
@@ -885,7 +932,7 @@ function QuickReceivingCapture({ locationList }) {
     });
     setReceipt(created);
     setEntryCount(created.entries?.length ?? 0);
-    setNotice('Delivery started.');
+    setNotice('Shipment started.');
     return created;
   }
 
@@ -905,7 +952,7 @@ function QuickReceivingCapture({ locationList }) {
         received: data.received ? toDatetimeLocal(data.received) : prev.received,
       }));
     } catch (err) {
-      setError(err.message || 'Could not open that receipt.');
+      setError(err.message || 'Could not open that shipment.');
     }
   }
 
@@ -916,7 +963,7 @@ function QuickReceivingCapture({ locationList }) {
     try {
       await ensureReceipt();
     } catch (err) {
-      setError(err.message || 'Could not start delivery.');
+      setError(err.message || 'Could not start shipment.');
     } finally {
       setSaving(false);
     }
@@ -950,23 +997,23 @@ function QuickReceivingCapture({ locationList }) {
           });
           saved = uploaded.entry || { ...saved, photos: uploaded.photos || [] };
         } catch (photoError) {
-          setError(photoError.message || 'Entry saved, but photos could not be uploaded.');
+          setError(photoError.message || 'Merchandise saved, but photos could not be uploaded.');
         }
       }
       if (entry.locationId) saveRecentReceivingLocation(entry.locationId);
       setReceipt(prev => prev ? { ...prev, entries: [...(prev.entries || []), saved] } : prev);
       setEntryCount(count => count + 1);
       resetEntry(entry.locationId);
-      setNotice('Entry saved. Ready for the next item.');
+      setNotice('Merchandise saved. Ready for the next merchandise record.');
     } catch (err) {
-      setError(err.message || 'Could not save entry.');
+      setError(err.message || 'Could not save merchandise.');
     } finally {
       setSaving(false);
     }
   }
 
   function finishDelivery() {
-    setNotice(receipt ? 'Delivery finished and sent to Verification.' : 'No delivery has been started yet.');
+    setNotice(receipt ? 'Shipment finished and sent to Merchandise Review.' : 'No shipment has been started yet.');
     setReceipt(null);
     setSelectedReceiptId('');
     setEntryCount(0);
@@ -979,9 +1026,9 @@ function QuickReceivingCapture({ locationList }) {
       <div className="mobile-receiving-top">
         <div>
           <span className="mobile-kicker">Quick Capture</span>
-          <h2>{receipt?.receipt || receipt?.name || receipt?.id || 'New Delivery'}</h2>
+          <h2>{receipt?.receipt || receipt?.name || receipt?.id || 'New Shipment'}</h2>
         </div>
-        <strong>{entryCount} entr{entryCount === 1 ? 'y' : 'ies'}</strong>
+          <strong>{entryCount} merchandise record{entryCount === 1 ? '' : 's'}</strong>
       </div>
 
       {error && <div className="error-state">{error}</div>}
@@ -989,12 +1036,12 @@ function QuickReceivingCapture({ locationList }) {
 
       <div className="mobile-receiving-panel">
         <div className="mobile-field">
-          <label>Open Receipt</label>
+          <label>Open Shipment</label>
           <select value={selectedReceiptId} onChange={event => openReceipt(event.target.value)}>
-            <option value="">Start a new delivery</option>
+            <option value="">Start a new shipment</option>
             {openReceipts.map(item => (
               <option value={item.id} key={item.id}>
-                {item.receipt || item.name || item.tracking || item.id} · {item.entries?.length ?? 0} entries
+                {item.receipt || item.name || item.tracking || item.id} · {item.entries?.length ?? 0} merchandise records
               </option>
             ))}
           </select>
@@ -1012,7 +1059,7 @@ function QuickReceivingCapture({ locationList }) {
         </div>
 
         <div className="mobile-field">
-          <label>Delivery Photos</label>
+          <label>Shipment Photos</label>
           <div className="mobile-photo-actions">
             <button type="button" className="mobile-photo-button primary" onClick={() => deliveryCameraRef.current?.click()}>Take Photo</button>
             <button type="button" className="mobile-photo-button" onClick={() => deliveryLibraryRef.current?.click()}>Photo Library</button>
@@ -1060,12 +1107,12 @@ function QuickReceivingCapture({ locationList }) {
         </div>
 
         <div className="mobile-field">
-          <label>Product Name</label>
+          <label>Package Name</label>
           <div className="mobile-identifier-row">
             <input ref={productNameRef} value={entry.productName} onChange={event => setEntry('productName', event.target.value)} placeholder="Name printed on package" />
             {barcodeSupported && <button type="button" className="btn btn-alt">Scan</button>}
           </div>
-          <input value={entry.skuId} onChange={event => setEntry('skuId', event.target.value)} placeholder="SKU / ID (optional)" />
+          <input value={entry.skuId} onChange={event => setEntry('skuId', event.target.value)} placeholder="Barcode or ID Number (optional)" />
         </div>
 
         <div className="mobile-field">
@@ -1115,7 +1162,7 @@ function QuickReceivingCapture({ locationList }) {
       </div>
 
       <div className="mobile-receiving-actions">
-        <button type="button" className="btn btn-alt" onClick={finishDelivery} disabled={saving}>Finish Delivery</button>
+        <button type="button" className="btn btn-alt" onClick={finishDelivery} disabled={saving}>Finish Shipment</button>
         <button type="button" className="btn btn-primary" onClick={saveNext} disabled={saving}>
           {saving ? 'Saving...' : 'Save & Next'}
         </button>
@@ -1124,11 +1171,11 @@ function QuickReceivingCapture({ locationList }) {
   );
 }
 
-function ReceivingPage() {
+function ShipmentsPage() {
   const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
   const carrierOptions = useResource(() => api.airtableSingleSelectOptions({ tableName: 'Receipts', fieldName: 'Carrier' }));
-  const allReceipts = useResource(() => api.listReceipts());
+  const allReceipts = useResource(() => api.listShipments());
 
   const [receipt, setReceipt] = useState(null);
   const [session, setSession] = useState({ clientId: '', carrier: '', tracking: '', boxQuantity: 1, received: toDatetimeLocal(), notes: '' });
@@ -1215,7 +1262,7 @@ function ReceivingPage() {
     setMatchLoading(true);
     const t = window.setTimeout(async () => {
       try {
-        const data = await api.searchVerificationItems({ q: matchQuery, clientId: activeClientId, includeItemId: prevMatchedItemId });
+        const data = await api.searchMerchandiseReviewProducts({ q: matchQuery, clientId: activeClientId, includeItemId: prevMatchedItemId });
         if (active) setItemMatches(data.records ?? []);
       } catch {
         if (active) setItemMatches([]);
@@ -1303,7 +1350,7 @@ function ReceivingPage() {
       await ensureDeliveryReceipt();
       setTimeout(() => productNameRef.current?.focus(), 80);
     } catch (err) {
-      setError(err.message || 'Could not create receipt.');
+      setError(err.message || 'Could not create shipment.');
     } finally {
       setSaving('');
     }
@@ -1333,7 +1380,7 @@ function ReceivingPage() {
       return;
     }
     if (!entry.productName.trim()) {
-      setError('Product name is required.');
+      setError('Package Name is required.');
       productNameRef.current?.focus();
       return;
     }
@@ -1383,8 +1430,8 @@ function ReceivingPage() {
           });
           saved = uploaded.entry || { ...saved, photos: uploaded.photos || [] };
         } catch (photoError) {
-          setError(photoError.message || 'Entry saved, but photos could not be uploaded.');
-          setToast('Entry saved, photo upload failed');
+          setError(photoError.message || 'Merchandise saved, but photos could not be uploaded.');
+          setToast('Merchandise saved, photo upload failed');
         }
       }
       if (uploadDelay) window.clearTimeout(uploadDelay);
@@ -1398,12 +1445,12 @@ function ReceivingPage() {
       setEditingEntryId('');
       resetActiveEntry(entry.locationId, entry.condition || 'Good');
       if (!newPhotos.length || saved.photos?.length || saved.photoMetadata?.length) {
-        setToast(editingEntryId ? 'Item updated' : 'Entry saved');
+        setToast(editingEntryId ? 'Merchandise updated' : 'Merchandise saved');
       }
     } catch (err) {
       if (uploadDelay) window.clearTimeout(uploadDelay);
       setShowUploadProgress(false);
-      setError(err.message || 'Could not save entry.');
+      setError(err.message || 'Could not save merchandise.');
     } finally {
       setSaving('');
     }
@@ -1436,7 +1483,7 @@ function ReceivingPage() {
       setEditingEntryId('');
       resetActiveEntry('', 'Good');
     } catch (err) {
-      setError(err.message || 'Could not load receipt.');
+      setError(err.message || 'Could not load shipment.');
     }
   }
 
@@ -1454,10 +1501,10 @@ function ReceivingPage() {
         notes: session.notes || '',
       });
       setReceipt(updated);
-      setToast('Delivery info saved.');
+      setToast('Shipment info saved.');
       allReceipts.reload();
     } catch (err) {
-      setError(err.message || 'Could not save delivery info.');
+      setError(err.message || 'Could not save shipment info.');
     } finally {
       setSaving('');
     }
@@ -1496,7 +1543,7 @@ function ReceivingPage() {
         status: 'matched',
         item: {
           id: saved.itemIds[0],
-          name: saved.productName || saved.name || 'Matched Item',
+          name: saved.productName || saved.name || 'Matched Product',
           identifier: receivingEntrySku(saved),
         },
       });
@@ -1513,12 +1560,12 @@ function ReceivingPage() {
   function editReceivedItem(saved) {
     populateEntryFromSaved(saved);
     setEditingEntryId(saved.id || '');
-    setToast('Editing received item.');
+    setToast('Editing merchandise.');
   }
 
   async function removeReceivedItem(saved) {
     if (!receipt || !saved?.id) return;
-    if (!window.confirm(`Remove ${receivingEntryLabel(saved)} from this delivery?`)) return;
+    if (!window.confirm(`Remove ${receivingEntryLabel(saved)} from this shipment?`)) return;
     setSaving('remove');
     setError('');
     try {
@@ -1528,9 +1575,9 @@ function ReceivingPage() {
         setEditingEntryId('');
         resetActiveEntry(entry.locationId, entry.condition || 'Good');
       }
-      setToast('Item removed.');
+      setToast('Merchandise removed.');
     } catch (err) {
-      setError(err.message || 'Could not remove item.');
+      setError(err.message || 'Could not remove merchandise.');
     } finally {
       setSaving('');
     }
@@ -1553,7 +1600,7 @@ function ReceivingPage() {
 
   return (
     <div className="recv-page">
-      {toast && <div className={`receiving-toast ${toast === 'Entry saved' ? 'is-success' : ''}`} role="status">✓ {toast}</div>}
+      {toast && <div className={`receiving-toast ${toast === 'Merchandise saved' ? 'is-success' : ''}`} role="status">✓ {toast}</div>}
       {previewPhoto && (
         <button type="button" className="receiving-photo-preview" onClick={() => setPreviewPhoto(null)}>
           <img src={previewPhoto.url} alt={previewPhoto.name || 'photo'} />
@@ -1567,14 +1614,14 @@ function ReceivingPage() {
           className={`recv-tab ${tab === 'new' ? 'is-active' : ''}`}
           onClick={() => { if (tab === 'new' && receipt) { startNewSession(); } else { setTab('new'); } }}
         >
-          {receipt ? 'Edit Receipt' : 'New Receipt'}
+          {receipt ? 'Edit Shipment' : 'New Shipment'}
         </button>
         {receipt && (
           <button
             type="button"
             className="recv-tab-new-btn"
             onClick={() => { startNewSession(); setTab('new'); }}
-            title="Start a new receipt"
+            title="Start a new shipment"
           >
             + New
           </button>
@@ -1584,20 +1631,20 @@ function ReceivingPage() {
           className={`recv-tab ${tab === 'all' ? 'is-active' : ''}`}
           onClick={() => setTab('all')}
         >
-          All Receipts
+          All Shipments
           {receiptList.length > 0 && <span className="recv-tab-count">{receiptList.length}</span>}
         </button>
       </div>
 
       {tab === 'new' ? (
-        /* ── Three-panel receipt entry layout ── */
+        /* ── Three-panel merchandise entry layout ── */
         <div className="recv-three-col">
 
-          {/* Panel 1: Receipt Details */}
+          {/* Panel 1: Shipment Details */}
           <div className="recv-receipt-panel">
             <div className="recv-panel-head">
               <span className="recv-panel-step">1</span>
-              <strong className="recv-panel-title">Receipt Details</strong>
+              <strong className="recv-panel-title">Shipment Details</strong>
             </div>
             <div className="recv-panel-body">
               <div className="recv-field">
@@ -1634,28 +1681,28 @@ function ReceivingPage() {
             {!receipt && error && <div className="recv-field-error" style={{ margin: '0 0 8px' }}>{error}</div>}
             {!receipt ? (
               <button type="button" className="recv-create-btn" onClick={createDelivery} disabled={Boolean(saving)}>
-                {saving === 'create' ? 'Creating…' : 'Create Receipt →'}
+                {saving === 'create' ? 'Creating…' : 'Create Shipment →'}
               </button>
             ) : (
               <div className="recv-panel-footer">
                 <div className="recv-panel-created">
-                  <span>✓ Receipt saved</span>
-                  <span className="recv-session-badge">{entryCount} item{entryCount !== 1 ? 's' : ''}</span>
+                  <span>✓ Shipment saved</span>
+                  <span className="recv-session-badge">{entryCount} merchandise record{entryCount !== 1 ? 's' : ''}</span>
                 </div>
                 {headerReceivedLabel && <span className="recv-session-time">{headerReceivedLabel}</span>}
               </div>
             )}
           </div>
 
-          {/* Panel 2: Add Item */}
+          {/* Panel 2: Add Merchandise */}
           <div className="recv-item-panel">
             <div className="recv-panel-head">
               <span className={`recv-panel-step${!receipt ? ' is-inactive' : ''}`}>2</span>
-              <strong className="recv-panel-title">Add Item</strong>
+              <strong className="recv-panel-title">Add Merchandise</strong>
             </div>
             {!receipt ? (
               <div className="recv-panel-locked">
-                <span>Create a receipt first to start adding items.</span>
+                <span>Create a shipment first to start adding merchandise.</span>
               </div>
             ) : (
               <>
@@ -1669,7 +1716,7 @@ function ReceivingPage() {
                 <div className={`recv-form${editingEntryId ? ' is-editing' : ''}`}>
                   {editingEntryId && (
                     <div className="recv-edit-modal-header">
-                      <span className="recv-edit-modal-title">Edit item</span>
+                      <span className="recv-edit-modal-title">Edit merchandise</span>
                       <button
                         type="button"
                         className="recv-edit-modal-close"
@@ -1705,11 +1752,11 @@ function ReceivingPage() {
                       {showUploadProgress && <div className="receiving-upload-progress" role="status"><span />Uploading...</div>}
                     </div>
                     <div className="recv-field recv-field-product">
-                      <label>Product Name</label>
+                      <label>Package Name</label>
                       <input ref={productNameRef} value={entry.productName} onChange={e => { setEntry('productName', e.target.value); if (error) setError(''); }} placeholder="Name printed on package" autoComplete="off" />
                     </div>
                     <div className="recv-field">
-                      <label>SKU / Identifier</label>
+                      <label>{DOMAIN_TERMS.merchandiseIdentifier}</label>
                       <input value={entry.skuId} onChange={e => setEntry('skuId', e.target.value)} placeholder="Optional" autoComplete="off" />
                     </div>
                     <div className="receiving-match-field">
@@ -1757,13 +1804,13 @@ function ReceivingPage() {
                         </div>
                       ) : matchChoice.status === 'needs' ? (
                         <div className="receiving-match-selected is-unmatched">
-                          <span><strong>No Clear Match</strong><small>Will go to PM verification.</small></span>
+                          <span><strong>No Clear Match</strong><small>Will go to Merchandise Review.</small></span>
                           <button type="button" onClick={() => setMatchChoice({ status: 'none', item: null })}>Change</button>
                         </div>
                       ) : showMatchSuggestions ? (
                         <div className="receiving-match-panel">
                           <div className="receiving-match-panel-head">
-                            <span>{matchLoading ? 'Searching items…' : itemMatches.length ? 'Suggested matches' : 'No matches found'}</span>
+                            <span>{matchLoading ? 'Searching products…' : itemMatches.length ? 'Suggested products' : 'No matches found'}</span>
                             <button type="button" onClick={() => setMatchChoice({ status: 'needs', item: null })}>No clear match</button>
                           </div>
                           {itemMatches.length > 0 && (
@@ -1822,7 +1869,7 @@ function ReceivingPage() {
                     </details>
                     {error && <div className="recv-field-error">{error}</div>}
                     <button type="button" className="recv-save-btn" onClick={saveNext} disabled={Boolean(saving) || entryPhotos.length === 0}>
-                      {saving === 'entry' ? 'Saving…' : editingEntryId ? 'Update item' : 'Save & next →'}
+                      {saving === 'entry' ? 'Saving…' : editingEntryId ? 'Update merchandise' : 'Save & next →'}
                     </button>
                   </div>{/* end recv-form-content */}
                 </div>
@@ -1830,15 +1877,15 @@ function ReceivingPage() {
             )}
           </div>
 
-          {/* Panel 3: Items Logged */}
+          {/* Panel 3: Merchandise Logged */}
           <div className="recv-list">
             <div className="recv-panel-head">
               <span className={`recv-panel-step${!receipt ? ' is-inactive' : ''}`}>3</span>
-              <strong className="recv-panel-title">{entryCount} Item{entryCount !== 1 ? 's' : ''} Logged</strong>
+              <strong className="recv-panel-title">{entryCount} Merchandise Record{entryCount !== 1 ? 's' : ''} Logged</strong>
             </div>
             <div className="recv-list-items">
               {savedEntries.length === 0 ? (
-                <div className="receiving-current-empty">Items you log will appear here.</div>
+                <div className="receiving-current-empty">Merchandise you log will appear here.</div>
               ) : [...savedEntries].reverse().map((saved, index) => {
                 const locationId = saved.locationIds?.[0] || saved.locationId;
                 const locationName = locationNameById[locationId] || '';
@@ -1872,23 +1919,23 @@ function ReceivingPage() {
 
         </div>
       ) : (
-        /* ── All Receipts view ── */
+        /* ── All Shipments view ── */
         <div className="recv-all-view">
           <div className="recv-all-toolbar">
             <input
               className="recv-all-search"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search receipts by client, carrier, tracking…"
+              placeholder="Search shipments by client, carrier, tracking…"
               autoFocus
             />
             <div className="recv-all-view-toggle">
-              <button type="button" className={`recv-all-view-btn${allReceiptsView === 'receipts' ? ' is-active' : ''}`} onClick={() => setAllReceiptsView('receipts')}>By Receipt</button>
-              <button type="button" className={`recv-all-view-btn${allReceiptsView === 'items' ? ' is-active' : ''}`} onClick={() => setAllReceiptsView('items')}>By Item</button>
+              <button type="button" className={`recv-all-view-btn${allReceiptsView === 'receipts' ? ' is-active' : ''}`} onClick={() => setAllReceiptsView('receipts')}>By Shipment</button>
+              <button type="button" className={`recv-all-view-btn${allReceiptsView === 'items' ? ' is-active' : ''}`} onClick={() => setAllReceiptsView('items')}>By Merchandise</button>
             </div>
           </div>
           {isSearching && (
-            <div className="recv-all-scope-note">{filteredReceipts.length} receipt{filteredReceipts.length !== 1 ? 's' : ''} found · <button type="button" className="recv-all-scope-search" onClick={() => setSearch('')}>Clear</button></div>
+            <div className="recv-all-scope-note">{filteredReceipts.length} shipment{filteredReceipts.length !== 1 ? 's' : ''} found · <button type="button" className="recv-all-scope-search" onClick={() => setSearch('')}>Clear</button></div>
           )}
           <div className="recv-cal-grid">
             {allReceipts.loading && <div className="empty-state" style={{gridColumn:'1/-1'}}>Loading…</div>}
@@ -1916,7 +1963,7 @@ function ReceivingPage() {
                   if (!grouped[key]) grouped[key] = [];
                   grouped[key].push(r);
                 });
-                if (filteredReceipts.length === 0) return <div className="empty-state" style={{gridColumn:'1/-1'}}>No receipts match that search.</div>;
+                if (filteredReceipts.length === 0) return <div className="empty-state" style={{gridColumn:'1/-1'}}>No shipments match that search.</div>;
                 return (
                   <div className="recv-search-results">
                     {Object.entries(grouped).map(([dateStr, receipts]) => (
@@ -2017,6 +2064,14 @@ function JobsPage({ navigate }) {
 
   const clientList = clients.data?.records ?? [];
   const jobList    = jobs.data?.records ?? [];
+  const jobExportColumns = [
+    { header: 'Client', value: job => clientList.find(c => job.clientIds?.includes(c.id))?.name || '' },
+    { header: 'Job', key: 'name' },
+    { header: 'Parent Job Number', value: job => job.parentJobNumber || job.extId || '' },
+    { header: 'Period', key: 'period' },
+    { header: 'Deadline', key: 'deadline' },
+    { header: 'Status', key: 'status' },
+  ];
 
   return (
     <div className="page-stack">
@@ -2033,6 +2088,15 @@ function JobsPage({ navigate }) {
       </div>
 
       {jobs.error && <div className="error-state">{jobs.error}</div>}
+
+      <DataTableToolbar>
+        <ExcelExportButton
+          filename={todayExportFilename('jobs')}
+          columns={jobExportColumns}
+          rows={jobList}
+          disabled={jobs.loading}
+        />
+      </DataTableToolbar>
 
       <div className="table-wrap">
         <table>
@@ -2071,7 +2135,7 @@ function JobsPage({ navigate }) {
                   <td><StatusBadge status={job.status} /></td>
                   <td>
                     <button className="btn btn-ghost" onClick={() => navigate('skus', { jobId: job.id })}>
-                      Items <Icon.ChevronRight />
+                      Products <Icon.ChevronRight />
                     </button>
                   </td>
                 </tr>
@@ -2155,14 +2219,14 @@ function NewJobPage({ navigate }) {
   );
 }
 
-// ── Items page ────────────────────────────────────────────────────────────────
-function SkusPage({ navigate, jobId: initJobId, queue: initQueue }) {
+// ── Products page ─────────────────────────────────────────────────────────────
+function ProductsPage({ navigate, jobId: initJobId, queue: initQueue }) {
   const jobs = useResource(() => api.listJobs());
   const clients = useResource(() => api.listClients());
   const [jobFilter, setJobFilter] = useState(initJobId ?? '');
   const [queueFilter, setQueueFilter] = useState(initQueue ?? '');
   const items = useResource(
-    () => api.listSkus(jobFilter || undefined),
+    () => api.listProducts(jobFilter || undefined),
     [jobFilter]
   );
 
@@ -2197,12 +2261,23 @@ function SkusPage({ navigate, jobId: initJobId, queue: initQueue }) {
       .filter(Boolean);
     return names.length ? names.join(', ') : '—';
   }
+  const productExportColumns = [
+    { header: 'Product', key: 'name' },
+    { header: identifierLabel, key: 'identifier' },
+    { header: 'Product or File Name', key: 'product' },
+    { header: DOMAIN_TERMS.productJobNumber, key: 'itemJobNumber' },
+    { header: 'Output Type', key: 'output' },
+    { header: 'Brand', key: 'brand' },
+    { header: 'Job', value: item => jobNames(item) },
+    { header: 'Readiness', value: item => item.readiness?.label || item.readiness?.state || '' },
+    { header: 'Received', key: 'received' },
+  ];
 
   async function selectItem(itemId) {
     setSelectedItemId(itemId);
     setDetailError('');
     try {
-      const data = await api.getItem(itemId);
+      const data = await api.getProduct(itemId);
       setItemDetail(data.record);
     } catch (error) {
       setItemDetail(null);
@@ -2227,15 +2302,24 @@ function SkusPage({ navigate, jobId: initJobId, queue: initQueue }) {
 
       {items.error && <div className="error-state">{items.error}</div>}
 
+      <DataTableToolbar>
+        <ExcelExportButton
+          filename={todayExportFilename('products')}
+          columns={productExportColumns}
+          rows={visibleItems}
+          disabled={items.loading}
+        />
+      </DataTableToolbar>
+
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
               <th></th>
-              <th>Item</th>
+              <th>Product</th>
               <th>{identifierLabel}</th>
               <th>Product or File Name</th>
-              <th>Item Job Number</th>
+              <th>{DOMAIN_TERMS.productJobNumber}</th>
               <th>Output Type</th>
               <th>Brand</th>
               <th>Job</th>
@@ -2246,7 +2330,7 @@ function SkusPage({ navigate, jobId: initJobId, queue: initQueue }) {
           <tbody>
             {items.loading && <tr><td colSpan="10" className="empty-state">Loading…</td></tr>}
             {!items.loading && visibleItems.length === 0 && (
-              <tr><td colSpan="10" className="empty-state">No Items found</td></tr>
+              <tr><td colSpan="10" className="empty-state">No Products found</td></tr>
             )}
             {visibleItems.map(item => (
               <tr key={item.id} onClick={() => selectItem(item.id)} style={{ cursor: 'pointer' }}>
@@ -2280,7 +2364,7 @@ function SkusPage({ navigate, jobId: initJobId, queue: initQueue }) {
           <div className="settings-list">
             <div className="setting-row"><span className="setting-key">{getIdentifierLabel({ record: itemDetail, clients: clientList })}</span><span className="setting-val">{itemDetail.identifier || 'Missing'}</span></div>
             <div className="setting-row"><span className="setting-key">Product or File Name</span><span className="setting-val">{itemDetail.product || 'Missing'}</span></div>
-            <div className="setting-row"><span className="setting-key">Item Job Number</span><span className="setting-val">{itemDetail.itemJobNumber || '—'}</span></div>
+            <div className="setting-row"><span className="setting-key">{DOMAIN_TERMS.productJobNumber}</span><span className="setting-val">{itemDetail.itemJobNumber || '—'}</span></div>
             <div className="setting-row"><span className="setting-key">Description</span><span className="setting-val">{itemDetail.description || '—'}</span></div>
             <div className="setting-row"><span className="setting-key">Output Type</span><span className="setting-val">{itemDetail.output || '—'}</span></div>
             <div className="setting-row"><span className="setting-key">Master or Variant</span><span className="setting-val">{itemDetail.masterOrVariant || '—'}</span></div>
@@ -2315,7 +2399,7 @@ function SkusPage({ navigate, jobId: initJobId, queue: initQueue }) {
   );
 }
 
-// ── Add SKU form ──────────────────────────────────────────────────────────────
+// ── Add Product form ─────────────────────────────────────────────────────────
 function AddSkuForm({ jobId, onSaved, onCancel, identifierLabel = 'Identifier' }) {
   const [form, setForm] = useState({
     productId: '', product: '', itemJobNumber: '', description: '', brand: '',
@@ -2342,7 +2426,7 @@ function AddSkuForm({ jobId, onSaved, onCancel, identifierLabel = 'Identifier' }
 
   return (
     <div className="form-wrap" style={{ maxWidth: '100%' }}>
-      <div className="form-title">Add SKU</div>
+      <div className="form-title">Add Product</div>
       {error && <div className="error-state">{error}</div>}
       <form onSubmit={submit}>
         <div className="form-grid">
@@ -2359,7 +2443,7 @@ function AddSkuForm({ jobId, onSaved, onCancel, identifierLabel = 'Identifier' }
             <input value={form.product} onChange={e => set('product', e.target.value)} />
           </div>
           <div className="field">
-            <label>Item Job Number</label>
+            <label>{DOMAIN_TERMS.productJobNumber}</label>
             <input value={form.itemJobNumber} onChange={e => set('itemJobNumber', e.target.value)} />
           </div>
           <div className="field">
@@ -2404,7 +2488,7 @@ function AddSkuForm({ jobId, onSaved, onCancel, identifierLabel = 'Identifier' }
         </div>
         <div className="form-actions">
           <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving ? 'Saving…' : 'Add SKU'}
+            {saving ? 'Saving…' : 'Add Product'}
           </button>
           <button type="button" className="btn btn-ghost" onClick={onCancel}>Cancel</button>
         </div>
@@ -2441,6 +2525,13 @@ function SettingsPage({ cards = null } = {}) {
       </div>
     );
   }
+  const clientRequirementsExportColumns = [
+    { header: 'Client', key: 'name' },
+    { header: 'Identifier Type', value: client => client.codeType || client.identifierLabel || '' },
+    { header: 'Required Fields', value: client => (client.requiredPhotographyFields ?? []).join(', ') || 'Identifier' },
+    { header: 'Artwork', value: client => client.artworkRequirement || 'Optional' },
+    { header: 'Merchandise', value: client => client.merchandiseRequired === false ? 'Not required' : 'Required' },
+  ];
 
   async function randomizeDemoData() {
     if (!window.confirm('Randomize existing demo records for dashboard and workflow testing? This updates existing Airtable records directly.')) return;
@@ -2458,7 +2549,7 @@ function SettingsPage({ cards = null } = {}) {
   }
 
   async function clearCoreTables() {
-    const typed = window.prompt('This will delete all rows from Airtable tables Receipt Entries, Receipts, Items, History, Jobs, and Imports. Type DELETE to continue.');
+    const typed = window.prompt(`This will delete all rows from ${technicalTableLabel('Receipt Entries')}, ${technicalTableLabel('Receipts')}, ${technicalTableLabel('Items')}, History, Jobs, and Imports. Type DELETE to continue.`);
     if (typed !== 'DELETE') return;
     setClearing(true);
     setClearError('');
@@ -2495,16 +2586,16 @@ function SettingsPage({ cards = null } = {}) {
                 <span className="setting-val">{s.base}</span>
               </div>
               <div className="setting-row">
-                <span className="setting-key">Clients table</span>
+                <span className="setting-key">Clients</span>
                 <span className="setting-val">{s.tables?.clients}</span>
               </div>
               <div className="setting-row">
-                <span className="setting-key">Jobs table</span>
+                <span className="setting-key">Jobs</span>
                 <span className="setting-val">{s.tables?.jobs}</span>
               </div>
               <div className="setting-row">
-                <span className="setting-key">SKUs table</span>
-                <span className="setting-val">{s.tables?.skus}</span>
+                <span className="setting-key">{DOMAIN_TERMS.products}</span>
+                <span className="setting-val">{technicalTableLabel(s.tables?.skus || 'Items')}</span>
               </div>
             </>
           )}
@@ -2519,6 +2610,14 @@ function SettingsPage({ cards = null } = {}) {
       </div>}
       {hasCard('clients') && <div className="panel requirements-panel">
         {clients.error && <div className="error-state">{clients.error}</div>}
+        <DataTableToolbar>
+          <ExcelExportButton
+            filename={todayExportFilename('client-requirements')}
+            columns={clientRequirementsExportColumns}
+            rows={clientList}
+            disabled={clients.loading}
+          />
+        </DataTableToolbar>
         <div className="table-wrap requirements-table">
           <table>
             <thead>
@@ -2578,7 +2677,7 @@ function SettingsPage({ cards = null } = {}) {
             </div>
             <div className="setting-row setting-row-danger">
               <span className="setting-key">Clear Core Tables</span>
-              <span className="setting-val">Delete all rows from Receipt Entries, Receipts, Items, History, Jobs, and Imports.</span>
+              <span className="setting-val">Delete all rows from {technicalTableLabel('Receipt Entries')}, {technicalTableLabel('Receipts')}, {technicalTableLabel('Items')}, History, Jobs, and Imports.</span>
               <button className="btn btn-danger" type="button" onClick={clearCoreTables} disabled={clearing}>
                 {clearing ? 'Deleting…' : 'Delete Rows'}
               </button>
@@ -2587,7 +2686,7 @@ function SettingsPage({ cards = null } = {}) {
           {randomizeError && <div className="error-state">{randomizeError}</div>}
           {randomizeSummary && (
             <div className="settings-list">
-              <div className="setting-row"><span className="setting-key">Items updated</span><span className="setting-val">{randomizeSummary.itemsUpdated ?? 0}</span></div>
+              <div className="setting-row"><span className="setting-key">Products updated</span><span className="setting-val">{randomizeSummary.itemsUpdated ?? 0}</span></div>
               <div className="setting-row"><span className="setting-key">Issues updated</span><span className="setting-val">{randomizeSummary.issuesUpdated ?? 0}</span></div>
               <div className="setting-row"><span className="setting-key">Clients updated</span><span className="setting-val">{randomizeSummary.clientsUpdated ?? 0}</span></div>
               {(randomizeSummary.warnings ?? []).map(warning => (
@@ -2615,39 +2714,39 @@ function SettingsPage({ cards = null } = {}) {
 
 // ── Intake page ──────────────────────────────────────────────────────────────
 const INTAKE_TARGET_LABELS = {
-  'Item Name': 'Item Name',
-  Identifier: 'Identifier',
-  'Product or File Name': 'Product or File Name',
-  'Product/File Name': 'Product or File Name',
-  'Product Name': 'Product or File Name',
-  Description: 'Description',
-  'Item Job Number': 'Item Job Number',
-  'Output Type': 'Output Type',
-  'Master or Variant': 'Master or Variant',
-  'Pickup Job Number': 'Pickup Job Number',
-  Brand: 'Brand',
-  'Parent Job Number': 'Parent Job Number',
-  'Due Date': 'Due Date',
-  Notes: 'Notes',
-  'Job Name': 'Job Name',
-  'Reference Data': 'Reference Data',
+  'Item Name': getFieldLabel('Item Name', 'product'),
+  Identifier: getFieldLabel('Identifier', 'product'),
+  'Product or File Name': getFieldLabel('Product or File Name', 'product'),
+  'Product/File Name': getFieldLabel('Product/File Name', 'product'),
+  'Product Name': getFieldLabel('Product Name', 'product'),
+  Description: getFieldLabel('Description', 'product'),
+  'Item Job Number': getFieldLabel('Item Job Number', 'product'),
+  'Output Type': getFieldLabel('Output Type', 'product'),
+  'Master or Variant': getFieldLabel('Master or Variant', 'product'),
+  'Pickup Job Number': getFieldLabel('Pickup Job Number', 'product'),
+  Brand: getFieldLabel('Brand', 'product'),
+  'Parent Job Number': getFieldLabel('Parent Job Number', 'product'),
+  'Due Date': getFieldLabel('Due Date', 'product'),
+  Notes: getFieldLabel('Notes', 'product'),
+  'Job Name': getFieldLabel('Job Name', 'product'),
+  'Reference Data': getFieldLabel('Reference Data', 'product'),
 };
 
 const INTAKE_FALLBACK_TARGET_DESCRIPTIONS = {
-  'Item Name': 'Optional item display name in the app.',
+  'Item Name': 'Optional product display name in the app.',
   Identifier: 'Client product identifier.',
   'Product or File Name': 'Product or file name.',
-  Description: 'Longer source product or item description.',
-  'Item Job Number': 'Row-level job or project number for the item.',
+  Description: 'Longer source product description.',
+  'Item Job Number': 'Row-level job or project number for the product.',
   'Output Type': 'Photo Only, Render Only, or Photo + Render.',
-  'Master or Variant': 'Whether this item is a master or a variant.',
+  'Master or Variant': 'Whether this product is a master or a variant.',
   'Pickup Job Number': 'Previous production job number for variant pickup work.',
   Brand: 'Product brand.',
   'Parent Job Number': 'Batch-level number edited on the selected Job.',
   'Due Date': 'Job due date when present in the source spreadsheet.',
-  Notes: 'Source notes that describe the item.',
+  Notes: 'Source notes that describe the product.',
   'Job Name': 'Human-readable job or group name.',
-  'Reference Data': 'Preserve source values as item reference JSON.',
+  'Reference Data': 'Preserve source values as product reference JSON.',
 };
 
 const INTAKE_REQUIRED_TARGETS = ['Identifier'];
@@ -2671,6 +2770,14 @@ const INTAKE_WIZARD_STEPS = [
 function mappingTargetLabel(target, identifierLabel = 'Identifier') {
   if (target === 'Identifier') return identifierLabel || 'Identifier';
   return INTAKE_TARGET_LABELS[target] || target || '';
+}
+function mappingTargetTechnicalLabel(target, identifierLabel = 'Identifier') {
+  if (!target || target === 'Ignore') return '';
+  if (target === 'Identifier') return labelWithFieldMeaning(target, identifierLabel || 'Identifier');
+  return labelWithFieldMeaning(target, mappingTargetLabel(target, identifierLabel));
+}
+function labelWithFieldMeaning(fieldName, label) {
+  return `${label} (Airtable field: ${fieldName})`;
 }
 function normalizeHeader(header) { return String(header || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 function headerMatches(header, patterns) {
@@ -2737,6 +2844,16 @@ function MappingHeader({ children, target, showUnmapped = false }) {
       <span>{children}</span>
       {isMapped ? <small>↓ {target}</small> : showUnmapped ? <small>Unmapped</small> : null}
     </th>
+  );
+}
+
+function MappingTargetHelp({ target, description, identifierLabel }) {
+  if (!target || target === 'Ignore') return null;
+  return (
+    <small>
+      <span>{description || 'Imported product field.'}</span>
+      <span>{mappingTargetTechnicalLabel(target, identifierLabel)}</span>
+    </small>
   );
 }
 
@@ -3001,7 +3118,7 @@ function IntakePage({ navigate }) {
     const value = targetMapping[target] || '';
     return (
       <div className={`intake-field-map ${required && !value ? 'is-missing' : ''}`} key={target}>
-        <div><div className="intake-field-map-label">{mappingTargetLabel(target, identifierLabel)} {required && <span className="badge badge-blue">Required</span>}</div>{helper && <div className="intake-field-map-helper">{helper}</div>}</div>
+        <div><div className="intake-field-map-label">{mappingTargetLabel(target, identifierLabel)} {required && <span className="badge badge-blue">Required</span>}</div>{helper && <div className="intake-field-map-helper">{helper}</div>}<div className="intake-field-map-helper">{mappingTargetTechnicalLabel(target, identifierLabel)}</div></div>
         <select value={value} onChange={event => updateTargetColumn(target, event.target.value)}><option value="">Choose column…</option>{headers.map((header, index) => <option key={`${header}-${index}`} value={header}>{header || '(blank)'}</option>)}</select>
       </div>
     );
@@ -3033,7 +3150,7 @@ function IntakePage({ navigate }) {
                 <input type="radio" name="import-mode" checked={importSettings.mode === 'existing'} onChange={() => chooseImportMode('existing')} />
                 <span>
                   <strong>Use Existing Job</strong>
-                  <small>Put all imported items into an existing job.</small>
+                  <small>Put all imported products into an existing job.</small>
                   <select
                     className="intake-choice-control"
                     value={importSettings.existingJobId}
@@ -3072,7 +3189,7 @@ function IntakePage({ navigate }) {
                 <input type="radio" name="import-mode" checked={importSettings.mode === 'single'} onChange={() => chooseImportMode('single')} />
                 <span>
                   <strong>Create New Job</strong>
-                  <small>Put all items into a new job.</small>
+                  <small>Put all imported products into a new job.</small>
                   <input
                     className="intake-choice-control"
                     value={importSettings.singleJobName}
@@ -3110,8 +3227,8 @@ function IntakePage({ navigate }) {
             </div>
             <div className="intake-mapping-table">
               <div className="intake-mapping-table-head">
-                <span>Spreadsheet Fields</span>
-                <span>Application Fields</span>
+                <span>Source column</span>
+                <span>Destination field</span>
               </div>
               <div className="intake-mapping-rows">
                 {headers.map((header, index) => {
@@ -3127,9 +3244,16 @@ function IntakePage({ navigate }) {
                       </div>
                       <div className="intake-application-field">
                         <input className="intake-map-check" type="checkbox" checked={Boolean(mapped)} readOnly aria-label={mapped ? 'Mapped' : 'Unmapped'} />
-                        <select value={value} onChange={event => updateSpreadsheetFieldMapping(header, event.target.value)}>
+                        <select value={value} onChange={event => updateSpreadsheetFieldMapping(header, event.target.value)} aria-label={`Map source column ${header || 'blank'}`}>
                           {applicationTargets.map(target => <option value={target} key={target}>{target === 'Ignore' ? 'Do not import' : mappingTargetLabel(target, identifierLabel)}</option>)}
                         </select>
+                        {value !== 'Ignore' && (
+                          <MappingTargetHelp
+                            target={value}
+                            description={targetDescriptions[value]}
+                            identifierLabel={identifierLabel}
+                          />
+                        )}
                       </div>
                     </div>
                   );
@@ -3150,9 +3274,9 @@ function IntakePage({ navigate }) {
           </div>
         </div>
       )}
-      {step === 'validate' && review && <div className="intake-card intake-preview-card"><div className="intake-preview-head"><div><div className="intake-preview-title">Validate & Fix</div><div className="intake-preview-sub">Fix highlighted rows or import only the valid rows.</div></div></div><div className="intake-summary-grid is-six"><div className="intake-summary-item"><span>Total rows</span><strong>{review.totalRows}</strong></div><div className="intake-summary-item"><span>Jobs detected</span><strong>{review.jobsDetected}</strong></div><div className="intake-summary-item"><span>Items to create</span><strong>{liveReviewStats.itemsToCreate}</strong></div><div className="intake-summary-item"><span>Items to update</span><strong>{liveReviewStats.itemsToUpdate}</strong></div><div className="intake-summary-item"><span>Errors</span><strong className="metric-error">{liveReviewStats.errorCount}</strong></div><div className="intake-summary-item"><span>Warnings</span><strong className="metric-warning">{liveReviewStats.warningCount}</strong></div></div>{hasErrors ? <div className="intake-callout danger"><div className="intake-callout-icon">!</div><div><div className="intake-callout-title">Errors Found</div><div className="intake-callout-text">Rows with unresolved errors will be skipped during import.</div></div></div> : <div className="intake-callout success"><div className="intake-callout-icon">✓</div><div><div className="intake-callout-title">Success</div><div className="intake-callout-text">All rows passed validation.</div></div></div>}<div className="intake-inline-actions"><button className="btn" type="button" onClick={resetIntake}>Cancel</button><button className="btn btn-alt" type="button" onClick={() => setStep('map')}>Map Columns</button><button className="btn btn-primary" type="button" onClick={executeImport} disabled={importing || validImportRowCount === 0}>{importing ? 'Importing...' : 'Import'}</button></div><div className="table-wrap intake-preview-table"><table><thead><tr>{headers.map((header, index) => <MappingHeader target={sourceColumnMappings[header]} showUnmapped key={`${header}-${index}`}>{header || '(blank)'}</MappingHeader>)}<th className="problem-column-header">Alerts</th></tr></thead><tbody>{editableRows.map(row => <tr className={(row.errors ?? []).length ? 'row-error' : (row.warnings ?? []).length ? 'row-warning' : ''} key={row.rowNumber}>{headers.map((header, columnIndex) => <td key={`${row.rowNumber}-${header}-${columnIndex}`}>{renderValidateCell(row, header, columnIndex)}</td>)}<td className="problem-column-cell"><div className="problem-row-alerts">{[...(row.errors ?? []), ...(row.warnings ?? [])].map((problem, index) => <span className={`badge problem-badge ${(row.errors ?? []).includes(problem) ? 'badge-red' : 'badge-amber'}`} key={`${row.rowNumber}-${index}`}><span className="problem-badge-icon">!</span>{problem}</span>)}</div></td></tr>)}</tbody></table></div><div className="form-actions"><button className="btn" type="button" onClick={resetIntake}>Cancel</button><button className="btn btn-alt" type="button" onClick={() => setStep('map')}>Map Columns</button><button className="btn btn-primary" type="button" onClick={executeImport} disabled={importing || validImportRowCount === 0}>{importing ? 'Importing...' : 'Import'}</button></div></div>}
-      {step === 'summary' && summary && <div className="intake-card intake-preview-card"><div className="intake-preview-head"><div><div className="intake-preview-title">Import Complete</div><div className="intake-preview-sub">{preview?.fileName}</div></div><span className="badge badge-green">Success</span></div><div className="intake-summary-grid is-six"><div className="intake-summary-item"><span>Rows skipped</span><strong>{summary.rowsSkipped}</strong></div><div className="intake-summary-item"><span>Jobs created</span><strong>{summary.jobsCreated}</strong></div><div className="intake-summary-item"><span>Jobs reused</span><strong>{summary.jobsReused}</strong></div><div className="intake-summary-item"><span>Items created</span><strong>{summary.itemsCreated}</strong></div><div className="intake-summary-item"><span>Items updated</span><strong>{summary.itemsUpdated}</strong></div><div className="intake-summary-item"><span>Errors</span><strong className="metric-error">{summary.errors}</strong></div></div><div className="form-actions"><button className="btn btn-primary" type="button" onClick={resetIntake}>New Import</button></div></div>}
-      {importing && <div className="intake-modal-backdrop" role="status" aria-live="polite"><div className="intake-modal"><div className="intake-modal-spinner" /><div className="intake-modal-title">Importing spreadsheet...</div><div className="intake-modal-sub">Creating and updating Jobs and Items in Airtable.</div></div></div>}
+      {step === 'validate' && review && <div className="intake-card intake-preview-card"><div className="intake-preview-head"><div><div className="intake-preview-title">Validate & Fix</div><div className="intake-preview-sub">Fix highlighted rows or import only the valid rows.</div></div></div><div className="intake-summary-grid is-six"><div className="intake-summary-item"><span>Total rows</span><strong>{review.totalRows}</strong></div><div className="intake-summary-item"><span>Jobs detected</span><strong>{review.jobsDetected}</strong></div><div className="intake-summary-item"><span>Products to create</span><strong>{liveReviewStats.itemsToCreate}</strong></div><div className="intake-summary-item"><span>Products to update</span><strong>{liveReviewStats.itemsToUpdate}</strong></div><div className="intake-summary-item"><span>Errors</span><strong className="metric-error">{liveReviewStats.errorCount}</strong></div><div className="intake-summary-item"><span>Warnings</span><strong className="metric-warning">{liveReviewStats.warningCount}</strong></div></div>{hasErrors ? <div className="intake-callout danger"><div className="intake-callout-icon">!</div><div><div className="intake-callout-title">Errors Found</div><div className="intake-callout-text">Rows with unresolved errors will be skipped during import.</div></div></div> : <div className="intake-callout success"><div className="intake-callout-icon">✓</div><div><div className="intake-callout-title">Success</div><div className="intake-callout-text">All rows passed validation.</div></div></div>}<div className="intake-inline-actions"><button className="btn" type="button" onClick={resetIntake}>Cancel</button><button className="btn btn-alt" type="button" onClick={() => setStep('map')}>Map Columns</button><button className="btn btn-primary" type="button" onClick={executeImport} disabled={importing || validImportRowCount === 0}>{importing ? 'Importing...' : 'Import'}</button></div><div className="table-wrap intake-preview-table"><table><thead><tr>{headers.map((header, index) => <MappingHeader target={sourceColumnMappings[header]} showUnmapped key={`${header}-${index}`}>{header || '(blank)'}</MappingHeader>)}<th className="problem-column-header">Alerts</th></tr></thead><tbody>{editableRows.map(row => <tr className={(row.errors ?? []).length ? 'row-error' : (row.warnings ?? []).length ? 'row-warning' : ''} key={row.rowNumber}>{headers.map((header, columnIndex) => <td key={`${row.rowNumber}-${header}-${columnIndex}`}>{renderValidateCell(row, header, columnIndex)}</td>)}<td className="problem-column-cell"><div className="problem-row-alerts">{[...(row.errors ?? []), ...(row.warnings ?? [])].map((problem, index) => <span className={`badge problem-badge ${(row.errors ?? []).includes(problem) ? 'badge-red' : 'badge-amber'}`} key={`${row.rowNumber}-${index}`}><span className="problem-badge-icon">!</span>{problem}</span>)}</div></td></tr>)}</tbody></table></div><div className="form-actions"><button className="btn" type="button" onClick={resetIntake}>Cancel</button><button className="btn btn-alt" type="button" onClick={() => setStep('map')}>Map Columns</button><button className="btn btn-primary" type="button" onClick={executeImport} disabled={importing || validImportRowCount === 0}>{importing ? 'Importing...' : 'Import'}</button></div></div>}
+      {step === 'summary' && summary && <div className="intake-card intake-preview-card"><div className="intake-preview-head"><div><div className="intake-preview-title">Import Complete</div><div className="intake-preview-sub">{preview?.fileName}</div></div><span className="badge badge-green">Success</span></div><div className="intake-summary-grid is-six"><div className="intake-summary-item"><span>Rows skipped</span><strong>{summary.rowsSkipped}</strong></div><div className="intake-summary-item"><span>Jobs created</span><strong>{summary.jobsCreated}</strong></div><div className="intake-summary-item"><span>Jobs reused</span><strong>{summary.jobsReused}</strong></div><div className="intake-summary-item"><span>Products created</span><strong>{summary.itemsCreated}</strong></div><div className="intake-summary-item"><span>Products updated</span><strong>{summary.itemsUpdated}</strong></div><div className="intake-summary-item"><span>Errors</span><strong className="metric-error">{summary.errors}</strong></div></div><div className="form-actions"><button className="btn btn-primary" type="button" onClick={resetIntake}>New Import</button></div></div>}
+      {importing && <div className="intake-modal-backdrop" role="status" aria-live="polite"><div className="intake-modal"><div className="intake-modal-spinner" /><div className="intake-modal-title">Importing spreadsheet...</div><div className="intake-modal-sub">Creating and updating Jobs and Products in Airtable.</div></div></div>}
     </div>
   );
 }
@@ -3172,6 +3296,20 @@ function ImportHistoryPage({ importId }) {
     if (!value) return '—';
     return new Date(value).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   }
+  const importExportColumns = [
+    { header: 'Date', value: record => formatDateTime(record.started) },
+    { header: 'Client', key: 'client' },
+    { header: 'File', key: 'file' },
+    { header: 'User', key: 'user' },
+    { header: 'Status', key: 'status' },
+    { header: 'Rows', key: 'rows' },
+    { header: 'Jobs Created', key: 'jobsCreated' },
+    { header: 'Jobs Reused', key: 'jobsReused' },
+    { header: 'Products Created', key: 'itemsCreated' },
+    { header: 'Products Updated', key: 'itemsUpdated' },
+    { header: 'Errors', key: 'errors' },
+    { header: 'Warnings', key: 'warnings' },
+  ];
 
   return (
     <div className="page-stack">
@@ -3180,6 +3318,14 @@ function ImportHistoryPage({ importId }) {
         <div className="panel-header">
           <span className="panel-title">Recent imports</span>
         </div>
+        <DataTableToolbar>
+          <ExcelExportButton
+            filename={todayExportFilename('import-history')}
+            columns={importExportColumns}
+            rows={records}
+            disabled={imports.loading}
+          />
+        </DataTableToolbar>
         <div className="table-wrap">
           <table>
             <thead>
@@ -3192,8 +3338,8 @@ function ImportHistoryPage({ importId }) {
                 <th>Rows</th>
                 <th>Jobs Created</th>
                 <th>Jobs Reused</th>
-                <th>Items Created</th>
-                <th>Items Updated</th>
+                <th>Products Created</th>
+                <th>Products Updated</th>
                 <th>Errors</th>
                 <th>Warnings</th>
               </tr>
@@ -3240,48 +3386,347 @@ function ImportHistoryPage({ importId }) {
   );
 }
 
-// ── Verification ─────────────────────────────────────────────────────────────
-function VerificationPage() {
-  const entries = useResource(() => api.listVerificationEntries());
+// ── Merchandise Inventory ───────────────────────────────────────────────────
+const AGE_FILTERS = [
+  { value: 'all', label: 'All ages' },
+  { value: '0-7', label: '0-7 days' },
+  { value: '8-14', label: '8-14 days' },
+  { value: '15-30', label: '15-30 days' },
+  { value: '30-plus', label: 'More than 30 days' },
+  { value: 'unknown', label: 'Unknown' },
+];
+
+function formatInventoryDate(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function uniqueInventoryOptions(records, getter) {
+  return Array.from(new Set(records.map(getter).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
+function MerchandiseInventoryPage() {
+  const merchandise = useResource(() => api.listMerchandise());
+  const records = merchandise.data?.records ?? [];
+  const [search, setSearch] = useState('');
+  const [clientFilter, setClientFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [locationFilter, setLocationFilter] = useState('all');
+  const [ageFilter, setAgeFilter] = useState('all');
+  const [viewMode, setViewMode] = useStoredState('merchandise-inventory:view-mode', 'cards');
+  const [sortKey, setSortKey] = useState('daysHere');
+  const [sortDirection, setSortDirection] = useState('desc');
+
+  const clients = uniqueInventoryOptions(records, record => record.client);
+  const statuses = uniqueInventoryOptions(records, record => record.status);
+  const locations = uniqueInventoryOptions(records, record => record.storageLocation);
+  const inventorySummary = {
+    total: records.length,
+    old: records.filter(record => record.ageGroup === '30-plus').length,
+    locations: locations.length,
+    unknownAge: records.filter(record => record.ageGroup === 'unknown').length,
+  };
+  const filtersActive = [search, clientFilter, statusFilter, locationFilter, ageFilter]
+    .some(value => value && value !== 'all');
+  const searchText = search.trim().toLowerCase();
+  const visibleRecords = records.filter(record => {
+    if (clientFilter !== 'all' && record.client !== clientFilter) return false;
+    if (statusFilter !== 'all' && record.status !== statusFilter) return false;
+    if (locationFilter !== 'all' && record.storageLocation !== locationFilter) return false;
+    if (ageFilter !== 'all' && record.ageGroup !== ageFilter) return false;
+    if (!searchText) return true;
+    return [
+      record.packageName,
+      record.barcodeOrIdNumber,
+      record.client,
+      record.matchedProduct?.name,
+      record.matchedProduct?.identifier,
+      record.shipment?.name,
+      record.shipment?.tracking,
+      record.storageLocation,
+      record.status,
+    ].some(value => String(value || '').toLowerCase().includes(searchText));
+  });
+  const merchandiseTableColumns = [
+    { key: 'packageName', header: DOMAIN_TERMS.packageName, value: record => record.packageName || '' },
+    { key: 'barcodeOrIdNumber', header: DOMAIN_TERMS.merchandiseIdentifier, value: record => record.barcodeOrIdNumber || '' },
+    { key: 'client', header: 'Client', value: record => record.client || '' },
+    { key: 'quantity', header: DOMAIN_TERMS.quantity, value: record => record.quantity ?? '' },
+    { key: 'storageLocation', header: DOMAIN_TERMS.storageLocation, value: record => record.storageLocation || '' },
+    { key: 'status', header: 'Status', value: record => record.status || 'Received' },
+    { key: 'daysHere', header: 'Days Here', value: record => record.daysHere ?? '' },
+    { key: 'timeHere', header: 'Time Here', value: record => record.timeHere || 'Unknown' },
+    { key: 'dateReceived', header: 'Date Received', value: record => formatInventoryDate(record.dateReceived) },
+    { key: 'matchedProduct', header: DOMAIN_TERMS.matchedProduct, value: record => record.matchedProduct?.name || '' },
+    { key: 'matchedProductIdentifier', header: 'Matched Product ID', value: record => record.matchedProduct?.identifier || '' },
+    { key: 'shipment', header: DOMAIN_TERMS.shipment, value: record => record.shipment?.name || '' },
+    { key: 'tracking', header: 'Tracking', value: record => record.shipment?.tracking || '' },
+    { key: 'condition', header: DOMAIN_TERMS.condition, value: record => record.condition || '' },
+  ];
+  const sortedVisibleRecords = [...visibleRecords].sort((a, b) => {
+    const column = merchandiseTableColumns.find(item => item.key === sortKey);
+    const getValue = record => column?.value ? column.value(record) : record[sortKey];
+    const aValue = getValue(a);
+    const bValue = getValue(b);
+    if (sortKey === 'daysHere') {
+      const aDays = a.daysHere ?? -1;
+      const bDays = b.daysHere ?? -1;
+      return sortDirection === 'asc' ? aDays - bDays : bDays - aDays;
+    }
+    return sortDirection === 'asc'
+      ? String(aValue || '').localeCompare(String(bValue || ''), undefined, { numeric: true })
+      : String(bValue || '').localeCompare(String(aValue || ''), undefined, { numeric: true });
+  });
+
+  function toggleInventorySort(key) {
+    if (sortKey === key) {
+      setSortDirection(direction => direction === 'asc' ? 'desc' : 'asc');
+      return;
+    }
+    setSortKey(key);
+    setSortDirection(key === 'daysHere' ? 'desc' : 'asc');
+  }
+
+  function compactAgeBadgeLabel(record) {
+    return record.daysHere === null || record.daysHere === undefined ? '—' : `${record.daysHere}d`;
+  }
+
+  return (
+    <div className="merchandise-inventory-page page-stack">
+      {merchandise.error && <div className="error-state">{merchandise.error}</div>}
+
+      <div className="merchandise-inventory-toolbar ui-filter-bar">
+        <input
+          className="ui-input"
+          type="search"
+          value={search}
+          onChange={event => setSearch(event.target.value)}
+          placeholder="Search merchandise"
+          aria-label="Search merchandise"
+        />
+        <select className="ui-select" value={clientFilter} onChange={event => setClientFilter(event.target.value)} aria-label="Client">
+          <option value="all">Client</option>
+          {clients.map(client => <option key={client} value={client}>{client}</option>)}
+        </select>
+        <select className="ui-select" value={statusFilter} onChange={event => setStatusFilter(event.target.value)} aria-label="Status">
+          <option value="all">Status</option>
+          {statuses.map(status => <option key={status} value={status}>{status}</option>)}
+        </select>
+        <select className="ui-select" value={locationFilter} onChange={event => setLocationFilter(event.target.value)} aria-label="Storage Location">
+          <option value="all">Storage Location</option>
+          {locations.map(location => <option key={location} value={location}>{location}</option>)}
+        </select>
+        <select className="ui-select" value={ageFilter} onChange={event => setAgeFilter(event.target.value)} aria-label="Age">
+          {AGE_FILTERS.map(filter => <option key={filter.value} value={filter.value}>{filter.label}</option>)}
+        </select>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={!filtersActive}
+          onClick={() => {
+            setSearch('');
+            setClientFilter('all');
+            setStatusFilter('all');
+            setLocationFilter('all');
+            setAgeFilter('all');
+          }}
+        >
+          Clear
+        </button>
+      </div>
+
+      <DataTableToolbar>
+        <ViewToggle value={viewMode} onChange={setViewMode} label="Merchandise inventory view" />
+        <ExcelExportButton
+            filename={todayExportFilename('merchandise-inventory')}
+            columns={merchandiseTableColumns}
+            rows={sortedVisibleRecords}
+            disabled={merchandise.loading}
+            label="Export to Excel"
+          />
+      </DataTableToolbar>
+
+      <div className="merchandise-inventory-summary-grid">
+        <div><span>Total on Shelf</span><strong>{inventorySummary.total}</strong></div>
+        <div><span>More Than 30 Days</span><strong>{inventorySummary.old}</strong></div>
+        <div><span>Storage Locations</span><strong>{inventorySummary.locations}</strong></div>
+        <div><span>Unknown Age</span><strong>{inventorySummary.unknownAge}</strong></div>
+      </div>
+
+      <div className="merchandise-inventory-count">
+        <strong>{visibleRecords.length}</strong>
+        <span>{visibleRecords.length === 1 ? 'record' : 'records'} currently shown</span>
+      </div>
+
+      {merchandise.loading && <div className="empty-state">Loading merchandise inventory...</div>}
+      {!merchandise.loading && visibleRecords.length === 0 && (
+        <div className="empty-state">No merchandise matches these filters.</div>
+      )}
+
+      {viewMode === 'cards' && (
+      <div className="merchandise-inventory-card-grid">
+        {sortedVisibleRecords.map(record => {
+          const thumbnail = record.photos?.[0]?.thumbnails?.large?.url
+            || record.photos?.[0]?.thumbnails?.small?.url
+            || record.photos?.[0]?.url
+            || '';
+          return (
+          <article className={`merchandise-inventory-card ui-card age-${record.ageGroup || 'unknown'}`} key={record.id}>
+            <div className="merchandise-inventory-image" aria-label="Merchandise thumbnail">
+              {thumbnail ? (
+                <img src={thumbnail} alt={record.packageName ? `${record.packageName} thumbnail` : 'Merchandise thumbnail'} />
+              ) : (
+                <span>No photo</span>
+              )}
+              <span className={`merchandise-age-badge age-${record.ageGroup || 'unknown'}`}>{compactAgeBadgeLabel(record)}</span>
+              <span className="merchandise-image-status-badge">
+                <StatusBadge status={record.status || 'Received'} />
+              </span>
+            </div>
+            <div className="merchandise-inventory-card-body">
+              <div className="merchandise-inventory-title-row">
+                <h2>{record.packageName || 'Unnamed Merchandise'}</h2>
+              </div>
+              <p className="merchandise-inventory-identifier">{record.barcodeOrIdNumber || 'No barcode or ID number'}</p>
+              <div className="merchandise-inventory-divider" />
+              <div className="merchandise-inventory-meta-row">
+                <span><span className="merchandise-inventory-meta-label">Client:</span> {record.client || '-'}</span>
+                <span aria-hidden="true" className="merchandise-inventory-meta-divider">|</span>
+                <span><span className="merchandise-inventory-meta-label">Qty:</span> {record.quantity ?? 0}</span>
+              </div>
+            </div>
+          </article>
+          );
+        })}
+      </div>
+      )}
+
+      {viewMode === 'list' && (
+        <div className="table-wrap merchandise-inventory-table-wrap">
+          <table className="data-table merchandise-inventory-table">
+            <thead>
+              <tr>
+                {merchandiseTableColumns.map(column => (
+                  <th key={column.key}>
+                    <button type="button" className="table-sort-button" onClick={() => toggleInventorySort(column.key)}>
+                      {column.header}
+                      {sortKey === column.key && <span aria-hidden="true">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                    </button>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedVisibleRecords.map(record => (
+                <tr key={record.id}>
+                  {merchandiseTableColumns.map(column => (
+                    <td key={column.key}>{column.value(record) || '-'}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Merchandise Review ──────────────────────────────────────────────────────
+const MERCHANDISE_REVIEW_STATES = ['Needs Review', 'Waiting for Product Data', 'Validated', 'Issue'];
+const MERCHANDISE_REVIEW_AGE_OPTIONS = [
+  { value: '', label: 'All ages' },
+  { value: '0-7', label: '0-7 days' },
+  { value: '8-14', label: '8-14 days' },
+  { value: '15-30', label: '15-30 days' },
+  { value: '30-plus', label: 'More than 30 days' },
+  { value: 'unknown', label: 'Unknown age' },
+];
+
+function reviewStateFor(record) {
+  return record?.reviewState || (record?.merchStatus === 'Validated' ? 'Validated' : record?.merchStatus === 'Issue' ? 'Issue' : 'Needs Review');
+}
+
+function MerchandiseReviewPage() {
+  const entries = useResource(() => api.listMerchandiseReviewEntries());
   const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
   const records = entries.data?.records ?? [];
   const [selectedId, setSelectedId] = useState('');
   const [queueSearch, setQueueSearch] = useState('');
+  const [clientFilter, setClientFilter] = useState('');
+  const [queueState, setQueueState] = useState('Needs Review');
+  const [ageFilter, setAgeFilter] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState([]);
   const [searching, setSearching] = useState(false);
   const [matching, setMatching] = useState('');
-  const [validating, setValidating] = useState('');
+  const [validating, setValidating] = useState(false);
+  const [actionName, setActionName] = useState('');
   const [error, setError] = useState('');
-  const [queueTab, setQueueTab] = useState('verify');
+  const [notice, setNotice] = useState('');
+  const [waitingNote, setWaitingNote] = useState('');
+  const [issueType, setIssueType] = useState('Unknown Item');
+  const [issueDescription, setIssueDescription] = useState('');
+  const [issueNotes, setIssueNotes] = useState('');
   const [photoIndex, setPhotoIndex] = useState(0);
   const [photoZoom, setPhotoZoom] = useState(1);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
 
   const clientMap = Object.fromEntries((clients.data?.records ?? []).map(client => [client.id, client]));
   const locationMap = Object.fromEntries((locations.data?.records ?? []).map(location => [location.id, location]));
-  const activeRecords = records.filter(record => record.merchStatus !== 'Validated');
-  // "Received" = logged but no item match yet — needs PM to find/match the item
-  // "Matched" = item linked, awaiting PM validation
-  // "Issue" = flagged problem
-  const toVerifyRecords = activeRecords.filter(record => record.merchStatus !== 'Received');
-  const waitingRecords = activeRecords.filter(record => record.merchStatus === 'Received');
-  const queueRecords = queueTab === 'waiting' ? waitingRecords : toVerifyRecords;
+  const stateCounts = MERCHANDISE_REVIEW_STATES.reduce((counts, state) => {
+    counts[state] = records.filter(record => reviewStateFor(record) === state).length;
+    return counts;
+  }, {});
+  const clientOptions = [...new Set(records.map(record => record.clientIds?.[0]).filter(Boolean))]
+    .map(id => ({ id, name: clientMap[id]?.name || 'Unknown client' }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const locationOptions = [...new Set(records.map(record => record.locationId).filter(Boolean))]
+    .map(id => ({ id, name: locationMap[id]?.name || 'Unknown location' }))
+    .sort((a, b) => a.name.localeCompare(b.name));
   const queueSearchText = queueSearch.trim().toLowerCase();
-  const visibleQueueRecords = queueSearchText
-    ? queueRecords.filter(record => [
-        record.productName,
-        record.skuId,
-        record.brand,
-        record.description,
-        clientMap[record.clientIds?.[0]]?.name,
-      ].some(value => String(value || '').toLowerCase().includes(queueSearchText)))
-    : queueRecords;
-  const selected = queueRecords.find(record => record.id === selectedId) || queueRecords[0];
+  const visibleQueueRecords = records.filter(record => {
+    const clientName = clientMap[record.clientIds?.[0]]?.name || '';
+    const locationName = record.locationId ? locationMap[record.locationId]?.name || '' : '';
+    const linkedProduct = record.linkedItem || {};
+    const haystack = [
+      record.productName,
+      record.skuId,
+      record.brand,
+      record.description,
+      record.notes,
+      record.receipt?.name,
+      clientName,
+      locationName,
+      linkedProduct.product,
+      linkedProduct.name,
+      linkedProduct.identifier,
+      linkedProduct.itemJobNumber,
+    ].join(' ').toLowerCase();
+    return reviewStateFor(record) === queueState
+      && (!queueSearchText || haystack.includes(queueSearchText))
+      && (!clientFilter || record.clientIds?.[0] === clientFilter)
+      && (!ageFilter || record.ageGroup === ageFilter)
+      && (!locationFilter || record.locationId === locationFilter);
+  });
+  const selected = visibleQueueRecords.find(record => record.id === selectedId)
+    || records.find(record => record.id === selectedId && reviewStateFor(record) === queueState)
+    || visibleQueueRecords[0];
   const selectedClientId = selected?.clientIds?.[0] || '';
+  const selectedClient = selectedClientId ? clientMap[selectedClientId] : null;
   const selectedLocation = selected?.locationId ? locationMap[selected.locationId]?.name : '';
   const selectedPhotos = recordPhotos(selected);
   const activePhoto = selectedPhotos[photoIndex] || selectedPhotos[0];
+  const activePhotoUrl = receivingPhotoUrl(activePhoto);
+  const linkedProduct = selected?.linkedItem || null;
+  const hasLinkedProduct = Boolean(selected?.itemIds?.length || linkedProduct?.id);
+  const hasBlockingIssue = Boolean(selected?.blockingIssues?.length);
+  const unidentified = Boolean(selected?.isUnidentified);
 
   useEffect(() => {
     if (!selected) {
@@ -3291,11 +3736,15 @@ function VerificationPage() {
     }
     setSelectedId(selected.id);
     setQuery(selected.skuId || selected.productName || selected.description || '');
-  }, [selected?.id, queueTab]);
+    setWaitingNote('');
+    setIssueDescription(selected.productName ? `${selected.productName} needs review` : 'Merchandise issue');
+    setIssueNotes('');
+  }, [selected?.id, queueState]);
 
   useEffect(() => {
     setPhotoIndex(0);
     setPhotoZoom(1);
+    setLightboxOpen(false);
   }, [selected?.id]);
 
   useEffect(() => {
@@ -3303,147 +3752,223 @@ function VerificationPage() {
     async function loadMatches() {
       const cleaned = query.trim();
       setError('');
-      if (cleaned.length < 3) {
+      if (cleaned.length < 3 || !selected) {
         setMatches([]);
         return;
       }
       setSearching(true);
       try {
-        const data = await api.searchVerificationItems({ q: cleaned, clientId: selectedClientId });
+        const data = await api.searchMerchandiseReviewProducts({
+          q: cleaned,
+          clientId: selectedClientId,
+          includeItemId: selected.itemIds?.[0],
+        });
         if (active) setMatches(data.records ?? []);
       } catch (err) {
-        if (active) setError(err.message || 'Could not search Items.');
+        if (active) setError(err.message || 'Could not search Products.');
       } finally {
         if (active) setSearching(false);
       }
     }
     loadMatches();
     return () => { active = false; };
-  }, [query, selectedClientId]);
+  }, [query, selectedClientId, selected?.id, selected?.itemIds]);
 
-  async function matchItem(itemId) {
+  function moveToNext(currentId = selected?.id) {
+    const nextSelection = visibleQueueRecords.find(record => record.id !== currentId)?.id || '';
+    setSelectedId(nextSelection);
+  }
+
+  function moveToNextNeedsReview(currentId = selected?.id) {
+    const nextSelection = records.find(record => record.id !== currentId && reviewStateFor(record) === 'Needs Review')?.id || '';
+    setQueueState('Needs Review');
+    setSelectedId(nextSelection);
+  }
+
+  async function runAction(name, callback, successMessage, { advance = false } = {}) {
     if (!selected) return;
-    setMatching(itemId);
+    setActionName(name);
     setError('');
+    setNotice('');
     try {
-      await api.matchVerificationEntry(selected.id, itemId);
+      await callback();
+      await entries.reload();
+      setNotice(successMessage);
+      if (advance) moveToNext(selected.id);
+    } catch (err) {
+      setError(err.message || 'Could not update merchandise review.');
+    } finally {
+      setActionName('');
+    }
+  }
+
+  async function matchProduct(productId) {
+    if (!selected) return;
+    setMatching(productId);
+    setError('');
+    setNotice('');
+    try {
+      await api.matchMerchandiseReviewEntry(selected.id, productId);
       await entries.reload();
       setMatches([]);
+      setNotice('Product match updated.');
     } catch (err) {
-      setError(err.message || 'Could not match this entry.');
+      setError(err.message || 'Could not match this merchandise.');
     } finally {
       setMatching('');
     }
   }
 
-  async function validateEntry(status) {
+  async function validateSelected() {
     if (!selected) return;
-    setValidating(status);
-    setError('');
-    const nextSelection = queueRecords.find(record => record.id !== selected.id)?.id || '';
-    try {
-      await api.validateVerificationEntry(selected.id, status);
-      await entries.reload();
-      setSelectedId(nextSelection);
-    } catch (err) {
-      setError(err.message || 'Could not update status.');
-    } finally {
-      setValidating('');
-    }
+    setValidating(true);
+    await runAction(
+      'validate',
+      () => api.validateMerchandiseReviewEntry(selected.id, 'Validated'),
+      'Merchandise validated.',
+    );
+    moveToNextNeedsReview(selected.id);
+    setValidating(false);
   }
 
-  function fact(label, value) {
+  const reviewActionBlockedReason = !hasLinkedProduct
+    ? 'Link a Product before validating.'
+    : hasBlockingIssue
+      ? 'Resolve the blocking Merchandise issue before validating.'
+      : reviewStateFor(selected) === 'Validated'
+        ? 'This Merchandise is already validated.'
+        : '';
+
+  function reviewFact(label, value, className = '') {
     return (
-      <div className="verification-fact">
+      <div className={`merch-review-fact ${className}`}>
         <span>{label}</span>
-        <strong>{value || '—'}</strong>
+        <strong>{value || '-'}</strong>
       </div>
     );
   }
 
-  if (entries.loading) return <div className="empty-state">Loading verification queue…</div>;
+  if (entries.loading) return <div className="empty-state">Loading merchandise review queue...</div>;
   if (entries.error) return <div className="error-state">{entries.error}</div>;
-  if (!activeRecords.length) {
+  if (!records.length) {
     return (
       <div className="verification-empty">
-        <h2>Verification</h2>
-        <p>No merchandise is awaiting verification.</p>
+        <h2>Merchandise Review</h2>
+        <p>No merchandise has been received for review.</p>
       </div>
     );
   }
 
   return (
-    <div className="verification-page workspace-layout validation-workspace">
-      {error && <div className="error-state">{error}</div>}
-      <WorkspacePanel id="validation-queue" title="Verification" meta={`${queueRecords.length} to review`} defaultWidth={360} minWidth={300} className="verification-queue">
-        <input
-          className="verification-queue-search"
-          value={queueSearch}
-          onChange={event => setQueueSearch(event.target.value)}
-          placeholder="Search received items…"
-        />
-        <div className="verification-tabs" role="tablist" aria-label="Verification queues">
-          <button type="button" className={queueTab === 'verify' ? 'is-active' : ''} onClick={() => setQueueTab('verify')}>
-            <span>Needs a Match</span>
-            <strong>{toVerifyRecords.length}</strong>
-          </button>
-          <button type="button" className={queueTab === 'waiting' ? 'is-active' : ''} onClick={() => setQueueTab('waiting')}>
-            <span>Ready to Approve</span>
-            <strong>{waitingRecords.length}</strong>
+    <div className={`merch-review-shell ${focusMode ? 'is-focus-mode' : ''}`}>
+      <header className="merch-review-header">
+        <div>
+          <h1>Merchandise Review</h1>
+          <span>{visibleQueueRecords.length} shown in {queueState === 'Issue' ? 'Issues' : queueState}</span>
+        </div>
+        <div className="merch-review-header-status">
+          {(error || notice) && <strong className={error ? 'is-error' : 'is-success'}>{error || notice}</strong>}
+          <button type="button" className="btn btn-ghost" onClick={() => setFocusMode(current => !current)}>
+            {focusMode ? 'Restore Panels' : 'Focus Photos'}
           </button>
         </div>
-        <div className="verification-entry-list">
-          {visibleQueueRecords.length === 0 && (
-            <div className="verification-queue-empty">
-              {queueSearch ? 'No queue items match that search.' : queueTab === 'waiting' ? 'No entries are waiting for import.' : 'No entries are ready to verify.'}
-            </div>
-          )}
-          {visibleQueueRecords.map(record => {
-            const client = clientMap[record.clientIds?.[0]];
-            const identifier = record.skuId || record.identifier || '';
-            const merchStatus = record.merchStatus || 'Received';
-            return (
-              <button
-                type="button"
-                className={`verification-entry-card ${selected?.id === record.id ? 'is-active' : ''}`}
-                key={record.id}
-                onClick={() => setSelectedId(record.id)}
-              >
-                <RecordThumbnail record={record} className="verification-entry-thumb" />
-                <span>
-                  <strong>{record.productName || 'Unnamed Product'}</strong>
-                  <small>{client?.name || 'Unknown client'}{identifier ? ` · ${identifier}` : ''}</small>
-                  <em>{record.brand || 'No brand'} · Qty {record.quantity || 1}</em>
-                  <span className="verification-card-badges">
-                    <b>{merchStatus}</b>
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </WorkspacePanel>
+      </header>
 
-      {selected ? (
-        <>
-          <WorkspacePanel id="validation-viewer" title={selected.productName || 'Unnamed Product'} meta={selected.merchStatus} defaultWidth={820} minWidth={520} dominant className="verification-viewer-panel">
-            <div className="verification-viewer">
-              <div className="verification-photo-stage">
-                {activePhoto && receivingPhotoUrl(activePhoto) ? (
-                  <img src={receivingPhotoUrl(activePhoto)} alt="" style={{ transform: `scale(${photoZoom})` }} />
-                ) : (
-                  <div className="verification-no-photo">No photos</div>
-                )}
+      <div className="merch-review-workspace">
+        <aside className="merch-review-queue-panel" aria-label="Merchandise review queue">
+          <div className="merch-review-state-switcher" role="tablist" aria-label="Merchandise review queues">
+            {MERCHANDISE_REVIEW_STATES.map(state => (
+              <button type="button" className={queueState === state ? 'is-active' : ''} onClick={() => setQueueState(state)} key={state}>
+                <span>{state === 'Issue' ? 'Issues' : state}</span>
+                <strong>{stateCounts[state] || 0}</strong>
+              </button>
+            ))}
+          </div>
+
+          <div className="merch-review-queue-filters">
+            <input
+              value={queueSearch}
+              onChange={event => setQueueSearch(event.target.value)}
+              placeholder="Search merchandise..."
+              aria-label="Search merchandise"
+            />
+            <select value={clientFilter} onChange={event => setClientFilter(event.target.value)} aria-label="Client">
+              <option value="">All clients</option>
+              {clientOptions.map(client => <option value={client.id} key={client.id}>{client.name}</option>)}
+            </select>
+            <select value={locationFilter} onChange={event => setLocationFilter(event.target.value)} aria-label="Storage Location">
+              <option value="">All locations</option>
+              {locationOptions.map(location => <option value={location.id} key={location.id}>{location.name}</option>)}
+            </select>
+            <select value={ageFilter} onChange={event => setAgeFilter(event.target.value)} aria-label="Age">
+              {MERCHANDISE_REVIEW_AGE_OPTIONS.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}
+            </select>
+          </div>
+
+          <div className="merch-review-queue-list">
+            {visibleQueueRecords.length === 0 && (
+              <div className="merch-review-empty-list">No merchandise matches these filters.</div>
+            )}
+            {visibleQueueRecords.map(record => {
+              const client = clientMap[record.clientIds?.[0]];
+              const identifier = record.skuId || record.identifier || '';
+              const state = reviewStateFor(record);
+              const locationName = record.locationId ? locationMap[record.locationId]?.name || '' : '';
+              return (
+                <button
+                  type="button"
+                  className={`merch-review-queue-card ${selected?.id === record.id ? 'is-active' : ''}`}
+                  key={record.id}
+                  onClick={() => setSelectedId(record.id)}
+                >
+                  <RecordThumbnail record={record} className="merch-review-queue-thumb" />
+                  <span className="merch-review-queue-text">
+                    <strong>{record.productName || (record.isUnidentified ? 'Unidentified Merchandise' : 'Unnamed Merchandise')}</strong>
+                    <small>{identifier || 'No barcode or ID number'}</small>
+                    <em>{client?.name || 'Unknown client'} - {record.timeHere || 'Unknown age'}</em>
+                    <em>{locationName || 'No storage location'}</em>
+                  </span>
+                  <span className={`merch-review-state-dot state-${state.toLowerCase().replaceAll(' ', '-')}`} aria-label={state} />
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+
+        {selected ? (
+          <>
+            <main className="merch-review-inspection-panel" aria-label="Merchandise inspection">
+              <div className="merch-review-identity-bar">
+                <div>
+                  <span>{unidentified ? 'Unidentified Merchandise' : DOMAIN_TERMS.packageName}</span>
+                  <h2>{unidentified ? 'Unidentified Merchandise' : selected.productName || 'Unnamed Merchandise'}</h2>
+                </div>
+                <strong>{reviewStateFor(selected)}</strong>
               </div>
-              <div className="verification-viewer-controls">
+
+              <section className="merch-review-photo-stage">
+                {activePhotoUrl ? (
+                  <button type="button" className="merch-review-main-photo" onClick={() => setLightboxOpen(true)} style={{ '--photo-zoom': photoZoom }}>
+                    <img src={activePhotoUrl} alt="" />
+                  </button>
+                ) : (
+                  <div className="merch-review-no-photo">
+                    <strong>No merchandise photos</strong>
+                    <span>Receiving photos will appear here when they are attached to this Merchandise record.</span>
+                  </div>
+                )}
+              </section>
+
+              <div className="merch-review-photo-controls">
                 <button type="button" className="btn" onClick={() => setPhotoIndex(index => Math.max(0, index - 1))} disabled={photoIndex <= 0}>Previous</button>
                 <span>{selectedPhotos.length ? `${photoIndex + 1} / ${selectedPhotos.length}` : '0 photos'}</span>
                 <button type="button" className="btn" onClick={() => setPhotoIndex(index => Math.min(selectedPhotos.length - 1, index + 1))} disabled={photoIndex >= selectedPhotos.length - 1}>Next</button>
-                <button type="button" className="btn" onClick={() => setPhotoZoom(zoom => Math.max(1, Number((zoom - 0.2).toFixed(1))))}>−</button>
+                <button type="button" className="btn" onClick={() => setPhotoZoom(zoom => Math.max(1, Number((zoom - 0.2).toFixed(1))))}>-</button>
                 <button type="button" className="btn" onClick={() => setPhotoZoom(zoom => Math.min(2.4, Number((zoom + 0.2).toFixed(1))))}>+</button>
               </div>
+
               {selectedPhotos.length > 1 && (
-                <div className="verification-photo-strip">
+                <div className="merch-review-thumbnail-strip">
                   {selectedPhotos.map((photo, index) => {
                     const url = receivingPhotoUrl(photo);
                     return url ? (
@@ -3454,82 +3979,168 @@ function VerificationPage() {
                   })}
                 </div>
               )}
-              <div className="verification-facts-grid">
-                {fact('Product Name', selected.productName)}
-                {fact('Identifier', selected.skuId)}
-                {fact('Quantity', selected.quantity || 1)}
-                {fact('Storage Location', selectedLocation)}
-              </div>
-            </div>
-          </WorkspacePanel>
 
-          <WorkspacePanel id="validation-details" title="Link to Item" meta={selected.merchStatus} defaultWidth={390} minWidth={320} className="verification-match-card">
-          <div className="verification-card-head">
-            <div>
-              <span>Received merchandise</span>
-              <h2>{selected.productName || 'Unnamed Product'}</h2>
-            </div>
-          </div>
-          <div className="verification-facts-grid is-single">
-            {fact('Identifier', selected.skuId)}
-            {fact('Brand', selected.brand)}
-            {fact('Description', selected.description)}
-            {fact('Variant', selected.packageSize)}
-            {fact('Condition', selected.condition)}
-            {fact('Notes', selected.notes)}
-          </div>
-          <input
-            className="verification-search"
-            value={query}
-            onChange={event => setQuery(event.target.value)}
-            placeholder="Search items to link…"
-          />
-          <div className="verification-results">
-            {searching && <div className="verification-muted">Searching…</div>}
-            {!searching && query.trim().length >= 3 && matches.length === 0 && (
-              <div className="verification-muted">
-                <strong>No matching item found.</strong>
-                <span>The item may not be imported yet. It will stay in the queue until a match is available.</span>
-              </div>
-            )}
-            {!searching && query.trim().length < 3 && (
-              <div className="verification-muted">Search by product name, SKU, or brand to find the matching item.</div>
-            )}
-            {matches.map(item => (
-              <div className="verification-match-row" key={item.id}>
-                <RecordThumbnail record={item} className="verification-match-thumb" />
-                <div>
-                  <strong>{item.product || item.name || item.identifier || 'Untitled Item'}</strong>
-                  <small>
-                    <span>{item.identifier || 'No product code'}</span>
-                    <span>{item.brand || 'No brand'}</span>
-                    <span>{item.packageSize || item.description || 'No package size'}</span>
-                  </small>
+              {unidentified && (
+                <div className="merch-review-note is-warning">
+                  <strong>Unidentified Merchandise</strong>
+                  <span>No useful Package Name or Barcode or ID Number was captured. Use photos and Shipment context to match later or raise an issue.</span>
                 </div>
-                <button type="button" className="btn btn-primary" onClick={() => matchItem(item.id)} disabled={Boolean(matching)}>
-                  {matching === item.id ? 'Matching…' : 'Match'}
-                </button>
+              )}
+
+              <section className="merch-review-merch-details" aria-label="Merchandise details">
+                {reviewFact(DOMAIN_TERMS.merchandiseIdentifier, selected.skuId)}
+                {reviewFact('Client', selectedClient?.name)}
+                {reviewFact(DOMAIN_TERMS.shipment, selected.receipt?.name)}
+                {reviewFact('Date Received', formatInventoryDate(selected.dateReceived || selected.received))}
+                {reviewFact('Time Here', selected.timeHere)}
+                {reviewFact('Quantity', selected.quantity || 1)}
+                {reviewFact('Storage Location', selectedLocation)}
+                {reviewFact('Condition', selected.condition)}
+                {reviewFact('Notes', selected.notes, 'is-wide')}
+              </section>
+            </main>
+
+            <aside className="merch-review-decision-panel" aria-label="Merchandise decision workspace">
+              <div className="merch-review-decision-scroll">
+                <section className="merch-review-decision-section">
+                  <div className="merch-review-section-heading">
+                    <span>Current Product</span>
+                    {hasLinkedProduct && (
+                      <button type="button" className="link-btn" onClick={() => document.getElementById('merchandise-product-search')?.focus()}>
+                        Change Product
+                      </button>
+                    )}
+                  </div>
+                  {linkedProduct ? (
+                    <div className="merch-review-product-summary">
+                      <h3>{linkedProduct.product || linkedProduct.name || 'Untitled Product'}</h3>
+                      <dl>
+                        <div><dt>Product Code</dt><dd>{linkedProduct.identifier || linkedProduct.productId || linkedProduct.gtinUpc || '-'}</dd></div>
+                        <div><dt>Job Number</dt><dd>{linkedProduct.itemJobNumber || linkedProduct.pickupJobNumber || '-'}</dd></div>
+                        <div><dt>Brand</dt><dd>{linkedProduct.brand || '-'}</dd></div>
+                        <div><dt>Description</dt><dd>{linkedProduct.description || '-'}</dd></div>
+                        <div><dt>Product Status</dt><dd>{linkedProduct.status || '-'}</dd></div>
+                        <div><dt>Readiness</dt><dd>{linkedProduct.readiness?.ready ? 'Ready for Photo' : linkedProduct.readiness?.missing?.length ? `Missing ${linkedProduct.readiness.missing.join(', ')}` : 'Not calculated'}</dd></div>
+                      </dl>
+                    </div>
+                  ) : (
+                    <div className="merch-review-no-product">
+                      <strong>No Product Matched</strong>
+                      <span>Find the Product below. Do not create Products from this workspace.</span>
+                    </div>
+                  )}
+                </section>
+
+                <section className="merch-review-decision-section">
+                  <div className="merch-review-section-heading">
+                    <span>Product Search</span>
+                    {searching && <em>Searching...</em>}
+                  </div>
+                  <input
+                    id="merchandise-product-search"
+                    className="merch-review-search"
+                    value={query}
+                    onChange={event => setQuery(event.target.value)}
+                    placeholder="Search name, code, barcode, or job number..."
+                  />
+                  <div className="merch-review-results">
+                    {!searching && query.trim().length >= 3 && matches.length === 0 && (
+                      <div className="merch-review-note">
+                        <strong>No matching Product found.</strong>
+                        <span>Mark this as Waiting for Product Data if it is identifiable but not imported yet.</span>
+                      </div>
+                    )}
+                    {!searching && query.trim().length < 3 && (
+                      <div className="merch-review-note">Enter at least 3 characters to search Products available to this client.</div>
+                    )}
+                    {matches.map(product => {
+                      const isCurrent = selected.itemIds?.includes(product.id) || linkedProduct?.id === product.id;
+                      return (
+                        <button type="button" className={`merch-review-product-result ${isCurrent ? 'is-current' : ''}`} onClick={() => matchProduct(product.id)} disabled={Boolean(matching)} key={product.id}>
+                          <RecordThumbnail record={product} className="merch-review-product-thumb" />
+                          <span>
+                            <strong>{product.product || product.name || product.identifier || 'Untitled Product'}</strong>
+                            <small>{product.identifier || 'No product code'} - {product.itemJobNumber || 'No job number'}</small>
+                            <small>{product.brand || 'No brand'}</small>
+                          </span>
+                          <em>{matching === product.id ? 'Matching...' : isCurrent ? 'Current' : hasLinkedProduct ? 'Change' : 'Match'}</em>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section className="merch-review-decision-section">
+                  <div className="merch-review-section-heading">
+                    <span>Review State</span>
+                  </div>
+                  <div className="merch-review-current-state">
+                    <strong>{reviewStateFor(selected)}</strong>
+                    <span>{hasBlockingIssue ? 'Blocked by unresolved Merchandise issue.' : hasLinkedProduct ? 'Product match is available for validation.' : 'Waiting for a Product match.'}</span>
+                  </div>
+                  {hasBlockingIssue && (
+                    <div className="merch-review-note is-warning">
+                      <strong>Blocking issue</strong>
+                      <span>Resolve the linked Merchandise issue before validating this record.</span>
+                    </div>
+                  )}
+                </section>
+
+                <details className="merch-review-secondary-detail">
+                  <summary>Waiting for Product Data</summary>
+                  <small>Use this when the merchandise is identifiable but the Product is not imported yet.</small>
+                  <textarea value={waitingNote} onChange={event => setWaitingNote(event.target.value)} placeholder="Optional note" />
+                </details>
+
+                <details className="merch-review-secondary-detail">
+                  <summary>Raise Issue</summary>
+                  <small>Creates an existing Issue record and keeps the photos attached as context.</small>
+                  <select value={issueType} onChange={event => setIssueType(event.target.value)}>
+                    <option>Unknown Item</option>
+                    <option>Damaged</option>
+                    <option>Wrong Merch</option>
+                    <option>Missing Merch</option>
+                    <option>Other</option>
+                  </select>
+                  <input value={issueDescription} onChange={event => setIssueDescription(event.target.value)} placeholder="Short description" />
+                  <textarea value={issueNotes} onChange={event => setIssueNotes(event.target.value)} placeholder="Notes" />
+                </details>
               </div>
-            ))}
-          </div>
-          <div className="validation-action-stack">
-            <button type="button" className="btn btn-primary" onClick={() => validateEntry('Validated')} disabled={Boolean(validating) || selected.merchStatus === 'Validated'}>
-              {validating === 'Validated' ? 'Approving…' : '✓ Approve & move to production'}
-            </button>
-            <button type="button" className="btn btn-alt" onClick={() => validateEntry('Issue')} disabled={Boolean(validating)}>
-              {validating === 'Issue' ? 'Flagging…' : 'Flag an issue'}
-            </button>
-          </div>
-          <div className="context-card">
-            <span>Previous validation history</span>
-            <small>No prior validation history loaded for this item.</small>
-          </div>
-          </WorkspacePanel>
-        </>
-      ) : (
-        <section className="verification-detail-empty">
-          Select a work item to verify.
-        </section>
+
+              <div className="merch-review-action-bar">
+                {reviewActionBlockedReason && <span>{reviewActionBlockedReason}</span>}
+                <button type="button" className="btn btn-primary" onClick={validateSelected} disabled={validating || Boolean(reviewActionBlockedReason)}>
+                  {actionName === 'validate' ? 'Validating...' : 'Validate Merchandise'}
+                </button>
+                <div className="merch-review-secondary-actions">
+                  <button type="button" className="btn btn-ghost" onClick={() => runAction('waiting', () => api.markMerchandiseWaitingForProductData(selected.id, { note: waitingNote }), 'Marked as Waiting for Product Data.', { advance: true })} disabled={Boolean(actionName)}>
+                    {actionName === 'waiting' ? 'Saving...' : 'Mark Waiting'}
+                  </button>
+                  <button type="button" className="btn btn-ghost" onClick={() => runAction('issue', () => api.createMerchandiseReviewIssue(selected.id, { type: issueType, description: issueDescription, notes: issueNotes }), 'Issue raised.', { advance: true })} disabled={Boolean(actionName) || !issueDescription.trim()}>
+                    {actionName === 'issue' ? 'Raising...' : 'Raise Issue'}
+                  </button>
+                  <button type="button" className="btn btn-ghost" onClick={() => runAction('remove-match', () => api.removeMerchandiseReviewMatch(selected.id), 'Product match removed.')} disabled={!hasLinkedProduct || Boolean(actionName)}>
+                    Remove Match
+                  </button>
+                  <button type="button" className="btn btn-ghost" onClick={() => moveToNext()} disabled={visibleQueueRecords.length <= 1}>
+                    Skip for Now
+                  </button>
+                </div>
+              </div>
+            </aside>
+          </>
+        ) : (
+          <section className="merch-review-empty-selection">
+            Select merchandise to review.
+          </section>
+        )}
+      </div>
+
+      {lightboxOpen && activePhotoUrl && (
+        <div className="merch-review-lightbox" role="dialog" aria-modal="true" aria-label="Merchandise photo preview" onClick={() => setLightboxOpen(false)}>
+          <button type="button" onClick={() => setLightboxOpen(false)}>Close</button>
+          <img src={activePhotoUrl} alt="" />
+        </div>
       )}
     </div>
   );
@@ -3552,16 +4163,16 @@ const AuthContext = createContext(null);
 function useAuth() { return useContext(AuthContext); }
 
 const ROLE_NAV = {
-  Admin:        ['/dashboard', '/imports', '/receiving', '/verification', '/items', '/jobs'],
-  Producer:     ['/dashboard', '/imports', '/receiving', '/verification', '/items', '/jobs'],
-  Merch:        ['/receiving'],
-  'Merch Receiver': ['/receiving'],
-  Receiver:     ['/receiving'],
-  User:         ['/dashboard', '/receiving', '/verification', '/items', '/jobs'],
-  PM:           ['/dashboard', '/items', '/jobs'],
-  Photographer: ['/dashboard', '/items', '/jobs'],
-  Retoucher:    ['/dashboard', '/items', '/jobs'],
-  Viewer:       ['/dashboard', '/items'],
+  Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/merchandise/review', '/products', '/jobs', '/clients', '/settings'],
+  Producer:     ['/dashboard', '/imports', '/shipments', '/merchandise', '/merchandise/review', '/products', '/jobs'],
+  Merch:        ['/shipments', '/merchandise'],
+  'Merch Receiver': ['/shipments', '/merchandise'],
+  Receiver:     ['/shipments', '/merchandise'],
+  User:         ['/dashboard', '/shipments', '/merchandise', '/merchandise/review', '/products', '/jobs'],
+  PM:           ['/dashboard', '/merchandise', '/merchandise/review', '/products', '/jobs'],
+  Photographer: ['/dashboard', '/products', '/jobs'],
+  Retoucher:    ['/dashboard', '/products', '/jobs'],
+  Viewer:       ['/dashboard', '/merchandise', '/products'],
 };
 const ROLES = ['Admin', 'Producer', 'Merch', 'User', 'Viewer'];
 const ADMIN_CARD_OPTIONS = [
@@ -3592,6 +4203,10 @@ function normalizeRolePermission(role, config, defaults) {
     ...(config || {}),
     paths: (config?.paths || defaults[role].paths)
       .map(path => path === '/settings' ? ADMINISTRATION_PATH : path)
+      .map(path => path === '/verification' ? '/merchandise/review' : path)
+      .map(path => path === '/receiving' || path === '/receipts' ? '/shipments' : path)
+      .map(path => path === '/items' ? '/products' : path)
+      .map(path => path === ADMINISTRATION_PATH ? '/settings' : path)
       .filter(path => path !== ADMINISTRATION_PATH)
       .filter((path, index, paths) => paths.indexOf(path) === index),
     adminCards: normalizeAdminCards(config?.adminCards || defaults[role].adminCards),
@@ -4053,6 +4668,14 @@ function UsersSection() {
     });
     setEditing(null);
   }
+  const userExportColumns = [
+    { header: 'User', value: user => userDisplayName(user) },
+    { header: 'Email', value: user => user.email || '' },
+    { header: 'Full Name', value: user => userFullName(user) },
+    { header: 'Role', key: 'role' },
+    { header: 'Clients', value: user => clientAccessLabel(user, clientList) },
+    { header: 'Status', value: user => user.active ? 'Active' : 'Inactive' },
+  ];
 
   return (
     <div className="users-section">
@@ -4061,22 +4684,7 @@ function UsersSection() {
           <h3>Users</h3>
         </div>
         <div className="users-section-actions">
-          <div className="view-toggle" aria-label="User view">
-            <button
-              type="button"
-              className={viewMode === 'cards' ? 'is-active' : ''}
-              onClick={() => setViewMode('cards')}
-            >
-              Cards
-            </button>
-            <button
-              type="button"
-              className={viewMode === 'list' ? 'is-active' : ''}
-              onClick={() => setViewMode('list')}
-            >
-              List
-            </button>
-          </div>
+          <ViewToggle value={viewMode} onChange={setViewMode} label="User view" />
           <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Add User</button>
         </div>
       </div>
@@ -4126,6 +4734,15 @@ function UsersSection() {
         </div>
       )}
       {!loading && viewMode === 'list' && (
+        <>
+        <DataTableToolbar>
+          <ExcelExportButton
+            filename={todayExportFilename('users')}
+            columns={userExportColumns}
+            rows={users}
+            disabled={loading}
+          />
+        </DataTableToolbar>
         <div className="table-wrap users-table-wrap">
           <table>
             <thead>
@@ -4165,6 +4782,7 @@ function UsersSection() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );
@@ -4256,14 +4874,18 @@ function AdministrationPage() {
   const routerNavigate = useNavigate();
   const adminCards = adminCardsForRole(auth?.role, rolePermissions);
   const availableCards = ADMIN_CARD_OPTIONS.filter(card => adminCards.includes(card.id));
-  const sectionSlug = location.pathname.split('/')[2] || availableCards[0]?.id || 'users';
+  const sectionSlug = location.pathname.startsWith('/clients')
+    ? 'clients'
+    : location.pathname.startsWith('/settings')
+      ? 'system'
+      : location.pathname.split('/')[2] || availableCards[0]?.id || 'users';
   const activeCard = availableCards.find(card => card.id === sectionSlug) || availableCards[0];
 
   useEffect(() => {
-    if (activeCard && sectionSlug !== activeCard.id) {
+    if (activeCard && sectionSlug !== activeCard.id && location.pathname.startsWith(ADMINISTRATION_PATH)) {
       routerNavigate(`${ADMINISTRATION_PATH}/${activeCard.id}`, { replace: true });
     }
-  }, [activeCard, routerNavigate, sectionSlug]);
+  }, [activeCard, location.pathname, routerNavigate, sectionSlug]);
 
   function renderActiveCard() {
     if (!activeCard) return <div className="empty-state">No Administration sections assigned.</div>;
@@ -4288,7 +4910,7 @@ function AdministrationPage() {
             type="button"
             key={card.id}
             className={`admin-section-tab ${activeCard?.id === card.id ? 'is-active' : ''}`}
-            onClick={() => routerNavigate(`${ADMINISTRATION_PATH}/${card.id}`)}
+            onClick={() => routerNavigate(card.id === 'clients' ? '/clients' : card.id === 'system' ? '/settings' : `${ADMINISTRATION_PATH}/${card.id}`)}
           >
             <span aria-hidden="true">{card.icon}</span>
             {card.label}
@@ -4306,11 +4928,13 @@ function AdministrationPage() {
 // ── App shell ─────────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: <Icon.Dashboard /> },
-  { path: '/imports', label: 'Import', icon: <Icon.Add /> },
-  { path: '/receiving', label: 'Receiving', icon: <Icon.Download /> },
-  { path: '/verification', label: 'Verification', icon: <Icon.Verify /> },
+  { path: '/imports', label: 'Imports', icon: <Icon.Add /> },
+  { path: '/shipments', label: DOMAIN_TERMS.shipments, icon: <Icon.Download /> },
+  { path: '/merchandise', label: 'Inventory', icon: <Icon.SKUs /> },
+  { path: '/merchandise/review', label: DOMAIN_TERMS.merchandiseReview, icon: <Icon.Verify /> },
+  { path: '/products', label: DOMAIN_TERMS.products, icon: <Icon.Jobs /> },
   { path: '/jobs', label: 'Jobs', icon: <Icon.SKUs /> },
-  { path: '/items', label: 'Items', icon: <Icon.Jobs /> },
+  { path: '/clients', label: 'Clients', icon: <Icon.Jobs /> },
 ];
 
 function routeForPage(page, params = {}) {
@@ -4324,15 +4948,20 @@ function routeForPage(page, params = {}) {
     imports: '/imports',
     intake: '/imports',
     'import-history': `/imports/history${suffix}`,
-    receiving: '/receiving',
-    'receiving-receipts': '/receiving/receipts',
-    verification: '/verification',
-    items: `/items${suffix}`,
-    skus: `/items${suffix}`,
+    receiving: '/shipments',
+    shipments: '/shipments',
+    receipts: '/shipments',
+    'receiving-receipts': '/shipments',
+    merchandise: '/merchandise',
+    verification: '/merchandise/review',
+    'merchandise-review': '/merchandise/review',
+    items: `/products${suffix}`,
+    products: `/products${suffix}`,
+    skus: `/products${suffix}`,
     jobs: '/jobs',
     'new-job': '/jobs/new',
-    clients: ADMINISTRATION_DEFAULT_PATH,
-    settings: ADMINISTRATION_DEFAULT_PATH,
+    clients: '/clients',
+    settings: '/settings',
     admin: ADMINISTRATION_DEFAULT_PATH,
     administration: ADMINISTRATION_DEFAULT_PATH,
   };
@@ -4341,23 +4970,27 @@ function routeForPage(page, params = {}) {
 
 function pageTitleForPath(pathname) {
   if (pathname === '/imports/history') return 'Import History';
-  if (pathname.startsWith('/imports')) return 'Import';
-  if (pathname.startsWith('/receiving')) return 'Receiving';
-  if (pathname.startsWith('/verification')) return 'Verification';
-  if (pathname.startsWith('/items')) return 'Items';
+  if (pathname.startsWith('/imports')) return 'Imports';
+  if (pathname.startsWith('/shipments')) return DOMAIN_TERMS.shipments;
+  if (pathname.startsWith('/receiving') || pathname.startsWith('/receipts')) return DOMAIN_TERMS.shipments;
+  if (pathname.startsWith('/merchandise/review')) return DOMAIN_TERMS.merchandiseReview;
+  if (pathname.startsWith('/merchandise')) return 'Inventory';
+  if (pathname.startsWith('/verification')) return DOMAIN_TERMS.merchandiseReview;
+  if (pathname.startsWith('/products')) return DOMAIN_TERMS.products;
+  if (pathname.startsWith('/items')) return DOMAIN_TERMS.products;
   if (pathname === '/jobs/new') return 'New Job';
   if (pathname.startsWith('/jobs')) return 'Jobs';
   if (pathname.startsWith('/clients')) return 'Clients';
-  if (pathname.startsWith('/administration')) return 'Administration';
-  if (pathname.startsWith('/settings')) return 'Administration';
+  if (pathname.startsWith('/administration')) return 'Settings';
+  if (pathname.startsWith('/settings')) return 'Settings';
   if (pathname.startsWith('/dashboard')) return 'Dashboard';
   return 'Not Found';
 }
 
-function RouteItemsPage({ navigate }) {
+function RouteProductsPage({ navigate }) {
   const [searchParams] = useSearchParams();
   return (
-    <SkusPage
+    <ProductsPage
       navigate={navigate}
       jobId={searchParams.get('jobId') || ''}
       queue={searchParams.get('queue') || ''}
@@ -4390,14 +5023,14 @@ function AppLayout() {
   const mobileMenuButtonRef = useRef(null);
   const mobileCloseButtonRef = useRef(null);
   const mobileDrawerRef = useRef(null);
-  const workspaceRoute = location.pathname.startsWith('/receiving') || location.pathname.startsWith('/verification');
+  const workspaceRoute = location.pathname.startsWith('/shipments') || location.pathname.startsWith('/receiving') || location.pathname.startsWith('/verification') || location.pathname.startsWith('/merchandise/review');
   const sidebarCollapsed = false; // always expanded — toggle removed
   const allowed = auth ? allowedPaths(auth.role, rolePermissions) : allowedPaths('User', rolePermissions);
   const visibleNav = NAV_ITEMS.filter(item => allowed.includes(item.path));
   const hasAdminAccess = auth ? roleHasAdminAccess(auth.role, rolePermissions) : false;
 
   // Alert count for sidebar badge
-  const skus = useResource(() => api.listSkus());
+  const skus = useResource(() => api.listProducts());
   const skuList = skus.data?.records ?? [];
   const alertCount = skuList.filter(s => s.readiness && s.readiness.state !== 'ready_for_photo').length;
 
@@ -4463,8 +5096,8 @@ function AppLayout() {
               <li key={item.path}>
                 <NavLink
                   to={item.path}
-                  className={({ isActive }) => `nav-item ${isActive || (item.path === '/imports' && location.pathname.startsWith('/imports/')) ? 'active' : ''}`}
-                  end={item.path === '/dashboard'}
+                  className={({ isActive }) => `nav-item ${isActive || (item.path === '/imports' && location.pathname.startsWith('/imports/')) || (item.path === '/shipments' && (location.pathname.startsWith('/receiving') || location.pathname.startsWith('/receipts'))) || (item.path === '/merchandise' && location.pathname === '/merchandise') || (item.path === '/products' && location.pathname.startsWith('/items')) ? 'active' : ''}`}
+                  end={item.path === '/dashboard' || item.path === '/merchandise'}
                   onClick={() => setMobileNavOpen(false)}
 	                >
 	                  {item.icon}
@@ -4480,7 +5113,7 @@ function AppLayout() {
                         <NavLink
                           to={child.path}
                           className={({ isActive }) => `nav-subitem ${isActive ? 'active' : ''}`}
-                          end={child.path === '/receiving'}
+                          end={child.path === '/shipments'}
                           onClick={() => setMobileNavOpen(false)}
                         >
                           {child.label}
@@ -4497,12 +5130,12 @@ function AppLayout() {
         <div className={`sidebar-bottom ${hasAdminAccess ? 'has-admin-link' : ''}`}>
           {hasAdminAccess && (
             <NavLink
-              to={ADMINISTRATION_DEFAULT_PATH}
+              to="/settings"
               className={({ isActive }) => `nav-item sidebar-admin-link ${isActive ? 'active' : ''}`}
               onClick={() => setMobileNavOpen(false)}
             >
               <Icon.Settings />
-              <span className="nav-label">Administration</span>
+              <span className="nav-label">Settings</span>
             </NavLink>
           )}
           <button className="sidebar-footer" onClick={() => setProfileOpen(true)} title="Your profile">
@@ -4552,13 +5185,18 @@ function AppLayout() {
             <Route path="/dashboard" element={<Dashboard navigate={navigate} />} />
             <Route path="/imports" element={<IntakePage navigate={navigate} />} />
             <Route path="/imports/history" element={<RouteImportHistoryPage />} />
-            <Route path="/receiving" element={<ReceivingPage />} />
-            <Route path="/verification" element={<VerificationPage />} />
-            <Route path="/items" element={<RouteItemsPage navigate={navigate} />} />
+            <Route path="/shipments" element={<ShipmentsPage />} />
+            <Route path="/receiving" element={<Navigate to="/shipments" replace />} />
+            <Route path="/receipts" element={<Navigate to="/shipments" replace />} />
+            <Route path="/verification" element={<Navigate to="/merchandise/review" replace />} />
+            <Route path="/merchandise" element={<MerchandiseInventoryPage navigate={navigate} />} />
+            <Route path="/merchandise/review" element={<MerchandiseReviewPage />} />
+            <Route path="/products" element={<RouteProductsPage navigate={navigate} />} />
+            <Route path="/items" element={<Navigate to="/products" replace />} />
             <Route path="/jobs" element={<JobsPage navigate={navigate} />} />
             <Route path="/jobs/new" element={<NewJobPage navigate={navigate} />} />
-            <Route path="/clients" element={<Navigate to={ADMINISTRATION_DEFAULT_PATH} replace />} />
-            <Route path="/settings" element={<Navigate to={ADMINISTRATION_DEFAULT_PATH} replace />} />
+            <Route path="/clients" element={<AdministrationPage />} />
+            <Route path="/settings" element={<AdministrationPage />} />
             <Route path="/administration" element={<Navigate to={ADMINISTRATION_DEFAULT_PATH} replace />} />
             <Route path="/administration/:section" element={<AdministrationPage />} />
             <Route path="/intake" element={<Navigate to="/imports" replace />} />

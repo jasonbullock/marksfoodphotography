@@ -464,6 +464,59 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(entry["skuId"], "UPC-1")
         self.assertEqual(entry["receipt"]["id"], "recReceipt")
 
+    @patch("routes.airtable.list_records")
+    def test_business_language_alias_routes_reuse_current_airtable_tables(self, list_records):
+        def list_side_effect(table, params=None, by_field_id=False):
+            if table == C.RECEIPT_ENTRIES_TABLE:
+                return {"records": [{
+                    "id": "recMerch",
+                    "fields": {
+                        C.F_RECEIPT_ENTRY_NAME: "Package Name",
+                        C.F_RECEIPT_ENTRY_RECEIPT: ["recShipment"],
+                        C.F_RECEIPT_ENTRY_SKU_ID: "BARCODE-1",
+                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
+                    },
+                }]}
+            if table == C.RECEIPTS_TABLE:
+                return {"records": [{
+                    "id": "recShipment",
+                    "fields": {
+                        C.F_RECEIPT_NAME: "Shipment 1",
+                        C.F_RECEIPT_CLIENT: ["recClient"],
+                        C.F_RECEIPT_RECEIVED: "2026-07-12T12:00:00Z",
+                    },
+                }]}
+            if table == C.ITEMS_TABLE:
+                return {"records": [{
+                    "id": "recProduct",
+                    "fields": {
+                        C.F_ITEM_NAME: "Imported Product",
+                        C.F_ITEM_CLIENT: ["recClient"],
+                        C.F_ITEM_IDENTIFIER: "BARCODE-1",
+                    },
+                }]}
+            return {"records": []}
+
+        list_records.side_effect = list_side_effect
+
+        shipments_response = self.app.get("/api/shipments")
+        merchandise_response = self.app.get("/api/merchandise/review")
+        products_response = self.app.get("/api/products")
+
+        self.assertEqual(shipments_response.status_code, 200)
+        self.assertEqual(merchandise_response.status_code, 200)
+        self.assertEqual(products_response.status_code, 200)
+        self.assertEqual(shipments_response.get_json()["records"][0]["id"], "recShipment")
+        self.assertEqual(merchandise_response.get_json()["records"][0]["id"], "recMerch")
+        self.assertEqual(products_response.get_json()["records"][0]["id"], "recProduct")
+        called_tables = [call.args[0] for call in list_records.call_args_list]
+        self.assertIn(C.RECEIPTS_TABLE, called_tables)
+        self.assertIn(C.RECEIPT_ENTRIES_TABLE, called_tables)
+        self.assertIn(C.ITEMS_TABLE, called_tables)
+        self.assertNotIn("Shipments", called_tables)
+        self.assertNotIn("Merchandise", called_tables)
+        self.assertNotIn("Products", called_tables)
+
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")

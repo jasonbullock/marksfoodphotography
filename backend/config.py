@@ -40,6 +40,12 @@ class Config:
     RECEIPTS_TABLE = "Receipts"
     RECEIVING_TABLE = RECEIPTS_TABLE
     RECEIPT_ENTRIES_TABLE = "Receipt Entries"
+
+    # Business-language aliases. Keep Airtable table names unchanged while the
+    # application migrates from Receipts/Receipt Entries/Items terminology.
+    PRODUCTS_TABLE = ITEMS_TABLE
+    SHIPMENTS_TABLE = RECEIPTS_TABLE
+    MERCHANDISE_TABLE = RECEIPT_ENTRIES_TABLE
     LOCATIONS_TABLE = "Locations"
     USERS_TABLE = "Users"
     ISSUES_TABLE = "Issues"
