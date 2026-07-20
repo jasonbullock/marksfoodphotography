@@ -28,6 +28,29 @@ Everything before Merchandise exists belongs in another system. Everything after
 
 Guiding principle: capture only the operational information Walnut Studio needs to determine readiness, execute production, and report completed work. Nothing more. Nothing less.
 
+## 2026-07-20 - R2 Is The Only Image Storage Layer
+
+Cloudflare R2 is the single source of truth for all Marks Photo images.
+
+Airtable must not store image files, image attachments, base64 image data, duplicate image copies, permanent public URLs, or signed URLs for merchandise, shipment, product, review, production, or delivery images.
+
+Airtable may store lightweight image references and structured metadata only. Preferred fields are R2 object-key manifests such as `Photo Metadata`, `Primary Image Key`, `Thumbnail Key`, `Image Count`, or similarly explicit R2 reference fields.
+
+The canonical manifest key is `object_key`. Optional metadata may include `thumbnail_key`, `sort_order`, `filename`, `original_filename`, `stored_filename`, `content_type`, `size_bytes`, and `uploaded_at`.
+
+The application resolves image display URLs from stored R2 object keys at read time. This keeps delivery domains, signed URL policy, and access rules changeable without rewriting Airtable records.
+
+Receiving uploads must write to R2 before Airtable is updated. Airtable updates for image changes must write only R2 manifests or reference fields.
+
+Application code must not:
+- upload images to Airtable attachments
+- create Airtable attachment-array payloads
+- read Airtable attachments as durable image storage
+- copy Airtable attachment URLs between records
+- fall back to local image storage for receiving uploads
+
+Deprecated Airtable attachment fields may remain temporarily when field deletion is unsafe or unavailable, but they must be empty, clearly marked deprecated, and protected by write guards.
+
 ## 2026-07-16 - Application Shell Uses Operational Top Navigation
 
 Marks Photo uses a top-navigation shell centered on operational work, not database tables.

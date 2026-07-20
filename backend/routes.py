@@ -5,7 +5,6 @@ import json
 import os
 import random
 import re
-import uuid
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -13,7 +12,7 @@ from xml.etree import ElementTree
 
 import requests
 
-from flask import Blueprint, jsonify, request, send_from_directory, session
+from flask import Blueprint, jsonify, request, session
 
 from airtable import airtable
 from config import Config
@@ -2477,6 +2476,7 @@ def _issues_by_item_id():
 
 def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, readiness_full=False):
     f = r.get("fields", {})
+    photo_metadata = _photo_metadata_from_fields(f, C.F_ITEM_PHOTO_METADATA)
     code_type = f.get(C.F_ITEM_IDENTIFIER_TYPE, "")
     if isinstance(code_type, list):
         code_type = code_type[0] if code_type else ""
@@ -2513,8 +2513,8 @@ def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, readiness_full
         "condition": f.get(C.F_ITEM_CONDITION, ""),
         "status": f.get(C.F_ITEM_STATUS, ""),
         "notes": f.get(C.F_ITEM_NOTES, ""),
-        "photos": f.get(C.F_ITEM_PHOTOS, []) if isinstance(f.get(C.F_ITEM_PHOTOS), list) else [],
-        "photoMetadata": _photo_metadata_from_fields(f, C.F_ITEM_PHOTO_METADATA),
+        "photos": photo_metadata,
+        "photoMetadata": photo_metadata,
         "referenceDataRaw": f.get(C.F_ITEM_REFERENCE_DATA, ""),
         "referenceData": _parse_reference_data(f.get(C.F_ITEM_REFERENCE_DATA, "")),
     }
@@ -2767,7 +2767,6 @@ def create_issue():
         "priority": C.F_ISSUE_PRIORITY,
         "opened": C.F_ISSUE_OPENED,
         "closed": C.F_ISSUE_CLOSED,
-        "photos": C.F_ISSUE_PHOTOS,
         "notes": C.F_ISSUE_NOTES,
     }.items():
         if key in body and body[key] not in (None, ""):
@@ -2811,7 +2810,6 @@ def update_issue(record_id):
         "priority": C.F_ISSUE_PRIORITY,
         "opened": C.F_ISSUE_OPENED,
         "closed": C.F_ISSUE_CLOSED,
-        "photos": C.F_ISSUE_PHOTOS,
         "notes": C.F_ISSUE_NOTES,
     }.items():
         if key in body and body[key] not in (None, ""):
@@ -2852,7 +2850,7 @@ def _shape_issue(r):
         "assignedIds": f.get(C.F_ISSUE_ASSIGNED, []),
         "opened": f.get(C.F_ISSUE_OPENED, ""),
         "closed": f.get(C.F_ISSUE_CLOSED, ""),
-        "photos": f.get(C.F_ISSUE_PHOTOS, []),
+        "photos": [],
         "notes": f.get(C.F_ISSUE_NOTES, ""),
     }
 
@@ -3391,9 +3389,12 @@ def create_merchandise_review_issue(entry_id):
     }
     if item_ids:
         issue_fields[C.F_ISSUE_ITEM] = item_ids
-    photos = entry_fields.get(C.F_RECEIPT_ENTRY_PHOTOS, []) or []
-    if photos:
-        issue_fields[C.F_ISSUE_PHOTOS] = photos
+    photo_metadata = _photo_metadata_from_entry(entry_fields)
+    if photo_metadata:
+        image_keys = [item.get("object_key") for item in photo_metadata if item.get("object_key")]
+        if image_keys:
+            image_note = "R2 image references:\n" + "\n".join(image_keys)
+            issue_fields[C.F_ISSUE_NOTES] = f"{notes}\n\n{image_note}".strip()
 
     try:
         issue = airtable.create_record(C.ISSUES_TABLE, issue_fields, by_field_id=False)
@@ -3406,33 +3407,16 @@ def create_merchandise_review_issue(entry_id):
     }), 201
 
 
-def _attachment_url(attachment):
-    if not isinstance(attachment, dict):
-        return ""
-    return attachment.get("url") or attachment.get("public_url") or attachment.get("publicUrl") or ""
-
-
 def _merge_receipt_entry_photos_into_item(entry_record, item_record):
     entry_fields = entry_record.get("fields", {})
     item_fields = item_record.get("fields", {})
-    entry_attachments = entry_fields.get(C.F_RECEIPT_ENTRY_PHOTOS, []) or []
-    entry_metadata = _photo_metadata_from_entry(entry_fields)
-    if not entry_attachments and not entry_metadata:
+    entry_metadata = _photo_metadata_from_entry(entry_fields, include_urls=False)
+    if not entry_metadata:
         return item_record
 
-    existing_item_attachments = item_fields.get(C.F_ITEM_PHOTOS, []) or []
-    existing_urls = {_attachment_url(photo) for photo in existing_item_attachments if _attachment_url(photo)}
-    merged_attachments = list(existing_item_attachments)
-    for attachment in entry_attachments:
-        url = _attachment_url(attachment)
-        if not url or url in existing_urls:
-            continue
-        merged_attachments.append({"url": url})
-        existing_urls.add(url)
-
-    existing_item_metadata = _photo_metadata_from_fields(item_fields, C.F_ITEM_PHOTO_METADATA)
+    existing_item_metadata = _photo_metadata_from_fields(item_fields, C.F_ITEM_PHOTO_METADATA, include_urls=False)
     existing_keys = {
-        item.get("object_key") or item.get("public_url") or item.get("url")
+        item.get("object_key")
         for item in existing_item_metadata
         if isinstance(item, dict)
     }
@@ -3440,7 +3424,7 @@ def _merge_receipt_entry_photos_into_item(entry_record, item_record):
     for item in entry_metadata:
         if not isinstance(item, dict):
             continue
-        key = item.get("object_key") or item.get("public_url") or item.get("url")
+        key = item.get("object_key")
         if key and key in existing_keys:
             continue
         merged_metadata.append(item)
@@ -3448,16 +3432,14 @@ def _merge_receipt_entry_photos_into_item(entry_record, item_record):
             existing_keys.add(key)
 
     update_fields = {}
-    if len(merged_attachments) != len(existing_item_attachments):
-        update_fields[C.F_ITEM_PHOTOS] = merged_attachments
     if len(merged_metadata) != len(existing_item_metadata):
-        update_fields[C.F_ITEM_PHOTO_METADATA] = json.dumps(merged_metadata)
+        update_fields[C.F_ITEM_PHOTO_METADATA] = json.dumps(_canonical_photo_manifest(merged_metadata))
     if not update_fields:
         return item_record
     try:
         return airtable.update_record(C.PRODUCTS_TABLE, item_record["id"], update_fields, by_field_id=False)
     except requests.HTTPError as error:
-        if _is_unknown_field_error(error, C.F_ITEM_PHOTOS) or _is_unknown_field_error(error, C.F_ITEM_PHOTO_METADATA):
+        if _is_unknown_field_error(error, C.F_ITEM_PHOTO_METADATA):
             return item_record
         raise
 
@@ -3469,30 +3451,7 @@ def upload_receiving_photos():
     if receipt_id and receipt_entry_id:
         return _upload_receiving_entry_photos(receipt_id, receipt_entry_id)
 
-    storage = _photo_storage()
-    if storage.mode == "r2":
-        return err("Create the received item before uploading permanent photos.", 409)
-    files = request.files.getlist("photos")
-    if not files:
-        return err("Add at least one photo.")
-    photos = []
-    for uploaded in files:
-        if not uploaded or not uploaded.filename:
-            continue
-        try:
-            photo = storage.upload_photo(uploaded, "unsaved", uuid.uuid4().hex)
-        except ReceivingPhotoValidationError as error:
-            return err(str(error))
-        except ReceivingPhotoConfigError as error:
-            return err(str(error), 500)
-        except ReceivingPhotoStorageError:
-            return err("Photo could not be uploaded.", 502)
-        photo["url"] = f"{request.host_url.rstrip('/')}/api/receiving/photos/{photo['object_key']}"
-        photo["public_url"] = photo["url"]
-        photos.append(photo)
-    if not photos:
-        return err("Add at least one photo.")
-    return jsonify({"photos": photos})
+    return err("Create the received item before uploading permanent photos.", 409)
 
 
 @api.get("/receiving/photo-storage/status")
@@ -3510,13 +3469,13 @@ def receiving_photo_storage_status():
         "bucketName": C.R2_BUCKET_NAME or "",
         "publicBaseUrlConfigured": bool(C.R2_PUBLIC_BASE_URL),
         "requiredVariables": required,
-        "ready": storage.mode == "local" or all(required.values()),
+        "ready": storage.mode == "r2" and all(required.values()),
     })
 
 
 @api.get("/receiving/photos/<path:filename>")
 def receiving_photo(filename):
-    return send_from_directory(C.RECEIVING_PHOTO_LOCAL_DIR, filename)
+    return err("Receiving photos are stored in Cloudflare R2.", 410)
 
 
 @api.post("/receiving/<receipt_id>/entries/<receipt_entry_id>/photos")
@@ -3732,18 +3691,12 @@ def _upload_receiving_entry_photos(receipt_id, receipt_entry_id):
 
     current_fields = entry_record.get("fields", {})
     metadata_payload = _photo_metadata_from_entry(current_fields) + uploaded_photos
-    attachment_payload = [
-        {"url": photo["public_url"]}
-        for photo in uploaded_photos
-        if photo.get("public_url")
-    ]
     try:
         updated = airtable.update_record(
             C.MERCHANDISE_TABLE,
             receipt_entry_id,
             {
-                C.F_RECEIPT_ENTRY_PHOTOS: (current_fields.get(C.F_RECEIPT_ENTRY_PHOTOS, []) or []) + attachment_payload,
-                C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps(metadata_payload),
+                C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps(_canonical_photo_manifest(metadata_payload)),
             },
             by_field_id=False,
         )
@@ -3952,7 +3905,6 @@ def _receipt_fields_from_body(body):
     received = (body.get("received") or body.get("receivedDate") or "").strip()
     receiver_ids = body.get("receiverIds") or body.get("receiverId") or []
     location_ids = body.get("locationIds") or body.get("locationId") or []
-    photos = body.get("photos") or []
     notes = (body.get("notes") or "").strip()
     try:
         box_quantity_number = int(box_quantity)
@@ -3983,8 +3935,6 @@ def _receipt_fields_from_body(body):
         fields[C.F_RECEIPT_RECEIVER] = receiver_ids if isinstance(receiver_ids, list) else [receiver_ids]
     if location_ids:
         fields[C.F_RECEIPT_LOCATION] = location_ids if isinstance(location_ids, list) else [location_ids]
-    if photos:
-        fields[C.F_RECEIPT_PHOTOS] = photos
     if notes:
         fields[C.F_RECEIPT_NOTES] = notes
     return fields
@@ -4120,7 +4070,6 @@ def _receipt_entry_fields(entry, receipt_id, index, receipt_name):
     condition = (entry.get("condition") or "").strip()
     description = (entry.get("description") or "").strip()
     notes = (entry.get("notes") or "").strip()
-    photos = entry.get("photos") or []
     if sku_id:
         fields[C.F_RECEIPT_ENTRY_SKU_ID] = sku_id
     if location_ids:
@@ -4131,8 +4080,6 @@ def _receipt_entry_fields(entry, receipt_id, index, receipt_name):
         fields[C.F_RECEIPT_ENTRY_DESCRIPTION] = description
     if notes:
         fields[C.F_RECEIPT_ENTRY_NOTES] = notes
-    if photos:
-        fields[C.F_RECEIPT_ENTRY_PHOTOS] = photos
     return fields
 
 
@@ -4205,8 +4152,10 @@ def _receipt_entry_update_fields_from_body(body):
         fields[C.F_RECEIPT_ENTRY_DESCRIPTION] = (body.get("description") or "").strip()
     if "notes" in body:
         fields[C.F_RECEIPT_ENTRY_NOTES] = (body.get("notes") or "").strip()
-    if "photos" in body:
-        fields[C.F_RECEIPT_ENTRY_PHOTOS] = body.get("photos") or []
+    if "photoMetadata" in body:
+        manifest = _canonical_photo_manifest(body.get("photoMetadata") or [])
+        if manifest:
+            fields[C.F_RECEIPT_ENTRY_PHOTO_METADATA] = json.dumps(manifest)
     if "merchStatus" in body:
         merch_status = (body.get("merchStatus") or "").strip()
         if merch_status in {"Received", "Matched", "Validated", "Issue"}:
@@ -4270,7 +4219,7 @@ def _shape_receipt(r, *, entries_by_receipt=None):
         "receiverIds": f.get(C.F_RECEIPT_RECEIVER, []) if isinstance(f.get(C.F_RECEIPT_RECEIVER), list) else [],
         "location": "",
         "locationIds": f.get(C.F_RECEIPT_LOCATION, []) if isinstance(f.get(C.F_RECEIPT_LOCATION), list) else [],
-        "photos": f.get(C.F_RECEIPT_PHOTOS, []),
+        "photos": [],
         "notes": f.get(C.F_RECEIPT_NOTES, ""),
         "entries": entries_by_receipt.get(r["id"], []),
     }
@@ -4282,6 +4231,7 @@ def _shape_receipt_entry(r):
     sku_id = f.get(C.F_RECEIPT_ENTRY_SKU_ID, "")
     item_ids = f.get(C.F_RECEIPT_ENTRY_ITEM, []) if isinstance(f.get(C.F_RECEIPT_ENTRY_ITEM), list) else []
     merch_status = f.get(C.F_RECEIPT_ENTRY_MERCH_STATUS) or ("Matched" if item_ids else "Received")
+    photo_metadata = _photo_metadata_from_entry(f)
     return {
         "id": r["id"],
         "name": product_name,
@@ -4294,8 +4244,8 @@ def _shape_receipt_entry(r):
         "condition": f.get(C.F_RECEIPT_ENTRY_CONDITION, ""),
         "description": f.get(C.F_RECEIPT_ENTRY_DESCRIPTION, ""),
         "notes": f.get(C.F_RECEIPT_ENTRY_NOTES, ""),
-        "photos": f.get(C.F_RECEIPT_ENTRY_PHOTOS, []),
-        "photoMetadata": _photo_metadata_from_entry(f),
+        "photos": photo_metadata,
+        "photoMetadata": photo_metadata,
         "itemIds": item_ids,
         "merchStatus": merch_status,
     }
@@ -4383,23 +4333,81 @@ def _shape_verification_entry(entry, receipt=None, *, item_record=None, issues_b
     }
 
 
-def _photo_metadata_from_entry(fields):
-    return _photo_metadata_from_fields(fields, C.F_RECEIPT_ENTRY_PHOTO_METADATA)
+def _photo_metadata_from_entry(fields, include_urls=True):
+    return _photo_metadata_from_fields(fields, C.F_RECEIPT_ENTRY_PHOTO_METADATA, include_urls=include_urls)
 
 
-def _photo_metadata_from_fields(fields, field_name):
+def _photo_metadata_from_fields(fields, field_name, include_urls=True):
     value = fields.get(field_name, "")
     if isinstance(value, list):
-        return value
-    if isinstance(value, dict):
-        return [value]
-    if not value:
-        return []
-    try:
-        parsed = json.loads(value)
-    except (TypeError, ValueError):
-        return []
-    return parsed if isinstance(parsed, list) else []
+        raw_items = value
+    elif isinstance(value, dict):
+        raw_items = [value]
+    elif not value:
+        raw_items = []
+    else:
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError):
+            raw_items = []
+        else:
+            raw_items = parsed if isinstance(parsed, list) else []
+    return _canonical_photo_manifest(raw_items, include_urls=include_urls)
+
+
+def _canonical_photo_manifest(items, include_urls=False):
+    manifest = []
+    if not isinstance(items, list):
+        return manifest
+    for index, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            continue
+        object_key = (item.get("object_key") or item.get("objectKey") or "").strip()
+        if not object_key:
+            continue
+        try:
+            sort_order = int(item.get("sort_order") or item.get("sortOrder") or index)
+        except (TypeError, ValueError):
+            sort_order = index
+        entry = {
+            "object_key": object_key,
+            "sort_order": sort_order,
+        }
+        thumbnail_key = (item.get("thumbnail_key") or item.get("thumbnailKey") or "").strip()
+        if thumbnail_key:
+            entry["thumbnail_key"] = thumbnail_key
+        filename = item.get("filename") or item.get("original_filename") or item.get("originalFilename") or item.get("stored_filename")
+        if filename:
+            entry["filename"] = str(filename)
+        original_filename = item.get("original_filename") or item.get("originalFilename")
+        if original_filename:
+            entry["original_filename"] = str(original_filename)
+        stored_filename = item.get("stored_filename") or item.get("storedFilename")
+        if stored_filename:
+            entry["stored_filename"] = str(stored_filename)
+        content_type = item.get("content_type") or item.get("contentType") or item.get("mime_type") or item.get("mimeType")
+        if content_type:
+            entry["content_type"] = str(content_type)
+        size_bytes = item.get("size_bytes") or item.get("sizeBytes")
+        if size_bytes:
+            try:
+                entry["size_bytes"] = int(size_bytes)
+            except (TypeError, ValueError):
+                pass
+        uploaded_at = item.get("uploaded_at") or item.get("uploadedAt")
+        if uploaded_at:
+            entry["uploaded_at"] = str(uploaded_at)
+        if include_urls:
+            try:
+                display_url = _photo_storage().public_url(object_key)
+            except ReceivingPhotoStorageError:
+                display_url = ""
+            if display_url:
+                entry["url"] = display_url
+                entry["public_url"] = display_url
+        manifest.append(entry)
+    manifest.sort(key=lambda photo: photo.get("sort_order") or 0)
+    return manifest
 
 
 # ── Development tools ─────────────────────────────────────────────────────────

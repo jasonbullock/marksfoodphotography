@@ -116,17 +116,15 @@ def _conditional_put_unsupported(error):
 class ReceivingPhotoStorage:
     def __init__(self, config, local_dir=None, s3_client=None, now_func=None):
         self.config = config
-        self.mode = (getattr(config, "RECEIVING_PHOTO_STORAGE", "local") or "local").lower()
+        self.mode = (getattr(config, "RECEIVING_PHOTO_STORAGE", "r2") or "r2").lower()
         self.local_dir = Path(local_dir or getattr(config, "RECEIVING_PHOTO_LOCAL_DIR", "uploads/receiving"))
         self.s3_client = s3_client
         self.now_func = now_func or _utc_now
         self.max_bytes = int(getattr(config, "RECEIVING_PHOTO_MAX_BYTES", DEFAULT_MAX_BYTES) or DEFAULT_MAX_BYTES)
 
     def validate_configuration(self):
-        if self.mode not in {"r2", "local"}:
-            raise ReceivingPhotoConfigError("RECEIVING_PHOTO_STORAGE must be either r2 or local.")
-        if self.mode == "local":
-            return
+        if self.mode != "r2":
+            raise ReceivingPhotoConfigError("RECEIVING_PHOTO_STORAGE must be r2.")
         missing = [
             name for name in (
                 "R2_ACCOUNT_ID",
@@ -142,8 +140,6 @@ class ReceivingPhotoStorage:
 
     def public_url(self, object_key):
         base_url = (getattr(self.config, "R2_PUBLIC_BASE_URL", "") or "").rstrip("/")
-        if self.mode == "local":
-            base_url = base_url or "/api/receiving/photos"
         return f"{base_url}/{object_key}"
 
     def object_key(self, delivery_folder, sequence_number, extension):
@@ -210,13 +206,6 @@ class ReceivingPhotoStorage:
         self.validate_configuration()
         if not object_key or ".." in object_key or object_key.startswith("/"):
             raise ReceivingPhotoValidationError("Invalid photo object key.")
-        if self.mode == "local":
-            path = (self.local_dir / object_key).resolve()
-            if self.local_dir.resolve() not in path.parents:
-                raise ReceivingPhotoValidationError("Invalid photo object key.")
-            if path.exists():
-                path.unlink()
-            return {"deleted": True, "object_key": object_key}
         self._client().delete_object(Bucket=self.config.R2_BUCKET_NAME, Key=object_key)
         return {"deleted": True, "object_key": object_key}
 
@@ -225,14 +214,6 @@ class ReceivingPhotoStorage:
         prefix = str(prefix or "")
         if not prefix or ".." in prefix or prefix.startswith("/"):
             raise ReceivingPhotoValidationError("Invalid photo object prefix.")
-        if self.mode == "local":
-            base = (self.local_dir / prefix).resolve()
-            if self.local_dir.resolve() not in base.parents and base != self.local_dir.resolve():
-                raise ReceivingPhotoValidationError("Invalid photo object prefix.")
-            if not base.exists():
-                return []
-            return sorted(str(path.relative_to(self.local_dir)) for path in base.rglob("*") if path.is_file())
-
         client = self._client()
         keys = []
         paginator = getattr(client, "get_paginator", None)
@@ -254,8 +235,6 @@ class ReceivingPhotoStorage:
     def object_exists(self, object_key):
         if not object_key:
             return False
-        if self.mode == "local":
-            return (self.local_dir / object_key).exists()
         try:
             self._client().head_object(Bucket=self.config.R2_BUCKET_NAME, Key=object_key)
             return True
@@ -269,13 +248,6 @@ class ReceivingPhotoStorage:
             return False
 
     def _put_object(self, object_key, data, mime_type, metadata):
-        if self.mode == "local":
-            path = self.local_dir / object_key
-            path.parent.mkdir(parents=True, exist_ok=True)
-            if path.exists():
-                raise ReceivingPhotoCollisionError("Photo object already exists.")
-            path.write_bytes(data)
-            return
         try:
             self._client().put_object(
                 Bucket=self.config.R2_BUCKET_NAME,

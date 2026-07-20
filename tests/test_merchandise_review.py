@@ -87,7 +87,7 @@ class MerchandiseReviewTests(unittest.TestCase):
             self.entry("recNeedsReview", {
                 C.F_RECEIPT_ENTRY_ITEM: ["recProductClean"],
                 C.F_RECEIPT_ENTRY_MERCH_STATUS: "Matched",
-                C.F_RECEIPT_ENTRY_PHOTOS: [{"url": "https://assets.example.com/merch.jpg"}],
+                C.F_RECEIPT_ENTRY_PHOTO_METADATA: '[{"object_key":"merchandise/recNeedsReview/image-1.jpg"}]',
             }),
             self.entry("recWaiting", {
                 C.F_RECEIPT_ENTRY_NAME: "Imported later",
@@ -129,7 +129,8 @@ class MerchandiseReviewTests(unittest.TestCase):
         self.assertEqual(records["recValidated"]["reviewState"], "Validated")
         self.assertEqual(records["recIssueState"]["reviewState"], "Issue")
         self.assertTrue(records["recUnidentified"]["isUnidentified"])
-        self.assertEqual(records["recNeedsReview"]["photos"][0]["url"], "https://assets.example.com/merch.jpg")
+        self.assertEqual(records["recNeedsReview"]["photos"][0]["object_key"], "merchandise/recNeedsReview/image-1.jpg")
+        self.assertTrue(records["recNeedsReview"]["photos"][0]["url"].endswith("/merchandise/recNeedsReview/image-1.jpg"))
         self.assertEqual(records["recNeedsReview"]["linkedItem"]["identifier"], "000123")
         self.assertIn("Damaged package", [issue["name"] for issue in records["recIssueState"]["blockingIssues"]])
 
@@ -211,21 +212,20 @@ class MerchandiseReviewTests(unittest.TestCase):
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.create_record")
     @patch("routes.airtable.get_record")
-    def test_raise_issue_uses_existing_issue_model_and_merchandise_photos(self, get_record, create_record, update_record, _clients):
-        photo = {"url": "https://assets.example.com/merch.jpg"}
+    def test_raise_issue_uses_existing_issue_model_and_r2_image_references(self, get_record, create_record, update_record, _clients):
         entry = self.entry("recEntry", {
             C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
-            C.F_RECEIPT_ENTRY_PHOTOS: [photo],
+            C.F_RECEIPT_ENTRY_PHOTO_METADATA: '[{"object_key":"merchandise/recEntry/image-1.jpg"}]',
         })
         get_record.side_effect = [entry, self.receipt(), self.product(), self.product()]
         create_record.return_value = self.issue("recIssue", {
             C.F_ISSUE_NAME: "Crushed package",
-            C.F_ISSUE_PHOTOS: [photo],
+            C.F_ISSUE_NOTES: "Corner is crushed\n\nR2 image references:\nmerchandise/recEntry/image-1.jpg",
         })
         update_record.return_value = self.entry("recEntry", {
             C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Issue",
-            C.F_RECEIPT_ENTRY_PHOTOS: [photo],
+            C.F_RECEIPT_ENTRY_PHOTO_METADATA: '[{"object_key":"merchandise/recEntry/image-1.jpg"}]',
         })
 
         response = self.app.post("/api/merchandise/review/recEntry/issue", json={
@@ -237,7 +237,8 @@ class MerchandiseReviewTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         issue_fields = create_record.call_args.args[1]
         self.assertEqual(issue_fields[C.F_ISSUE_ITEM], ["recProduct"])
-        self.assertEqual(issue_fields[C.F_ISSUE_PHOTOS], [photo])
+        self.assertNotIn(C.F_ISSUE_PHOTOS, issue_fields)
+        self.assertIn("merchandise/recEntry/image-1.jpg", issue_fields[C.F_ISSUE_NOTES])
         self.assertEqual(update_record.call_args.args[2][C.F_RECEIPT_ENTRY_MERCH_STATUS], "Issue")
         payload = response.get_json()
         self.assertEqual(payload["merchandise"]["reviewState"], "Issue")

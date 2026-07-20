@@ -24,6 +24,7 @@ Marks Photo should not become a project management system, PIM, or system of rec
 - Activation emails should eventually become structured production instructions.
 - Products, Shipments, and Merchandise are the canonical physical Airtable table names.
 - Legacy Items, Receipts, and Receipt Entries language may remain only in compatibility code, historical notes, or rollback documentation.
+- Cloudflare R2 is the only supported image storage layer; Airtable stores image references and metadata only.
 
 ## Current Questions
 
@@ -37,7 +38,44 @@ Marks Photo should not become a project management system, PIM, or system of rec
 
 ## Next Step
 
-The live Airtable schema now uses canonical Products, Shipments, and Merchandise table names. The likely next product step is to continue Merchandise Review V2 experimentation without changing Merchandise Review V1 or the read-only Merchandise inventory workspace.
+The live Airtable schema now uses canonical Products, Shipments, and Merchandise table names, and image storage has been migrated to R2-only references. The likely next product step is to continue Merchandise Review V2 experimentation without changing Merchandise Review V1 or the read-only Merchandise inventory workspace.
+
+## 2026-07-20 R2-Only Image Storage Migration
+
+The approved R2-only image storage migration has been completed.
+
+What is now true:
+- Cloudflare R2 is the single source of truth for merchandise, shipment, product, review, production, and delivery images.
+- Airtable image-bearing records store lightweight references only, primarily in `Photo Metadata`.
+- Canonical image manifest entries store stable R2 `object_key` values plus ordering and file metadata.
+- The backend resolves display URLs from R2 object keys when records are loaded.
+- The application no longer writes Airtable image attachment arrays.
+- The application no longer reads Airtable image attachments as durable image storage.
+- Receiving photo upload storage mode is R2-only; local receiving-photo storage is rejected.
+- Shipment-level Airtable photo attachment payloads are no longer created.
+- Merchandise photo uploads update `Photo Metadata` only.
+- Product photo merges copy R2 metadata references only.
+- Issue creation no longer copies Merchandise attachments into Issues.
+- The Airtable write client strips `Photos` and `Deprecated Airtable Photos - Do Not Use` from create/update payloads as a final guard.
+
+Live Airtable cleanup:
+- Products `Photos` attachment field: 1 record / 4 attachments verified in R2, metadata canonicalized, attachment values cleared.
+- Merchandise `Photos` attachment field: 3 records / 6 attachments verified in R2, metadata canonicalized, attachment values cleared.
+- Shipments `Photos` attachment field: 0 records / 0 attachments.
+- Issues `Photos` attachment field: 0 records / 0 attachments.
+- Post-migration audit confirmed 0 attachment values in Products, Shipments, Issues, and Merchandise.
+- The former attachment fields were renamed to `Deprecated Airtable Photos - Do Not Use` and described as deprecated.
+
+Migration artifacts:
+- `docs/migrations/2026-07-20-r2-only-image-storage.md`
+- `docs/migrations/2026-07-20-r2-only-image-storage-report.json`
+
+Verification:
+- `backend/.venv/bin/python -m unittest tests/test_receiving.py tests/test_merchandise_review.py tests/test_merchandise_inventory.py`
+- Authenticated API smoke checks for `/api/merchandise`, `/api/merchandise/review`, `/api/products`, and `/api/receiving/photo-storage/status`.
+
+Current caveats:
+- The deprecated Airtable attachment fields still physically exist because destructive field deletion is not reliable through the Airtable API in this environment. They are empty, renamed, documented as deprecated, and protected by backend write guards.
 
 ## 2026-07-20 Live Airtable Domain Rename
 
@@ -79,7 +117,7 @@ Post-migration verification:
   - `CF Product Name`
   - `CF Category`
 - Airtable webhooks remain empty.
-- Photo attachments remain present on Products and Merchandise photo fields.
+- Photo attachments have been migrated to R2-only metadata. Deprecated attachment fields remain empty.
 - Local route smoke checks returned HTTP 200 for `/shipments`, `/merchandise`, `/merchandise/review`, `/merchandise-review-v2`, `/products`, `/imports`, `/settings`, and `/clients`.
 - Live application smoke tests created a temporary Shipment and Merchandise record, matched the Merchandise to an existing Product, read the Receiving/Merchandise/Review endpoints, imported one temporary Product row, and deleted the temporary Shipment, Merchandise, Product, Job, Import, and History records.
 

@@ -143,11 +143,11 @@ Current implementation note:
 - Issue means the Merchandise itself has been flagged or has an unresolved Merchandise-type Issue.
 - Merchandise validation requires a linked Product and should not create Product records.
 - Product search and matching must remain client-filtered by the current authenticated user's allowed Clients.
-- Receiving photos belong to Merchandise and are used as review context.
+- Receiving photos belong to Merchandise and are used as review context. Image files live in Cloudflare R2; Merchandise and Product records store R2 metadata references only.
 
 Issue implementation note:
 - The current Issues table links to Products and Jobs, not directly to Merchandise.
-- For matched Merchandise, review-created Issues link to the matched Product and can include Merchandise photos.
+- For matched Merchandise, review-created Issues link to the matched Product and can include R2 image object-key references in notes when image context is needed.
 - For unmatched Merchandise, the Merchandise can be marked as Issue, but the Issue record cannot carry a direct Merchandise relationship until a future schema decision adds one.
 
 Workspace implementation note:

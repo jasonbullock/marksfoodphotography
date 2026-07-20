@@ -889,7 +889,7 @@ function Dashboard({ navigate }) {
                 <span></span><span>Receiving Logged</span><span>Client</span><span>Merchandise</span><span>Quantity</span><span>Days Ago</span>
               </div>
               {reviewReceipts.map(r => {
-                const thumb = r.photos?.[0]?.thumbnails?.small?.url || r.photos?.[0]?.url;
+                const thumb = recordPhotoUrl(r);
                 const client = clientMap[r.clientIds?.[0]];
                 return (
                   <div key={r.id} className="dash-aging-row" style={{ gridTemplateColumns: '44px 1.2fr 1fr 2fr 80px 80px' }}>
@@ -1027,13 +1027,10 @@ function receiptEntryHasUnsavedValues(entry, photos = []) {
 
 function receivingPhotoUrl(photo) {
   if (!photo) return '';
-  return photo.previewUrl
-    || photo.thumbnails?.small?.url
-    || photo.thumbnails?.large?.url
-    || photo.url
-    || photo.publicUrl
-    || photo.public_url
-    || '';
+  if (photo.previewUrl) return photo.previewUrl;
+  const objectKey = photo.object_key || photo.objectKey || '';
+  if (!objectKey) return '';
+  return photo.url || photo.publicUrl || photo.public_url || '';
 }
 
 function recordPhotoUrl(record) {
@@ -1043,7 +1040,7 @@ function recordPhotoUrl(record) {
 function recordPhotos(record) {
   const metadata = (record?.photoMetadata || []).filter(photo => receivingPhotoUrl(photo));
   if (metadata.length) return metadata;
-  return (record?.photos || []).filter(photo => receivingPhotoUrl(photo));
+  return (record?.photos || []).filter(photo => (photo.object_key || photo.objectKey) && receivingPhotoUrl(photo));
 }
 
 function RecordThumbnail({ record, className = '', count }) {
@@ -1068,13 +1065,6 @@ function photoFilesFromInput(files) {
   }));
 }
 
-function photoPayload(photos) {
-  return (photos || []).filter(photo => photo.remoteUrl).map(photo => ({
-    url: photo.remoteUrl,
-    filename: photo.name,
-  }));
-}
-
 function QuickReceivingCapture({ locationList }) {
   const receiptList = useResource(() => api.listShipments());
   const [receipt, setReceipt] = useState(null);
@@ -1084,7 +1074,6 @@ function QuickReceivingCapture({ locationList }) {
     tracking: '',
     boxQuantity: 1,
     received: toDatetimeLocal(),
-    photos: [],
   });
   const [entry, setEntryState] = useState(() => ({
     ...emptyReceiptEntry(),
@@ -1098,8 +1087,6 @@ function QuickReceivingCapture({ locationList }) {
   const productNameRef = useRef(null);
   const cameraInputRef = useRef(null);
   const libraryInputRef = useRef(null);
-  const deliveryCameraRef = useRef(null);
-  const deliveryLibraryRef = useRef(null);
   const barcodeSupported = typeof window !== 'undefined' && 'BarcodeDetector' in window;
   const openReceipts = receiptList.data?.records ?? [];
   const recentLocationIds = loadRecentReceivingLocations();
@@ -1147,34 +1134,6 @@ function QuickReceivingCapture({ locationList }) {
     });
   }
 
-  async function addDeliveryPhotos(files) {
-    const localPhotos = photoFilesFromInput(files);
-    if (!localPhotos.length) return;
-    setSession(prev => ({ ...prev, photos: [...prev.photos, ...localPhotos] }));
-    try {
-      const uploaded = await api.uploadReceivingPhotos(localPhotos.map(photo => photo.file));
-      const uploadedPhotos = uploaded.photos || [];
-      setSession(prev => ({
-        ...prev,
-        photos: prev.photos.map(photo => {
-          const index = localPhotos.findIndex(local => local.id === photo.id);
-          if (index === -1 || !uploadedPhotos[index]) return photo;
-          return { ...photo, remoteUrl: uploadedPhotos[index].url };
-        }),
-      }));
-    } catch (err) {
-      setError(err.message || 'Photos could not be uploaded.');
-    }
-  }
-
-  function removeDeliveryPhoto(photoId) {
-    setSession(prev => {
-      const photo = prev.photos.find(item => item.id === photoId);
-      if (photo) URL.revokeObjectURL(photo.previewUrl);
-      return { ...prev, photos: prev.photos.filter(item => item.id !== photoId) };
-    });
-  }
-
   async function ensureReceipt() {
     if (receipt) return receipt;
     const created = await api.startReceivingSession({
@@ -1182,7 +1141,6 @@ function QuickReceivingCapture({ locationList }) {
       tracking: session.tracking.trim(),
       boxQuantity: Number(session.boxQuantity || 1),
       received: session.received,
-      photos: photoPayload(session.photos),
     });
     setReceipt(created);
     setEntryCount(created.entries?.length ?? 0);
@@ -1271,7 +1229,7 @@ function QuickReceivingCapture({ locationList }) {
     setReceipt(null);
     setSelectedReceiptId('');
     setEntryCount(0);
-    setSession({ carrier: '', tracking: '', boxQuantity: 1, received: toDatetimeLocal(), photos: [] });
+    setSession({ carrier: '', tracking: '', boxQuantity: 1, received: toDatetimeLocal() });
     resetEntry('');
   }
 
@@ -1310,26 +1268,6 @@ function QuickReceivingCapture({ locationList }) {
             <label>Tracking</label>
             <input value={session.tracking} onChange={event => setSession(prev => ({ ...prev, tracking: event.target.value }))} placeholder="Optional" />
           </div>
-        </div>
-
-        <div className="mobile-field">
-          <label>Shipment Photos</label>
-          <div className="mobile-photo-actions">
-            <button type="button" className="mobile-photo-button primary" onClick={() => deliveryCameraRef.current?.click()}>Take Photo</button>
-            <button type="button" className="mobile-photo-button" onClick={() => deliveryLibraryRef.current?.click()}>Photo Library</button>
-          </div>
-          <input ref={deliveryCameraRef} type="file" accept="image/*" capture="environment" multiple hidden onChange={event => { addDeliveryPhotos(event.target.files); event.target.value = ''; }} />
-          <input ref={deliveryLibraryRef} type="file" accept="image/*" multiple hidden onChange={event => { addDeliveryPhotos(event.target.files); event.target.value = ''; }} />
-          {session.photos.length > 0 && (
-            <div className="mobile-photo-strip">
-              {session.photos.map(photo => (
-                <button type="button" className="mobile-thumb" key={photo.id} onClick={() => removeDeliveryPhoto(photo.id)} title="Remove photo">
-                  <img src={photo.previewUrl} alt="" />
-                  <span>×</span>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         {!receipt && (
@@ -1767,7 +1705,7 @@ function ShipmentsPage() {
   function populateEntryFromSaved(saved) {
     setEntryPhotos(prev => {
       prev.forEach(p => { if (!p.isExisting) URL.revokeObjectURL(p.previewUrl); });
-      // Load existing saved photos so they show as thumbnails in the edit modal
+      // Load existing R2-backed photos so they show as previews in the edit modal.
       const existingPhotos = (saved.photoMetadata || []).map(p => ({
         id: p.object_key || p.objectKey || p.url || p.public_url,
         previewUrl: p.public_url || p.url || '',
@@ -3838,10 +3776,7 @@ function MerchandiseInventoryPage({ navigate }) {
       {viewMode === 'cards' && (
       <div className="merchandise-inventory-card-grid">
         {sortedVisibleRecords.map(record => {
-          const thumbnail = record.photos?.[0]?.thumbnails?.large?.url
-            || record.photos?.[0]?.thumbnails?.small?.url
-            || record.photos?.[0]?.url
-            || '';
+          const thumbnail = recordPhotoUrl(record);
           return (
           <article
             className={`merchandise-inventory-card ui-card age-${record.ageGroup || 'unknown'}`}
@@ -4415,7 +4350,7 @@ function MerchandiseReviewPage() {
 
                 <details className="merch-review-secondary-detail">
                   <summary>Raise Issue</summary>
-                  <small>Creates an existing Issue record and keeps the photos attached as context.</small>
+                  <small>Creates an existing Issue record and records R2 image references as context.</small>
                   <select value={issueType} onChange={event => setIssueType(event.target.value)}>
                     <option value="Unknown Item">Unidentified Merchandise</option>
                     <option>Damaged</option>

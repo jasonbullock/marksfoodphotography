@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from app import create_app  # noqa: E402
 from config import Config as C  # noqa: E402
+from airtable import strip_airtable_image_attachments  # noqa: E402
 from routes import AUTH_SESSION_KEY  # noqa: E402
 from receiving_photo_storage import ReceivingPhotoStorage, ReceivingPhotoConfigError, ReceivingPhotoValidationError  # noqa: E402
 
@@ -268,7 +269,7 @@ class ReceivingTests(unittest.TestCase):
     @patch("routes.airtable.list_records")
     @patch("routes.airtable.get_record")
     @patch("routes.airtable.create_record")
-    def test_mobile_receiving_adds_entry_with_photos_but_no_item_link(self, create_record, get_record, list_records):
+    def test_mobile_receiving_ignores_attachment_photos_on_entry_create(self, create_record, get_record, list_records):
         get_record.return_value = {
             "id": "recReceipt",
             "fields": {},
@@ -296,12 +297,12 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_NAME], "Ham Roast Unsliced")
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_SKU_ID], "BOX-7")
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_QUANTITY], 2)
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PHOTOS], [{"url": "https://example.com/photo.jpg"}])
+        self.assertNotIn(C.F_RECEIPT_ENTRY_PHOTOS, fields)
         self.assertNotIn(C.F_RECEIPT_ENTRY_ITEM, fields)
         payload = response.get_json()
         self.assertEqual(payload["productName"], "Ham Roast Unsliced")
         self.assertEqual(payload["skuId"], "BOX-7")
-        self.assertEqual(payload["photos"], [{"url": "https://example.com/photo.jpg"}])
+        self.assertEqual(payload["photos"], [])
         self.assertEqual(payload["itemIds"], [])
 
     @patch("routes.airtable.create_record")
@@ -564,21 +565,11 @@ class ReceivingTests(unittest.TestCase):
         self.assertNotEqual(update_record.call_args.args[0], C.ITEMS_TABLE)
         self.assertEqual(response.get_json()["merchStatus"], "Matched")
 
-    def test_mobile_receiving_photo_upload_returns_attachment_urls_in_local_mode(self):
-        with tempfile.TemporaryDirectory() as temp_dir, patch.object(C, "RECEIVING_PHOTO_STORAGE", "local"), patch.object(C, "RECEIVING_PHOTO_LOCAL_DIR", temp_dir):
-            response = self.app.post(
-                "/api/receiving/photos",
-                data={"photos": upload_file(JPEG_BYTES, "carton.jpg")},
-                content_type="multipart/form-data",
-            )
+    def test_receiving_photo_storage_rejects_local_mode(self):
+        storage = ReceivingPhotoStorage(r2_config(RECEIVING_PHOTO_STORAGE="local"), s3_client=mock_s3_client())
 
-            self.assertEqual(response.status_code, 200)
-            photos = response.get_json()["photos"]
-            self.assertEqual(len(photos), 1)
-            self.assertEqual(photos[0]["filename"], "carton.jpg")
-            self.assertIn("/api/receiving/photos/", photos[0]["url"])
-            self.assertIn("object_key", photos[0])
-            self.assertTrue(any(Path(temp_dir).rglob("*.*")))
+        with self.assertRaises(ReceivingPhotoConfigError):
+            storage.upload_photo(Mock(filename="carton.jpg", read=Mock(return_value=JPEG_BYTES)), "recR", "recE")
 
     def test_receiving_photo_storage_uploads_jpeg_to_mocked_r2(self):
         s3 = mock_s3_client()
@@ -753,7 +744,7 @@ class ReceivingTests(unittest.TestCase):
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.list_records")
     @patch("routes.airtable.get_record")
-    def test_receiving_entry_photo_upload_updates_airtable_with_public_url_and_metadata(self, get_record, list_records, update_record):
+    def test_receiving_entry_photo_upload_updates_airtable_with_r2_metadata_only(self, get_record, list_records, update_record):
         s3 = mock_s3_client()
         storage = ReceivingPhotoStorage(
             r2_config(),
@@ -823,14 +814,16 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         update_record.assert_called_once()
         update_fields = update_record.call_args.args[2]
-        attachments = update_fields[C.F_RECEIPT_ENTRY_PHOTOS]
         metadata = update_fields[C.F_RECEIPT_ENTRY_PHOTO_METADATA]
-        self.assertEqual(len(attachments), 2)
-        self.assertEqual(attachments[0]["url"], "https://assets.example.com/receiving/Kroger-2026-07-12-16-11/Kroger-2026-07-12-16-11-1.jpg")
-        self.assertEqual(attachments[1]["url"], "https://assets.example.com/receiving/Kroger-2026-07-12-16-11/Kroger-2026-07-12-16-11-2.png")
+        self.assertNotIn(C.F_RECEIPT_ENTRY_PHOTOS, update_fields)
         metadata_items = json.loads(metadata)
+        self.assertEqual(len(metadata_items), 2)
         self.assertEqual(metadata_items[0]["stored_filename"], "Kroger-2026-07-12-16-11-1.jpg")
         self.assertEqual(metadata_items[0]["original_filename"], "front.jpg")
+        self.assertEqual(metadata_items[0]["content_type"], "image/jpeg")
+        self.assertEqual(metadata_items[0]["sort_order"], 1)
+        self.assertNotIn("url", metadata_items[0])
+        self.assertNotIn("public_url", metadata_items[0])
         self.assertNotIn("recReceipt", metadata_items[0]["object_key"])
         self.assertNotIn("recEntry", metadata_items[0]["object_key"])
         self.assertNotIn("Kroger-Baking-Powder", metadata_items[0]["object_key"])
@@ -838,7 +831,23 @@ class ReceivingTests(unittest.TestCase):
         self.assertTrue(all("/" not in item["stored_filename"] for item in metadata_items))
         payload = response.get_json()
         self.assertEqual(len(payload["photos"]), 2)
-        self.assertEqual(payload["entry"]["photoMetadata"][0]["public_url"], attachments[0]["url"])
+        self.assertEqual(payload["entry"]["photoMetadata"][0]["object_key"], metadata_items[0]["object_key"])
+        self.assertEqual(payload["entry"]["photoMetadata"][0]["public_url"], f"https://assets.example.com/{metadata_items[0]['object_key']}")
+
+    def test_airtable_client_strips_image_attachment_fields(self):
+        fields = strip_airtable_image_attachments({
+            "Name": "Package",
+            "Photos": [{"url": "https://airtable.example/photo.jpg"}],
+            "Deprecated Airtable Photos - Do Not Use": [{"url": "https://airtable.example/deprecated.jpg"}],
+            "fldtTr7eNQrT6iVrS": [{"url": "https://airtable.example/field-id.jpg"}],
+            "Photo Metadata": json.dumps([{"object_key": "merchandise/rec1/image-1.jpg"}]),
+        })
+
+        self.assertEqual(fields["Name"], "Package")
+        self.assertIn("Photo Metadata", fields)
+        self.assertNotIn("Photos", fields)
+        self.assertNotIn("Deprecated Airtable Photos - Do Not Use", fields)
+        self.assertNotIn("fldtTr7eNQrT6iVrS", fields)
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.list_records")

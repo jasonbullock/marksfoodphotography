@@ -5,6 +5,27 @@ import requests
 from config import Config
 
 
+IMAGE_ATTACHMENT_FIELD_NAMES = {"Photos", "Deprecated Airtable Photos - Do Not Use"}
+IMAGE_ATTACHMENT_FIELD_IDS = {
+    "fld518nperBoHn9yG",
+    "fldlDpgrtKRTpBWla",
+    "fldBqWeFeXoFPo2Ws",
+    "fldtTr7eNQrT6iVrS",
+}
+
+
+def strip_airtable_image_attachments(fields):
+    """Central guard: app writes may not persist image attachment arrays to Airtable."""
+    if not isinstance(fields, dict):
+        return fields
+    clean = {}
+    for field, value in fields.items():
+        if field in IMAGE_ATTACHMENT_FIELD_NAMES or field in IMAGE_ATTACHMENT_FIELD_IDS:
+            continue
+        clean[field] = value
+    return clean
+
+
 class AirtableClient:
     def __init__(self):
         self.api_key = Config.AIRTABLE_API_KEY
@@ -60,6 +81,7 @@ class AirtableClient:
 
     def create_record(self, table_name, fields, by_field_id=True, typecast=False):
         params = self._field_id_params() if by_field_id else {}
+        fields = strip_airtable_image_attachments(fields)
         return self._request(
             "POST",
             table_name,
@@ -69,6 +91,7 @@ class AirtableClient:
 
     def update_record(self, table_name, record_id, fields, by_field_id=True, typecast=False):
         params = self._field_id_params() if by_field_id else {}
+        fields = strip_airtable_image_attachments(fields)
         return self._request(
             "PATCH",
             f"{table_name}/{record_id}",

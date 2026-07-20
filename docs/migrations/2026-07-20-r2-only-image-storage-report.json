@@ -1,0 +1,199 @@
+{
+  "generated_at": "2026-07-20T17:42:53Z",
+  "applied": true,
+  "tables": [
+    {
+      "table": "Products",
+      "field": "Photos",
+      "field_id": "fld518nperBoHn9yG",
+      "attachment_record_count": 1,
+      "attachment_count": 4
+    },
+    {
+      "table": "Shipments",
+      "field": "Photos",
+      "field_id": "fldlDpgrtKRTpBWla",
+      "attachment_record_count": 0,
+      "attachment_count": 0
+    },
+    {
+      "table": "Issues",
+      "field": "Photos",
+      "field_id": "fldBqWeFeXoFPo2Ws",
+      "attachment_record_count": 0,
+      "attachment_count": 0
+    },
+    {
+      "table": "Merchandise",
+      "field": "Photos",
+      "field_id": "fldtTr7eNQrT6iVrS",
+      "attachment_record_count": 3,
+      "attachment_count": 6
+    }
+  ],
+  "records": [
+    {
+      "table": "Products",
+      "record_id": "rec9h0TRvd73aNhpJ",
+      "attachment_field": "Photos",
+      "original_attachment_count": 4,
+      "original_attachment_filenames": [
+        "41cc596b",
+        "9d431586",
+        "ca877664",
+        "d2aa0bf2"
+      ],
+      "new_r2_object_keys": [
+        "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-1.jpg",
+        "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-2.jpg",
+        "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-5.jpg",
+        "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-6.jpg"
+      ],
+      "verification": [
+        {
+          "object_key": "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-1.jpg",
+          "ok": true,
+          "content_type": "image/jpeg",
+          "content_length": 7675872
+        },
+        {
+          "object_key": "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-2.jpg",
+          "ok": true,
+          "content_type": "image/jpeg",
+          "content_length": 6669226
+        },
+        {
+          "object_key": "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-5.jpg",
+          "ok": true,
+          "content_type": "image/jpeg",
+          "content_length": 5730564
+        },
+        {
+          "object_key": "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-6.jpg",
+          "ok": true,
+          "content_type": "image/jpeg",
+          "content_length": 4868837
+        }
+      ],
+      "attachment_removal_result": "cleared",
+      "metadata_update_result": "canonicalized"
+    },
+    {
+      "table": "Merchandise",
+      "record_id": "rec39XPMp3GLHqhD9",
+      "attachment_field": "Photos",
+      "original_attachment_count": 2,
+      "original_attachment_filenames": [
+        "Kroger-2026-07-16-05-25-5.jpg",
+        "Kroger-2026-07-16-05-25-6.jpg"
+      ],
+      "new_r2_object_keys": [
+        "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-5.jpg",
+        "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-6.jpg"
+      ],
+      "verification": [
+        {
+          "object_key": "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-5.jpg",
+          "ok": true,
+          "content_type": "image/jpeg",
+          "content_length": 5730564
+        },
+        {
+          "object_key": "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-6.jpg",
+          "ok": true,
+          "content_type": "image/jpeg",
+          "content_length": 4868837
+        }
+      ],
+      "attachment_removal_result": "cleared",
+      "metadata_update_result": "canonicalized"
+    },
+    {
+      "table": "Merchandise",
+      "record_id": "recY2ERH2u2u2JGbb",
+      "attachment_field": "Photos",
+      "original_attachment_count": 2,
+      "original_attachment_filenames": [
+        "Kroger-2026-07-16-05-25-3.jpg",
+        "Kroger-2026-07-16-05-25-4.jpg"
+      ],
+      "new_r2_object_keys": [
+        "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-3.jpg",
+        "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-4.jpg"
+      ],
+      "verification": [
+        {
+          "object_key": "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-3.jpg",
+          "ok": true,
+          "content_type": "image/jpeg",
+          "content_length": 4759752
+        },
+        {
+          "object_key": "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-4.jpg",
+          "ok": true,
+          "content_type": "image/jpeg",
+          "content_length": 3919124
+        }
+      ],
+      "attachment_removal_result": "cleared",
+      "metadata_update_result": "canonicalized"
+    },
+    {
+      "table": "Merchandise",
+      "record_id": "recqmvAXtYm2Bncgn",
+      "attachment_field": "Photos",
+      "original_attachment_count": 2,
+      "original_attachment_filenames": [
+        "Kroger-2026-07-16-05-25-1.jpg",
+        "Kroger-2026-07-16-05-25-2.jpg"
+      ],
+      "new_r2_object_keys": [
+        "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-1.jpg",
+        "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-2.jpg"
+      ],
+      "verification": [
+        {
+          "object_key": "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-1.jpg",
+          "ok": true,
+          "content_type": "image/jpeg",
+          "content_length": 7675872
+        },
+        {
+          "object_key": "receiving/Kroger-2026-07-16-05-25/Kroger-2026-07-16-05-25-2.jpg",
+          "ok": true,
+          "content_type": "image/jpeg",
+          "content_length": 6669226
+        }
+      ],
+      "attachment_removal_result": "cleared",
+      "metadata_update_result": "canonicalized"
+    }
+  ],
+  "field_updates": [
+    {
+      "table": "Products",
+      "field_id": "fld518nperBoHn9yG",
+      "result": "deprecated",
+      "new_name": "Deprecated Airtable Photos - Do Not Use"
+    },
+    {
+      "table": "Shipments",
+      "field_id": "fldlDpgrtKRTpBWla",
+      "result": "deprecated",
+      "new_name": "Deprecated Airtable Photos - Do Not Use"
+    },
+    {
+      "table": "Issues",
+      "field_id": "fldBqWeFeXoFPo2Ws",
+      "result": "deprecated",
+      "new_name": "Deprecated Airtable Photos - Do Not Use"
+    },
+    {
+      "table": "Merchandise",
+      "field_id": "fldtTr7eNQrT6iVrS",
+      "result": "deprecated",
+      "new_name": "Deprecated Airtable Photos - Do Not Use"
+    }
+  ],
+  "failures": []
+}

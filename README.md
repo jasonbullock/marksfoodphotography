@@ -98,11 +98,11 @@ For example:
 receiving/Smithfield-2026-07-12-16-11/Smithfield-2026-07-12-16-11-1.jpg
 ```
 
-`R2_PUBLIC_BASE_URL` must be publicly reachable without authentication because Airtable stores attachment references from public URLs. The R2 bucket or custom domain should allow public reads for the uploaded receiving path. Browser CORS does not need direct R2 write access because uploads go through the backend, but the public asset domain should allow normal image reads from the app origin.
+`R2_PUBLIC_BASE_URL` is used by the backend to resolve display URLs from durable R2 object keys at read time. Browser CORS does not need direct R2 write access because uploads go through the backend, but the asset domain should allow normal image reads from the app origin.
 
-For local development only, set `RECEIVING_PHOTO_STORAGE=local`. Local mode writes files under `backend/uploads/receiving` and serves them from `/api/receiving/photos/...`. The backend will not silently fall back to local mode when `RECEIVING_PHOTO_STORAGE=r2`; missing R2 configuration returns a clear upload error.
+Cloudflare R2 is the only supported image storage mode. Local receiving-photo storage and Airtable attachment storage are not supported.
 
-Airtable should keep the existing `Merchandise` attachment field named `Photos`. Add one compact long-text field on `Merchandise` named `Photo Metadata`; it stores JSON metadata including the durable R2 `object_key` and `public_url`. The `Products` table should also have `Photos` and `Photo Metadata` so review can copy Merchandise photos onto the matched Product.
+Airtable stores image references only. The `Merchandise` and `Products` tables use a compact long-text field named `Photo Metadata` containing a JSON manifest with durable R2 `object_key` values, optional `thumbnail_key` values, ordering, and file metadata. Do not store public URLs, base64 image data, duplicate files, or Airtable attachment arrays in Airtable. The API resolves display URLs from R2 object keys when records are loaded.
 
 ## Airtable Table Mapping
 
