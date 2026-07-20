@@ -29,23 +29,31 @@ class Config:
     RECEIVING_PHOTO_MAX_BYTES = int(os.getenv("RECEIVING_PHOTO_MAX_BYTES", str(12 * 1024 * 1024)) or str(12 * 1024 * 1024))
     RECEIVING_PHOTO_LOCAL_DIR = str(BACKEND_DIR / "uploads" / "receiving")
 
-    # Table names — production schema uses concise Airtable field names.
+    # Table names - canonical application domain.
+    #
+    # Marks Photo code should use Products, Shipments, and Merchandise as the
+    # business entities. The current Airtable base may still use legacy physical
+    # table names during the compatibility period, so each canonical table can
+    # be pointed at either the renamed table or its legacy equivalent with env.
     CLIENTS_TABLE = "Clients"
 
     JOBS_TABLE = "Jobs"
 
-    # Table IDs — Marks Food Photography base (appE30EGZv8OzssDx)
-    ITEMS_TABLE = "Items"
-    SKUS_TABLE = ITEMS_TABLE
-    RECEIPTS_TABLE = "Receipts"
-    RECEIVING_TABLE = RECEIPTS_TABLE
-    RECEIPT_ENTRIES_TABLE = "Receipt Entries"
+    PRODUCTS_TABLE = os.getenv("AIRTABLE_PRODUCTS_TABLE", os.getenv("AIRTABLE_ITEMS_TABLE", "Items"))
+    SHIPMENTS_TABLE = os.getenv("AIRTABLE_SHIPMENTS_TABLE", os.getenv("AIRTABLE_RECEIPTS_TABLE", "Receipts"))
+    MERCHANDISE_TABLE = os.getenv(
+        "AIRTABLE_MERCHANDISE_TABLE",
+        os.getenv("AIRTABLE_RECEIPT_ENTRIES_TABLE", "Receipt Entries"),
+    )
 
-    # Business-language aliases. Keep Airtable table names unchanged while the
-    # application migrates from Receipts/Receipt Entries/Items terminology.
-    PRODUCTS_TABLE = ITEMS_TABLE
-    SHIPMENTS_TABLE = RECEIPTS_TABLE
-    MERCHANDISE_TABLE = RECEIPT_ENTRIES_TABLE
+    # Legacy compatibility aliases. Use the canonical constants in new backend
+    # code; keep these aliases for older tests, routes, payloads, and local
+    # scripts that still refer to Items, Receipts, or Receipt Entries.
+    ITEMS_TABLE = PRODUCTS_TABLE
+    SKUS_TABLE = PRODUCTS_TABLE
+    RECEIPTS_TABLE = SHIPMENTS_TABLE
+    RECEIVING_TABLE = SHIPMENTS_TABLE
+    RECEIPT_ENTRIES_TABLE = MERCHANDISE_TABLE
     LOCATIONS_TABLE = "Locations"
     USERS_TABLE = "Users"
     ISSUES_TABLE = "Issues"

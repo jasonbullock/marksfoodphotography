@@ -8,14 +8,18 @@ const BACKEND_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5057/a
 const TABLES = {
   CLIENTS: 'Clients',
   JOBS:    'Jobs',
-  SKUS:    'Items',
-  RECEIPTS: 'Receipts',
+  PRODUCTS: 'Items',
+  SHIPMENTS: 'Receipts',
+  MERCHANDISE: 'Receipt Entries',
   LOCATIONS: 'Locations',
   USERS: 'Users',
   ISSUES: 'Issues',
   HISTORY: 'History',
   IMPORTS: 'Imports',
 };
+
+TABLES.SKUS = TABLES.PRODUCTS;
+TABLES.RECEIPTS = TABLES.SHIPMENTS;
 
 const F = {
   CLIENT_NAME: 'Client',

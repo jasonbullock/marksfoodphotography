@@ -219,9 +219,9 @@ def _record_client_ids(table, record_id):
     fields = record.get("fields", {})
     if table == C.JOBS_TABLE:
         return fields.get(C.F_JOB_CLIENT, []) or []
-    if table == C.ITEMS_TABLE:
+    if table == C.PRODUCTS_TABLE:
         return fields.get(C.F_ITEM_CLIENT, []) or []
-    if table == C.RECEIPTS_TABLE:
+    if table == C.SHIPMENTS_TABLE:
         return fields.get(C.F_RECEIPT_CLIENT, []) or []
     return []
 
@@ -231,7 +231,7 @@ def _job_client_ids(job_id):
 
 
 def _item_client_ids(item_id):
-    return _record_client_ids(C.ITEMS_TABLE, item_id)
+    return _record_client_ids(C.PRODUCTS_TABLE, item_id)
 
 
 def _client_ids_for_issue(record):
@@ -1154,17 +1154,17 @@ def _intake_destination_field_map():
         "Job Name": (C.JOBS_TABLE, C.F_JOB_NAME),
         "Parent Job Number": (C.JOBS_TABLE, C.F_JOB_PARENT_NUMBER),
         "Due Date": (C.JOBS_TABLE, C.F_JOB_DUE),
-        "Item Name": (C.ITEMS_TABLE, C.F_ITEM_NAME),
-        "Identifier": (C.ITEMS_TABLE, C.F_ITEM_IDENTIFIER),
-        "Product or File Name": (C.ITEMS_TABLE, C.F_ITEM_PRODUCT),
-        "Description": (C.ITEMS_TABLE, C.F_ITEM_DESCRIPTION),
-        "Item Job Number": (C.ITEMS_TABLE, C.F_ITEM_JOB_NUMBER),
-        "Output Type": (C.ITEMS_TABLE, C.F_ITEM_OUTPUT),
-        "Master or Variant": (C.ITEMS_TABLE, C.F_ITEM_MASTER_VARIANT),
-        "Pickup Job Number": (C.ITEMS_TABLE, C.F_ITEM_PICKUP_JOB_NUMBER),
-        "Brand": (C.ITEMS_TABLE, C.F_ITEM_BRAND),
-        "Notes": (C.ITEMS_TABLE, C.F_ITEM_NOTES),
-        "Reference Data": (C.ITEMS_TABLE, C.F_ITEM_REFERENCE_DATA),
+        "Item Name": (C.PRODUCTS_TABLE, C.F_ITEM_NAME),
+        "Identifier": (C.PRODUCTS_TABLE, C.F_ITEM_IDENTIFIER),
+        "Product or File Name": (C.PRODUCTS_TABLE, C.F_ITEM_PRODUCT),
+        "Description": (C.PRODUCTS_TABLE, C.F_ITEM_DESCRIPTION),
+        "Item Job Number": (C.PRODUCTS_TABLE, C.F_ITEM_JOB_NUMBER),
+        "Output Type": (C.PRODUCTS_TABLE, C.F_ITEM_OUTPUT),
+        "Master or Variant": (C.PRODUCTS_TABLE, C.F_ITEM_MASTER_VARIANT),
+        "Pickup Job Number": (C.PRODUCTS_TABLE, C.F_ITEM_PICKUP_JOB_NUMBER),
+        "Brand": (C.PRODUCTS_TABLE, C.F_ITEM_BRAND),
+        "Notes": (C.PRODUCTS_TABLE, C.F_ITEM_NOTES),
+        "Reference Data": (C.PRODUCTS_TABLE, C.F_ITEM_REFERENCE_DATA),
     }
 
 
@@ -1500,7 +1500,7 @@ def _existing_job_for_import(existing_jobs, group_key, job_name, parent_number="
 
 
 def _existing_items_by_identifier(client_id):
-    data = airtable.list_records(C.ITEMS_TABLE, by_field_id=False)
+    data = airtable.list_records(C.PRODUCTS_TABLE, by_field_id=False)
     items = {}
     for record in _filter_by_client_field(data.get("records", []), C.F_ITEM_CLIENT):
         fields = record.get("fields", {})
@@ -1874,13 +1874,13 @@ def _execute_intake_plan(plan):
             continue
         fields = _item_fields_from_row(client_id, job_id, row)
         if row.get("existingItemId"):
-            previous = airtable.get_record(C.ITEMS_TABLE, row["existingItemId"], by_field_id=False)
-            data = airtable.update_record(C.ITEMS_TABLE, row["existingItemId"], fields, by_field_id=False)
+            previous = airtable.get_record(C.PRODUCTS_TABLE, row["existingItemId"], by_field_id=False)
+            data = airtable.update_record(C.PRODUCTS_TABLE, row["existingItemId"], fields, by_field_id=False)
             _log_item_changes(data["id"], previous, data, fields)
             row["action"] = "updated"
             summary["itemsUpdated"] += 1
         else:
-            data = airtable.create_record(C.ITEMS_TABLE, fields, by_field_id=False)
+            data = airtable.create_record(C.PRODUCTS_TABLE, fields, by_field_id=False)
             row["existingItemId"] = data["id"]
             row["action"] = "created"
             _create_history_event(
@@ -1914,8 +1914,8 @@ def _filter_locations(records):
     permissions = _permission_context()
     if permissions["all"]:
         return records
-    permitted_item_ids = _permitted_record_ids(C.ITEMS_TABLE, C.F_ITEM_CLIENT)
-    permitted_receipt_ids = _permitted_record_ids(C.RECEIPTS_TABLE, C.F_RECEIPT_CLIENT)
+    permitted_item_ids = _permitted_record_ids(C.PRODUCTS_TABLE, C.F_ITEM_CLIENT)
+    permitted_receipt_ids = _permitted_record_ids(C.SHIPMENTS_TABLE, C.F_RECEIPT_CLIENT)
     filtered = []
     for record in records:
         fields = record.get("fields", {})
@@ -2363,7 +2363,7 @@ def list_items():
         "sort[0][direction]": "asc",
     }
     job_id = request.args.get("jobId")
-    data = airtable.list_records(C.ITEMS_TABLE, params=params, by_field_id=False)
+    data = airtable.list_records(C.PRODUCTS_TABLE, params=params, by_field_id=False)
     records = _filter_by_client_field(data.get("records", []), C.F_ITEM_CLIENT)
     if job_id:
         records = [record for record in records if job_id in (record.get("fields", {}).get(C.F_ITEM_JOB, []) or [])]
@@ -2377,7 +2377,7 @@ def list_items():
 @api.get("/products/<record_id>")
 @api.get("/skus/<record_id>")
 def get_item(record_id):
-    record = airtable.get_record(C.ITEMS_TABLE, record_id, by_field_id=False)
+    record = airtable.get_record(C.PRODUCTS_TABLE, record_id, by_field_id=False)
     if not _client_ids_permitted(record.get("fields", {}).get(C.F_ITEM_CLIENT, [])):
         return _forbidden()
     clients_by_id = _clients_by_id()
@@ -2412,7 +2412,7 @@ def create_item():
         fields[C.F_ITEM_JOB] = [job_id]
     _apply_item_fields(fields, body)
 
-    data = airtable.create_record(C.ITEMS_TABLE, fields, by_field_id=False)
+    data = airtable.create_record(C.PRODUCTS_TABLE, fields, by_field_id=False)
     item_id = data["id"]
     _create_history_event(
         "Item Created",
@@ -2428,7 +2428,7 @@ def create_item():
 @api.patch("/skus/<record_id>")
 def update_item(record_id):
     body = request.get_json(silent=True) or {}
-    previous = airtable.get_record(C.ITEMS_TABLE, record_id, by_field_id=False)
+    previous = airtable.get_record(C.PRODUCTS_TABLE, record_id, by_field_id=False)
     if not _client_ids_permitted(previous.get("fields", {}).get(C.F_ITEM_CLIENT, [])):
         return _forbidden()
     fields = {}
@@ -2452,7 +2452,7 @@ def update_item(record_id):
     if not fields:
         return err("No updatable fields provided")
 
-    data = airtable.update_record(C.ITEMS_TABLE, record_id, fields, by_field_id=False)
+    data = airtable.update_record(C.PRODUCTS_TABLE, record_id, fields, by_field_id=False)
     _log_item_changes(record_id, previous, data, fields)
     return jsonify(_shape_item(data, clients_by_id=_clients_by_id(), issues_by_item_id=_issues_by_item_id()))
 
@@ -2695,7 +2695,7 @@ def _find_matching_skus(query, *, client_id="", include_item_id=""):
     if len(_match_compact(cleaned)) < 3:
         return []
 
-    data = airtable.list_records(C.ITEMS_TABLE, params={"sort[0][field]": C.F_ITEM_NAME, "sort[0][direction]": "asc"}, by_field_id=False)
+    data = airtable.list_records(C.PRODUCTS_TABLE, params={"sort[0][field]": C.F_ITEM_NAME, "sort[0][direction]": "asc"}, by_field_id=False)
     jobs_by_id = _jobs_by_id()
     matches = []
     for record in _filter_by_client_field(data.get("records", []), C.F_ITEM_CLIENT):
@@ -2751,7 +2751,7 @@ def create_issue():
     fields = {C.F_ISSUE_NAME: issue}
     item_ids = _as_list(body.get("itemId") or body.get("itemIds"))
     job_ids = _as_list(body.get("jobId") or body.get("jobIds"))
-    if item_ids and not _all_linked_records_permitted(C.ITEMS_TABLE, item_ids):
+    if item_ids and not _all_linked_records_permitted(C.PRODUCTS_TABLE, item_ids):
         return _forbidden()
     if job_ids and not _all_linked_records_permitted(C.JOBS_TABLE, job_ids):
         return _forbidden()
@@ -2793,7 +2793,7 @@ def update_issue(record_id):
     fields = {}
     item_ids = _as_list(body.get("itemId") or body.get("itemIds"))
     job_ids = _as_list(body.get("jobId") or body.get("jobIds"))
-    if item_ids and not _all_linked_records_permitted(C.ITEMS_TABLE, item_ids):
+    if item_ids and not _all_linked_records_permitted(C.PRODUCTS_TABLE, item_ids):
         return _forbidden()
     if job_ids and not _all_linked_records_permitted(C.JOBS_TABLE, job_ids):
         return _forbidden()
@@ -2896,7 +2896,7 @@ def create_history():
     fields = {C.F_HISTORY_EVENT: event}
     item_ids = _as_list(body.get("itemId") or body.get("itemIds"))
     job_ids = _as_list(body.get("jobId") or body.get("jobIds"))
-    if item_ids and not _all_linked_records_permitted(C.ITEMS_TABLE, item_ids):
+    if item_ids and not _all_linked_records_permitted(C.PRODUCTS_TABLE, item_ids):
         return _forbidden()
     if job_ids and not _all_linked_records_permitted(C.JOBS_TABLE, job_ids):
         return _forbidden()
@@ -2949,7 +2949,7 @@ def _set_link_field(fields, field, value):
 def list_receipts():
     try:
         data = airtable.list_records(
-            C.RECEIPTS_TABLE,
+            C.SHIPMENTS_TABLE,
             params={"sort[0][field]": C.F_RECEIPT_RECEIVED, "sort[0][direction]": "desc"},
             by_field_id=False,
         )
@@ -2974,8 +2974,8 @@ def list_receipts():
 
 def _list_merchandise_review_records():
     try:
-        entries = _list_all_records(C.RECEIPT_ENTRIES_TABLE)
-        receipts = _list_all_records(C.RECEIPTS_TABLE)
+        entries = _list_all_records(C.MERCHANDISE_TABLE)
+        receipts = _list_all_records(C.SHIPMENTS_TABLE)
         issues = _list_all_records(C.ISSUES_TABLE)
     except requests.HTTPError as error:
         raise error
@@ -3156,9 +3156,9 @@ def _shape_merchandise_inventory_entry(entry, *, receipts_by_id, products_by_id,
 
 
 def _list_merchandise_inventory_records():
-    entries = _list_all_records(C.RECEIPT_ENTRIES_TABLE)
-    receipts = _filter_receipts_by_access(_list_all_records(C.RECEIPTS_TABLE))
-    products = _filter_by_client_field(_list_all_records(C.ITEMS_TABLE), C.F_ITEM_CLIENT)
+    entries = _list_all_records(C.MERCHANDISE_TABLE)
+    receipts = _filter_receipts_by_access(_list_all_records(C.SHIPMENTS_TABLE))
+    products = _filter_by_client_field(_list_all_records(C.PRODUCTS_TABLE), C.F_ITEM_CLIENT)
     clients = _permitted_client_records(_list_all_records(C.CLIENTS_TABLE))
     locations = _filter_locations(_list_all_records(C.LOCATIONS_TABLE))
 
@@ -3239,8 +3239,8 @@ def match_verification_entry(entry_id):
         return err("itemId is required")
 
     try:
-        entry = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, entry_id, by_field_id=False)
-        item = airtable.get_record(C.ITEMS_TABLE, item_id, by_field_id=False)
+        entry = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
+        item = airtable.get_record(C.PRODUCTS_TABLE, item_id, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
 
@@ -3276,7 +3276,7 @@ def validate_verification_entry(entry_id):
         return err("status must be 'Validated' or 'Issue'")
 
     try:
-        entry = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, entry_id, by_field_id=False)
+        entry = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
 
@@ -3305,7 +3305,7 @@ def validate_verification_entry(entry_id):
 @api.post("/merchandise/review/<entry_id>/remove-match")
 def remove_merchandise_review_match(entry_id):
     try:
-        entry = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, entry_id, by_field_id=False)
+        entry = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
 
@@ -3329,7 +3329,7 @@ def mark_merchandise_waiting_for_product_data(entry_id):
     body = request.get_json(silent=True) or {}
     note = (body.get("note") or body.get("notes") or "").strip()
     try:
-        entry = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, entry_id, by_field_id=False)
+        entry = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
 
@@ -3364,7 +3364,7 @@ def create_merchandise_review_issue(entry_id):
     notes = (body.get("notes") or "").strip()
 
     try:
-        entry = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, entry_id, by_field_id=False)
+        entry = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
 
@@ -3375,7 +3375,7 @@ def create_merchandise_review_issue(entry_id):
 
     entry_fields = entry.get("fields", {})
     item_ids = _as_list(entry_fields.get(C.F_RECEIPT_ENTRY_ITEM, []))
-    if item_ids and not _all_linked_records_permitted(C.ITEMS_TABLE, item_ids):
+    if item_ids and not _all_linked_records_permitted(C.PRODUCTS_TABLE, item_ids):
         return _forbidden()
 
     issue_fields = {
@@ -3452,7 +3452,7 @@ def _merge_receipt_entry_photos_into_item(entry_record, item_record):
     if not update_fields:
         return item_record
     try:
-        return airtable.update_record(C.ITEMS_TABLE, item_record["id"], update_fields, by_field_id=False)
+        return airtable.update_record(C.PRODUCTS_TABLE, item_record["id"], update_fields, by_field_id=False)
     except requests.HTTPError as error:
         if _is_unknown_field_error(error, C.F_ITEM_PHOTOS) or _is_unknown_field_error(error, C.F_ITEM_PHOTO_METADATA):
             return item_record
@@ -3544,7 +3544,7 @@ def delete_receiving_entry_photo(record_id, entry_id):
     if not object_key:
         return err("objectKey is required.")
     try:
-        entry = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, entry_id, by_field_id=False)
+        entry = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
     # Verify the entry belongs to this receipt
@@ -3568,7 +3568,7 @@ def delete_receiving_entry_photo(record_id, entry_id):
     ]
     try:
         updated = airtable.update_record(
-            C.RECEIPT_ENTRIES_TABLE,
+            C.MERCHANDISE_TABLE,
             entry_id,
             {C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps(updated_metadata)},
             by_field_id=False,
@@ -3617,7 +3617,7 @@ def _delivery_folder_for_receipt(receipt):
     base = _delivery_folder_base(_receipt_client_name(receipt), fields.get(C.F_RECEIPT_RECEIVED, ""))
     receipt_id = receipt.get("id", "")
     try:
-        receipts = _list_all_records(C.RECEIPTS_TABLE)
+        receipts = _list_all_records(C.SHIPMENTS_TABLE)
     except requests.HTTPError:
         return base
 
@@ -3648,7 +3648,7 @@ def _sequence_from_object_key(object_key, delivery_folder):
 def _existing_receipt_photo_metadata(receipt_id, current_entry_record):
     metadata = []
     try:
-        entries = _list_all_records(C.RECEIPT_ENTRIES_TABLE)
+        entries = _list_all_records(C.MERCHANDISE_TABLE)
     except requests.HTTPError:
         entries = [current_entry_record]
     seen_current = False
@@ -3681,8 +3681,8 @@ def _upload_receiving_entry_photos(receipt_id, receipt_entry_id):
     if not files:
         return err("Add at least one photo.")
     try:
-        receipt = airtable.get_record(C.RECEIPTS_TABLE, receipt_id, by_field_id=False)
-        entry_record = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, receipt_entry_id, by_field_id=False)
+        receipt = airtable.get_record(C.SHIPMENTS_TABLE, receipt_id, by_field_id=False)
+        entry_record = airtable.get_record(C.MERCHANDISE_TABLE, receipt_entry_id, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
     if not _receipt_client_permitted(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
@@ -3736,7 +3736,7 @@ def _upload_receiving_entry_photos(receipt_id, receipt_entry_id):
     ]
     try:
         updated = airtable.update_record(
-            C.RECEIPT_ENTRIES_TABLE,
+            C.MERCHANDISE_TABLE,
             receipt_entry_id,
             {
                 C.F_RECEIPT_ENTRY_PHOTOS: (current_fields.get(C.F_RECEIPT_ENTRY_PHOTOS, []) or []) + attachment_payload,
@@ -3754,7 +3754,7 @@ def _upload_receiving_entry_photos(receipt_id, receipt_entry_id):
 @api.get("/receiving/<record_id>")
 def get_receiving_session(record_id):
     try:
-        record = airtable.get_record(C.RECEIPTS_TABLE, record_id, by_field_id=False)
+        record = airtable.get_record(C.SHIPMENTS_TABLE, record_id, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
     if not _receipt_client_permitted(record.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
@@ -3767,7 +3767,7 @@ def get_receiving_session(record_id):
 def update_receiving_session(record_id):
     body = request.get_json(silent=True) or {}
     try:
-        current = airtable.get_record(C.RECEIPTS_TABLE, record_id, by_field_id=False)
+        current = airtable.get_record(C.SHIPMENTS_TABLE, record_id, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
     if not _receipt_client_permitted(current.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
@@ -3779,7 +3779,7 @@ def update_receiving_session(record_id):
         entries_by_receipt = _receipt_entries_by_receipt_id([record_id])
         return jsonify(_shape_receipt(current, entries_by_receipt=entries_by_receipt))
     try:
-        updated = airtable.update_record(C.RECEIPTS_TABLE, record_id, fields_or_error, by_field_id=False)
+        updated = airtable.update_record(C.SHIPMENTS_TABLE, record_id, fields_or_error, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
     entries_by_receipt = _receipt_entries_by_receipt_id([record_id])
@@ -3793,7 +3793,7 @@ def create_receiving_session():
     if isinstance(fields_or_error, tuple):
         return fields_or_error
     try:
-        data = airtable.create_record(C.RECEIPTS_TABLE, fields_or_error, by_field_id=False)
+        data = airtable.create_record(C.SHIPMENTS_TABLE, fields_or_error, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
     receipt_fields = data.get("fields", {})
@@ -3810,7 +3810,7 @@ def create_receiving_session():
 def create_receiving_entry(record_id):
     body = request.get_json(silent=True) or {}
     try:
-        receipt = airtable.get_record(C.RECEIPTS_TABLE, record_id, by_field_id=False)
+        receipt = airtable.get_record(C.SHIPMENTS_TABLE, record_id, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
     if not _receipt_client_permitted(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
@@ -3836,8 +3836,8 @@ def create_receiving_entry(record_id):
 def update_receiving_entry(record_id, entry_id):
     body = request.get_json(silent=True) or {}
     try:
-        receipt = airtable.get_record(C.RECEIPTS_TABLE, record_id, by_field_id=False)
-        entry_record = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, entry_id, by_field_id=False)
+        receipt = airtable.get_record(C.SHIPMENTS_TABLE, record_id, by_field_id=False)
+        entry_record = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
     if not _receipt_client_permitted(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
@@ -3867,8 +3867,8 @@ def update_receiving_entry(record_id, entry_id):
 @api.delete("/receiving/<record_id>/entries/<entry_id>")
 def delete_receiving_entry(record_id, entry_id):
     try:
-        receipt = airtable.get_record(C.RECEIPTS_TABLE, record_id, by_field_id=False)
-        entry_record = airtable.get_record(C.RECEIPT_ENTRIES_TABLE, entry_id, by_field_id=False)
+        receipt = airtable.get_record(C.SHIPMENTS_TABLE, record_id, by_field_id=False)
+        entry_record = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
     if not _receipt_client_permitted(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
@@ -3877,7 +3877,7 @@ def delete_receiving_entry(record_id, entry_id):
     if record_id not in linked_receipts:
         return err("Received item does not belong to this delivery.", 404)
     try:
-        airtable.delete_record(C.RECEIPT_ENTRIES_TABLE, entry_id)
+        airtable.delete_record(C.MERCHANDISE_TABLE, entry_id)
     except requests.HTTPError as error:
         return airtable_err(error)
     return jsonify({"deleted": True, "id": entry_id})
@@ -3900,7 +3900,7 @@ def create_receipt():
 
     created_entry_ids = []
     try:
-        data = airtable.create_record(C.RECEIPTS_TABLE, fields_or_error, by_field_id=False)
+        data = airtable.create_record(C.SHIPMENTS_TABLE, fields_or_error, by_field_id=False)
         receipt_name = data.get("fields", {}).get(C.F_RECEIPT_NAME) or data["id"]
         shaped_entries = []
         for index, entry in enumerate(entries, start=1):
@@ -3915,12 +3915,12 @@ def create_receipt():
     except requests.HTTPError as error:
         if created_entry_ids:
             try:
-                airtable.delete_records(C.RECEIPT_ENTRIES_TABLE, created_entry_ids)
+                airtable.delete_records(C.MERCHANDISE_TABLE, created_entry_ids)
             except requests.HTTPError:
                 pass
         if "data" in locals() and data.get("id"):
             try:
-                airtable.delete_record(C.RECEIPTS_TABLE, data["id"])
+                airtable.delete_record(C.SHIPMENTS_TABLE, data["id"])
             except requests.HTTPError:
                 pass
         return airtable_err(error)
@@ -4141,7 +4141,7 @@ def _receipt_entry_match_fields(body, receipt):
     match_status = (body.get("matchStatus") or "").strip()
     if item_id:
         try:
-            item = airtable.get_record(C.ITEMS_TABLE, item_id, by_field_id=False)
+            item = airtable.get_record(C.PRODUCTS_TABLE, item_id, by_field_id=False)
         except requests.HTTPError as error:
             return airtable_err(error)
         item_client_ids = _as_list(item.get("fields", {}).get(C.F_ITEM_CLIENT, []))
@@ -4154,7 +4154,7 @@ def _receipt_entry_match_fields(body, receipt):
         fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Matched"
         if job_id:
             try:
-                airtable.update_record(C.ITEMS_TABLE, item_id, {C.F_ITEM_JOB: [job_id]}, by_field_id=False)
+                airtable.update_record(C.PRODUCTS_TABLE, item_id, {C.F_ITEM_JOB: [job_id]}, by_field_id=False)
             except Exception:
                 pass  # don't fail the entry save if batch assignment fails
     elif body.get("noClearMatch") or match_status in {"Needs Match", "No Clear Match"}:
@@ -4212,11 +4212,11 @@ def _receipt_entry_update_fields_from_body(body):
 
 
 def _create_receipt_entry_record(fields):
-    return airtable.create_record(C.RECEIPT_ENTRIES_TABLE, fields, by_field_id=False)
+    return airtable.create_record(C.MERCHANDISE_TABLE, fields, by_field_id=False)
 
 
 def _update_receipt_entry_record(entry_id, fields):
-    return airtable.update_record(C.RECEIPT_ENTRIES_TABLE, entry_id, fields, by_field_id=False)
+    return airtable.update_record(C.MERCHANDISE_TABLE, entry_id, fields, by_field_id=False)
 
 
 def _receipt_entries_by_receipt_id(receipt_ids):
@@ -4225,7 +4225,7 @@ def _receipt_entries_by_receipt_id(receipt_ids):
     if not receipt_ids:
         return grouped
     try:
-        entries = _list_all_records(C.RECEIPT_ENTRIES_TABLE)
+        entries = _list_all_records(C.MERCHANDISE_TABLE)
     except requests.HTTPError:
         return grouped
     for entry in entries:
@@ -4239,7 +4239,7 @@ def _job_ids_for_items(item_ids):
     job_ids = []
     for item_id in _as_list(item_ids):
         try:
-            item = airtable.get_record(C.ITEMS_TABLE, item_id, by_field_id=False)
+            item = airtable.get_record(C.PRODUCTS_TABLE, item_id, by_field_id=False)
         except requests.HTTPError:
             continue
         for job_id in item.get("fields", {}).get(C.F_ITEM_JOB, []) or []:
@@ -4312,7 +4312,7 @@ def _verification_status_label(status):
 def _first_permitted_receipt(receipt_ids):
     for receipt_id in _as_list(receipt_ids):
         try:
-            receipt = airtable.get_record(C.RECEIPTS_TABLE, receipt_id, by_field_id=False)
+            receipt = airtable.get_record(C.SHIPMENTS_TABLE, receipt_id, by_field_id=False)
         except requests.HTTPError:
             continue
         if _receipt_client_permitted(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
@@ -4342,7 +4342,7 @@ def _shape_verification_entry(entry, receipt=None, *, item_record=None, issues_b
     linked_item = None
     if item_record is None and item_ids:
         try:
-            item_record = airtable.get_record(C.ITEMS_TABLE, item_ids[0], by_field_id=False)
+            item_record = airtable.get_record(C.PRODUCTS_TABLE, item_ids[0], by_field_id=False)
         except requests.HTTPError:
             item_record = None
     if item_record:
@@ -4526,7 +4526,7 @@ def randomize_demo_data():
 
     clients_data = airtable.list_records(C.CLIENTS_TABLE, by_field_id=False).get("records", [])
     clients_by_id = {record["id"]: _shape_client(record) for record in clients_data}
-    items = airtable.list_records(C.ITEMS_TABLE, by_field_id=False).get("records", [])
+    items = airtable.list_records(C.PRODUCTS_TABLE, by_field_id=False).get("records", [])
     issues = airtable.list_records(C.ISSUES_TABLE, by_field_id=False).get("records", [])
     issues_by_item = {}
     for issue in issues:
@@ -4581,7 +4581,7 @@ def randomize_demo_data():
             queue_id = "ready_for_photo"
         client = clients_by_id.get(_item_client_id(item), {})
         fields = _demo_item_payload(item, client, queue_id, index)
-        airtable.update_record(C.ITEMS_TABLE, item["id"], fields, by_field_id=False)
+        airtable.update_record(C.PRODUCTS_TABLE, item["id"], fields, by_field_id=False)
         queue_counts[queue_id] = queue_counts.get(queue_id, 0) + 1
         updated_items += 1
 
@@ -4616,9 +4616,9 @@ def clear_core_tables():
         return err("Developer tools are only available in development mode.", 404)
 
     tables = [
-        ("receiptEntries", C.RECEIPT_ENTRIES_TABLE),
-        ("receipts", C.RECEIPTS_TABLE),
-        ("items", C.ITEMS_TABLE),
+        ("receiptEntries", C.MERCHANDISE_TABLE),
+        ("receipts", C.SHIPMENTS_TABLE),
+        ("items", C.PRODUCTS_TABLE),
         ("history", C.HISTORY_TABLE),
         ("jobs", C.JOBS_TABLE),
         ("imports", C.IMPORTS_TABLE),
@@ -4650,9 +4650,13 @@ def settings():
             "tables": {
                 "clients": C.CLIENTS_TABLE,
                 "jobs":    C.JOBS_TABLE,
+                "products": C.PRODUCTS_TABLE,
+                "shipments": C.SHIPMENTS_TABLE,
+                "merchandise": C.MERCHANDISE_TABLE,
                 "items":   C.ITEMS_TABLE,
                 "skus":    C.SKUS_TABLE,
                 "receipts": C.RECEIPTS_TABLE,
+                "receiptEntries": C.RECEIPT_ENTRIES_TABLE,
                 "locations": C.LOCATIONS_TABLE,
                 "users": C.USERS_TABLE,
                 "issues": C.ISSUES_TABLE,

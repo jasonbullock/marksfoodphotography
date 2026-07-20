@@ -1,10 +1,14 @@
 # Marks Photo
 
-Marks Photo is a React + Flask app for imports, receiving, job lists, item tracking, and settings backed by Airtable.
+Marks Photo is the operational readiness system for Walnut Studio.
+
+It is not a project management system, PIM, or system of record. Its purpose is to consolidate enough information to receive, understand, prepare, photograph, route, and dispose of Merchandise.
+
+The app should answer: "What do we need to do with this Merchandise right now?"
 
 ## Structure
 
-- `frontend/` - Vite React app for dashboard, imports, receiving, job lists, item tracking, and settings.
+- `frontend/` - Vite React app for the operational shell, dashboard, receiving, merchandise, planning, production, inventory, supporting data, clients, and settings.
 - `backend/` - Flask API with environment loading, CORS support, Airtable helpers, and route blueprints.
 - `.env.example` - root-level configuration reference for local development.
 
@@ -40,12 +44,18 @@ The app uses React Router with these bookmarkable routes:
 - `/dashboard`
 - `/imports`
 - `/imports/history`
-- `/receiving`
-- `/items`
+- `/shipments`
+- `/merchandise`
+- `/merchandise/review`
+- `/planning`
+- `/production`
+- `/products`
 - `/jobs`
 - `/jobs/new`
 - `/clients`
 - `/settings`
+
+Compatibility redirects remain for older routes such as `/receiving`, `/receipts`, `/verification`, `/items`, and `/intake`.
 
 Static hosting must serve `index.html` for client-side routes while leaving `/api/*` for the backend. The Netlify-style fallback in `frontend/public/_redirects` is:
 
@@ -94,6 +104,28 @@ For local development only, set `RECEIVING_PHOTO_STORAGE=local`. Local mode writ
 
 Airtable should keep the existing `Receipt Entries` attachment field named `Photos`. Add one compact long-text field on `Receipt Entries` named `Photo Metadata`; it stores JSON metadata including the durable R2 `object_key` and `public_url`. The `Items` table should also have `Photos` and `Photo Metadata` so verification can copy receipt-entry photos onto the matched Item.
 
+## Airtable Table Mapping
+
+The application domain uses Products, Shipments, and Merchandise.
+
+During the compatibility period, those canonical concepts default to the current Airtable table names:
+
+- Products -> `Items`
+- Shipments -> `Receipts`
+- Merchandise -> `Receipt Entries`
+
+The backend reads Airtable through canonical table constants. If the physical Airtable tables are renamed later, update environment overrides instead of changing route code:
+
+```bash
+AIRTABLE_PRODUCTS_TABLE=Products
+AIRTABLE_SHIPMENTS_TABLE=Shipments
+AIRTABLE_MERCHANDISE_TABLE=Merchandise
+```
+
+Do not set those overrides until the live Airtable schema and linked fields have been migrated and verified.
+
 ## Current Scope
 
-The app includes sidebar navigation, a dashboard, imports, receiving, job list, item tracking, settings, and Airtable connection status. Airtable table and field IDs are currently configured for the Marks Photo base.
+Marks Photo currently includes a top-navigation operational shell, dashboard, imports, receiving/shipments, physical Merchandise Inventory, Merchandise Review, placeholder Planning and Production workspaces, supporting Product and Job views, client administration, settings, and Airtable connection status.
+
+Airtable table and field IDs are currently configured for the Marks Photo base. During the compatibility period, Airtable table names remain unchanged while the app presents the newer Merchandise-centered language through the canonical table mapping layer.

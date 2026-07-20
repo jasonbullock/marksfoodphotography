@@ -1,11 +1,17 @@
 import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
 import { createPortal } from 'react-dom';
-import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { api } from './api';
 import { Select as FormSelect } from './design-system.jsx';
 import { DOMAIN_TERMS, getFieldLabel, technicalTableLabel } from './domainVocabulary';
 import { exportTableToXlsx, todayExportFilename } from './tableExport';
+import {
+  MERCHANDISE_REVIEW_WORKFLOW,
+  evaluateMerchandiseReviewAssignment,
+  gatesForBoard,
+  validateWorkflowTransition,
+} from './workflowEngine';
 import './styles.css';
 
 // ── Icons ────────────────────────────────────────────────────────────────────
@@ -152,6 +158,254 @@ function ViewToggle({ value, onChange, label = 'View mode' }) {
 
 function DataTableToolbar({ children }) {
   return <div className="data-table-toolbar">{children}</div>;
+}
+
+function CountBadge({ count, label }) {
+  return <span className="count-badge" aria-label={label}>{count}</span>;
+}
+
+function EmptyState({ title = 'Nothing here yet.', children }) {
+  return (
+    <div className="empty-state shell-empty-state">
+      <strong>{title}</strong>
+      {children && <p>{children}</p>}
+    </div>
+  );
+}
+
+function LoadingState({ label = 'Loading...' }) {
+  return <div className="empty-state shell-loading-state" role="status">{label}</div>;
+}
+
+function ErrorState({ message = 'Something went wrong.' }) {
+  return <div className="error-state shell-error-state" role="alert">{message}</div>;
+}
+
+function PanelCollapseButton({ collapsed, onClick, label }) {
+  return (
+    <button
+      type="button"
+      className="panel-collapse-button"
+      aria-label={label}
+      aria-expanded={!collapsed}
+      onClick={onClick}
+    >
+      {collapsed ? <Icon.ChevronRight /> : <Icon.Close />}
+    </button>
+  );
+}
+
+function SearchControl({ value = '', onChange, placeholder = 'Search', label = 'Search' }) {
+  return (
+    <label className="search-control">
+      <span className="sr-only">{label}</span>
+      <input
+        className="ui-input"
+        type="search"
+        value={value}
+        onChange={event => onChange?.(event.target.value)}
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
+
+function FilterControl({ label, value = '', onChange, options = [] }) {
+  return (
+    <label className="filter-control">
+      <span className="sr-only">{label}</span>
+      <select className="ui-select" value={value} onChange={event => onChange?.(event.target.value)} aria-label={label}>
+        {options.map(option => (
+          <option key={option.value ?? option} value={option.value ?? option}>
+            {option.label ?? option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function ViewSwitcher({ value, onChange, options = [], label = 'View' }) {
+  return (
+    <div className="view-switcher" aria-label={label}>
+      {options.map(option => (
+        <button
+          type="button"
+          key={option.value}
+          className={value === option.value ? 'is-active' : ''}
+          onClick={() => onChange?.(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── SubNav ───────────────────────────────────────────────────────────────────
+// Reusable in-page section navigation. `items`: [{ id, label, icon?, count?, disabled?, onClick? }].
+// `actions` renders page-level utilities on the right.
+function SubNav({ items, value, onChange, actions, className = '', label = 'Section navigation' }) {
+  return (
+    <div className={`subnav ${className}`}>
+      <div className="subnav-tabs" role="tablist" aria-label={label}>
+        {items.map(item => {
+          const isActive = value === item.id;
+          const isDisabled = Boolean(item.disabled);
+          return (
+            <button
+              type="button"
+              key={item.id}
+              role="tab"
+              aria-selected={isActive}
+              aria-disabled={isDisabled}
+              disabled={isDisabled}
+              className={`subnav-tab ${isActive ? 'is-active' : ''}`}
+              onClick={() => {
+                if (isDisabled) return;
+                item.onClick?.(item);
+                onChange?.(item.id, item);
+              }}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+              {item.count !== undefined && item.count !== null && (
+                <span className="subnav-count">{item.count}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {actions && <div className="subnav-actions">{actions}</div>}
+    </div>
+  );
+}
+
+function CardShell({ children, className = '' }) {
+  return <article className={`card-shell ${className}`}>{children}</article>;
+}
+
+function MediaThumbnail({ src, alt = '', children }) {
+  return (
+    <div className="media-thumbnail">
+      {src ? <img src={src} alt={alt} /> : <span>{children || 'No media'}</span>}
+    </div>
+  );
+}
+
+function MetadataRow({ items = [] }) {
+  return (
+    <div className="metadata-row">
+      {items.filter(Boolean).map(item => (
+        <span key={`${item.label}-${item.value}`}>
+          <em>{item.label}</em>
+          {item.value}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ActionBar({ children }) {
+  return <div className="action-bar">{children}</div>;
+}
+
+function WorkspaceHeader({
+  title,
+  description,
+  count,
+  search,
+  filters,
+  primaryAction,
+  secondaryActions,
+  viewControls,
+}) {
+  return (
+    <header className="workspace-header">
+      <div className="workspace-header-copy">
+        <div className="workspace-title-row">
+          <h1>{title}</h1>
+          {count !== undefined && <CountBadge count={count} label={`${count} records`} />}
+        </div>
+        {description && <p>{description}</p>}
+      </div>
+      <div className="workspace-header-controls">
+        {search}
+        {filters}
+        {viewControls}
+        {secondaryActions}
+        {primaryAction}
+      </div>
+    </header>
+  );
+}
+
+function QueuePanel({ title, views = [], activeView, onSelectView, footer, loading, error, empty = 'No queues yet.' }) {
+  const [collapsed, setCollapsed] = useStoredState('workspace:queue-panel:collapsed', 'false');
+  const isCollapsed = collapsed === 'true';
+  return (
+    <aside className={`queue-panel ${isCollapsed ? 'is-collapsed' : ''}`} aria-label={title}>
+      <div className="workspace-panel-top">
+        <strong>{title}</strong>
+        <PanelCollapseButton collapsed={isCollapsed} label={isCollapsed ? 'Expand queue panel' : 'Collapse queue panel'} onClick={() => setCollapsed(isCollapsed ? 'false' : 'true')} />
+      </div>
+      {!isCollapsed && (
+        <>
+          {loading && <LoadingState label="Loading queues..." />}
+          {error && <ErrorState message={error} />}
+          {!loading && !error && views.length === 0 && <EmptyState title={empty} />}
+          {!loading && !error && views.length > 0 && (
+            <div className="queue-list">
+              {views.map(view => (
+                <button
+                  type="button"
+                  key={view.id}
+                  className={`queue-item ${activeView === view.id ? 'is-active' : ''}`}
+                  onClick={() => onSelectView?.(view.id)}
+                >
+                  <span>{view.label}</span>
+                  {view.count !== undefined && <CountBadge count={view.count} label={`${view.count} ${view.label}`} />}
+                </button>
+              ))}
+            </div>
+          )}
+          {footer && <div className="queue-footer">{footer}</div>}
+        </>
+      )}
+    </aside>
+  );
+}
+
+function WorkspaceCanvas({ children, className = '' }) {
+  return <section className={`workspace-canvas ${className}`}>{children}</section>;
+}
+
+function InspectorPanel({ title = 'Inspector', selected, children, empty = 'Select a record to inspect details.' }) {
+  const [collapsed, setCollapsed] = useStoredState('workspace:inspector-panel:collapsed', 'false');
+  const isCollapsed = collapsed === 'true';
+  return (
+    <aside className={`inspector-panel ${isCollapsed ? 'is-collapsed' : ''}`} aria-label={title}>
+      <div className="workspace-panel-top">
+        <strong>{title}</strong>
+        <PanelCollapseButton collapsed={isCollapsed} label={isCollapsed ? 'Expand inspector panel' : 'Collapse inspector panel'} onClick={() => setCollapsed(isCollapsed ? 'false' : 'true')} />
+      </div>
+      {!isCollapsed && (
+        <div className="inspector-body">
+          {selected || children ? children : <EmptyState title={empty} />}
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function WorkspaceLayout({ queue, children, inspector, className = '' }) {
+  return (
+    <div className={`workspace-shell-layout ${className}`}>
+      {queue}
+      <WorkspaceCanvas>{children}</WorkspaceCanvas>
+      {inspector}
+    </div>
+  );
 }
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
@@ -1607,34 +1861,28 @@ function ShipmentsPage() {
         </button>
       )}
 
-      {/* Sub-page tab bar */}
-      <div className="recv-tabs">
-        <button
-          type="button"
-          className={`recv-tab ${tab === 'new' ? 'is-active' : ''}`}
-          onClick={() => { if (tab === 'new' && receipt) { startNewSession(); } else { setTab('new'); } }}
-        >
-          {receipt ? 'Edit Shipment' : 'New Shipment'}
-        </button>
-        {receipt && (
+      {/* Sub-page navigation */}
+      <SubNav
+        value={tab}
+        onChange={next => {
+          if (next === 'new' && tab === 'new' && receipt) { startNewSession(); }
+          else { setTab(next); }
+        }}
+        items={[
+          { id: 'new', label: receipt ? 'Edit Shipment' : 'New Shipment', icon: <Icon.Download /> },
+          { id: 'all', label: 'All Shipments', icon: <Icon.Jobs />, count: receiptList.length || undefined },
+        ]}
+        actions={receipt && (
           <button
             type="button"
-            className="recv-tab-new-btn"
+            className="subnav-action"
             onClick={() => { startNewSession(); setTab('new'); }}
             title="Start a new shipment"
           >
-            + New
+            <Icon.Add /> New Shipment
           </button>
         )}
-        <button
-          type="button"
-          className={`recv-tab ${tab === 'all' ? 'is-active' : ''}`}
-          onClick={() => setTab('all')}
-        >
-          All Shipments
-          {receiptList.length > 0 && <span className="recv-tab-count">{receiptList.length}</span>}
-        </button>
-      </div>
+      />
 
       {tab === 'new' ? (
         /* ── Three-panel merchandise entry layout ── */
@@ -1677,13 +1925,14 @@ function ShipmentsPage() {
                 <label>Notes</label>
                 <textarea value={session.notes} onChange={e => setSessionField('notes', e.target.value)} onBlur={e => autoSaveReceiptHeader({ notes: e.target.value })} rows="2" placeholder="Optional" />
               </div>
+              {!receipt && error && <div className="recv-field-error">{error}</div>}
+              {!receipt && (
+                <button type="button" className="recv-create-btn" onClick={createDelivery} disabled={Boolean(saving)}>
+                  {saving === 'create' ? 'Creating...' : 'Create Shipment'}
+                </button>
+              )}
             </div>
-            {!receipt && error && <div className="recv-field-error" style={{ margin: '0 0 8px' }}>{error}</div>}
-            {!receipt ? (
-              <button type="button" className="recv-create-btn" onClick={createDelivery} disabled={Boolean(saving)}>
-                {saving === 'create' ? 'Creating…' : 'Create Shipment →'}
-              </button>
-            ) : (
+            {receipt && (
               <div className="recv-panel-footer">
                 <div className="recv-panel-created">
                   <span>✓ Shipment saved</span>
@@ -2549,7 +2798,10 @@ function SettingsPage({ cards = null } = {}) {
   }
 
   async function clearCoreTables() {
-    const typed = window.prompt(`This will delete all rows from ${technicalTableLabel('Receipt Entries')}, ${technicalTableLabel('Receipts')}, ${technicalTableLabel('Items')}, History, Jobs, and Imports. Type DELETE to continue.`);
+    const merchandiseTable = s?.tables?.merchandise || s?.tables?.receiptEntries || 'Receipt Entries';
+    const shipmentsTable = s?.tables?.shipments || s?.tables?.receipts || 'Receipts';
+    const productsTable = s?.tables?.products || s?.tables?.items || 'Items';
+    const typed = window.prompt(`This will delete all rows from ${technicalTableLabel(merchandiseTable)}, ${technicalTableLabel(shipmentsTable)}, ${technicalTableLabel(productsTable)}, History, Jobs, and Imports. Type DELETE to continue.`);
     if (typed !== 'DELETE') return;
     setClearing(true);
     setClearError('');
@@ -2595,7 +2847,15 @@ function SettingsPage({ cards = null } = {}) {
               </div>
               <div className="setting-row">
                 <span className="setting-key">{DOMAIN_TERMS.products}</span>
-                <span className="setting-val">{technicalTableLabel(s.tables?.skus || 'Items')}</span>
+                <span className="setting-val">{technicalTableLabel(s.tables?.products || s.tables?.skus || 'Items')}</span>
+              </div>
+              <div className="setting-row">
+                <span className="setting-key">{DOMAIN_TERMS.shipments}</span>
+                <span className="setting-val">{technicalTableLabel(s.tables?.shipments || s.tables?.receipts || 'Receipts')}</span>
+              </div>
+              <div className="setting-row">
+                <span className="setting-key">{DOMAIN_TERMS.merchandise}</span>
+                <span className="setting-val">{technicalTableLabel(s.tables?.merchandise || s.tables?.receiptEntries || 'Receipt Entries')}</span>
               </div>
             </>
           )}
@@ -2677,7 +2937,7 @@ function SettingsPage({ cards = null } = {}) {
             </div>
             <div className="setting-row setting-row-danger">
               <span className="setting-key">Clear Core Tables</span>
-              <span className="setting-val">Delete all rows from {technicalTableLabel('Receipt Entries')}, {technicalTableLabel('Receipts')}, {technicalTableLabel('Items')}, History, Jobs, and Imports.</span>
+              <span className="setting-val">Delete all rows from {technicalTableLabel(s.tables?.merchandise || s.tables?.receiptEntries || 'Receipt Entries')}, {technicalTableLabel(s.tables?.shipments || s.tables?.receipts || 'Receipts')}, {technicalTableLabel(s.tables?.products || s.tables?.items || 'Items')}, History, Jobs, and Imports.</span>
               <button className="btn btn-danger" type="button" onClick={clearCoreTables} disabled={clearing}>
                 {clearing ? 'Deleting…' : 'Delete Rows'}
               </button>
@@ -3407,34 +3667,38 @@ function uniqueInventoryOptions(records, getter) {
   return Array.from(new Set(records.map(getter).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 }
 
-function MerchandiseInventoryPage() {
+function MerchandiseInventoryPage({ navigate }) {
   const merchandise = useResource(() => api.listMerchandise());
   const records = merchandise.data?.records ?? [];
   const [search, setSearch] = useState('');
   const [clientFilter, setClientFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [locationFilter, setLocationFilter] = useState('all');
+  const [conditionFilter, setConditionFilter] = useState('all');
   const [ageFilter, setAgeFilter] = useState('all');
   const [viewMode, setViewMode] = useStoredState('merchandise-inventory:view-mode', 'cards');
   const [sortKey, setSortKey] = useState('daysHere');
   const [sortDirection, setSortDirection] = useState('desc');
+  const [selectedInventoryId, setSelectedInventoryId] = useState('');
 
   const clients = uniqueInventoryOptions(records, record => record.client);
   const statuses = uniqueInventoryOptions(records, record => record.status);
   const locations = uniqueInventoryOptions(records, record => record.storageLocation);
+  const conditions = uniqueInventoryOptions(records, record => record.condition);
   const inventorySummary = {
     total: records.length,
     old: records.filter(record => record.ageGroup === '30-plus').length,
     locations: locations.length,
     unknownAge: records.filter(record => record.ageGroup === 'unknown').length,
   };
-  const filtersActive = [search, clientFilter, statusFilter, locationFilter, ageFilter]
+  const filtersActive = [search, clientFilter, statusFilter, locationFilter, conditionFilter, ageFilter]
     .some(value => value && value !== 'all');
   const searchText = search.trim().toLowerCase();
   const visibleRecords = records.filter(record => {
     if (clientFilter !== 'all' && record.client !== clientFilter) return false;
     if (statusFilter !== 'all' && record.status !== statusFilter) return false;
     if (locationFilter !== 'all' && record.storageLocation !== locationFilter) return false;
+    if (conditionFilter !== 'all' && record.condition !== conditionFilter) return false;
     if (ageFilter !== 'all' && record.ageGroup !== ageFilter) return false;
     if (!searchText) return true;
     return [
@@ -3447,8 +3711,10 @@ function MerchandiseInventoryPage() {
       record.shipment?.tracking,
       record.storageLocation,
       record.status,
+      record.condition,
     ].some(value => String(value || '').toLowerCase().includes(searchText));
   });
+  const selectedInventoryRecord = records.find(record => record.id === selectedInventoryId) || null;
   const merchandiseTableColumns = [
     { key: 'packageName', header: DOMAIN_TERMS.packageName, value: record => record.packageName || '' },
     { key: 'barcodeOrIdNumber', header: DOMAIN_TERMS.merchandiseIdentifier, value: record => record.barcodeOrIdNumber || '' },
@@ -3518,6 +3784,10 @@ function MerchandiseInventoryPage() {
           <option value="all">Storage Location</option>
           {locations.map(location => <option key={location} value={location}>{location}</option>)}
         </select>
+        <select className="ui-select" value={conditionFilter} onChange={event => setConditionFilter(event.target.value)} aria-label="Condition">
+          <option value="all">Condition</option>
+          {conditions.map(condition => <option key={condition} value={condition}>{condition}</option>)}
+        </select>
         <select className="ui-select" value={ageFilter} onChange={event => setAgeFilter(event.target.value)} aria-label="Age">
           {AGE_FILTERS.map(filter => <option key={filter.value} value={filter.value}>{filter.label}</option>)}
         </select>
@@ -3530,6 +3800,7 @@ function MerchandiseInventoryPage() {
             setClientFilter('all');
             setStatusFilter('all');
             setLocationFilter('all');
+            setConditionFilter('all');
             setAgeFilter('all');
           }}
         >
@@ -3573,7 +3844,19 @@ function MerchandiseInventoryPage() {
             || record.photos?.[0]?.url
             || '';
           return (
-          <article className={`merchandise-inventory-card ui-card age-${record.ageGroup || 'unknown'}`} key={record.id}>
+          <article
+            className={`merchandise-inventory-card ui-card age-${record.ageGroup || 'unknown'}`}
+            key={record.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => setSelectedInventoryId(record.id)}
+            onKeyDown={event => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                setSelectedInventoryId(record.id);
+              }
+            }}
+          >
             <div className="merchandise-inventory-image" aria-label="Merchandise thumbnail">
               {thumbnail ? (
                 <img src={thumbnail} alt={record.packageName ? `${record.packageName} thumbnail` : 'Merchandise thumbnail'} />
@@ -3595,6 +3878,9 @@ function MerchandiseInventoryPage() {
                 <span><span className="merchandise-inventory-meta-label">Client:</span> {record.client || '-'}</span>
                 <span aria-hidden="true" className="merchandise-inventory-meta-divider">|</span>
                 <span><span className="merchandise-inventory-meta-label">Qty:</span> {record.quantity ?? 0}</span>
+              </div>
+              <div className="merchandise-inventory-location">
+                <span className="merchandise-inventory-meta-label">Storage Location:</span> {record.storageLocation || '-'}
               </div>
             </div>
           </article>
@@ -3628,6 +3914,45 @@ function MerchandiseInventoryPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {selectedInventoryRecord && (
+        <div className="merchandise-detail-backdrop" role="presentation" onClick={() => setSelectedInventoryId('')}>
+          <aside
+            className="merchandise-detail-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Merchandise details"
+            onClick={event => event.stopPropagation()}
+          >
+            <div className="merchandise-detail-header">
+              <div>
+                <span>Merchandise</span>
+                <h2>{selectedInventoryRecord.packageName || 'Unnamed Merchandise'}</h2>
+              </div>
+              <button type="button" className="merchandise-detail-close" onClick={() => setSelectedInventoryId('')} aria-label="Close details">
+                <Icon.Close />
+              </button>
+            </div>
+            <div className="merchandise-detail-body">
+              <div><span>Status</span><strong>{selectedInventoryRecord.status || 'Received'}</strong></div>
+              <div><span>Time Here</span><strong>{selectedInventoryRecord.timeHere || 'Unknown'}</strong></div>
+              <div><span>Client</span><strong>{selectedInventoryRecord.client || '-'}</strong></div>
+              <div><span>Quantity</span><strong>{selectedInventoryRecord.quantity ?? 0}</strong></div>
+              <div><span>{DOMAIN_TERMS.merchandiseIdentifier}</span><strong>{selectedInventoryRecord.barcodeOrIdNumber || '-'}</strong></div>
+              <div><span>Storage Location</span><strong>{selectedInventoryRecord.storageLocation || '-'}</strong></div>
+              <div><span>Condition</span><strong>{selectedInventoryRecord.condition || '-'}</strong></div>
+              <div><span>Date Received</span><strong>{formatInventoryDate(selectedInventoryRecord.dateReceived)}</strong></div>
+              <div><span>{DOMAIN_TERMS.matchedProduct}</span><strong>{selectedInventoryRecord.matchedProduct?.name || '-'}</strong></div>
+              <div><span>{DOMAIN_TERMS.shipment}</span><strong>{selectedInventoryRecord.shipment?.name || '-'}</strong></div>
+            </div>
+            <div className="merchandise-detail-actions">
+              <button type="button" className="btn btn-primary" onClick={() => navigate('merchandise-review')}>
+                Open Merchandise Review
+              </button>
+            </div>
+          </aside>
         </div>
       )}
     </div>
@@ -3861,50 +4186,47 @@ function MerchandiseReviewPage() {
 
   return (
     <div className={`merch-review-shell ${focusMode ? 'is-focus-mode' : ''}`}>
-      <header className="merch-review-header">
-        <div>
-          <h1>Merchandise Review</h1>
-          <span>{visibleQueueRecords.length} shown in {queueState === 'Issue' ? 'Issues' : queueState}</span>
-        </div>
-        <div className="merch-review-header-status">
+      <SubNav
+        className="merch-review-subnav"
+        value={queueState}
+        onChange={setQueueState}
+        items={MERCHANDISE_REVIEW_STATES.map(state => ({
+          id: state,
+          label: state === 'Waiting for Product Data' ? 'Waiting for Product' : state === 'Issue' ? 'Issues' : state,
+          count: stateCounts[state] || 0,
+        }))}
+        actions={(
+          <>
           {(error || notice) && <strong className={error ? 'is-error' : 'is-success'}>{error || notice}</strong>}
           <button type="button" className="btn btn-ghost" onClick={() => setFocusMode(current => !current)}>
             {focusMode ? 'Restore Panels' : 'Focus Photos'}
           </button>
-        </div>
-      </header>
+          </>
+        )}
+      />
+
+      <div className="merch-review-queue-filters">
+        <input
+          value={queueSearch}
+          onChange={event => setQueueSearch(event.target.value)}
+          placeholder="Search merchandise..."
+          aria-label="Search merchandise"
+        />
+        <select value={clientFilter} onChange={event => setClientFilter(event.target.value)} aria-label="Client">
+          <option value="">All clients</option>
+          {clientOptions.map(client => <option value={client.id} key={client.id}>{client.name}</option>)}
+        </select>
+        <select value={locationFilter} onChange={event => setLocationFilter(event.target.value)} aria-label="Storage Location">
+          <option value="">All locations</option>
+          {locationOptions.map(location => <option value={location.id} key={location.id}>{location.name}</option>)}
+        </select>
+        <select value={ageFilter} onChange={event => setAgeFilter(event.target.value)} aria-label="Age">
+          {MERCHANDISE_REVIEW_AGE_OPTIONS.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}
+        </select>
+      </div>
 
       <div className="merch-review-workspace">
         <aside className="merch-review-queue-panel" aria-label="Merchandise review queue">
-          <div className="merch-review-state-switcher" role="tablist" aria-label="Merchandise review queues">
-            {MERCHANDISE_REVIEW_STATES.map(state => (
-              <button type="button" className={queueState === state ? 'is-active' : ''} onClick={() => setQueueState(state)} key={state}>
-                <span>{state === 'Issue' ? 'Issues' : state}</span>
-                <strong>{stateCounts[state] || 0}</strong>
-              </button>
-            ))}
-          </div>
-
-          <div className="merch-review-queue-filters">
-            <input
-              value={queueSearch}
-              onChange={event => setQueueSearch(event.target.value)}
-              placeholder="Search merchandise..."
-              aria-label="Search merchandise"
-            />
-            <select value={clientFilter} onChange={event => setClientFilter(event.target.value)} aria-label="Client">
-              <option value="">All clients</option>
-              {clientOptions.map(client => <option value={client.id} key={client.id}>{client.name}</option>)}
-            </select>
-            <select value={locationFilter} onChange={event => setLocationFilter(event.target.value)} aria-label="Storage Location">
-              <option value="">All locations</option>
-              {locationOptions.map(location => <option value={location.id} key={location.id}>{location.name}</option>)}
-            </select>
-            <select value={ageFilter} onChange={event => setAgeFilter(event.target.value)} aria-label="Age">
-              {MERCHANDISE_REVIEW_AGE_OPTIONS.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}
-            </select>
-          </div>
-
           <div className="merch-review-queue-list">
             {visibleQueueRecords.length === 0 && (
               <div className="merch-review-empty-list">No merchandise matches these filters.</div>
@@ -4146,6 +4468,280 @@ function MerchandiseReviewPage() {
   );
 }
 
+// ── Experimental Merchandise Review V2 ──────────────────────────────────────
+const MERCH_REVIEW_V2_STORAGE_KEY = 'marks:merch-review-v2-board';
+const MERCH_REVIEW_V2_ARTWORK_KEY = 'marks:merch-review-v2-artwork-overrides';
+
+function loadJsonMap(key) {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveJsonMap(key, value) {
+  window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function ReadinessIndicators({ items }) {
+  return (
+    <div className="readiness-indicators" aria-label="Readiness indicators">
+      {items.map(item => (
+        <span
+          key={item.key}
+          className={`readiness-dot is-${item.tone} ${item.overridden ? 'is-overridden' : ''}`}
+          title={`${item.label}\n${item.detail}`}
+          aria-label={`${item.label}: ${item.detail}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function KanbanCard({ item, draggable = true, onDragStart }) {
+  return (
+    <article
+      className="kanban-card"
+      draggable={draggable}
+      onDragStart={event => onDragStart?.(event, item)}
+      tabIndex={0}
+    >
+      <div className="kanban-card-media">
+        <RecordThumbnail record={item.record} />
+        <ReadinessIndicators items={item.readiness} />
+      </div>
+      <div className="kanban-card-body">
+        <div className="kanban-card-title-row">
+          <h3>{item.title}</h3>
+          {item.badge && <span className="kanban-card-badge">{item.badge}</span>}
+        </div>
+        <p>{item.client}</p>
+        <dl>
+          <div><dt>Identifier</dt><dd>{item.identifier || '-'}</dd></div>
+          <div><dt>Storage</dt><dd>{item.location || '-'}</dd></div>
+          <div><dt>Time Here</dt><dd>{item.timeHere || 'Unknown'}</dd></div>
+        </dl>
+      </div>
+    </article>
+  );
+}
+
+function KanbanColumn({ column, items, active, rejected, onDragOver, onDragLeave, onDrop, onCardDragStart }) {
+  const title = column.displayName || column.title || column.name;
+  return (
+    <section
+      className={`kanban-column ${active ? 'is-drag-target' : ''} ${rejected ? 'is-rejected' : ''}`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      aria-label={title}
+    >
+      <header className="kanban-column-header">
+        <div>
+          <h2>{title}</h2>
+          <p>{column.description}</p>
+        </div>
+        <span>{items.length}</span>
+      </header>
+      <div className="kanban-column-list">
+        {items.length === 0 && <div className="kanban-empty">No merchandise in this column.</div>}
+        {items.map(item => (
+          <KanbanCard item={item} key={item.id} onDragStart={onCardDragStart} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function KanbanBoard({ columns, itemsByColumn, dragState, onCardDragStart, onColumnDragOver, onColumnDragLeave, onColumnDrop }) {
+  return (
+    <div className="kanban-board" role="list" aria-label="Workflow board">
+      {columns.map(column => (
+        <KanbanColumn
+          column={column}
+          items={itemsByColumn[column.id] || []}
+          key={column.id}
+          active={dragState?.columnId === column.id && dragState.allowed}
+          rejected={dragState?.columnId === column.id && dragState.allowed === false}
+          onDragOver={event => onColumnDragOver(event, column.id)}
+          onDragLeave={onColumnDragLeave}
+          onDrop={event => onColumnDrop(event, column.id)}
+          onCardDragStart={onCardDragStart}
+        />
+      ))}
+    </div>
+  );
+}
+
+function MerchandiseReviewV2Page() {
+  const entries = useResource(() => api.listMerchandiseReviewEntries());
+  const clients = useResource(() => api.listClients());
+  const locations = useResource(() => api.listLocations());
+  const records = entries.data?.records ?? [];
+  const workflowGates = gatesForBoard(MERCHANDISE_REVIEW_WORKFLOW);
+  const [manualColumns, setManualColumns] = useState(() => loadJsonMap(MERCH_REVIEW_V2_STORAGE_KEY));
+  const [artworkOverrides, setArtworkOverrides] = useState(() => loadJsonMap(MERCH_REVIEW_V2_ARTWORK_KEY));
+  const [draggedId, setDraggedId] = useState('');
+  const [dragState, setDragState] = useState(null);
+  const [feedback, setFeedback] = useState('');
+  const [overrideTarget, setOverrideTarget] = useState(null);
+  const [overrideReason, setOverrideReason] = useState('');
+  const [overrideStatus, setOverrideStatus] = useState('approved');
+  const { auth } = useAuth();
+
+  const clientMap = Object.fromEntries((clients.data?.records ?? []).map(client => [client.id, client]));
+  const locationMap = Object.fromEntries((locations.data?.records ?? []).map(location => [location.id, location]));
+  const boardItems = records.map(record => {
+    const override = artworkOverrides[record.id];
+    const assignment = evaluateMerchandiseReviewAssignment(record, {
+      artworkOverride: override,
+      requestedGateId: manualColumns[record.id],
+      reviewState: reviewStateFor(record),
+    });
+    const client = clientMap[record.clientIds?.[0]];
+    const location = record.locationId ? locationMap[record.locationId] : null;
+    return {
+      id: record.id,
+      record,
+      assignment,
+      readiness: assignment.requirements,
+      columnId: assignment.currentGate,
+      title: record.productName || record.linkedItem?.product || record.linkedItem?.name || 'Unidentified Merchandise',
+      client: client?.name || 'Unknown client',
+      identifier: record.skuId || record.linkedItem?.identifier || record.linkedItem?.productId || '',
+      location: location?.name || '',
+      timeHere: record.timeHere || 'Unknown',
+      badge: reviewStateFor(record) === 'Issue' ? 'Issue' : reviewStateFor(record) === 'Validated' ? 'Validated' : '',
+    };
+  });
+  const itemsByColumn = workflowGates.reduce((groups, column) => ({ ...groups, [column.id]: [] }), {});
+  boardItems.forEach(item => {
+    itemsByColumn[item.columnId]?.push(item);
+  });
+
+  function updateManualColumns(next) {
+    setManualColumns(next);
+    saveJsonMap(MERCH_REVIEW_V2_STORAGE_KEY, next);
+  }
+
+  function updateArtworkOverrides(next) {
+    setArtworkOverrides(next);
+    saveJsonMap(MERCH_REVIEW_V2_ARTWORK_KEY, next);
+  }
+
+  function boardItemFor(id) {
+    return boardItems.find(item => item.id === id);
+  }
+
+  function handleCardDragStart(event, item) {
+    setDraggedId(item.id);
+    setFeedback('');
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', item.id);
+  }
+
+  function handleColumnDragOver(event, columnId) {
+    const item = boardItemFor(draggedId || event.dataTransfer.getData('text/plain'));
+    if (!item) return;
+    const validation = validateWorkflowTransition(MERCHANDISE_REVIEW_WORKFLOW, item.assignment, columnId);
+    setDragState({ columnId, allowed: validation.allowed, message: validation.message });
+    event.dataTransfer.dropEffect = validation.allowed ? 'move' : 'none';
+    event.preventDefault();
+  }
+
+  function handleColumnDrop(event, columnId) {
+    event.preventDefault();
+    const id = draggedId || event.dataTransfer.getData('text/plain');
+    const item = boardItemFor(id);
+    setDraggedId('');
+    setDragState(null);
+    if (!item) return;
+    const validation = validateWorkflowTransition(MERCHANDISE_REVIEW_WORKFLOW, item.assignment, columnId);
+    if (!validation.allowed) {
+      setFeedback(validation.message);
+      return;
+    }
+    updateManualColumns({ ...manualColumns, [id]: columnId });
+    setFeedback(`Moved to ${workflowGates.find(column => column.id === columnId)?.displayName}.`);
+  }
+
+  function saveArtworkOverride() {
+    if (!overrideTarget || !overrideReason.trim()) return;
+    updateArtworkOverrides({
+      ...artworkOverrides,
+      [overrideTarget.id]: {
+        status: overrideStatus === 'not-required' ? 'not-required' : 'approved',
+        reason: overrideReason.trim(),
+        user: userDisplayName(auth),
+        timestamp: new Date().toISOString(),
+      },
+    });
+    setFeedback('Artwork override saved.');
+    setOverrideTarget(null);
+    setOverrideReason('');
+    setOverrideStatus('approved');
+  }
+
+  if (entries.loading) return <div className="empty-state">Loading Merchandise Review V2 board...</div>;
+  if (entries.error) return <div className="error-state">{entries.error}</div>;
+
+  return (
+    <div className="merch-review-v2-page">
+      <header className="merch-review-v2-toolbar">
+        <div>
+          <span>Experimental V2</span>
+          <h1>Merchandise Review Board</h1>
+        </div>
+        {feedback && <strong className={feedback.startsWith('Cannot') ? 'is-error' : 'is-success'}>{feedback}</strong>}
+      </header>
+      {dragState?.allowed === false && <div className="merch-review-v2-blocker" role="alert">{dragState.message}</div>}
+      <KanbanBoard
+        columns={workflowGates}
+        itemsByColumn={itemsByColumn}
+        dragState={dragState}
+        onCardDragStart={handleCardDragStart}
+        onColumnDragOver={handleColumnDragOver}
+        onColumnDragLeave={() => setDragState(null)}
+        onColumnDrop={handleColumnDrop}
+      />
+      <aside className="merch-review-v2-override-panel" aria-label="Artwork overrides">
+        <header>
+          <span>Artwork Override</span>
+          <strong>PM exception only</strong>
+        </header>
+        <select value={overrideTarget?.id || ''} onChange={event => setOverrideTarget(boardItems.find(item => item.id === event.target.value) || null)} aria-label="Merchandise for artwork override">
+          <option value="">Select merchandise</option>
+          {boardItems.map(item => <option value={item.id} key={item.id}>{item.title}</option>)}
+        </select>
+        <select value={overrideStatus} onChange={event => setOverrideStatus(event.target.value)} aria-label="Artwork override type">
+          <option value="approved">Artwork Approved to Proceed</option>
+          <option value="not-required">Artwork Not Required</option>
+        </select>
+        <textarea value={overrideReason} onChange={event => setOverrideReason(event.target.value)} placeholder="Required override reason" />
+        <button type="button" className="btn btn-primary" onClick={saveArtworkOverride} disabled={!overrideTarget || !overrideReason.trim()}>
+          Save Artwork Override
+        </button>
+        <div className="merch-review-v2-audit">
+          {Object.entries(artworkOverrides).length === 0 ? (
+            <span>No artwork overrides recorded in this experimental workspace.</span>
+          ) : Object.entries(artworkOverrides).map(([id, override]) => {
+            const item = boardItemFor(id);
+            return (
+              <div key={id}>
+                <strong>{item?.title || id}</strong>
+                <span>{override.status === 'not-required' ? 'Artwork Not Required' : 'Artwork Approved'} - {override.user} - {formatInventoryDate(override.timestamp)}</span>
+                <p>{override.reason}</p>
+              </div>
+            );
+          })}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 // ── Auth ─────────────────────────────────────────────────────────────────────
 const AUTH_STORAGE_KEY = 'marks:auth';
 const ROLE_PERMISSION_STORAGE_KEY = 'marks:role-permissions';
@@ -4163,15 +4759,15 @@ const AuthContext = createContext(null);
 function useAuth() { return useContext(AuthContext); }
 
 const ROLE_NAV = {
-  Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/merchandise/review', '/products', '/jobs', '/clients', '/settings'],
-  Producer:     ['/dashboard', '/imports', '/shipments', '/merchandise', '/merchandise/review', '/products', '/jobs'],
+  Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/merchandise/review', '/merchandise-review-v2', '/products', '/jobs'],
+  Producer:     ['/dashboard', '/imports', '/shipments', '/merchandise', '/merchandise/review', '/merchandise-review-v2', '/products', '/jobs'],
   Merch:        ['/shipments', '/merchandise'],
   'Merch Receiver': ['/shipments', '/merchandise'],
   Receiver:     ['/shipments', '/merchandise'],
-  User:         ['/dashboard', '/shipments', '/merchandise', '/merchandise/review', '/products', '/jobs'],
-  PM:           ['/dashboard', '/merchandise', '/merchandise/review', '/products', '/jobs'],
-  Photographer: ['/dashboard', '/products', '/jobs'],
-  Retoucher:    ['/dashboard', '/products', '/jobs'],
+  User:         ['/dashboard', '/shipments', '/merchandise', '/merchandise/review', '/merchandise-review-v2', '/products', '/jobs'],
+  PM:           ['/dashboard', '/merchandise', '/merchandise/review', '/merchandise-review-v2', '/products', '/jobs'],
+  Photographer: ['/dashboard', '/production', '/products', '/jobs'],
+  Retoucher:    ['/dashboard', '/production', '/products', '/jobs'],
   Viewer:       ['/dashboard', '/merchandise', '/products'],
 };
 const ROLES = ['Admin', 'Producer', 'Merch', 'User', 'Viewer'];
@@ -4179,7 +4775,7 @@ const ADMIN_CARD_OPTIONS = [
   { id: 'users', label: 'Users', icon: '👤', description: 'Manage users, PINs, and client access.' },
   { id: 'roles', label: 'Roles', icon: '🔐', description: 'Manage role permissions and admin access.' },
   { id: 'system', label: 'System', icon: '⚙️', description: 'Review Airtable connection and backend configuration.' },
-  { id: 'clients', label: 'Client Settings', icon: '🏷️', description: 'Review client defaults, identifiers, and requirements.' },
+  { id: 'clients', label: 'Clients', icon: '🏷️', description: 'Review client defaults, identifiers, and requirements.' },
   { id: 'developer', label: 'Developer Tools', icon: '🛠️', description: 'Run local utilities and maintenance tools.' },
 ];
 const DEFAULT_ADMIN_CARDS = {
@@ -4928,14 +5524,16 @@ function AdministrationPage() {
 // ── App shell ─────────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: <Icon.Dashboard /> },
-  { path: '/imports', label: 'Imports', icon: <Icon.Add /> },
-  { path: '/shipments', label: DOMAIN_TERMS.shipments, icon: <Icon.Download /> },
-  { path: '/merchandise', label: 'Inventory', icon: <Icon.SKUs /> },
-  { path: '/merchandise/review', label: DOMAIN_TERMS.merchandiseReview, icon: <Icon.Verify /> },
-  { path: '/products', label: DOMAIN_TERMS.products, icon: <Icon.Jobs /> },
-  { path: '/jobs', label: 'Jobs', icon: <Icon.SKUs /> },
-  { path: '/clients', label: 'Clients', icon: <Icon.Jobs /> },
+  { path: '/imports', label: 'Imports', icon: <Icon.Upload /> },
+  { path: '/shipments', label: 'Receiving', icon: <Icon.Download /> },
+  { path: '/merchandise', label: 'Merchandise', icon: <Icon.SKUs /> },
+  { path: '/merchandise/review', label: 'Merchandise Review', icon: <Icon.Verify /> },
+  { path: '/merchandise-review-v2', label: 'Merchandise Review V2', icon: <Icon.Verify /> },
+  { path: '/products', label: 'Products', icon: <Icon.SKUs /> },
+  { path: '/jobs', label: 'Jobs', icon: <Icon.Jobs /> },
 ];
+
+const ADMIN_NAV_ITEM = { path: '/settings', label: 'Admin', icon: <Icon.Settings /> };
 
 function routeForPage(page, params = {}) {
   const query = new URLSearchParams();
@@ -4955,6 +5553,9 @@ function routeForPage(page, params = {}) {
     merchandise: '/merchandise',
     verification: '/merchandise/review',
     'merchandise-review': '/merchandise/review',
+    'merchandise-review-v2': '/merchandise-review-v2',
+    planning: '/planning',
+    production: '/production',
     items: `/products${suffix}`,
     products: `/products${suffix}`,
     skus: `/products${suffix}`,
@@ -4974,15 +5575,18 @@ function pageTitleForPath(pathname) {
   if (pathname.startsWith('/shipments')) return DOMAIN_TERMS.shipments;
   if (pathname.startsWith('/receiving') || pathname.startsWith('/receipts')) return DOMAIN_TERMS.shipments;
   if (pathname.startsWith('/merchandise/review')) return DOMAIN_TERMS.merchandiseReview;
-  if (pathname.startsWith('/merchandise')) return 'Inventory';
+  if (pathname.startsWith('/merchandise-review-v2')) return 'Merchandise Review V2';
+  if (pathname.startsWith('/merchandise')) return DOMAIN_TERMS.merchandise;
   if (pathname.startsWith('/verification')) return DOMAIN_TERMS.merchandiseReview;
+  if (pathname.startsWith('/planning')) return 'Planning';
+  if (pathname.startsWith('/production')) return 'Production';
   if (pathname.startsWith('/products')) return DOMAIN_TERMS.products;
   if (pathname.startsWith('/items')) return DOMAIN_TERMS.products;
   if (pathname === '/jobs/new') return 'New Job';
   if (pathname.startsWith('/jobs')) return 'Jobs';
   if (pathname.startsWith('/clients')) return 'Clients';
-  if (pathname.startsWith('/administration')) return 'Settings';
-  if (pathname.startsWith('/settings')) return 'Settings';
+  if (pathname.startsWith('/administration')) return 'Admin';
+  if (pathname.startsWith('/settings')) return 'Admin';
   if (pathname.startsWith('/dashboard')) return 'Dashboard';
   return 'Not Found';
 }
@@ -5011,38 +5615,192 @@ function NotFound() {
   );
 }
 
+function isPrimaryNavActive(item, pathname) {
+  if (item.path === '/dashboard') return pathname === '/dashboard';
+  if (item.path === '/imports') return pathname.startsWith('/imports') || pathname.startsWith('/intake');
+  if (item.path === '/shipments') return pathname.startsWith('/shipments') || pathname.startsWith('/receiving') || pathname.startsWith('/receipts');
+  if (item.path === '/merchandise') return pathname === '/merchandise';
+  if (item.path === '/merchandise/review') return pathname.startsWith('/merchandise/review') || pathname.startsWith('/verification');
+  if (item.path === '/merchandise-review-v2') return pathname.startsWith('/merchandise-review-v2');
+  return pathname === item.path || pathname.startsWith(`${item.path}/`);
+}
+
+function isTopNavVisible(item, allowed) {
+  return allowed.includes(item.path) || (item.aliases || []).some(path => allowed.includes(path));
+}
+
+function PlanningPage() {
+  return (
+    <div className="page-stack shell-workspace-page">
+      <WorkspaceHeader
+        title="Planning"
+        description="Plan what Walnut is photographing next."
+      />
+      <WorkspaceLayout
+        queue={<QueuePanel title="Planning Queue" empty="Planning queues are not connected yet." />}
+        inspector={<InspectorPanel title="Planning Inspector" />}
+      >
+        <EmptyState title="Planning workspace not implemented yet.">
+          This shell is ready for scheduling, batch planning, and production readiness work in a later phase.
+        </EmptyState>
+      </WorkspaceLayout>
+    </div>
+  );
+}
+
+function ProductionPage() {
+  return (
+    <div className="page-stack shell-workspace-page">
+      <WorkspaceHeader
+        title="Production"
+        description="Track where active merchandise is in production."
+      />
+      <WorkspaceLayout
+        queue={<QueuePanel title="Production Queue" empty="Production queues are not connected yet." />}
+        inspector={<InspectorPanel title="Production Inspector" />}
+      >
+        <EmptyState title="Production workspace not implemented yet.">
+          This shell is ready for photography, THR3D routing, and disposition work in a later phase.
+        </EmptyState>
+      </WorkspaceLayout>
+    </div>
+  );
+}
+
+function TopNavigation({
+  items,
+  adminItem,
+  showAdmin,
+  location,
+  mobileOpen,
+  setMobileOpen,
+  profileMenuOpen,
+  setProfileMenuOpen,
+  onOpenProfile,
+  onSignOut,
+  auth,
+}) {
+  const showAdminShortcut = showAdmin && !items.some(item => item.path === adminItem?.path);
+  const primaryNav = (
+    <nav className="topbar-primary-nav" aria-label="Primary navigation">
+      {items.map(item => {
+        const isActive = isPrimaryNavActive(item, location.pathname);
+        return (
+          <Link
+            key={item.path}
+            to={item.path}
+            aria-current={isActive ? 'page' : undefined}
+            className={`topbar-nav-link ${isActive ? 'active' : ''}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+
+  return (
+    <header className="app-topbar">
+      <div className="topbar-brand">
+        <button
+          type="button"
+          className="topbar-menu-button"
+          aria-label="Open navigation"
+          aria-controls="mobile-primary-navigation"
+          aria-expanded={mobileOpen}
+          onClick={() => setMobileOpen(true)}
+        >
+          <Icon.Menu />
+        </button>
+        <img src="/marks-logo.png" alt="Marks Photo" className="topbar-brand-logo" />
+        <span className="topbar-brand-name">Marks Photo</span>
+      </div>
+
+      <div className="topbar-desktop-nav">
+        {primaryNav}
+        {showAdminShortcut && (
+          <NavLink
+            to={adminItem.path}
+            className={({ isActive }) => `topbar-admin-link ${isActive || location.pathname.startsWith('/administration') || location.pathname.startsWith('/clients') ? 'active' : ''}`}
+          >
+            {adminItem.icon}
+            <span>{adminItem.label}</span>
+          </NavLink>
+        )}
+      </div>
+
+      <div className="topbar-user-area">
+        <button
+          type="button"
+          className="topbar-profile-button"
+          aria-haspopup="menu"
+          aria-expanded={profileMenuOpen}
+          onClick={() => setProfileMenuOpen(open => !open)}
+        >
+          <span className="topbar-user-avatar" aria-hidden="true">{auth?.avatar || userDisplayName(auth)[0] || 'M'}</span>
+          <span className="topbar-user-copy">
+            <strong>{userDisplayName(auth)}</strong>
+            <small>{auth?.role || 'User'}</small>
+          </span>
+        </button>
+        {profileMenuOpen && (
+          <div className="topbar-user-popover" role="menu">
+            <button type="button" role="menuitem" onClick={onOpenProfile}>Profile</button>
+            {showAdminShortcut && (
+              <NavLink to="/settings" role="menuitem" onClick={() => setProfileMenuOpen(false)}>
+                Admin
+              </NavLink>
+            )}
+            <button type="button" role="menuitem" onClick={onSignOut}>Sign Out</button>
+          </div>
+        )}
+      </div>
+
+      {mobileOpen && (
+        <>
+          <button type="button" className="topbar-mobile-backdrop" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />
+          <div className="topbar-mobile-panel" id="mobile-primary-navigation">
+            <div className="topbar-mobile-header">
+              <strong>Marks Photo</strong>
+              <button type="button" className="topbar-mobile-close" aria-label="Close navigation" onClick={() => setMobileOpen(false)}>
+                <Icon.Close />
+              </button>
+            </div>
+            {primaryNav}
+            {showAdmin && (
+              <NavLink
+                to={adminItem.path}
+                className={({ isActive }) => `topbar-admin-link ${isActive || location.pathname.startsWith('/administration') || location.pathname.startsWith('/clients') ? 'active' : ''}`}
+                onClick={() => setMobileOpen(false)}
+              >
+                {adminItem.icon}
+                <span>{adminItem.label}</span>
+              </NavLink>
+            )}
+          </div>
+        </>
+      )}
+    </header>
+  );
+}
+
 function AppLayout() {
-  const { auth, rolePermissions } = useAuth();
+  const { auth, setAuth, rolePermissions } = useAuth();
   const location = useLocation();
   const routerNavigate = useNavigate();
   const navigate = (page, params = {}) => routerNavigate(routeForPage(page, params));
-  const pageTitle = pageTitleForPath(location.pathname);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [, setSidebarMode] = useStoredState('shell:sidebar:mode', 'expanded');
-  const mobileMenuButtonRef = useRef(null);
-  const mobileCloseButtonRef = useRef(null);
-  const mobileDrawerRef = useRef(null);
-  const workspaceRoute = location.pathname.startsWith('/shipments') || location.pathname.startsWith('/receiving') || location.pathname.startsWith('/verification') || location.pathname.startsWith('/merchandise/review');
-  const sidebarCollapsed = false; // always expanded — toggle removed
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const allowed = auth ? allowedPaths(auth.role, rolePermissions) : allowedPaths('User', rolePermissions);
-  const visibleNav = NAV_ITEMS.filter(item => allowed.includes(item.path));
+  const visibleNav = NAV_ITEMS.filter(item => isTopNavVisible(item, allowed));
   const hasAdminAccess = auth ? roleHasAdminAccess(auth.role, rolePermissions) : false;
-
-  // Alert count for sidebar badge
-  const skus = useResource(() => api.listProducts());
-  const skuList = skus.data?.records ?? [];
-  const alertCount = skuList.filter(s => s.readiness && s.readiness.state !== 'ready_for_photo').length;
 
   useEffect(() => {
     if (!mobileNavOpen) return undefined;
     document.body.classList.add('mobile-nav-open');
-    const focusTimer = window.setTimeout(() => {
-      mobileCloseButtonRef.current?.focus();
-      if (document.activeElement !== mobileCloseButtonRef.current) {
-        mobileDrawerRef.current?.focus();
-      }
-    }, 0);
     const handleKeyDown = event => {
       if (event.key === 'Escape') {
         setMobileNavOpen(false);
@@ -5050,135 +5808,37 @@ function AppLayout() {
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => {
-      window.clearTimeout(focusTimer);
       document.body.classList.remove('mobile-nav-open');
       document.removeEventListener('keydown', handleKeyDown);
-      mobileMenuButtonRef.current?.focus();
     };
   }, [mobileNavOpen]);
 
-  // Nav stays expanded on all routes now — receiving page no longer needs the space
+  async function signOut() {
+    try { await api.logoutUser(); } catch { /* session may already be gone */ }
+    clearAuth();
+    setAuth(null);
+  }
 
   return (
-    <div className={`app-shell ${mobileNavOpen ? 'mobile-nav-is-open' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'} ${workspaceRoute ? 'workspace-nav-compact' : ''}`}>
-      {mobileNavOpen && (
-        <button
-          type="button"
-          className="mobile-nav-backdrop"
-          aria-label="Close navigation"
-          onClick={() => setMobileNavOpen(false)}
-        />
-      )}
-      <aside
-        className="sidebar"
-        id="mobile-navigation-drawer"
-        aria-label="Primary navigation"
-        ref={mobileDrawerRef}
-        tabIndex={-1}
-      >
-        <div className="brand">
-          <img src="/marks-logo.png" alt="Marks Photo" className="brand-logo" />
-          <div className="brand-sub">Marks Photo</div>
-          <button
-            type="button"
-            className="mobile-nav-close"
-            aria-label="Close navigation"
-            ref={mobileCloseButtonRef}
-            onClick={() => setMobileNavOpen(false)}
-          >
-            <Icon.Close />
-          </button>
-        </div>
-
-        <nav className="nav-section" aria-label="Primary">
-          <ul className="nav-list" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {visibleNav.map(item => (
-              <li key={item.path}>
-                <NavLink
-                  to={item.path}
-                  className={({ isActive }) => `nav-item ${isActive || (item.path === '/imports' && location.pathname.startsWith('/imports/')) || (item.path === '/shipments' && (location.pathname.startsWith('/receiving') || location.pathname.startsWith('/receipts'))) || (item.path === '/merchandise' && location.pathname === '/merchandise') || (item.path === '/products' && location.pathname.startsWith('/items')) ? 'active' : ''}`}
-                  end={item.path === '/dashboard' || item.path === '/merchandise'}
-                  onClick={() => setMobileNavOpen(false)}
-	                >
-	                  {item.icon}
-	                  <span className="nav-label">{item.label}</span>
-	                  {item.path === '/dashboard' && alertCount > 0 && (
-	                    <span className="nav-badge">{alertCount}</span>
-                  )}
-                </NavLink>
-                {item.children && (
-                  <ul className="nav-sublist" aria-label={`${item.label} submenu`}>
-                    {item.children.map(child => (
-                      <li key={child.path}>
-                        <NavLink
-                          to={child.path}
-                          className={({ isActive }) => `nav-subitem ${isActive ? 'active' : ''}`}
-                          end={child.path === '/shipments'}
-                          onClick={() => setMobileNavOpen(false)}
-                        >
-                          {child.label}
-                        </NavLink>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <div className={`sidebar-bottom ${hasAdminAccess ? 'has-admin-link' : ''}`}>
-          {hasAdminAccess && (
-            <NavLink
-              to="/settings"
-              className={({ isActive }) => `nav-item sidebar-admin-link ${isActive ? 'active' : ''}`}
-              onClick={() => setMobileNavOpen(false)}
-            >
-              <Icon.Settings />
-              <span className="nav-label">Settings</span>
-            </NavLink>
-          )}
-          <button className="sidebar-footer" onClick={() => setProfileOpen(true)} title="Your profile">
-            <span className="sidebar-user-avatar" aria-hidden="true">
-              {auth?.avatar || userDisplayName(auth)[0] || 'M'}
-            </span>
-            <span className="sidebar-user-copy">
-              <strong>{userDisplayName(auth)}</strong>
-              <small>{auth?.role || (skus.loading ? 'Loading…' : skus.error ? 'Connection error' : 'Live')}</small>
-            </span>
-          </button>
-        </div>
-        {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
-      </aside>
-
+    <div className={`app-shell app-shell-topnav ${mobileNavOpen ? 'mobile-nav-is-open' : ''}`}>
+      <TopNavigation
+        items={visibleNav}
+        adminItem={ADMIN_NAV_ITEM}
+        showAdmin={hasAdminAccess}
+        location={location}
+        mobileOpen={mobileNavOpen}
+        setMobileOpen={setMobileNavOpen}
+        profileMenuOpen={profileMenuOpen}
+        setProfileMenuOpen={setProfileMenuOpen}
+        onOpenProfile={() => {
+          setProfileMenuOpen(false);
+          setProfileOpen(true);
+        }}
+        onSignOut={signOut}
+        auth={auth}
+      />
+      {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
       <main className="main">
-        <header className={`topbar ${location.pathname === '/dashboard' ? 'is-dashboard' : ''}`}>
-          <div className="topbar-left">
-            <button
-              type="button"
-              className="mobile-menu-button"
-              aria-label="Open navigation"
-              aria-controls="mobile-navigation-drawer"
-              aria-expanded={mobileNavOpen}
-              ref={mobileMenuButtonRef}
-              onClick={() => setMobileNavOpen(true)}
-            >
-              <Icon.Menu />
-            </button>
-            <span className="topbar-title">{pageTitle}</span>
-          </div>
-          <div className="topbar-right">
-            {location.pathname === '/imports' && (
-              <button className="btn btn-ghost" type="button" onClick={() => navigate('import-history')}>
-                Import History
-              </button>
-            )}
-            <button className="btn btn-ghost" onClick={() => window.location.reload()} title="Refresh" aria-label="Refresh">
-              <Icon.Refresh />
-            </button>
-          </div>
-        </header>
-
         <div className="content">
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -5191,6 +5851,9 @@ function AppLayout() {
             <Route path="/verification" element={<Navigate to="/merchandise/review" replace />} />
             <Route path="/merchandise" element={<MerchandiseInventoryPage navigate={navigate} />} />
             <Route path="/merchandise/review" element={<MerchandiseReviewPage />} />
+            <Route path="/merchandise-review-v2" element={<MerchandiseReviewV2Page />} />
+            <Route path="/planning" element={<PlanningPage />} />
+            <Route path="/production" element={<ProductionPage />} />
             <Route path="/products" element={<RouteProductsPage navigate={navigate} />} />
             <Route path="/items" element={<Navigate to="/products" replace />} />
             <Route path="/jobs" element={<JobsPage navigate={navigate} />} />

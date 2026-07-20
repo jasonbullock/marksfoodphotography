@@ -2,14 +2,62 @@
 
 This model is intentionally provisional.
 
+## Canonical Architecture Direction
+
+Marks Photo revolves around Merchandise.
+
+Merchandise is the operational object moving through Walnut Studio. Products, Jobs, Shipments, Issues, client requirements, artwork, activation emails, and production/reporting references exist to answer what should happen to the Merchandise next and how completed production should be reported.
+
+Marks Photo is not the system of record for Products, Jobs, or external project management. It is the operational readiness system that consolidates enough supporting information to receive, understand, prepare, photograph, route, and dispose of Merchandise.
+
+The core question is:
+
+> What do we need to do with this Merchandise right now?
+
+Operational Readiness is the heart of the model. Readiness is evaluated against client requirements and should communicate blockers in plain operational terms, not implementation workflow jargon.
+
+Marks Photo owns operational information required to execute production and report production. It does not own upstream project planning, client communication, budgeting, approvals, or project task management.
+
+## Application Workspace Model
+
+The application shell presents Marks Photo as an operational command center.
+
+Primary navigation is organized around the core operational questions:
+- Dashboard: what needs attention?
+- Receiving: what arrived?
+- Merchandise: what information is missing and what should happen next?
+- Planning: what are we photographing?
+- Production: where is the work now?
+
+Products, Jobs, Clients, Imports, Issues, and Airtable diagnostics remain supporting surfaces. They may remain routable for compatibility, administration, reporting, or incremental migration, but they are not the primary domain hierarchy.
+
+Shared workspaces should use three contextual regions when appropriate:
+- Queue: what needs attention within this workspace
+- Canvas: the main work surface
+- Inspector: details, decisions, or supporting information for the selected Merchandise or production work
+
+This workspace model is a frontend shell/layout decision. It does not change Airtable table names, backend payloads, compatibility routes, or the underlying provisional domain model.
+
 ## Product Data
 
 Imported reference data from MySGS or client files.
 
-It may be incomplete and does not initiate PM work by itself.
+It may be incomplete and does not initiate PM work by itself. Product information is supporting information for Merchandise, not the center of the application.
+
+Product Information has three responsibilities:
+- Operational Readiness
+- Production Execution
+- Production Reporting
+
+Product Information may come from any source. Marks Photo does not care where it originated.
+
+If Product data exists, the system should reuse it. If it does not exist, the user should be able to enter only the minimum missing information needed to make the Merchandise operationally ready. Users should not experience "match Product" and "create Product" as separate workflows; the application should present one continuous Merchandise readiness experience.
+
+Minimum operational information may include reporting references such as Job Number, Client Project Number, External Reference, Service Type, Activation, and Deliverable Type. These are not project-management fields in Marks Photo. They are operational references used to execute production and associate completed production activity with the correct reporting identifiers.
 
 Current implementation note:
 - The existing Airtable `Items` table represents Products during the compatibility period.
+- Backend table access uses the canonical `PRODUCTS_TABLE` constant, which currently maps to `Items` unless configured otherwise.
 - UI and new APIs should use Product language even while the physical table name remains `Items`.
 - The canonical frontend route is `/products`; legacy `/items` redirects there.
 - The frontend vocabulary layer translates recurring product-facing labels while preserving Airtable field names such as `Item Name` and `Item Job Number` for imports and backend payloads.
@@ -17,6 +65,8 @@ Current implementation note:
 ## Merchandise
 
 A physical sample received by the studio.
+
+Merchandise is the core operational object in Marks Photo.
 
 Merchandise can:
 - Arrive with or without matching product data
@@ -28,8 +78,11 @@ Merchandise can:
 
 Merchandise receipt initiates review work.
 
+Everything exists to move Merchandise toward the correct next operational step: waiting for missing information, ready for photography, THR3D, replacement, no production, production, or disposition.
+
 Current implementation note:
 - The existing Airtable `Receipt Entries` table represents Merchandise during the compatibility period.
+- Backend table access uses the canonical `MERCHANDISE_TABLE` constant, which currently maps to `Receipt Entries` unless configured otherwise.
 - UI should describe package-facing fields as Package Name and Barcode or ID Number, even if the stored field names remain Product Name and SKU / ID.
 - The canonical inventory route is `/merchandise`. It is a current physical inventory view, not a review workflow.
 - The canonical review route is `/merchandise/review`; legacy `/verification` redirects there.
@@ -61,10 +114,11 @@ The logistics parent for received merchandise.
 
 A Shipment stores carrier, tracking, received time, receiver, location, shipment photos, and shipment notes.
 
-Shipments support Receiving, but they are not the operational center for PM review.
+Shipments support Receiving, but they are not the operational center for PM review or readiness. They answer what arrived and when; Merchandise answers what Walnut must do next.
 
 Current implementation note:
 - The existing Airtable `Receipts` table represents Shipments during the compatibility period.
+- Backend table access uses the canonical `SHIPMENTS_TABLE` constant, which currently maps to `Receipts` unless configured otherwise.
 - The canonical frontend route is `/shipments`; legacy `/receiving` and `/receipts` URLs redirect there.
 - Admin/developer surfaces may show `Receipts` only when clearly identified as the technical Airtable table behind Shipments.
 
@@ -78,6 +132,8 @@ Review determines:
 - Whether additional data is required
 - Whether artwork or instructions are missing
 - Whether it goes to Photography, THR3D, Replacement, Wait, or No Production
+
+Review should not require users to perform database work. If supporting Product information exists, the software should reuse it. If it is missing, the user should continue entering only the missing operational information in the Merchandise context.
 
 Current implementation note:
 - Merchandise Review uses existing Receipt Entry / Merchandise records as the review work surface.
@@ -132,6 +188,174 @@ May include:
 - Special instructions
 - File destinations
 
+## Production Reporting
+
+Marks Photo is expected to become the operational reporting source for Walnut Studio.
+
+Production reports may include:
+- Client
+- Job Number
+- Product
+- Service Type
+- Production Dates
+- Photographer
+- Production Status
+- Deliverables
+- Time
+- Disposition
+
+This does not make Marks Photo a project-management application. Product Information and production activity should carry enough operational references to report completed work accurately.
+
 ## External References
 
 Workfront, MediaBox, MySGS, structure-form numbers, and other identifiers are references. None should automatically become the application's primary workflow hierarchy.
+
+## Client Requirements
+
+The Clients table defines operational readiness.
+
+Each client specifies the minimum information Walnut needs before photography can begin. Examples include Product Name, Identifier, Brand, Size, Artwork Required, Activation Email Required, and whether Photography or THR3D is required.
+
+Marks Photo should evaluate readiness against these client requirements regardless of where the information originated.
+
+## Operational Readiness
+
+Operational Readiness answers whether Walnut can photograph the Merchandise now.
+
+Typical readiness checks include:
+- Merchandise Received
+- Product Information Available
+- Client Required Fields Complete
+- Merchandise Verified
+- Artwork Available, if required
+- Photography Required, otherwise THR3D
+- Activation Email Received
+
+Readiness status should explain blockers, such as missing artwork or activation email, rather than expose workflow jargon.
+
+## Workflow Engine
+
+The Workflow Engine is the reusable business decision layer for Merchandise movement.
+
+It sits between Receiving and Production:
+
+- Receiving records physical facts and creates Merchandise.
+- The Workflow Engine evaluates what should happen next.
+- Creative Force executes production.
+- Marks Photo synchronizes Creative Force production metadata.
+- Delivery handles ready-to-deliver, delivered, billing, and reporting states.
+
+The Workflow Engine should eventually support client-configurable workflow templates without requiring pages to hardcode business routing rules.
+
+### Workflow
+
+A Workflow is a named template for moving Merchandise through a small set of business gates.
+
+A Workflow may belong to a Client. For example, one Client may use Review, THR3D Decision, Activation, Release to Production, Production, and Delivery gates, while another Client may skip THR3D or Activation.
+
+Workflows should be configuration, not page-specific code.
+
+### Gate
+
+A Gate is a business decision point or ownership boundary.
+
+A Gate should eventually support:
+
+- gate name
+- display name
+- description
+- order
+- owner
+- current status
+- entry rules
+- exit rules
+- required data
+- available actions
+- allowed next gates
+- permissions
+- visible fields
+- panel layout
+
+Gates should not represent every system event. Queued, assigned, retouch, QC, export, upload, and similar production details are Creative Force metadata, not Marks Photo gates.
+
+### Transition
+
+A Transition is a move from one Gate to another.
+
+Transitions are allowed only when the destination Gate's requirements and rules are satisfied. The system should explain blocked transitions in operational language.
+
+### Requirement
+
+A Requirement is a readiness condition that can be evaluated independently.
+
+Initial Merchandise Review requirements include:
+
+- Product Information
+- Artwork
+- Activation Information
+
+Product Information and Activation Information cannot be manually overridden. Artwork is the first planned exception and may support a Project Management override with a reason and audit trail.
+
+### Action
+
+An Action is something a user or system can do at a Gate.
+
+Examples:
+
+- review Merchandise
+- choose Output Type
+- resolve required data
+- override Artwork
+- attach Activation
+- release to Production
+
+Actions should belong to Gate configuration and permissions rather than scattered page code.
+
+### Workflow Assignment
+
+A Workflow Assignment represents one Merchandise record's current position in a Workflow.
+
+An assignment should expose:
+
+- workflow
+- subject type
+- subject id
+- current Gate
+- current Owner
+- current Status
+- Requirements
+- available Actions
+- allowed next Gates
+
+During the compatibility period, assignments may be derived from existing Merchandise Review records and browser-local experimental state. Durable schema-backed assignments require a future schema/API decision.
+
+### Owner
+
+Owner identifies who owns the current Gate:
+
+- Receiving owns physical intake.
+- Project Management owns Workflow Engine decisions.
+- Creative Force owns production execution.
+- Delivery owns ready-to-deliver, delivered, billing, and reporting follow-through.
+
+### Status
+
+Status is not the same as Workflow.
+
+Status describes current data or synchronized external state. Workflow identifies the current business decision or ownership gate.
+
+Creative Force production status should be synchronized and displayed as production metadata, not expanded into dozens of Marks Photo workflow gates.
+
+### Output Type
+
+Output Type is an early Review decision.
+
+Examples:
+
+- Photography
+- Scan
+- THR3D
+- Video
+- Other
+
+Output Type should eventually influence routing, especially THR3D branching, without forcing pages to hardcode routing logic.
