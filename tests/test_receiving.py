@@ -513,9 +513,6 @@ class ReceivingTests(unittest.TestCase):
         self.assertIn(C.RECEIPTS_TABLE, called_tables)
         self.assertIn(C.RECEIPT_ENTRIES_TABLE, called_tables)
         self.assertIn(C.ITEMS_TABLE, called_tables)
-        self.assertNotIn("Shipments", called_tables)
-        self.assertNotIn("Merchandise", called_tables)
-        self.assertNotIn("Products", called_tables)
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")

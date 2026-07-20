@@ -26,10 +26,10 @@ class DomainTableMappingTests(unittest.TestCase):
                 "hasPIN": True,
             }
 
-    def test_canonical_tables_default_to_current_airtable_schema(self):
-        self.assertEqual(C.PRODUCTS_TABLE, "Items")
-        self.assertEqual(C.SHIPMENTS_TABLE, "Receipts")
-        self.assertEqual(C.MERCHANDISE_TABLE, "Receipt Entries")
+    def test_canonical_tables_default_to_renamed_airtable_schema(self):
+        self.assertEqual(C.PRODUCTS_TABLE, "Products")
+        self.assertEqual(C.SHIPMENTS_TABLE, "Shipments")
+        self.assertEqual(C.MERCHANDISE_TABLE, "Merchandise")
         self.assertEqual(C.ITEMS_TABLE, C.PRODUCTS_TABLE)
         self.assertEqual(C.RECEIPTS_TABLE, C.SHIPMENTS_TABLE)
         self.assertEqual(C.RECEIPT_ENTRIES_TABLE, C.MERCHANDISE_TABLE)

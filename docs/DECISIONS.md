@@ -279,3 +279,23 @@ Backend code should use `PRODUCTS_TABLE`, `SHIPMENTS_TABLE`, and `MERCHANDISE_TA
 The frontend may continue to preserve legacy API names such as `listItems`, `listReceipts`, `itemIds`, and `receiptIds` where changing them would create churn or break compatibility, but new user-facing language should use Product, Shipment, and Merchandise.
 
 Physical Airtable table and linked-field renames are a separate schema migration. That migration must preserve records and links, have a rollback plan, and be explicitly approved before changing the live base. Until then, the canonical table constants should continue to point at the existing physical table names or to environment-configured renamed tables.
+
+## 2026-07-20 - Live Airtable Schema Uses Canonical Domain Names
+
+The physical Airtable schema has been migrated in place to the canonical domain language.
+
+Renamed tables:
+- `Items` -> `Products`
+- `Receipts` -> `Shipments`
+- `Receipt Entries` -> `Merchandise`
+
+The table IDs were preserved:
+- Products: `tblC9Tu69BEOIy6Q4`
+- Shipments: `tblnDJYWtYvgEunVM`
+- Merchandise: `tblWALCoKwvT6Nl8A`
+
+Relationship fields were renamed to Product, Products, Shipment, Shipments, and Merchandise where their business meaning matched the renamed entities. Merchandise observation fields were renamed to Observed Package Name, Observed Identifier, and Storage Location.
+
+Application defaults now point to the canonical physical table names. Deprecated code aliases such as `ITEMS_TABLE`, `RECEIPTS_TABLE`, `RECEIPT_ENTRIES_TABLE`, `listItems`, `listReceipts`, `itemIds`, and `receiptIds` may remain for one migration cycle to protect compatibility and rollback, but new work should not introduce new user-facing Item, Receipt, or Receipt Entry language.
+
+The migration was performed by Airtable Metadata API in-place renames by table ID and field ID. Records were not copied or duplicated.

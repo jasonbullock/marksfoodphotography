@@ -25,12 +25,13 @@ export const DOMAIN_TERMS = {
 const PRODUCT_FIELD_LABELS = {
   Item: DOMAIN_TERMS.productName,
   'Item Name': DOMAIN_TERMS.productName,
+  'Product Name': DOMAIN_TERMS.productName,
   Identifier: 'Identifier',
   'Product or File Name': 'Product/File Name',
   'Product/File Name': 'Product/File Name',
-  'Product Name': 'Product/File Name',
   Description: 'Description',
   'Item Job Number': DOMAIN_TERMS.productJobNumber,
+  'Product Job Number': DOMAIN_TERMS.productJobNumber,
   'Output Type': 'Output Type',
   'Master or Variant': 'Master or Variant',
   'Pickup Job Number': 'Pickup Job Number',
@@ -46,6 +47,7 @@ const MERCHANDISE_FIELD_LABELS = {
   'Product Name': DOMAIN_TERMS.packageName,
   'Item Name': DOMAIN_TERMS.packageName,
   'Observed Product Name': DOMAIN_TERMS.packageName,
+  'Observed Package Name': DOMAIN_TERMS.packageName,
   Identifier: DOMAIN_TERMS.merchandiseIdentifier,
   'SKU / ID': DOMAIN_TERMS.merchandiseIdentifier,
   'Observed Identifier': DOMAIN_TERMS.merchandiseIdentifier,
@@ -59,8 +61,11 @@ const MERCHANDISE_FIELD_LABELS = {
 };
 
 const TECHNICAL_TABLE_LABELS = {
+  Products: DOMAIN_TERMS.products,
   Items: DOMAIN_TERMS.products,
+  Shipments: DOMAIN_TERMS.shipments,
   Receipts: DOMAIN_TERMS.shipments,
+  Merchandise: DOMAIN_TERMS.merchandise,
   'Receipt Entries': DOMAIN_TERMS.merchandise,
 };
 

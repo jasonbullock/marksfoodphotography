@@ -30,25 +30,20 @@ class Config:
     RECEIVING_PHOTO_LOCAL_DIR = str(BACKEND_DIR / "uploads" / "receiving")
 
     # Table names - canonical application domain.
-    #
-    # Marks Photo code should use Products, Shipments, and Merchandise as the
-    # business entities. The current Airtable base may still use legacy physical
-    # table names during the compatibility period, so each canonical table can
-    # be pointed at either the renamed table or its legacy equivalent with env.
     CLIENTS_TABLE = "Clients"
 
     JOBS_TABLE = "Jobs"
 
-    PRODUCTS_TABLE = os.getenv("AIRTABLE_PRODUCTS_TABLE", os.getenv("AIRTABLE_ITEMS_TABLE", "Items"))
-    SHIPMENTS_TABLE = os.getenv("AIRTABLE_SHIPMENTS_TABLE", os.getenv("AIRTABLE_RECEIPTS_TABLE", "Receipts"))
+    PRODUCTS_TABLE = os.getenv("AIRTABLE_PRODUCTS_TABLE", os.getenv("AIRTABLE_ITEMS_TABLE", "Products"))
+    SHIPMENTS_TABLE = os.getenv("AIRTABLE_SHIPMENTS_TABLE", os.getenv("AIRTABLE_RECEIPTS_TABLE", "Shipments"))
     MERCHANDISE_TABLE = os.getenv(
         "AIRTABLE_MERCHANDISE_TABLE",
-        os.getenv("AIRTABLE_RECEIPT_ENTRIES_TABLE", "Receipt Entries"),
+        os.getenv("AIRTABLE_RECEIPT_ENTRIES_TABLE", "Merchandise"),
     )
 
-    # Legacy compatibility aliases. Use the canonical constants in new backend
-    # code; keep these aliases for older tests, routes, payloads, and local
-    # scripts that still refer to Items, Receipts, or Receipt Entries.
+    # Deprecated compatibility aliases. Use canonical constants in new backend
+    # code. These stay for one migration cycle to protect older routes, tests,
+    # payloads, local scripts, and rollback.
     ITEMS_TABLE = PRODUCTS_TABLE
     SKUS_TABLE = PRODUCTS_TABLE
     RECEIPTS_TABLE = SHIPMENTS_TABLE
@@ -79,10 +74,10 @@ class Config:
     F_USER_AVATAR = "Avatar"
     F_USER_PIN_HASH = "PIN Hash"
 
-    # Field names — Receipts
-    F_RECEIPT_NAME = "Receipt"
+    # Field names - Shipments
+    F_RECEIPT_NAME = "Shipment"
     F_RECEIPT_CLIENT = "Client"
-    F_RECEIPT_ITEMS = "Items"
+    F_RECEIPT_ITEMS = "Products"
     F_RECEIPT_CARRIER = "Carrier"
     F_RECEIPT_TRACKING = "Tracking"
     F_RECEIPT_BOX_QUANTITY = "Box Quantity"
@@ -92,18 +87,18 @@ class Config:
     F_RECEIPT_PHOTOS = "Photos"
     F_RECEIPT_NOTES = "Notes"
 
-    # Field names — Receipt Entries
-    F_RECEIPT_ENTRY_NAME = "Product Name"
-    F_RECEIPT_ENTRY_RECEIPT = "Receipt"
-    F_RECEIPT_ENTRY_SKU_ID = "SKU / ID"
+    # Field names - Merchandise
+    F_RECEIPT_ENTRY_NAME = "Observed Package Name"
+    F_RECEIPT_ENTRY_RECEIPT = "Shipment"
+    F_RECEIPT_ENTRY_SKU_ID = "Observed Identifier"
     F_RECEIPT_ENTRY_QUANTITY = "Quantity"
-    F_RECEIPT_ENTRY_LOCATION = "Location"
+    F_RECEIPT_ENTRY_LOCATION = "Storage Location"
     F_RECEIPT_ENTRY_CONDITION = "Condition"
     F_RECEIPT_ENTRY_DESCRIPTION = "Description"
     F_RECEIPT_ENTRY_NOTES = "Notes"
     F_RECEIPT_ENTRY_PHOTOS = "Photos"
     F_RECEIPT_ENTRY_PHOTO_METADATA = "Photo Metadata"
-    F_RECEIPT_ENTRY_ITEM = "Item"
+    F_RECEIPT_ENTRY_ITEM = "Product"
     F_RECEIPT_ENTRY_MERCH_STATUS = "Merch Status"
 
     # Field names — Clients
@@ -127,14 +122,14 @@ class Config:
     F_JOB_STATUS = "Status"
     F_JOB_DUE = "Due"
 
-    # Field names — Items
-    F_ITEM_NAME = "Item"
+    # Field names - Products
+    F_ITEM_NAME = "Product Name"
     F_ITEM_CLIENT = "Client"
     F_ITEM_JOB = "Job"
     F_ITEM_IDENTIFIER = "Identifier"
     F_ITEM_IDENTIFIER_TYPE = "Identifier Type"
     F_ITEM_PRODUCT = "Product or File Name"
-    F_ITEM_JOB_NUMBER = "Item Job Number"
+    F_ITEM_JOB_NUMBER = "Product Job Number"
     F_ITEM_DESCRIPTION = "Description"
     F_ITEM_OUTPUT = "Output Type"
     F_ITEM_MASTER_VARIANT = "Master or Variant"
@@ -150,7 +145,7 @@ class Config:
     F_ITEM_PHOTOS = "Photos"
     F_ITEM_PHOTO_METADATA = "Photo Metadata"
     F_ITEM_REFERENCE_DATA = "Reference Data"
-    F_ITEM_RECEIPTS = "Receipts"
+    F_ITEM_RECEIPTS = "Shipments"
     F_ITEM_ISSUES = "Issues"
     F_ITEM_ARTWORK_RECEIVED = "Artwork Received"
     F_ITEM_EXPORTED = "Exported"
@@ -159,7 +154,7 @@ class Config:
 
     # Field names — Issues
     F_ISSUE_NAME = "Issue"
-    F_ISSUE_ITEM = "Item"
+    F_ISSUE_ITEM = "Product"
     F_ISSUE_JOB = "Job"
     F_ISSUE_TYPE = "Type"
     F_ISSUE_STATUS = "Status"
@@ -172,7 +167,7 @@ class Config:
 
     # Field names — History
     F_HISTORY_EVENT = "Event"
-    F_HISTORY_ITEM = "Item"
+    F_HISTORY_ITEM = "Product"
     F_HISTORY_JOB = "Job"
     F_HISTORY_USER = "User"
     F_HISTORY_TYPE = "Type"
@@ -194,8 +189,8 @@ class Config:
     F_IMPORT_ROWS = "Rows"
     F_IMPORT_JOBS_CREATED = "Jobs Created"
     F_IMPORT_JOBS_REUSED = "Jobs Reused"
-    F_IMPORT_ITEMS_CREATED = "Items Created"
-    F_IMPORT_ITEMS_UPDATED = "Items Updated"
+    F_IMPORT_ITEMS_CREATED = "Products Created"
+    F_IMPORT_ITEMS_UPDATED = "Products Updated"
     F_IMPORT_ROWS_SKIPPED = "Rows Skipped"
     F_IMPORT_ERRORS = "Errors"
     F_IMPORT_WARNINGS = "Warnings"

@@ -56,11 +56,10 @@ If Product data exists, the system should reuse it. If it does not exist, the us
 Minimum operational information may include reporting references such as Job Number, Client Project Number, External Reference, Service Type, Activation, and Deliverable Type. These are not project-management fields in Marks Photo. They are operational references used to execute production and associate completed production activity with the correct reporting identifiers.
 
 Current implementation note:
-- The existing Airtable `Items` table represents Products during the compatibility period.
-- Backend table access uses the canonical `PRODUCTS_TABLE` constant, which currently maps to `Items` unless configured otherwise.
-- UI and new APIs should use Product language even while the physical table name remains `Items`.
+- The live Airtable `Products` table represents Products.
+- Backend table access uses the canonical `PRODUCTS_TABLE` constant, which defaults to `Products`.
 - The canonical frontend route is `/products`; legacy `/items` redirects there.
-- The frontend vocabulary layer translates recurring product-facing labels while preserving Airtable field names such as `Item Name` and `Item Job Number` for imports and backend payloads.
+- The frontend vocabulary layer translates recurring product-facing labels while preserving deprecated compatibility payload names such as `itemIds` where needed.
 
 ## Merchandise
 
@@ -81,13 +80,13 @@ Merchandise receipt initiates review work.
 Everything exists to move Merchandise toward the correct next operational step: waiting for missing information, ready for photography, THR3D, replacement, no production, production, or disposition.
 
 Current implementation note:
-- The existing Airtable `Receipt Entries` table represents Merchandise during the compatibility period.
-- Backend table access uses the canonical `MERCHANDISE_TABLE` constant, which currently maps to `Receipt Entries` unless configured otherwise.
-- UI should describe package-facing fields as Package Name and Barcode or ID Number, even if the stored field names remain Product Name and SKU / ID.
+- The live Airtable `Merchandise` table represents Merchandise.
+- Backend table access uses the canonical `MERCHANDISE_TABLE` constant, which defaults to `Merchandise`.
+- Airtable now stores package-facing fields as Observed Package Name and Observed Identifier.
 - The canonical inventory route is `/merchandise`. It is a current physical inventory view, not a review workflow.
 - The canonical review route is `/merchandise/review`; legacy `/verification` redirects there.
 - `GET /api/merchandise` returns current inventory records enriched from existing Shipment, Product, Client, and Location data.
-- Admin/developer surfaces may show `Receipt Entries` only when clearly identified as the technical Airtable table behind Merchandise.
+- Deprecated `Receipt Entries` terminology may appear only in historical documentation, compatibility code names, or rollback notes.
 
 Inventory implementation note:
 - Merchandise Inventory answers what physical goods are currently held by the studio.
@@ -117,10 +116,10 @@ A Shipment stores carrier, tracking, received time, receiver, location, shipment
 Shipments support Receiving, but they are not the operational center for PM review or readiness. They answer what arrived and when; Merchandise answers what Walnut must do next.
 
 Current implementation note:
-- The existing Airtable `Receipts` table represents Shipments during the compatibility period.
-- Backend table access uses the canonical `SHIPMENTS_TABLE` constant, which currently maps to `Receipts` unless configured otherwise.
+- The live Airtable `Shipments` table represents Shipments.
+- Backend table access uses the canonical `SHIPMENTS_TABLE` constant, which defaults to `Shipments`.
 - The canonical frontend route is `/shipments`; legacy `/receiving` and `/receipts` URLs redirect there.
-- Admin/developer surfaces may show `Receipts` only when clearly identified as the technical Airtable table behind Shipments.
+- Deprecated `Receipts` terminology may appear only in historical documentation, compatibility code names, or rollback notes.
 
 ## Review Work
 
@@ -136,7 +135,7 @@ Review determines:
 Review should not require users to perform database work. If supporting Product information exists, the software should reuse it. If it is missing, the user should continue entering only the missing operational information in the Merchandise context.
 
 Current implementation note:
-- Merchandise Review uses existing Receipt Entry / Merchandise records as the review work surface.
+- Merchandise Review uses existing Merchandise records as the review work surface.
 - Review currently derives one of four operational states: Needs Review, Waiting for Product Data, Validated, or Issue.
 - Needs Review is the default for newly received or matched Merchandise until a PM makes a review decision.
 - Waiting for Product Data means the Merchandise is identifiable but the matching Product is not imported or complete enough to link. During the compatibility period this is represented in the existing Merchandise Notes field with a marker, not a new Airtable field.

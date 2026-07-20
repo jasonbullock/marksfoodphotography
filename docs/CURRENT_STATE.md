@@ -22,8 +22,8 @@ Marks Photo should not become a project management system, PIM, or system of rec
 - Review must support Photo, THR3D, Replacement, Waiting, and No Production.
 - Ready for Photo must mean that merchandise, data, artwork, and production instructions are complete.
 - Activation emails should eventually become structured production instructions.
-- Existing Items and Jobs concepts require reconsideration.
-- Do not rename or rebuild them until the domain model is agreed upon.
+- Products, Shipments, and Merchandise are the canonical physical Airtable table names.
+- Legacy Items, Receipts, and Receipt Entries language may remain only in compatibility code, historical notes, or rollback documentation.
 
 ## Current Questions
 
@@ -37,7 +37,58 @@ Marks Photo should not become a project management system, PIM, or system of rec
 
 ## Next Step
 
-The application shell now follows the new product vision. The likely next product step is to redesign Merchandise Review into a broader Merchandise Workspace that combines review, information completion, and readiness blockers without exposing match/create/import workflow choices.
+The live Airtable schema now uses canonical Products, Shipments, and Merchandise table names. The likely next product step is to continue Merchandise Review V2 experimentation without changing Merchandise Review V1 or the read-only Merchandise inventory workspace.
+
+## 2026-07-20 Live Airtable Domain Rename
+
+The approved live Airtable physical schema migration has been completed.
+
+What is now true:
+- `Items` was renamed in place to `Products`.
+- `Receipts` was renamed in place to `Shipments`.
+- `Receipt Entries` was renamed in place to `Merchandise`.
+- Table IDs were preserved:
+  - Products: `tblC9Tu69BEOIy6Q4`
+  - Shipments: `tblnDJYWtYvgEunVM`
+  - Merchandise: `tblWALCoKwvT6Nl8A`
+- Core relationship fields were renamed to Product, Products, Shipment, Shipments, and Merchandise where they reflect those canonical entities.
+- Merchandise observation fields now use `Observed Package Name`, `Observed Identifier`, and `Storage Location`.
+- Application defaults now point to the renamed physical tables:
+  - `PRODUCTS_TABLE = "Products"`
+  - `SHIPMENTS_TABLE = "Shipments"`
+  - `MERCHANDISE_TABLE = "Merchandise"`
+- Deprecated compatibility aliases remain for one migration cycle:
+  - backend constants such as `ITEMS_TABLE`, `RECEIPTS_TABLE`, and `RECEIPT_ENTRIES_TABLE`
+  - frontend/API payload names such as `listItems`, `listReceipts`, `itemIds`, and `receiptIds`
+  - Airtable single-select choices that still physically exist, including `Unknown Item` and `Item Created`
+
+Pre-migration baseline:
+- Products/Items: 18 records.
+- Shipments/Receipts: 2 records.
+- Merchandise/Receipt Entries: 3 records.
+
+Post-migration verification:
+- Products, Shipments, and Merchandise still have 18, 2, and 3 records after cleanup of smoke-test records.
+- Primary fields retain their field IDs:
+  - Products `Product Name`: `fld96N7hMpncFfXhJ`
+  - Shipments `Shipment`: `fldmc1GLRF7aADXQJ`
+  - Merchandise `Observed Package Name`: `fldXCqOarj5rBAYyj`
+- Linked-record fields retain linked table IDs and inverse field IDs.
+- Products calculated fields remain valid:
+  - `Identifier Type`
+  - `CF Product Name`
+  - `CF Category`
+- Airtable webhooks remain empty.
+- Photo attachments remain present on Products and Merchandise photo fields.
+- Local route smoke checks returned HTTP 200 for `/shipments`, `/merchandise`, `/merchandise/review`, `/merchandise-review-v2`, `/products`, `/imports`, `/settings`, and `/clients`.
+- Live application smoke tests created a temporary Shipment and Merchandise record, matched the Merchandise to an existing Product, read the Receiving/Merchandise/Review endpoints, imported one temporary Product row, and deleted the temporary Shipment, Merchandise, Product, Job, Import, and History records.
+
+Migration artifact:
+- `docs/migrations/2026-07-20-airtable-domain-rename.md` records the audit, table and field IDs, verification checklist, and rollback procedure.
+
+Current caveats:
+- Airtable Metadata API access in this environment did not expose full Interfaces, Automations, embedded scripts, or external integrations. Repository code and environment settings did not reference Airtable automation/interface IDs.
+- Stored Airtable choice values such as `Unknown Item` and `Item Created` were not renamed in this pass because they are data choices, not table/field schema names, and changing them requires a separate compatibility review.
 
 ## 2026-07-16 Product Vision Update
 
@@ -559,25 +610,23 @@ Marks Photo now has a backend compatibility layer that treats Products, Shipment
 
 What is now true:
 - `backend/config.py` defines canonical `PRODUCTS_TABLE`, `SHIPMENTS_TABLE`, and `MERCHANDISE_TABLE` constants.
-- Those canonical constants currently default to the existing Airtable physical table names:
-  - Products -> `Items`
-  - Shipments -> `Receipts`
-  - Merchandise -> `Receipt Entries`
-- The same constants can be pointed at renamed Airtable tables with `AIRTABLE_PRODUCTS_TABLE`, `AIRTABLE_SHIPMENTS_TABLE`, and `AIRTABLE_MERCHANDISE_TABLE`.
+- Those canonical constants now default to the renamed Airtable physical table names:
+  - Products -> `Products`
+  - Shipments -> `Shipments`
+  - Merchandise -> `Merchandise`
+- The same constants retain deprecated environment-variable fallback aliases for one rollback cycle.
 - Legacy constants `ITEMS_TABLE`, `RECEIPTS_TABLE`, and `RECEIPT_ENTRIES_TABLE` remain compatibility aliases to the canonical constants.
 - Backend route table access now uses the canonical constants for Products, Shipments, and Merchandise.
 - Admin system settings report both canonical and legacy table keys so the current physical mapping is visible.
 - The frontend direct-Airtable constants expose canonical `PRODUCTS`, `SHIPMENTS`, and `MERCHANDISE` table names with legacy aliases preserved.
 
-What did not change:
-- No Airtable table was renamed by this code change.
-- No Airtable fields or linked-field names were changed.
+What did not change in the compatibility refactor:
 - No backend route behavior changed.
 - No frontend workflow, Receiving behavior, Merchandise Review behavior, import behavior, or Product linking behavior changed.
 - Existing API payload keys such as `itemIds`, `receiptIds`, and import summary keys remain compatibility payload names for now.
 
 Current architecture caveat:
-- A physical Airtable schema rename still requires an explicit migration plan, validation window, and rollback path. Until that migration is approved and performed, the app should continue to run against the existing `Items`, `Receipts`, and `Receipt Entries` tables through the canonical compatibility constants.
+- The later physical Airtable schema rename is recorded in the "Live Airtable Domain Rename" section above and in `docs/migrations/2026-07-20-airtable-domain-rename.md`.
 
 Validation:
 - `python3 -m unittest tests/test_domain_table_mapping.py tests/test_receiving.py tests/test_merchandise_review.py tests/test_merchandise_inventory.py tests/test_frontend_routing.py` passed.

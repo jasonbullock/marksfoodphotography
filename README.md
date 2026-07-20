@@ -102,19 +102,13 @@ receiving/Smithfield-2026-07-12-16-11/Smithfield-2026-07-12-16-11-1.jpg
 
 For local development only, set `RECEIVING_PHOTO_STORAGE=local`. Local mode writes files under `backend/uploads/receiving` and serves them from `/api/receiving/photos/...`. The backend will not silently fall back to local mode when `RECEIVING_PHOTO_STORAGE=r2`; missing R2 configuration returns a clear upload error.
 
-Airtable should keep the existing `Receipt Entries` attachment field named `Photos`. Add one compact long-text field on `Receipt Entries` named `Photo Metadata`; it stores JSON metadata including the durable R2 `object_key` and `public_url`. The `Items` table should also have `Photos` and `Photo Metadata` so verification can copy receipt-entry photos onto the matched Item.
+Airtable should keep the existing `Merchandise` attachment field named `Photos`. Add one compact long-text field on `Merchandise` named `Photo Metadata`; it stores JSON metadata including the durable R2 `object_key` and `public_url`. The `Products` table should also have `Photos` and `Photo Metadata` so review can copy Merchandise photos onto the matched Product.
 
 ## Airtable Table Mapping
 
 The application domain uses Products, Shipments, and Merchandise.
 
-During the compatibility period, those canonical concepts default to the current Airtable table names:
-
-- Products -> `Items`
-- Shipments -> `Receipts`
-- Merchandise -> `Receipt Entries`
-
-The backend reads Airtable through canonical table constants. If the physical Airtable tables are renamed later, update environment overrides instead of changing route code:
+The live Airtable schema now uses the canonical physical table names:
 
 ```bash
 AIRTABLE_PRODUCTS_TABLE=Products
@@ -122,10 +116,10 @@ AIRTABLE_SHIPMENTS_TABLE=Shipments
 AIRTABLE_MERCHANDISE_TABLE=Merchandise
 ```
 
-Do not set those overrides until the live Airtable schema and linked fields have been migrated and verified.
+The backend reads Airtable through canonical table constants. Deprecated legacy environment aliases such as `AIRTABLE_ITEMS_TABLE`, `AIRTABLE_RECEIPTS_TABLE`, and `AIRTABLE_RECEIPT_ENTRIES_TABLE` may remain for one rollback cycle, but new configuration should use the canonical variable names above.
 
 ## Current Scope
 
 Marks Photo currently includes a top-navigation operational shell, dashboard, imports, receiving/shipments, physical Merchandise Inventory, Merchandise Review, placeholder Planning and Production workspaces, supporting Product and Job views, client administration, settings, and Airtable connection status.
 
-Airtable table and field IDs are currently configured for the Marks Photo base. During the compatibility period, Airtable table names remain unchanged while the app presents the newer Merchandise-centered language through the canonical table mapping layer.
+Airtable table and field IDs are currently configured for the Marks Photo base. The physical Airtable schema now uses the Merchandise-centered language through the canonical table mapping layer.

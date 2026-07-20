@@ -230,14 +230,14 @@ class FrontendRoutingTests(unittest.TestCase):
 
     def test_admin_surfaces_canonical_table_mapping(self):
         for text in [
-            "s.tables?.products || s.tables?.skus || 'Items'",
-            "s.tables?.shipments || s.tables?.receipts || 'Receipts'",
-            "s.tables?.merchandise || s.tables?.receiptEntries || 'Receipt Entries'",
+            "s.tables?.products || s.tables?.skus || 'Products'",
+            "s.tables?.shipments || s.tables?.receipts || 'Shipments'",
+            "s.tables?.merchandise || s.tables?.receiptEntries || 'Merchandise'",
         ]:
             self.assertIn(text, self.source)
-        self.assertIn("PRODUCTS: 'Items'", (ROOT / "frontend" / "src" / "api.js").read_text())
-        self.assertIn("SHIPMENTS: 'Receipts'", (ROOT / "frontend" / "src" / "api.js").read_text())
-        self.assertIn("MERCHANDISE: 'Receipt Entries'", (ROOT / "frontend" / "src" / "api.js").read_text())
+        self.assertIn("PRODUCTS: 'Products'", (ROOT / "frontend" / "src" / "api.js").read_text())
+        self.assertIn("SHIPMENTS: 'Shipments'", (ROOT / "frontend" / "src" / "api.js").read_text())
+        self.assertIn("MERCHANDISE: 'Merchandise'", (ROOT / "frontend" / "src" / "api.js").read_text())
 
     def test_shared_application_shell_components_exist(self):
         for text in [
@@ -277,18 +277,18 @@ class FrontendRoutingTests(unittest.TestCase):
             self.assertIn(selector, self.styles)
 
     def test_import_mappings_keep_internal_field_names_with_user_labels(self):
-        self.assertIn("'Item Name': 'itemName'", self.source)
-        self.assertIn("'Item Job Number': 'itemJobNumber'", self.source)
-        self.assertIn("getFieldLabel('Item Name', 'product')", self.source)
-        self.assertIn("getFieldLabel('Item Job Number', 'product')", self.source)
+        self.assertIn("'Product Name': 'itemName'", self.source)
+        self.assertIn("'Product Job Number': 'itemJobNumber'", self.source)
+        self.assertIn("getFieldLabel('Product Name', 'product')", self.source)
+        self.assertIn("getFieldLabel('Product Job Number', 'product')", self.source)
         self.assertIn("Source column", self.source)
         self.assertIn("Destination field", self.source)
         self.assertIn("Airtable field:", self.source)
 
     def test_technical_airtable_names_are_labeled_as_technical(self):
-        self.assertIn("technicalTableLabel(s.tables?.products || s.tables?.skus || 'Items')", self.source)
-        self.assertIn("technicalTableLabel(s.tables?.shipments || s.tables?.receipts || 'Receipts')", self.source)
-        self.assertIn("technicalTableLabel(s.tables?.merchandise || s.tables?.receiptEntries || 'Receipt Entries')", self.source)
+        self.assertIn("technicalTableLabel(s.tables?.products || s.tables?.skus || 'Products')", self.source)
+        self.assertIn("technicalTableLabel(s.tables?.shipments || s.tables?.receipts || 'Shipments')", self.source)
+        self.assertIn("technicalTableLabel(s.tables?.merchandise || s.tables?.receiptEntries || 'Merchandise')", self.source)
         self.assertIn("Airtable table", self.vocabulary)
 
     def test_migrated_pages_use_alias_api_calls(self):

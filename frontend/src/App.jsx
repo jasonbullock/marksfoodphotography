@@ -1428,7 +1428,7 @@ function QuickReceivingCapture({ locationList }) {
 function ShipmentsPage() {
   const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
-  const carrierOptions = useResource(() => api.airtableSingleSelectOptions({ tableName: 'Receipts', fieldName: 'Carrier' }));
+  const carrierOptions = useResource(() => api.airtableSingleSelectOptions({ tableName: 'Shipments', fieldName: 'Carrier' }));
   const allReceipts = useResource(() => api.listShipments());
 
   const [receipt, setReceipt] = useState(null);
@@ -2798,9 +2798,9 @@ function SettingsPage({ cards = null } = {}) {
   }
 
   async function clearCoreTables() {
-    const merchandiseTable = s?.tables?.merchandise || s?.tables?.receiptEntries || 'Receipt Entries';
-    const shipmentsTable = s?.tables?.shipments || s?.tables?.receipts || 'Receipts';
-    const productsTable = s?.tables?.products || s?.tables?.items || 'Items';
+    const merchandiseTable = s?.tables?.merchandise || s?.tables?.receiptEntries || 'Merchandise';
+    const shipmentsTable = s?.tables?.shipments || s?.tables?.receipts || 'Shipments';
+    const productsTable = s?.tables?.products || s?.tables?.items || 'Products';
     const typed = window.prompt(`This will delete all rows from ${technicalTableLabel(merchandiseTable)}, ${technicalTableLabel(shipmentsTable)}, ${technicalTableLabel(productsTable)}, History, Jobs, and Imports. Type DELETE to continue.`);
     if (typed !== 'DELETE') return;
     setClearing(true);
@@ -2847,15 +2847,15 @@ function SettingsPage({ cards = null } = {}) {
               </div>
               <div className="setting-row">
                 <span className="setting-key">{DOMAIN_TERMS.products}</span>
-                <span className="setting-val">{technicalTableLabel(s.tables?.products || s.tables?.skus || 'Items')}</span>
+                <span className="setting-val">{technicalTableLabel(s.tables?.products || s.tables?.skus || 'Products')}</span>
               </div>
               <div className="setting-row">
                 <span className="setting-key">{DOMAIN_TERMS.shipments}</span>
-                <span className="setting-val">{technicalTableLabel(s.tables?.shipments || s.tables?.receipts || 'Receipts')}</span>
+                <span className="setting-val">{technicalTableLabel(s.tables?.shipments || s.tables?.receipts || 'Shipments')}</span>
               </div>
               <div className="setting-row">
                 <span className="setting-key">{DOMAIN_TERMS.merchandise}</span>
-                <span className="setting-val">{technicalTableLabel(s.tables?.merchandise || s.tables?.receiptEntries || 'Receipt Entries')}</span>
+                <span className="setting-val">{technicalTableLabel(s.tables?.merchandise || s.tables?.receiptEntries || 'Merchandise')}</span>
               </div>
             </>
           )}
@@ -2937,7 +2937,7 @@ function SettingsPage({ cards = null } = {}) {
             </div>
             <div className="setting-row setting-row-danger">
               <span className="setting-key">Clear Core Tables</span>
-              <span className="setting-val">Delete all rows from {technicalTableLabel(s.tables?.merchandise || s.tables?.receiptEntries || 'Receipt Entries')}, {technicalTableLabel(s.tables?.shipments || s.tables?.receipts || 'Receipts')}, {technicalTableLabel(s.tables?.products || s.tables?.items || 'Items')}, History, Jobs, and Imports.</span>
+              <span className="setting-val">Delete all rows from {technicalTableLabel(s.tables?.merchandise || s.tables?.receiptEntries || 'Merchandise')}, {technicalTableLabel(s.tables?.shipments || s.tables?.receipts || 'Shipments')}, {technicalTableLabel(s.tables?.products || s.tables?.items || 'Products')}, History, Jobs, and Imports.</span>
               <button className="btn btn-danger" type="button" onClick={clearCoreTables} disabled={clearing}>
                 {clearing ? 'Deleting…' : 'Delete Rows'}
               </button>
@@ -2974,13 +2974,12 @@ function SettingsPage({ cards = null } = {}) {
 
 // ── Intake page ──────────────────────────────────────────────────────────────
 const INTAKE_TARGET_LABELS = {
-  'Item Name': getFieldLabel('Item Name', 'product'),
+  'Product Name': getFieldLabel('Product Name', 'product'),
   Identifier: getFieldLabel('Identifier', 'product'),
   'Product or File Name': getFieldLabel('Product or File Name', 'product'),
   'Product/File Name': getFieldLabel('Product/File Name', 'product'),
-  'Product Name': getFieldLabel('Product Name', 'product'),
   Description: getFieldLabel('Description', 'product'),
-  'Item Job Number': getFieldLabel('Item Job Number', 'product'),
+  'Product Job Number': getFieldLabel('Product Job Number', 'product'),
   'Output Type': getFieldLabel('Output Type', 'product'),
   'Master or Variant': getFieldLabel('Master or Variant', 'product'),
   'Pickup Job Number': getFieldLabel('Pickup Job Number', 'product'),
@@ -2993,11 +2992,11 @@ const INTAKE_TARGET_LABELS = {
 };
 
 const INTAKE_FALLBACK_TARGET_DESCRIPTIONS = {
-  'Item Name': 'Optional product display name in the app.',
+  'Product Name': 'Optional product display name in the app.',
   Identifier: 'Client product identifier.',
   'Product or File Name': 'Product or file name.',
   Description: 'Longer source product description.',
-  'Item Job Number': 'Row-level job or project number for the product.',
+  'Product Job Number': 'Row-level job or project number for the product.',
   'Output Type': 'Photo Only, Render Only, or Photo + Render.',
   'Master or Variant': 'Whether this product is a master or a variant.',
   'Pickup Job Number': 'Previous production job number for variant pickup work.',
@@ -3011,13 +3010,13 @@ const INTAKE_FALLBACK_TARGET_DESCRIPTIONS = {
 
 const INTAKE_REQUIRED_TARGETS = ['Identifier'];
 const KNOWN_INTAKE_MAPPINGS = {
-  kroger: { 'Job #': 'Item Job Number', Description: 'Description', UPC: 'Identifier', Brand: 'Brand', 'Product Received': 'Item Name', 'Output Type': 'Output Type', Notes: 'Notes' },
-  unfi: { 'Project Number': 'Item Job Number', Description: 'Description', UPC: 'Identifier', 'Output Type': 'Output Type', Notes: 'Notes' },
-  smithfield: { 'Job #': 'Item Job Number', 'GAR #': 'Identifier', Brand: 'Brand', 'Product Description': 'Description', Output: 'Output Type', Notes: 'Notes' },
+  kroger: { 'Job #': 'Product Job Number', Description: 'Description', UPC: 'Identifier', Brand: 'Brand', 'Product Received': 'Product Name', 'Output Type': 'Output Type', Notes: 'Notes' },
+  unfi: { 'Project Number': 'Product Job Number', Description: 'Description', UPC: 'Identifier', 'Output Type': 'Output Type', Notes: 'Notes' },
+  smithfield: { 'Job #': 'Product Job Number', 'GAR #': 'Identifier', Brand: 'Brand', 'Product Description': 'Description', Output: 'Output Type', Notes: 'Notes' },
 };
 const INTAKE_TARGET_FIELDS = {
   'Job Name': 'jobName', 'Parent Job Number': 'parentJobNumber', 'Due Date': 'due',
-  'Item Name': 'itemName', Identifier: 'id', 'Product or File Name': 'product', 'Product/File Name': 'product', 'Product Name': 'product', Description: 'description', 'Item Job Number': 'itemJobNumber', 'Output Type': 'output', 'Master or Variant': 'masterOrVariant', 'Pickup Job Number': 'pickupJobNumber', Brand: 'brand', Notes: 'notes',
+  'Product Name': 'itemName', Identifier: 'id', 'Product or File Name': 'product', 'Product/File Name': 'product', Description: 'description', 'Product Job Number': 'itemJobNumber', 'Output Type': 'output', 'Master or Variant': 'masterOrVariant', 'Pickup Job Number': 'pickupJobNumber', Brand: 'brand', Notes: 'notes',
 };
 const INTAKE_WIZARD_STEPS = [
   { id: 'upload', label: 'Upload' },
@@ -3054,15 +3053,15 @@ function buildInitialColumnMapping(headers, clientName) {
   Object.entries(known).forEach(([source, target]) => {
     if ((headers || []).includes(source)) { mapping[source] = target; used.add(source); }
   });
-  if (!Object.values(mapping).includes('Item Name')) {
+  if (!Object.values(mapping).includes('Product Name')) {
     const itemName = firstAvailableHeader(headers, used, ['productreceived', 'productdescription', 'itemname', 'itemdescription', 'description']);
-    if (itemName) { mapping[itemName] = 'Item Name'; used.add(itemName); }
+    if (itemName) { mapping[itemName] = 'Product Name'; used.add(itemName); }
   }
   [
     ['Identifier', ['upc', 'gtin', 'gar', 'itemnumber', 'sku']],
     ['Product or File Name', ['productfilename', 'productname']],
     ['Description', ['description', 'productdescription', 'productreceived', 'itemdescription']],
-    ['Item Job Number', ['jobnumber', 'jobid', 'job', 'projectnumber', 'project']],
+    ['Product Job Number', ['jobnumber', 'jobid', 'job', 'projectnumber', 'project']],
     ['Output Type', ['outputtype', 'output']],
     ['Master or Variant', ['masterorvariant', 'mastervariant', 'varianttype']],
     ['Pickup Job Number', ['pickupjobnumber', 'pickupjob', 'previousjobnumber']],
@@ -3255,7 +3254,7 @@ function IntakePage({ navigate }) {
   const normalizedClientRequiredFields = clientRequiredFields.map(field => field === 'ID' ? 'Identifier' : ['Product Name', 'Product/File Name'].includes(field) ? 'Product or File Name' : field);
   const photographyTargets = ['Identifier', ...normalizedClientRequiredFields.filter(field => ['Product or File Name', 'Brand'].includes(field))].filter((target, index, list) => list.indexOf(target) === index);
   const photographyRequiredTargets = new Set(['Identifier', ...normalizedClientRequiredFields]);
-  const itemMappingTargets = ['Item Name', ...photographyTargets, ...(photographyTargets.includes('Brand') ? [] : ['Brand']), 'Product or File Name', 'Description', 'Item Job Number', 'Output Type', 'Master or Variant', 'Pickup Job Number', 'Notes', 'Reference Data']
+  const itemMappingTargets = ['Product Name', ...photographyTargets, ...(photographyTargets.includes('Brand') ? [] : ['Brand']), 'Product or File Name', 'Description', 'Product Job Number', 'Output Type', 'Master or Variant', 'Pickup Job Number', 'Notes', 'Reference Data']
     .filter((target, index, list) => list.indexOf(target) === index);
   const itemMappingTargetSet = new Set(itemMappingTargets);
   const referenceColumns = headers.filter(header => !new Set(Object.values(targetMapping).filter(Boolean)).has(header));
@@ -4418,7 +4417,7 @@ function MerchandiseReviewPage() {
                   <summary>Raise Issue</summary>
                   <small>Creates an existing Issue record and keeps the photos attached as context.</small>
                   <select value={issueType} onChange={event => setIssueType(event.target.value)}>
-                    <option>Unknown Item</option>
+                    <option value="Unknown Item">Unidentified Merchandise</option>
                     <option>Damaged</option>
                     <option>Wrong Merch</option>
                     <option>Missing Merch</option>

@@ -498,7 +498,7 @@ def evaluate_photo_readiness(item, client=None, issues=None, full=False):
 
     if item.get("status") in PRODUCTION_LOCK_STATUSES:
         details.update({"ready": True, "state": "ready_for_photo", "label": READINESS_LABELS["ready_for_photo"]})
-        details["warnings"].append("Item is already in production or complete; readiness will not move it backward.")
+        details["warnings"].append("Product is already in production or complete; readiness will not move it backward.")
         return details
 
     blockers = _blocking_merchandise_issues(issues)
@@ -511,7 +511,7 @@ def evaluate_photo_readiness(item, client=None, issues=None, full=False):
 
     if merchandise_required and not _item_has_merchandise(item):
         details.update({"state": "waiting_for_merchandise", "label": READINESS_LABELS["waiting_for_merchandise"]})
-        details["missing"].append("Merchandise must be received and matched to this item.")
+        details["missing"].append("Merchandise must be received and matched to this Product.")
         return details
 
     missing_data = []
@@ -557,19 +557,19 @@ XLSX_RELS_NS = {
 DEFAULT_IMPORT_OUTPUT = "Photo + Render"
 IMPORT_OUTPUTS = {"Photo Only", "Render Only", "Photo + Render"}
 INTAKE_FALLBACK_DESCRIPTIONS = {
-    "Item Name": "Optional item display name in the app.",
+    "Product Name": "Optional product display name in the app.",
     "Identifier": "Client product identifier.",
     "Product or File Name": "Product or file name.",
-    "Description": "Longer source product or item description.",
-    "Item Job Number": "Row-level job or project number for the item.",
+    "Description": "Longer source product description.",
+    "Product Job Number": "Row-level job or project number for the product.",
     "Output Type": "Photo Only, Render Only, or Photo + Render.",
-    "Master or Variant": "Whether this item is a master or a variant.",
+    "Master or Variant": "Whether this product is a master or a variant.",
     "Pickup Job Number": "Previous production job number for variant pickup work.",
     "Brand": "Product brand.",
     "Due Date": "Job due date when present in the source spreadsheet.",
-    "Notes": "Source notes that describe the item.",
+    "Notes": "Source notes that describe the product.",
     "Job Name": "Human-readable job or group name.",
-    "Reference Data": "Preserve source values as item reference JSON.",
+    "Reference Data": "Preserve source values as product reference JSON.",
 }
 INTAKE_MAPPINGS = {
     "kroger": {
@@ -1154,11 +1154,11 @@ def _intake_destination_field_map():
         "Job Name": (C.JOBS_TABLE, C.F_JOB_NAME),
         "Parent Job Number": (C.JOBS_TABLE, C.F_JOB_PARENT_NUMBER),
         "Due Date": (C.JOBS_TABLE, C.F_JOB_DUE),
-        "Item Name": (C.PRODUCTS_TABLE, C.F_ITEM_NAME),
+        "Product Name": (C.PRODUCTS_TABLE, C.F_ITEM_NAME),
         "Identifier": (C.PRODUCTS_TABLE, C.F_ITEM_IDENTIFIER),
         "Product or File Name": (C.PRODUCTS_TABLE, C.F_ITEM_PRODUCT),
         "Description": (C.PRODUCTS_TABLE, C.F_ITEM_DESCRIPTION),
-        "Item Job Number": (C.PRODUCTS_TABLE, C.F_ITEM_JOB_NUMBER),
+        "Product Job Number": (C.PRODUCTS_TABLE, C.F_ITEM_JOB_NUMBER),
         "Output Type": (C.PRODUCTS_TABLE, C.F_ITEM_OUTPUT),
         "Master or Variant": (C.PRODUCTS_TABLE, C.F_ITEM_MASTER_VARIANT),
         "Pickup Job Number": (C.PRODUCTS_TABLE, C.F_ITEM_PICKUP_JOB_NUMBER),
@@ -1305,12 +1305,13 @@ def _mapping_from_ui_mapping(ui_mapping):
         mapping["job_group"] = job_group_field
     target_keys = {
         "Item Name": "item_name",
+        "Product Name": "item_name",
         "Identifier": "id",
         "Product or File Name": "product",
         "Product/File Name": "product",
-        "Product Name": "product",
         "Description": "description",
         "Item Job Number": "item_job_number",
+        "Product Job Number": "item_job_number",
         "Brand": "brand",
         "Job Number": "item_job_number",
         "Parent Job Number": "parent_job_number",
@@ -1324,12 +1325,14 @@ def _mapping_from_ui_mapping(ui_mapping):
         "Jobs.Parent Job Number": "parent_job_number",
         "Jobs.Due": "due",
         "Items.Item": "item_name",
+        "Products.Product Name": "item_name",
         "Items.Identifier": "id",
         "Items.Product or File Name": "product",
         "Items.Product/File Name": "product",
         "Items.Product Name": "product",
         "Items.Description": "description",
         "Items.Item Job Number": "item_job_number",
+        "Products.Product Job Number": "item_job_number",
         "Items.Job Number": "item_job_number",
         "Items.Output Type": "output",
         "Items.Master or Variant": "master_or_variant",
@@ -1342,9 +1345,9 @@ def _mapping_from_ui_mapping(ui_mapping):
         "ID": "id",
         "Product or File Name": "product",
         "Product/File Name": "product",
-        "Product Name": "product",
         "Description": "description",
         "Item Job Number": "item_job_number",
+        "Product Job Number": "item_job_number",
         "Job Number": "item_job_number",
         "Output Type": "output",
         "Master or Variant": "master_or_variant",
@@ -1360,7 +1363,7 @@ def _mapping_from_ui_mapping(ui_mapping):
             target_name = str(target or "").strip()
             if not source_name:
                 continue
-            if target_name == "Notes" or target_name == "Items.Notes":
+            if target_name in {"Notes", "Items.Notes", "Products.Notes"}:
                 mapping["notes"].append(source_name)
                 continue
             key = target_keys.get(target_name)
@@ -1374,7 +1377,7 @@ def _mapping_from_ui_mapping(ui_mapping):
         target_name = str(target or "").strip()
         if not source_name or target_name == "Ignore":
             continue
-        if target_name == "Items.Notes" or target_name == "Notes":
+        if target_name in {"Items.Notes", "Products.Notes", "Notes"}:
             mapping["notes"].append(source_name)
             continue
         if target_name == "Reference Data":
@@ -1888,7 +1891,7 @@ def _execute_intake_plan(plan):
                 "Item Created",
                 item_ids=[data["id"]],
                 job_ids=[job_id],
-                details=f"Item created: {fields.get(C.F_ITEM_NAME, data['id'])}.",
+                details=f"Product created: {fields.get(C.F_ITEM_NAME, data['id'])}.",
             )
             summary["itemsCreated"] += 1
 
@@ -1919,8 +1922,8 @@ def _filter_locations(records):
     filtered = []
     for record in records:
         fields = record.get("fields", {})
-        item_ids = set(fields.get("Items", []) or [])
-        receipt_ids = set(fields.get("Receipts", []) or [])
+        item_ids = set((fields.get("Products", []) or []) + (fields.get("Items", []) or []))
+        receipt_ids = set((fields.get("Shipments", []) or []) + (fields.get("Receipts", []) or []))
         if item_ids & permitted_item_ids or receipt_ids & permitted_receipt_ids:
             filtered.append(record)
     return filtered
@@ -2352,7 +2355,7 @@ def _jobs_by_id():
     return {record["id"]: _shape_job(record) for record in records}
 
 
-# ── Items ─────────────────────────────────────────────────────────────────────
+# ── Products ──────────────────────────────────────────────────────────────────
 
 @api.get("/items")
 @api.get("/products")
@@ -2419,7 +2422,7 @@ def create_item():
         "Item Created",
         item_ids=[item_id],
         job_ids=[job_id] if job_id else None,
-        details=f"Item created: {fields.get(C.F_ITEM_NAME, item_id)}.",
+        details=f"Product created: {fields.get(C.F_ITEM_NAME, item_id)}.",
     )
     return jsonify(_shape_item(data, clients_by_id=_clients_by_id(), issues_by_item_id=_issues_by_item_id())), 201
 
@@ -2941,7 +2944,7 @@ def _set_link_field(fields, field, value):
     fields[field] = value if isinstance(value, list) else [value]
 
 
-# ── Receipts ─────────────────────────────────────────────────────────────────
+# ── Shipments ────────────────────────────────────────────────────────────────
 
 @api.get("/receipts")
 @api.get("/shipments")
@@ -3253,7 +3256,7 @@ def match_verification_entry(entry_id):
         return _forbidden()
     receipt_client_ids = _as_list(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])) if receipt else []
     if receipt_client_ids and item_client_ids and not (set(receipt_client_ids) & set(item_client_ids)):
-        return err("Item does not belong to this receipt client.", 403)
+        return err("Product does not belong to this Shipment client.", 403)
 
     try:
         updated_item = _merge_receipt_entry_photos_into_item(entry, item)
@@ -3689,7 +3692,7 @@ def _upload_receiving_entry_photos(receipt_id, receipt_entry_id):
         return _forbidden()
     linked_receipts = _as_list(entry_record.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
     if receipt_id not in linked_receipts:
-        return err("Receipt entry does not belong to this receipt.", 404)
+        return err("Merchandise does not belong to this Shipment.", 404)
 
     storage = _photo_storage()
     uploaded_photos = []
@@ -3844,7 +3847,7 @@ def update_receiving_entry(record_id, entry_id):
         return _forbidden()
     linked_receipts = _as_list(entry_record.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
     if record_id not in linked_receipts:
-        return err("Receipt entry does not belong to this receipt.", 404)
+        return err("Merchandise does not belong to this Shipment.", 404)
     fields_or_error = _receipt_entry_update_fields_from_body(body)
     if isinstance(fields_or_error, tuple):
         return fields_or_error
@@ -4149,7 +4152,7 @@ def _receipt_entry_match_fields(body, receipt):
             return _forbidden()
         receipt_client_ids = _as_list(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, []))
         if receipt_client_ids and item_client_ids and not (set(receipt_client_ids) & set(item_client_ids)):
-            return err("Item does not belong to this receipt client.", 403)
+            return err("Product does not belong to this Shipment client.", 403)
         fields[C.F_RECEIPT_ENTRY_ITEM] = [item_id]
         fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Matched"
         if job_id:
@@ -4160,7 +4163,7 @@ def _receipt_entry_match_fields(body, receipt):
     elif body.get("noClearMatch") or match_status in {"Needs Match", "No Clear Match"}:
         fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Received"
     elif match_status == "Matched":
-        return err("Choose an Item before marking this entry matched.")
+        return err("Choose a Product before marking this Merchandise matched.")
     else:
         fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Received"
     return fields
@@ -4301,7 +4304,7 @@ def _shape_receipt_entry(r):
 VERIFICATION_STATUS_LABELS = {
     "Needs Review": "Awaiting Verification",
     "Verified": "Verified",
-    "Issue": "Awaiting Item Import",
+    "Issue": "Awaiting Product Import",
 }
 
 
@@ -4534,7 +4537,7 @@ def randomize_demo_data():
             issues_by_item.setdefault(item_id, []).append(issue)
 
     if not items:
-        return jsonify({"summary": {"itemsUpdated": 0, "issuesUpdated": 0, "clientsUpdated": 0, "warnings": ["No Items records exist to randomize."]}})
+        return jsonify({"summary": {"itemsUpdated": 0, "issuesUpdated": 0, "clientsUpdated": 0, "warnings": ["No Products records exist to randomize."]}})
 
     assignments = _queue_assignment(items, issues_by_item)
     item_queue_by_id = {record["id"]: queue_id for queue_id, record in assignments.items() if record}
@@ -4554,9 +4557,9 @@ def randomize_demo_data():
     updated_clients = 0
 
     if not assignments.get("waiting_merchandise"):
-        warnings.append("No unreceived/unlinked Item was available for Waiting for Merchandise without changing relationships.")
+        warnings.append("No unreceived/unlinked Product was available for Waiting for Merchandise without changing relationships.")
     if not assignments.get("merchandise_issues"):
-        warnings.append("No existing Issue linked to an Item was available for Merchandise Issues.")
+        warnings.append("No existing Issue linked to a Product was available for Merchandise Issues.")
 
     artwork_client_ids = {
         _item_client_id(assignments["missing_artwork"])
