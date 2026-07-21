@@ -10,7 +10,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app import create_app  # noqa: E402
 from config import Config as C  # noqa: E402
 from routes import AUTH_SESSION_KEY  # noqa: E402
-from routes import WAITING_FOR_PRODUCT_DATA_MARKER  # noqa: E402
 
 
 class IntakeDecisionTests(unittest.TestCase):
@@ -55,35 +54,114 @@ class IntakeDecisionTests(unittest.TestCase):
     def test_valid_intake_decisions_save_and_serialize(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_PRODUCTION_TYPE: "Packaging",
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo", "Ecomm Photo"],
             C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Keep at Walnut",
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
-            "productionType": "Packaging",
+            "deliverables": ["Packaging Photo", "Ecomm Photo"],
             "merchandiseResolution": "Keep at Walnut",
         })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PRODUCTION_TYPE], "Packaging")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging Photo", "Ecomm Photo"])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION], "Keep at Walnut")
         payload = response.get_json()
-        self.assertEqual(payload["production_type"], "Packaging")
-        self.assertEqual(payload["productionType"], "Packaging")
+        self.assertEqual(payload["deliverables"], ["Packaging Photo", "Ecomm Photo"])
         self.assertEqual(payload["merchandise_resolution"], "Keep at Walnut")
         self.assertEqual(payload["merchandiseResolution"], "Keep at Walnut")
 
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
-    def test_invalid_production_type_rejected(self, get_record):
+    def test_single_deliverable_saves_as_multi_select_payload(self, get_record, update_record, _clients):
+        get_record.side_effect = [self.entry(), self.receipt()]
+        update_record.return_value = self.entry({
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo"],
+        })
+
+        response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
+            "deliverables": "Packaging",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        fields = update_record.call_args.args[2]
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging Photo"])
+        payload = response.get_json()
+        self.assertEqual(payload["deliverables"], ["Packaging Photo"])
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_legacy_and_airtable_multiselect_shapes_are_normalized(self, get_record, update_record, _clients):
+        get_record.side_effect = [self.entry(), self.receipt()]
+        update_record.return_value = self.entry({
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo", "Ecomm Photo", "Thr3d"],
+        })
+
+        response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
+            "deliverables": [{"name": "Packaging"}, {"name": "Ecomm"}, {"name": "THR3D"}],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        fields = update_record.call_args.args[2]
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging Photo", "Ecomm Photo", "Thr3d"])
+        self.assertEqual(response.get_json()["deliverables"], ["Packaging Photo", "Ecomm Photo", "Thr3d"])
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_comma_separated_legacy_deliverables_are_normalized(self, get_record, update_record, _clients):
+        get_record.side_effect = [self.entry(), self.receipt()]
+        update_record.return_value = self.entry({
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo", "Ecomm Photo"],
+        })
+
+        response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
+            "deliverables": "Packaging, Ecomm",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(update_record.call_args.args[2][C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging Photo", "Ecomm Photo"])
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_malformed_deliverable_shapes_are_normalized_before_airtable(self, get_record, update_record, _clients):
+        get_record.side_effect = [self.entry(), self.receipt()]
+        update_record.return_value = self.entry({
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo", "Ecomm Photo", "Thr3d"],
+        })
+
+        response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
+            "deliverables": [
+                '["Packaging Photo"]',
+                ['"Ecomm"'],
+                {"name": '"THR3D"'},
+                "",
+                '"""',
+                None,
+                "Packaging",
+            ],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            update_record.call_args.args[2][C.F_RECEIPT_ENTRY_DELIVERABLES],
+            ["Packaging Photo", "Ecomm Photo", "Thr3d"],
+        )
+
+    @patch("routes.airtable.get_record")
+    def test_invalid_deliverable_rejected(self, get_record):
         get_record.side_effect = [self.entry(), self.receipt()]
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
-            "productionType": "Video",
+            "deliverables": ["Video"],
         })
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Production Type must be one of", response.get_json()["error"])
+        self.assertIn("Deliverables must be one or more of", response.get_json()["error"])
 
     @patch("routes.airtable.get_record")
     def test_invalid_merchandise_resolution_rejected(self, get_record):
@@ -102,18 +180,18 @@ class IntakeDecisionTests(unittest.TestCase):
     def test_blank_values_are_allowed(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_PRODUCTION_TYPE: "",
+            C.F_RECEIPT_ENTRY_DELIVERABLES: [],
             C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "",
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
-            "productionType": "",
+            "deliverables": [],
             "merchandiseResolution": "",
         })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PRODUCTION_TYPE], "")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], [])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION], "")
 
     @patch("routes._clients_by_id", return_value={})
@@ -122,17 +200,17 @@ class IntakeDecisionTests(unittest.TestCase):
     def test_thr3d_defaults_resolution_when_blank(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_PRODUCTION_TYPE: "THR3D",
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d", "Ecomm Photo"],
             C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Ship to Kentucky",
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
-            "productionType": "THR3D",
+            "deliverables": ["Thr3d", "Ecomm Photo"],
         })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PRODUCTION_TYPE], "THR3D")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Thr3d", "Ecomm Photo"])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION], "Ship to Kentucky")
 
     @patch("routes._clients_by_id", return_value={})
@@ -144,17 +222,17 @@ class IntakeDecisionTests(unittest.TestCase):
             self.receipt(),
         ]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_PRODUCTION_TYPE: "THR3D",
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d"],
             C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Hold",
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
-            "productionType": "THR3D",
+            "deliverables": ["Thr3d"],
         })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PRODUCTION_TYPE], "THR3D")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Thr3d"])
         self.assertNotIn(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, fields)
 
     @patch("routes._clients_by_id", return_value={})
@@ -163,41 +241,49 @@ class IntakeDecisionTests(unittest.TestCase):
     def test_changing_away_from_thr3d_does_not_clear_resolution(self, get_record, update_record, _clients):
         get_record.side_effect = [
             self.entry({
-                C.F_RECEIPT_ENTRY_PRODUCTION_TYPE: "THR3D",
+                C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d"],
                 C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Ship to Kentucky",
             }),
             self.receipt(),
         ]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_PRODUCTION_TYPE: "eCommerce",
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm Photo"],
             C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Ship to Kentucky",
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
-            "productionType": "eCommerce",
+            "deliverables": ["Ecomm Photo"],
         })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PRODUCTION_TYPE], "eCommerce")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Ecomm Photo"])
         self.assertNotIn(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, fields)
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
-    def test_intake_state_waiting_info_uses_merchandise_notes_and_status(self, get_record, update_record, _clients):
+    def test_intake_state_waiting_info_uses_intake_status(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry({C.F_RECEIPT_ENTRY_NOTES: "Receiver note"}), self.receipt()]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_NOTES: f"Receiver note\n{WAITING_FOR_PRODUCT_DATA_MARKER}",
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo"],
+            C.F_RECEIPT_ENTRY_NOTES: "Receiver note",
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Waiting on Information",
         })
 
-        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={"stage": "waiting-info"})
+        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
+            "stage": "waiting-info",
+            "deliverables": ["Packaging Photo"],
+            "blockingRequirements": ["Product not identified"],
+        })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging Photo"])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
-        self.assertIn(WAITING_FOR_PRODUCT_DATA_MARKER, fields[C.F_RECEIPT_ENTRY_NOTES])
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Waiting on Information")
+        self.assertNotIn(C.F_RECEIPT_ENTRY_NOTES, fields)
         self.assertEqual(response.get_json()["reviewState"], "Waiting for Product Data")
 
     @patch("routes._clients_by_id", return_value={})
@@ -206,16 +292,20 @@ class IntakeDecisionTests(unittest.TestCase):
     def test_intake_state_send_thr3d_updates_merchandise_decision_fields(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_PRODUCTION_TYPE: "THR3D",
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d"],
             C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Ship to Kentucky",
         })
 
-        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={"stage": "send-thr3d"})
+        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
+            "stage": "send-thr3d",
+            "deliverables": ["Thr3d"],
+        })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PRODUCTION_TYPE], "THR3D")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Thr3d"])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION], "Ship to Kentucky")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Ready to Release")
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
 
     @patch("routes._clients_by_id", return_value={})
@@ -226,32 +316,53 @@ class IntakeDecisionTests(unittest.TestCase):
         get_record.side_effect = [
             self.entry({
                 C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
-                C.F_RECEIPT_ENTRY_NOTES: f"Receiver note\n{WAITING_FOR_PRODUCT_DATA_MARKER}",
+                C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo"],
+                C.F_RECEIPT_ENTRY_NOTES: "Receiver note",
+                C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
             }),
             self.receipt(),
-            {"id": "recProduct", "fields": {C.F_ITEM_NAME: "Frozen Pizza"}},
+            {"id": "recProduct", "fields": {C.F_ITEM_NAME: "Frozen Pizza", C.F_ITEM_IDENTIFIER: "000123", C.F_ITEM_ARTWORK_RECEIVED: True}},
+            {"id": "recProduct", "fields": {C.F_ITEM_NAME: "Frozen Pizza", C.F_ITEM_IDENTIFIER: "000123", C.F_ITEM_ARTWORK_RECEIVED: True}},
         ]
         update_record.return_value = self.entry({
             C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo"],
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated",
             C.F_RECEIPT_ENTRY_NOTES: "Receiver note",
         })
 
-        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={"stage": "ready-production"})
+        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
+            "stage": "ready-production",
+            "deliverables": ["Packaging Photo"],
+        })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging Photo"])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Validated")
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_NOTES], "Receiver note")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Ready to Release")
+        self.assertNotIn(C.F_RECEIPT_ENTRY_NOTES, fields)
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_explicit_invalid_intake_status_is_rejected(self, get_record, update_record, _clients):
+        get_record.side_effect = [self.entry(), self.receipt()]
+
+        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={"intakeStatus": "Blocked"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Intake Status must be one of", response.get_json()["error"])
+        update_record.assert_not_called()
 
     @patch("routes.airtable.get_record")
     def test_intake_state_ready_production_requires_product(self, get_record):
-        get_record.side_effect = [self.entry(), self.receipt()]
+        get_record.side_effect = [self.entry({C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo"]}), self.receipt()]
 
         response = self.app.patch("/api/merchandise/recMerch/intake-state", json={"stage": "ready-production"})
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Product Information", response.get_json()["error"])
+        self.assertIn("Product Linked", response.get_json()["error"])
 
 
 class IntakeDecisionSchemaUtilityTests(unittest.TestCase):
@@ -261,11 +372,11 @@ class IntakeDecisionSchemaUtilityTests(unittest.TestCase):
     def table(self, fields=None):
         return {"id": "tblMerch", "name": C.MERCHANDISE_TABLE, "fields": fields or []}
 
-    def field(self, name, choices):
+    def field(self, name, choices, field_type="singleSelect"):
         return {
             "id": f"fld{name.replace(' ', '')}",
             "name": name,
-            "type": "singleSelect",
+            "type": field_type,
             "options": {"choices": [{"name": choice} for choice in choices]},
         }
 
@@ -275,10 +386,10 @@ class IntakeDecisionSchemaUtilityTests(unittest.TestCase):
     def test_schema_utility_creates_missing_fields(self, _load_env, get_tables, create_field):
         get_tables.side_effect = [
             [self.table()],
-            [self.table([self.field(C.F_RECEIPT_ENTRY_PRODUCTION_TYPE, C.PRODUCTION_TYPE_OPTIONS)])],
+            [self.table([self.field(C.F_RECEIPT_ENTRY_DELIVERABLES, C.DELIVERABLE_OPTIONS)])],
         ]
         create_field.side_effect = [
-            {"id": "fldProductionType"},
+            {"id": "fldDeliverables"},
             {"id": "fldMerchandiseResolution"},
         ]
 
@@ -288,20 +399,21 @@ class IntakeDecisionSchemaUtilityTests(unittest.TestCase):
         self.assertEqual(create_field.call_count, 2)
         created_names = [call.args[1]["name"] for call in create_field.call_args_list]
         self.assertEqual(created_names, [
-            C.F_RECEIPT_ENTRY_PRODUCTION_TYPE,
+            C.F_RECEIPT_ENTRY_DELIVERABLES,
             C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION,
         ])
         self.assertEqual(
             [choice["name"] for choice in create_field.call_args_list[0].args[1]["options"]["choices"]],
-            C.PRODUCTION_TYPE_OPTIONS,
+            C.DELIVERABLE_OPTIONS,
         )
+        self.assertEqual(create_field.call_args_list[0].args[1]["type"], "multipleSelects")
 
     @patch("ensure_intake_decision_fields.create_field")
     @patch("ensure_intake_decision_fields.get_tables")
     @patch("ensure_intake_decision_fields.load_env")
     def test_schema_utility_reuses_existing_equivalent_fields(self, _load_env, get_tables, create_field):
         existing = self.table([
-            self.field(C.F_RECEIPT_ENTRY_PRODUCTION_TYPE, C.PRODUCTION_TYPE_OPTIONS),
+            self.field(C.F_RECEIPT_ENTRY_DELIVERABLES, C.DELIVERABLE_OPTIONS, "multipleSelects"),
             self.field(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, C.MERCHANDISE_RESOLUTION_OPTIONS),
         ])
         get_tables.side_effect = [[existing], [existing]]
@@ -311,11 +423,34 @@ class IntakeDecisionSchemaUtilityTests(unittest.TestCase):
 
         create_field.assert_not_called()
 
+    @patch("ensure_intake_decision_fields.update_field")
+    @patch("ensure_intake_decision_fields.create_field")
+    @patch("ensure_intake_decision_fields.get_tables")
+    @patch("ensure_intake_decision_fields.load_env")
+    def test_schema_utility_converts_existing_single_select(self, _load_env, get_tables, create_field, update_field):
+        existing_single = self.table([
+            self.field(C.F_RECEIPT_ENTRY_DELIVERABLES, C.DELIVERABLE_OPTIONS),
+            self.field(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, C.MERCHANDISE_RESOLUTION_OPTIONS),
+        ])
+        converted = self.table([
+            self.field(C.F_RECEIPT_ENTRY_DELIVERABLES, C.DELIVERABLE_OPTIONS, "multipleSelects"),
+            self.field(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, C.MERCHANDISE_RESOLUTION_OPTIONS),
+        ])
+        get_tables.side_effect = [[existing_single], [converted]]
+        update_field.return_value = {"id": "fldDeliverables"}
+
+        with patch.object(C, "airtable_ready", return_value=True):
+            self.utility.main()
+
+        create_field.assert_not_called()
+        update_field.assert_called_once()
+        self.assertEqual(update_field.call_args.args[2]["type"], "multipleSelects")
+
     @patch("ensure_intake_decision_fields.get_tables")
     @patch("ensure_intake_decision_fields.load_env")
     def test_schema_utility_rejects_incomplete_existing_options(self, _load_env, get_tables):
         get_tables.return_value = [self.table([
-            self.field(C.F_RECEIPT_ENTRY_PRODUCTION_TYPE, ["eCommerce"]),
+            self.field(C.F_RECEIPT_ENTRY_DELIVERABLES, ["eCommerce"]),
         ])]
 
         with patch.object(C, "airtable_ready", return_value=True):

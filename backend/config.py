@@ -107,9 +107,17 @@ class Config:
     F_RECEIPT_ENTRY_PHOTO_METADATA = "Photo Metadata"
     F_RECEIPT_ENTRY_ITEM = "Product"
     F_RECEIPT_ENTRY_MERCH_STATUS = "Merch Status"
-    F_RECEIPT_ENTRY_PRODUCTION_TYPE = "Production Type"
+    F_RECEIPT_ENTRY_INTAKE_STATUS = "Intake Status"
+    F_RECEIPT_ENTRY_DELIVERABLES = "Deliverables"
     F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION = "Merchandise Resolution"
-    PRODUCTION_TYPE_OPTIONS = ["eCommerce", "Packaging", "THR3D"]
+    F_RECEIPT_ENTRY_RELEASED = "Released"
+    F_RECEIPT_ENTRY_RELEASED_AT = "Released At"
+    F_RECEIPT_ENTRY_RELEASED_BY = "Released By"
+    F_RECEIPT_ENTRY_MERCH_VERIFIED = "Merchandise Verified"
+    F_RECEIPT_ENTRY_MERCH_VERIFIED_AT = "Merchandise Verified At"
+    F_RECEIPT_ENTRY_MERCH_VERIFIED_BY = "Merchandise Verified By"
+    INTAKE_STATUS_OPTIONS = ["Needs Review", "Waiting on Information", "Ready to Release", "Closed"]
+    DELIVERABLE_OPTIONS = ["Packaging Photo", "Ecomm Photo", "Thr3d"]
     MERCHANDISE_RESOLUTION_OPTIONS = [
         "Keep at Walnut",
         "Ship to Kentucky",

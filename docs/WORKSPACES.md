@@ -55,37 +55,65 @@ Examples:
 
 Inventory views may include cards, lists, filters, exports, age groupings, storage groupings, or physical-status perspectives. These are views over the same merchandise, not new data models.
 
-## Intake
+## Planning
 
 Business Question:
 
-> What still needs to happen before this can be produced?
+> What must be resolved before Production can accept this work?
 
 Purpose:
 
-Resolve uncertainty and establish readiness.
+Resolve uncertainty and prepare work for the shared Ready for Photo handoff.
 
-Intake is the decision perspective. It is where Project Management determines what a piece of merchandise is, what the client requires, what kind of production is needed, and whether anything blocks release.
+The primary Planning board is a freeform PM workspace organized by Queue, not an automatic workflow engine.
 
-Active Intake state should be derived from Merchandise and supporting Product data. Intake should not require PMs to create Work Orders, choose Workflow Templates, maintain Workflow Stages, or manage Work Order Types before merchandise can move toward readiness.
+Queue answers:
 
-Intake includes:
+> Where is this PM work sitting today?
+
+Queue is separate from Merchandise Status. Queue does not describe whether the physical sample is in house, at Thr3d, returned, disposed, or in production.
+
+The only system-owned Queue is `New`. The only gated Queue is `Ready for Photo`. Middle queues `Planning` and `Waiting` are PM-controlled.
+
+The public checklist language is `Required to Shoot`, not `Readiness`.
+
+Planning is the PM preparation perspective. It is where Project Management determines what a piece of merchandise is, what the client requires, what kind of production is needed, and whether anything blocks Production from accepting the work.
+
+Active Planning state should be derived from Merchandise and supporting Product data. Planning should not require PMs to create Work Orders, choose Workflow Templates, maintain Workflow Stages, or manage Work Order Types before merchandise can move toward readiness.
+
+The canonical Intake state field is Merchandise `Intake Status`. Supporting Merchandise fields such as `deliverables`, `Merchandise Resolution`, and existing matched/validated compatibility status may create specialized views, but they should not multiply workflow-specific status values.
+
+Planning includes:
 
 - product identification
 - client requirements
-- production type
-- merchandise resolution
+- deliverables
+- required information
+- exception handling
 - replacement requests
-- readiness
 - release to production
 
-Intake should collapse "match product", "create product", and "enter missing information" into one continuous readiness experience. Users should not experience database maintenance as the work.
+Planning should collapse "match product", "create product", and "enter missing information" into one continuous verification experience. Users should not experience database maintenance as the work.
 
-Intake decisions should produce one clear answer:
+The primary PM experience is the Merchandise Verification wizard:
+
+1. Verify Merchandise
+2. Identify Product
+3. Choose Deliverables
+4. Complete Required Information
+5. Finish
+
+The wizard determines what should happen next. PMs do not need to complete every item in one sitting; saved, incomplete verification belongs in Waiting for Information with explicit missing-information reasons.
+
+Planning decisions should produce one clear answer:
 
 > Is this merchandise ready to release to production?
 
-If not, Intake should explain what is missing.
+If not, Planning should explain what is missing.
+
+`Ready for Photo` is the shared Planning-to-Production handoff queue. Moving a card there means Planning work is complete, but PM ownership remains until Production accepts it.
+
+When Production later moves a card from `Ready for Photo` to `Scheduled`, that acceptance should remove the card from Planning, show it on Production, transfer ownership to Production, and log Activity. This should happen without duplicating Merchandise records.
 
 ## Production
 
@@ -97,16 +125,19 @@ Purpose:
 
 Plan and coordinate execution.
 
-Production begins after Release to Production. It is concerned with how ready work becomes scheduled, staffed, staged, and executed.
+Production begins by accepting shared `Ready for Photo` work. It is concerned with how ready work becomes scheduled, staffed, staged, and executed.
 
 Production includes:
 
+- accepting Ready for Photo work
 - scheduling
 - resources
 - studios
 - pre-production
 - planning
 - Creative Force integration
+
+Future Production board states should be `Ready for Photo`, `Scheduled`, `In Production`, `QC`, and `Complete`. Planning and Production are related by the shared handoff queue, but they should not be modeled as one tightly coupled continuous workflow.
 
 Production may display Creative Force state, but it should not recreate Creative Force. Marks Photo owns the readiness handoff and production context, while Creative Force owns detailed execution.
 
@@ -130,7 +161,7 @@ The same merchandise can appear in multiple workspaces because each workspace is
 
 - Receiving sees merchandise as newly arrived physical reality.
 - Inventory sees merchandise as something physically held.
-- Intake sees merchandise as decisions and readiness.
+- Planning sees merchandise as decisions, blockers, and Required to Shoot.
 - Production sees merchandise as production intent and execution planning.
 - PhotoTrack sees merchandise through production success and asset outcome.
 

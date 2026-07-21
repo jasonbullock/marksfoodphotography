@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from app import create_app  # noqa: E402
 from config import Config as C  # noqa: E402
-from routes import AUTH_SESSION_KEY, WAITING_FOR_PRODUCT_DATA_MARKER  # noqa: E402
+from routes import AUTH_SESSION_KEY  # noqa: E402
 
 
 class MerchandiseReviewTests(unittest.TestCase):
@@ -91,7 +91,7 @@ class MerchandiseReviewTests(unittest.TestCase):
             }),
             self.entry("recWaiting", {
                 C.F_RECEIPT_ENTRY_NAME: "Imported later",
-                C.F_RECEIPT_ENTRY_NOTES: f"{WAITING_FOR_PRODUCT_DATA_MARKER} missing import",
+                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Waiting on Information",
             }),
             self.entry("recValidated", {
                 C.F_RECEIPT_ENTRY_ITEM: ["recProductValidated"],
@@ -193,18 +193,20 @@ class MerchandiseReviewTests(unittest.TestCase):
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
-    def test_waiting_for_product_data_uses_existing_notes(self, get_record, update_record):
+    def test_waiting_for_product_data_uses_intake_status_and_preserves_notes(self, get_record, update_record):
         get_record.side_effect = [self.entry("recEntry", {C.F_RECEIPT_ENTRY_NOTES: "Receiver note"}), self.receipt()]
         update_record.return_value = self.entry("recEntry", {
-            C.F_RECEIPT_ENTRY_NOTES: f"Receiver note\n{WAITING_FOR_PRODUCT_DATA_MARKER} Import missing",
+            C.F_RECEIPT_ENTRY_NOTES: "Receiver note\nImport missing",
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Waiting on Information",
         })
 
         response = self.app.post("/api/merchandise/review/recEntry/waiting-product-data", json={"note": "Import missing"})
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertIn(WAITING_FOR_PRODUCT_DATA_MARKER, fields[C.F_RECEIPT_ENTRY_NOTES])
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Waiting on Information")
+        self.assertNotIn("[Waiting for Product Data]", fields[C.F_RECEIPT_ENTRY_NOTES])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
         self.assertEqual(response.get_json()["reviewState"], "Waiting for Product Data")
 

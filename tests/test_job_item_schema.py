@@ -30,7 +30,7 @@ class JobItemSchemaTests(unittest.TestCase):
     def test_workstream_registry_contains_only_initial_work_order_workstreams(self):
         self.assertEqual(
             [definition["label"] for definition in WORKSTREAM_DEFINITIONS],
-            ["Ecomm Photo", "Packaging Photo", "THR3D"],
+            ["Ecomm Photo", "Packaging Photo", "Thr3d"],
         )
         self.assertEqual(
             [definition["id"] for definition in WORKSTREAM_DEFINITIONS],

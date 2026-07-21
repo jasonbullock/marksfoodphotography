@@ -10,8 +10,8 @@ Examples:
 
 - Receiving: What arrived?
 - Inventory: What do we physically have?
-- Intake: What must be decided before production?
-- Production: How will we execute production?
+- Planning: What must be decided before Production can accept the work?
+- Production: How will we execute accepted work?
 - PhotoTrack: Was production successful?
 
 Do not create a workspace because a table exists, a status exists, or a new workflow state exists.
@@ -28,7 +28,7 @@ New views should be common. New workspaces should be rare.
 
 Marks Photo should present different perspectives of the same merchandise.
 
-Receiving, Inventory, Intake, Production, and PhotoTrack may all show the same merchandise through different lenses. They should not create duplicate merchandise or duplicate product facts to make the UI convenient.
+Receiving, Inventory, Planning, Production, and PhotoTrack may all show the same merchandise through different lenses. They should not create duplicate merchandise or duplicate product facts to make the UI convenient.
 
 ## 4. Readiness Over Workflow
 
@@ -48,15 +48,15 @@ If not:
 
 Merchandise is the operational center of Marks Photo.
 
-Products, Jobs, Clients, Shipments, production types, and reporting references support the merchandise lifecycle. They should not displace merchandise as the thing the application is helping Walnut move toward production.
+Products, Jobs, Clients, Shipments, deliverabless, and reporting references support the merchandise lifecycle. They should not displace merchandise as the thing the application is helping Walnut move toward production.
 
-## 6. One Release To Production
+## 6. One Shared Ready For Photo Handoff
 
-There should be one clear Release to Production concept.
+There should be one clear Ready for Photo handoff queue.
 
-Different clients or production types may require different readiness checks, but the handoff should remain understandable: the merchandise is either ready to release or it is not.
+Different clients or deliverabless may require different checks, but the handoff should remain understandable: the merchandise is either ready for Production to accept or it is not.
 
-Avoid fragmenting release into many competing workflow events.
+Avoid fragmenting the handoff into many competing workflow events or duplicate records.
 
 ## 7. Prefer Fields Over Tables
 
@@ -78,21 +78,25 @@ It should emphasize physical presence, storage location, age, condition, identif
 
 Inventory should not become the PM decision workflow.
 
-## 10. Intake Is A Decision Perspective
+## 10. Planning Is A PM Preparation Perspective
 
-Intake answers what must be decided before production.
+Planning answers what must be decided before Production can accept the work.
 
-It owns product identification, client requirements, production type, merchandise resolution, replacement requests, readiness, and release to production.
+It owns product identification, client requirements, deliverables, merchandise resolution, replacement requests, Required to Shoot, and movement into the shared Ready for Photo queue.
 
-Intake should make uncertainty actionable.
+Planning should make uncertainty actionable.
+
+The primary PM Planning experience should guide verification rather than expose a database form. Use progressive steps when the PM must first verify Merchandise, identify Product, choose Deliverables, then resolve only the required missing information for those Deliverables.
 
 ## 11. Production Is An Execution Perspective
 
-Production answers how the studio will execute released work.
+Production answers how the studio will execute accepted work.
 
 It owns scheduling, resources, studios, pre-production, planning, and Creative Force integration context.
 
-Production should not absorb Intake decisions, and it should not replace Creative Force.
+Production should not absorb Planning decisions, and it should not replace Creative Force.
+
+Production should begin by accepting shared `Ready for Photo` work. The future move from `Ready for Photo` to `Scheduled` should transfer ownership from PM to Production without creating duplicate Merchandise.
 
 ## 12. The Interface Should Remove Uncertainty
 
@@ -100,7 +104,7 @@ Every meaningful interaction should reduce uncertainty:
 
 - identify the merchandise
 - explain what is missing
-- clarify the required production type
+- clarify the required deliverables
 - resolve the physical merchandise path
 - release work cleanly to production
 
@@ -116,9 +120,23 @@ Prefer:
 - blocked
 - missing artwork
 - awaiting identification
+- required information
+- still needed
 - ready to release
 
-Avoid exposing implementation language such as engine, transition, assignment, schema, or table unless the user is in an administrative or developer context.
+Avoid exposing implementation language such as readiness, engine, transition, assignment, schema, or table unless the user is in an administrative or developer context.
+
+For the Planning board, prefer:
+
+- Queue
+- Required to Shoot
+- Conversation
+- Activity
+- Ready for Photo
+
+Avoid public board labels such as Board Status, Readiness, workflow gate, transition, and assignment.
+
+The PM board should feel like a workspace. Cards should not disappear or change queues merely because a PM completed a field.
 
 ## 14. Existing Systems Keep Their Jobs
 

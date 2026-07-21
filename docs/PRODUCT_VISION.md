@@ -38,9 +38,9 @@ Receiving
 ↓
 Inventory
 ↓
-Intake
+Planning
 ↓
-Release to Production
+Ready for Photo
 ↓
 Production
 ↓
@@ -69,27 +69,33 @@ Ownership: operations and warehouse visibility.
 
 Inventory answers what the studio physically has. It is a shelf and storage perspective over merchandise, not a decision workflow. Inventory helps people locate, age, inspect, purge, or answer client inventory questions about physical samples.
 
-### Intake
+### Planning
 
 Ownership: Project Management and operations readiness.
 
-Intake is where uncertainty is resolved before production. It identifies the product, evaluates client requirements, determines production type, decides merchandise resolution, requests replacement when needed, and establishes whether the work is ready to release.
+Planning is where uncertainty is resolved before production. It identifies the product, evaluates client requirements, determines deliverables, decides merchandise resolution, requests replacement when needed, and establishes whether the work is ready for photo production.
 
-Intake is the decision perspective. It is not a generic workflow board. It is the operating room for readiness.
+Planning is the PM preparation perspective. Its board is a freeform PM workspace organized by Queue, not an automatic workflow engine.
 
-### Release to Production
+The PM-facing Planning experience should guide Merchandise Verification step by step. The interface should show `Required to Shoot` and the next business outcome rather than asking PMs to manage a generic readiness gate.
+
+Queue is separate from Merchandise Status. Queue organizes PM work; Merchandise Status describes the physical or operational state of the sample.
+
+### Ready for Photo
 
 Ownership: Project Management.
 
-Release to Production is the single readiness handoff. It means the required merchandise facts, product facts, client requirements, production type, and production instructions are complete enough for production planning and execution.
+Ready for Photo is the shared handoff queue between Planning and Production. It means the required merchandise facts, product facts, client requirements, deliverables, and production instructions are complete enough for Production to accept the work.
 
-There should be one Release to Production concept. Readiness paths may differ by client or production type, but the handoff should remain clear.
+There should be one shared Ready for Photo queue. Readiness paths may differ by client or deliverables, but the handoff should remain clear and should not duplicate Merchandise records.
 
 ### Production
 
 Ownership: Production coordination.
 
 Production determines how the work will be executed: schedule, resources, studio, pre-production, planning, and integration with Creative Force. Marks Photo may prepare and display production intent, but it should not become the system that manages every production task.
+
+Production begins by accepting shared `Ready for Photo` work. A future move from `Ready for Photo` to `Scheduled` should transfer ownership from Project Management to Production, remove the card from the Planning board, show it on the Production board, and log Activity.
 
 ### Creative Force
 
@@ -111,7 +117,7 @@ The application presents different perspectives of the same merchandise:
 
 - Receiving perspective: what arrived?
 - Inventory perspective: what do we physically have?
-- Intake perspective: what must be decided?
+- Planning perspective: what must be decided before production can accept the work?
 - Production perspective: how will we execute?
 - PhotoTrack perspective: was production successful?
 

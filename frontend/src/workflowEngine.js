@@ -58,22 +58,24 @@ export const WORKSTREAMS = [
   },
   {
     id: WORKSTREAM_IDS.thr3d,
-    label: 'THR3D',
-    description: 'THR3D routing workstream.',
+    label: 'Thr3d',
+    description: 'Thr3d routing workstream.',
     active: true,
     workflowTemplate: 'thr3d-review',
-    workflowName: 'THR3D Review',
+    workflowName: 'Thr3d Review',
     initialGate: 'new-review',
     requiredReviewData: ['product-information', 'thr3d-routing'],
     jobRequired: false,
     producerRequired: false,
     schedulingRequired: false,
-    externalDestination: 'THR3D',
+    externalDestination: 'Thr3d',
   },
 ];
 
 export const REQUIREMENT_KEYS = {
+  merchandiseVerified: 'merchandise-verified',
   productInformation: 'product-information',
+  deliverables: 'deliverables',
   artwork: 'artwork',
   activationInformation: 'activation-information',
 };
@@ -84,6 +86,40 @@ export const GATE_IDS = {
   sendThr3d: 'send-thr3d',
   waitingActivation: 'waiting-activation',
   readyProduction: 'ready-production',
+  productionScheduled: 'production-scheduled',
+  productionInProgress: 'production-in-progress',
+  productionQc: 'production-qc',
+  productionComplete: 'production-complete',
+};
+
+export const WORKFLOW_BOARD_IDS = {
+  planning: 'planning',
+  production: 'production',
+};
+
+export const WORKFLOW_BOARD_STATE_MODEL = {
+  [WORKFLOW_BOARD_IDS.planning]: {
+    id: WORKFLOW_BOARD_IDS.planning,
+    label: 'Planning Board',
+    owner: WORKFLOW_OWNERS.projectManagement,
+    owns: [GATE_IDS.newReview, GATE_IDS.waitingActivation, GATE_IDS.waitingInformation],
+    shared: [GATE_IDS.readyProduction],
+    columns: [GATE_IDS.newReview, GATE_IDS.waitingActivation, GATE_IDS.waitingInformation, GATE_IDS.readyProduction],
+  },
+  [WORKFLOW_BOARD_IDS.production]: {
+    id: WORKFLOW_BOARD_IDS.production,
+    label: 'Production Board',
+    owner: 'Production',
+    owns: [GATE_IDS.productionScheduled, GATE_IDS.productionInProgress, GATE_IDS.productionQc, GATE_IDS.productionComplete],
+    shared: [GATE_IDS.readyProduction],
+    columns: [
+      GATE_IDS.readyProduction,
+      GATE_IDS.productionScheduled,
+      GATE_IDS.productionInProgress,
+      GATE_IDS.productionQc,
+      GATE_IDS.productionComplete,
+    ],
+  },
 };
 
 export const WORKSPACE_SECTIONS = {
@@ -101,7 +137,7 @@ export const WORKSPACE_SECTIONS = {
   shipment: 'shipment',
   issues: 'issues',
   history: 'history',
-  readinessSummary: 'readiness-summary',
+  readinessSummary: 'required-to-shoot',
   merchandiseSummary: 'merchandise-summary',
   productSummary: 'product-summary',
 };
@@ -115,7 +151,7 @@ export const CARD_FIELDS = {
   timeHere: 'timeHere',
   quantity: 'quantity',
   issueIndicator: 'issueIndicator',
-  readiness: 'readiness',
+  readiness: 'requiredToShoot',
 };
 
 function gate({
@@ -168,17 +204,17 @@ function gate({
 
 export const MERCHANDISE_REVIEW_WORKFLOW = {
   id: 'merchandise-review',
-  name: 'Intake',
+  name: 'Planning Board',
   owner: WORKFLOW_OWNERS.projectManagement,
   defaultFor: 'merchandise-review',
-  description: 'Resolve what is needed before merchandise can be produced.',
+  description: 'A PM-owned planning board for resolving what is required to shoot before production accepts the work.',
   gates: [
     gate({
       id: GATE_IDS.newReview,
-      label: 'Review',
-      description: 'Newly received merchandise awaiting Intake review.',
+      label: 'New',
+      description: 'Newly received merchandise awaiting PM verification.',
       order: 10,
-      exitCriteria: [REQUIREMENT_KEYS.productInformation],
+      exitCriteria: [REQUIREMENT_KEYS.merchandiseVerified],
       allowedNextGates: [GATE_IDS.waitingInformation, GATE_IDS.sendThr3d, GATE_IDS.waitingActivation, GATE_IDS.readyProduction],
       workspaceMode: WORKSPACE_MODES.modal,
       workspaceSections: [
@@ -191,8 +227,8 @@ export const MERCHANDISE_REVIEW_WORKFLOW = {
     }),
     gate({
       id: GATE_IDS.waitingInformation,
-      label: 'Waiting for Information',
-      description: 'Required product, identifier, artwork, or client fields need attention.',
+      label: 'Waiting',
+      description: 'PM-owned queue for client answers, files, or decisions.',
       order: 20,
       exitCriteria: [REQUIREMENT_KEYS.productInformation, REQUIREMENT_KEYS.artwork, REQUIREMENT_KEYS.activationInformation],
       allowedNextGates: [GATE_IDS.newReview, GATE_IDS.sendThr3d, GATE_IDS.waitingActivation, GATE_IDS.readyProduction],
@@ -207,11 +243,11 @@ export const MERCHANDISE_REVIEW_WORKFLOW = {
     }),
     gate({
       id: GATE_IDS.sendThr3d,
-      label: 'Send to THR3D',
-      description: 'Merchandise routed into the THR3D workflow branch.',
+      label: 'Ready for Thr3d Shipping',
+      description: 'Verified merchandise ready for a dedicated Thr3d shipping workspace.',
       order: 30,
-      entryCriteria: [REQUIREMENT_KEYS.productInformation],
-      exitCriteria: [REQUIREMENT_KEYS.productInformation],
+      entryCriteria: [REQUIREMENT_KEYS.merchandiseVerified, REQUIREMENT_KEYS.deliverables],
+      exitCriteria: [REQUIREMENT_KEYS.merchandiseVerified, REQUIREMENT_KEYS.deliverables],
       allowedNextGates: [GATE_IDS.waitingActivation, GATE_IDS.readyProduction],
       workspaceSections: [
         WORKSPACE_SECTIONS.merchandiseObservations,
@@ -225,8 +261,8 @@ export const MERCHANDISE_REVIEW_WORKFLOW = {
     }),
     gate({
       id: GATE_IDS.waitingActivation,
-      label: 'Waiting for Activation',
-      description: 'Ready except for activation or campaign assignment.',
+      label: 'Planning',
+      description: 'PM-controlled planning queue.',
       order: 40,
       entryCriteria: [REQUIREMENT_KEYS.productInformation, REQUIREMENT_KEYS.artwork],
       exitCriteria: [REQUIREMENT_KEYS.activationInformation],
@@ -241,14 +277,14 @@ export const MERCHANDISE_REVIEW_WORKFLOW = {
     }),
     gate({
       id: GATE_IDS.readyProduction,
-      label: 'Ready for Production',
-      description: 'All required gates are satisfied.',
+      label: 'Ready for Photo',
+      description: 'All required information for the selected photo deliverables is complete.',
       order: 50,
       workspaceMode: WORKSPACE_MODES.readonly,
       entryCriteria: [
+        REQUIREMENT_KEYS.merchandiseVerified,
         REQUIREMENT_KEYS.productInformation,
-        REQUIREMENT_KEYS.artwork,
-        REQUIREMENT_KEYS.activationInformation,
+        REQUIREMENT_KEYS.deliverables,
       ],
       allowedNextGates: [],
       workspaceSections: [
@@ -353,6 +389,51 @@ function productInformationRequirement(record) {
     tone: warnings.length ? 'orange' : 'green',
     detail: warnings.length ? warnings.join(', ') : 'Complete',
     satisfied: !warnings.length,
+    overrideAllowed: false,
+  });
+}
+
+function deliverableValues(record) {
+  const values = Array.isArray(record?.deliverables) ? record.deliverables : [];
+  return values.filter(Boolean);
+}
+
+function selectedPhotoDeliverables(record) {
+  return deliverableValues(record).filter(value => value === 'Packaging Photo' || value === 'Ecomm Photo');
+}
+
+function isThr3dOnly(record) {
+  const deliverables = deliverableValues(record);
+  return deliverables.length === 1 && deliverables[0] === 'Thr3d';
+}
+
+function merchandiseVerifiedRequirement(record) {
+  const hasIssue = record?.reviewState === 'Issue' || record?.merchStatus === 'Issue' || Boolean(record?.blockingIssues?.length);
+  const verified = Boolean(record?.merchandiseVerified) && !hasIssue;
+  return requirementState({
+    key: REQUIREMENT_KEYS.merchandiseVerified,
+    label: 'Merchandise Verified',
+    status: verified ? WORKFLOW_STATUS.complete : WORKFLOW_STATUS.blocked,
+    tone: verified ? 'green' : 'red',
+    detail: hasIssue
+      ? 'Resolve the flagged merchandise issue.'
+      : verified
+        ? 'Complete'
+        : 'Confirm the physical merchandise.',
+    satisfied: verified,
+    overrideAllowed: false,
+  });
+}
+
+function deliverablesRequirement(record) {
+  const deliverables = deliverableValues(record);
+  return requirementState({
+    key: REQUIREMENT_KEYS.deliverables,
+    label: 'Deliverables',
+    status: deliverables.length ? WORKFLOW_STATUS.complete : WORKFLOW_STATUS.blocked,
+    tone: deliverables.length ? 'green' : 'red',
+    detail: deliverables.length ? deliverables.join(', ') : 'Choose Packaging Photo, Ecomm Photo, Thr3d, or a combination.',
+    satisfied: deliverables.length > 0,
     overrideAllowed: false,
   });
 }
@@ -493,11 +574,28 @@ function activationInformationRequirement(record, { client } = {}) {
 }
 
 export function evaluateMerchandiseReviewRequirements(record, { artworkOverride, client } = {}) {
-  return [
-    productInformationRequirement(record),
-    artworkRequirement(record, { artworkOverride, client }),
-    activationInformationRequirement(record, { client }),
+  const baseRequirements = [
+    merchandiseVerifiedRequirement(record),
+    deliverablesRequirement(record),
   ];
+  if (isThr3dOnly(record)) return baseRequirements;
+  const photoDeliverables = selectedPhotoDeliverables(record);
+  if (!photoDeliverables.length) return baseRequirements;
+  const photoRequirements = [productInformationRequirement(record)];
+  if (photoDeliverables.includes('Ecomm Photo')) {
+    photoRequirements.push(artworkRequirement(record, { artworkOverride, client }));
+    photoRequirements.push(activationInformationRequirement(record, { client }));
+  }
+  if (photoDeliverables.includes('Packaging Photo')) {
+    photoRequirements.push(artworkRequirement(record, { artworkOverride, client }));
+  }
+  const byKey = {};
+  [...baseRequirements, ...photoRequirements].forEach(requirement => {
+    if (!byKey[requirement.key] || (!requirement.satisfied && byKey[requirement.key].satisfied)) {
+      byKey[requirement.key] = requirement;
+    }
+  });
+  return Object.values(byKey);
 }
 
 function isThr3dRecord(record) {
@@ -579,15 +677,8 @@ export function gateById(workflow, gateId) {
 export function deriveMerchandiseReviewGate(record, requirements, requestedGateId, reviewState, workflow = MERCHANDISE_REVIEW_WORKFLOW) {
   const visibleGateIds = new Set(gatesForBoard(workflow).map(gateConfig => gateConfig.id));
   if (requestedGateId && visibleGateIds.has(requestedGateId)) return requestedGateId;
-  if (isThr3dRecord(record) && visibleGateIds.has(GATE_IDS.sendThr3d)) return GATE_IDS.sendThr3d;
-
-  const product = requirementByKey(requirements, REQUIREMENT_KEYS.productInformation);
-  const artwork = requirementByKey(requirements, REQUIREMENT_KEYS.artwork);
-  const activation = requirementByKey(requirements, REQUIREMENT_KEYS.activationInformation);
-
-  if ((!product.satisfied || artwork.status === WORKFLOW_STATUS.blocked) && visibleGateIds.has(GATE_IDS.waitingInformation)) return GATE_IDS.waitingInformation;
-  if (!activation.satisfied && visibleGateIds.has(GATE_IDS.waitingActivation)) return GATE_IDS.waitingActivation;
-  if (reviewState === 'Validated' && requirements.every(requirement => requirement.satisfied) && visibleGateIds.has(GATE_IDS.readyProduction)) return GATE_IDS.readyProduction;
+  if ((reviewState === 'Validated' || record?.intakeStatus === 'Ready to Release') && visibleGateIds.has(GATE_IDS.readyProduction)) return GATE_IDS.readyProduction;
+  if (record?.intakeStatus === 'Waiting on Information' && visibleGateIds.has(GATE_IDS.waitingInformation)) return GATE_IDS.waitingInformation;
   return visibleGateIds.has(GATE_IDS.newReview) ? GATE_IDS.newReview : [...visibleGateIds][0];
 }
 
@@ -618,13 +709,13 @@ export function createWorkflowAssignment({ workflow = MERCHANDISE_REVIEW_WORKFLO
 }
 
 function assignmentReason(gateId, requirements, record) {
-  if (gateId === GATE_IDS.sendThr3d) return 'Workstream or notes indicate THR3D routing.';
+  if (gateId === GATE_IDS.sendThr3d) return 'Thr3d is selected and this belongs in the Thr3d shipping path.';
   const blockers = requirements.filter(requirement => requirement.visible !== false && !requirement.satisfied);
-  if (gateId === GATE_IDS.waitingInformation) return blockers.length ? `Blocked by ${blockers.map(item => item.label).join(', ')}.` : 'Waiting for required information.';
-  if (gateId === GATE_IDS.waitingActivation) return 'Product and artwork are ready enough; activation is still pending.';
-  if (gateId === GATE_IDS.readyProduction) return 'All configured readiness requirements are satisfied.';
+  if (gateId === GATE_IDS.waitingInformation) return blockers.length ? `Still needed: ${blockers.map(item => item.label).join(', ')}.` : 'Waiting on a client answer.';
+  if (gateId === GATE_IDS.waitingActivation) return 'PM is actively working this card.';
+  if (gateId === GATE_IDS.readyProduction) return 'All required information for photography is complete.';
   if (record?.reviewState) return `Existing review state: ${record.reviewState}.`;
-  return 'Newly received merchandise is awaiting first review.';
+  return 'New merchandise is ready for a PM to pick up.';
 }
 
 export function validateWorkflowTransition(workflow, assignment, destinationGateId) {

@@ -118,7 +118,10 @@ async function backend(method, path, body) {
   }
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(payload?.error || `Backend error ${res.status}`);
+    const error = new Error(payload?.error || `Backend error ${res.status}`);
+    error.status = res.status;
+    error.payload = payload;
+    throw error;
   }
   return payload;
 }
@@ -332,11 +335,14 @@ api.searchMerchandiseReviewProducts = async ({ q, clientId, includeItemId } = {}
 };
 api.matchVerificationEntry = async (entryId, itemId) => backend('POST', `/verification/entries/${entryId}/match`, { itemId });
 api.validateVerificationEntry = async (entryId, status) => backend('POST', `/verification/entries/${entryId}/validate`, { status });
+api.verifyMerchandise = async (entryId, payload = {}) => backend('POST', `/merchandise/review/${entryId}/verify`, payload);
+api.unverifyMerchandise = async (entryId) => backend('POST', `/merchandise/review/${entryId}/unverify`);
 api.matchMerchandiseReviewEntry = async (entryId, productId) => backend('POST', `/merchandise/review/${entryId}/match`, { itemId: productId });
 api.validateMerchandiseReviewEntry = async (entryId, status) => backend('POST', `/merchandise/review/${entryId}/validate`, { status });
 api.removeMerchandiseReviewMatch = async (entryId) => backend('POST', `/merchandise/review/${entryId}/remove-match`);
 api.updateMerchandiseIntakeDecisions = async (entryId, payload = {}) => backend('PATCH', `/merchandise/${entryId}/intake-decisions`, payload);
 api.updateMerchandiseIntakeState = async (entryId, payload = {}) => backend('PATCH', `/merchandise/${entryId}/intake-state`, payload);
+api.releaseMerchandiseToProduction = async (entryId) => backend('POST', `/merchandise/${entryId}/release`);
 api.markMerchandiseWaitingForProductData = async (entryId, payload = {}) => backend('POST', `/merchandise/review/${entryId}/waiting-product-data`, payload);
 api.createMerchandiseReviewIssue = async (entryId, payload = {}) => backend('POST', `/merchandise/review/${entryId}/issue`, payload);
 api.listLocations = async () => backend('GET', '/locations');

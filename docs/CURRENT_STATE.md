@@ -6,6 +6,91 @@ Aligning the application with the updated Marks Photo product vision: an Operati
 
 Marks Photo should transform incoming merchandise into production-ready work. It should remove uncertainty before production begins and should not become a workflow engine, project management tool, Creative Force replacement, or PhotoTrack replacement.
 
+## 2026-07-21 Planning Workspace Architecture Refinement
+
+The current PM-owned board is now the `Planning` workspace.
+
+What is now true:
+- `/planning` is the canonical route for the PM planning board.
+- `/intake`, `/work`, and `/merchandise-review-v2` redirect to `/planning` for compatibility.
+- Primary navigation shows `Planning`, not `Intake`.
+- Planning is owned by Project Managers and answers what must be resolved before work can be photographed or otherwise accepted by Production.
+- Planning columns are `New`, `Planning`, `Waiting`, and `Ready for Photo`.
+- Cards still do not automatically move because fields were completed; PMs explicitly move cards.
+- `Ready for Photo` is the shared handoff queue between Planning and the future Production workspace.
+- A card in `Ready for Photo` remains visible on the Planning board until Production later accepts it.
+- No duplicate Merchandise records are created for the handoff.
+- The frontend workflow model now separates Planning board states from future Production board states.
+- Future Production board states are modeled as `Ready for Photo`, `Scheduled`, `In Production`, `QC`, and `Complete`.
+- Future acceptance from `Ready for Photo` to `Scheduled` should remove the card from Planning, show it on Production, transfer ownership from PM to Production, and log Activity.
+
+What did not change:
+- The board's visual design, compact cards, variable-height columns, modal, comments, Activity, and Required to Shoot UI were preserved.
+- Production scheduling was not implemented.
+- A full Production board was not implemented.
+- The existing Intake-named backend endpoints and Airtable compatibility fields remain in place until a staged schema/API migration is approved.
+
+Validation:
+- pending for this refinement pass.
+
+## 2026-07-21 PM Operations Board First Pass
+
+Superseded for the active workspace by `2026-07-21 Planning Workspace Architecture Refinement`.
+
+Intake is now being redirected toward a PM Operations Board model.
+
+What is now true:
+- The active `/intake` board is framed as a freeform PM workspace, not an automatic workflow engine.
+- User-facing board language uses `Queue` and `Required to Shoot`; public PM-facing surfaces should not use `Readiness`.
+- Board cards do not automatically move just because data was completed.
+- Closing the edit modal no longer silently moves incomplete New cards to Waiting on Information.
+- The board uses a darker, higher-contrast Trello-style canvas with light cards and variable-height queue columns that size to their card contents.
+- Active board columns are `New`, `Working`, `Waiting on Client`, `On Hold`, and `Ready for Photo`.
+- `Ready for Photo` remains gated. Dragging a card there is blocked unless Required to Shoot is complete.
+- `Working` and `On Hold` are PM-owned queue overrides stored locally for this first UI pass because the live Airtable base does not yet have a canonical `Queue` field.
+- `New`, `Waiting on Client`, and `Ready for Photo` continue to use the existing Intake state endpoint until the Airtable Queue migration is approved.
+- Every active Intake card opens the same modal, regardless of queue.
+- The modal now emphasizes Product, Deliverables, Required to Shoot, Conversation, and Activity.
+- The inline photo area is smaller; the existing fullscreen image viewer remains available by clicking the image.
+- Conversation is a single local comment stream for human discussion in this first pass.
+- Activity is a separate local stream for system events such as queue moves and comments.
+- Cards show comment count, new-comment indicator, age, deliverables, merchandise status, and Required to Shoot progress.
+- Opening a card marks its local comments read for the current user.
+- Backend `Ready for Photo` validation now aligns with the frontend Required to Shoot requirements for selected photo deliverables, including artwork and activation/campaign information where applicable.
+
+What is intentionally temporary:
+- PM queue overrides, Conversation, Activity, and unread-comment state are browser-local while the Airtable cleanup and canonical schema are audited.
+- A durable Airtable `Queue` field, durable Conversation table, durable Activity table, and dedicated Thr3d Shipping workspace still require schema approval and migration.
+- Thr3d work should not be forced onto the PM board. The current recommendation is a dedicated Thr3d Shipping workspace once Airtable schema cleanup is staged.
+
+Validation:
+- `backend/.venv/bin/python -m unittest tests.test_release_to_production tests.test_intake_decisions tests.test_frontend_routing`
+- `npm run build` in `frontend/`
+- `backend/.venv/bin/python backend/audit_airtable_schema.py`
+- `git diff --check`
+
+## 2026-07-21 Airtable Schema Cleanup Audit
+
+A non-destructive live Airtable schema audit was added and run.
+
+What is now true:
+- Audit script: `backend/audit_airtable_schema.py`
+- Audit output: `docs/migrations/2026-07-21-airtable-schema-cleanup-audit.json`
+- Staging note: `docs/migrations/2026-07-21-airtable-schema-cleanup.md`
+- Live base inspected: `appE30EGZv8OzssDx`
+- Live table count: 15
+- Canonical keep tables in the audit: Products, Jobs, Clients, Shipments, Locations, Users, Issues, Imports, Merchandise
+- Archive-review tables in the audit: History, Workstreams, Work Orders, Workflow Templates, Workflow Stages, Work Order Types
+- Work Orders currently reports no records in the metadata/data sample, but it was not deleted.
+- Scattered `Notes` fields were flagged for Conversation-consolidation review on Products, Shipments, Locations, Issues, and Merchandise.
+
+No Airtable tables, fields, or records were deleted in this pass.
+
+Remaining cleanup requirements:
+- Manually inspect Airtable Interfaces, Automations, Forms, shared views, scripts, extensions, and external syncs before destructive changes.
+- Export or snapshot affected tables before deletion or field removal.
+- Add canonical durable Queue/Conversation/Activity schema before removing compatibility structures used by active code.
+
 ## Foundational Architecture Documents
 
 The current foundational architecture documents are:
@@ -60,7 +145,253 @@ These documents define the long-term operating model:
 
 ## Next Step
 
-The Intake workspace is now driven by Merchandise state, Product data, Production Type, and Merchandise Resolution. The likely next product step is to define real Production Readiness requirements and the single Release to Production handoff without reintroducing workflow-engine configuration or Work Order creation as a PM prerequisite.
+The Intake workspace now has baseline Production Readiness, a single Merchandise-owned Release to Production handoff, and PM-facing Deliverables chips backed by the Merchandise `Deliverables` field. The likely next step is to continue shaping the Intake decision experience around readiness without adding workflow architecture.
+
+## 2026-07-21 Merchandise Verification Wizard
+
+Intake is being reshaped from an overloaded review form into a guided Merchandise Verification wizard.
+
+What is now true:
+- The `/intake` new-review modal presents a five-step wizard: Verify Merchandise, Identify Product, Choose Deliverables, Complete Required Information, and Finish.
+- PM-facing labels use `Package Name` and `Package ID / Barcode / SKU`; the wizard no longer exposes `Observed` terminology, `Storage Location`, `Merchandise Resolution`, `Readiness`, `Save`, `Save & Continue`, or `Release to Production` in the normal modal happy path.
+- Merchandise photos remain large, with thumbnails in a vertical strip to the left of the main image on desktop and wrapping below on smaller screens.
+- Deliverables use compact accessible checkbox controls and autosave after a short debounce. There is no separate `Save Deliverables` button in the wizard.
+- Product matching remains the primary middle step. Matching an existing Product or saving Product information still uses the existing Product endpoints and does not duplicate Product facts onto Merchandise.
+- Required information is derived after Deliverables are selected. `Thr3d`-only skips photo requirements and routes to the existing Thr3d gate once Merchandise is verified.
+- `Packaging Photo` and `Ecomm Photo` require the union of currently supported photo requirements. The first implementation derives from existing Merchandise/Product data and existing client/product artwork and activation signals; no new client requirement schema was added.
+- `Finish Verification` computes the next state instead of asking the PM to choose a final status:
+  - incomplete verification routes to `Waiting on Information`
+  - complete `Thr3d`-only verification routes to the existing Thr3d gate
+  - complete photo verification routes to the ready photo/release gate
+- Closing an incomplete new verification pauses the wizard and moves the item to `Waiting on Information` with derived missing-information labels.
+- Waiting for Information is now treated as a normal working state for incomplete verification, not a failure state.
+- Backend production readiness no longer requires `Merchandise Resolution` as a universal baseline requirement. It now requires Package Name, Package ID / Barcode / SKU, Deliverables, and Product fields only for selected photo deliverables.
+
+What did not change:
+- No Airtable schema changes were made.
+- Merchandise remains the center of Intake state.
+- `Intake Status` remains the canonical persisted state field with existing options.
+- Work Orders, Workflow Templates, Workflow Stages, Work Order Types, and Workstreams remain compatibility infrastructure and were not reintroduced as PM workflow requirements.
+- Merchandise Review V1 was not redesigned in this pass.
+
+Validation:
+- `backend/.venv/bin/python -m unittest tests.test_intake_decisions tests.test_frontend_routing`
+- `npm run build` in `frontend/`
+
+## 2026-07-20 Merchandise Legacy Field Cleanup Audit
+
+A narrow Merchandise schema cleanup pass migrated the only remaining legacy `Production Type` value into canonical `Deliverables`.
+
+What is now true:
+- Merchandise record `recVk8YYAj7vcl2B4` (`Pants`) had legacy `Production Type = Packaging`.
+- Before migration, the record's canonical `Deliverables` were `Ecomm Photo` and `Thr3d`.
+- The legacy `Packaging` value was treated as an additional historical deliverable and merged into `Deliverables`.
+- Airtable read-back confirmed the record now has exactly `Packaging Photo`, `Ecomm Photo`, and `Thr3d`.
+- During this audit pass, the legacy `Production Type` field still existed and still contained `Packaging` on that record because field deletion was blocked until Airtable-side Interfaces, Automations, Forms, shared views, scripts, and extensions were manually confirmed.
+- During this audit pass, live Merchandise metadata still included `Production Type` (`fldSwUluDDqwe6MVs`) and `Deprecated Airtable Photos - Do Not Use` (`fldtTr7eNQrT6iVrS`). The later 2026-07-21 removal section supersedes this state.
+- The Merchandise attachment field `Deprecated Airtable Photos - Do Not Use` has zero attachments on all live Merchandise records.
+- Every live Merchandise record has `Photo Metadata`, which remains the canonical R2-backed image reference field.
+- Airtable metadata exposed no Merchandise formulas, lookups, or rollups depending on these fields and showed the Merchandise table has only a `Grid view`; it did not expose Airtable Interfaces, Automations, Forms, shared-view usage, scripts, or extensions.
+- No active frontend or backend runtime code references `Production Type`, `fldSwUluDDqwe6MVs`, `productionType`, or `productionTypes`; remaining references are historical documentation or tests that intentionally assert legacy UI/API names are absent.
+- Active frontend image display uses `Photo Metadata` through `recordPhotos`.
+- Receiving image upload continues to use the R2 upload path and `Photo Metadata`.
+- The Airtable write client still strips legacy attachment fields by name and field ID as a final guard, so legacy attachment payloads are not written to Airtable.
+- `backend/ensure_intake_decision_fields.py` ensures `Deliverables` and `Merchandise Resolution`; it does not recreate `Production Type`.
+
+No Airtable fields or tables were deleted in this pass.
+
+Unresolved blocker:
+- Deleting `Production Type` or `Deprecated Airtable Photos - Do Not Use` requires manual Airtable-side confirmation that no Interface, Automation, Form, shared view, script, or extension references either field.
+
+Validation:
+- Airtable update and read-back confirmed `recVk8YYAj7vcl2B4` has `Deliverables = Packaging Photo, Ecomm Photo, Thr3d`.
+- Live Merchandise inspection confirmed 0 deprecated attachments and `Photo Metadata` present on all 7 records.
+- `backend/.venv/bin/python backend/ensure_intake_decision_fields.py`
+- `backend/.venv/bin/python -m unittest discover -s tests`
+- `npm run build` in `frontend/`
+- Local frontend route smoke returned HTTP 200 for `/intake`, `/merchandise`, `/receiving`, and `/imports` on port 5175.
+- Repository searches were run for legacy field names, field IDs, and API property names.
+- `git diff --check`
+
+## 2026-07-21 Merchandise Legacy Field Removal
+
+A final cleanup pass removed the two Merchandise legacy fields:
+
+- `Production Type` (`fldSwUluDDqwe6MVs`)
+- `Deprecated Airtable Photos - Do Not Use` (`fldtTr7eNQrT6iVrS`)
+
+Manual Airtable inspection confirmed no references to either field in:
+- Automations
+- Shared views
+- Scripts
+- Extensions
+
+Connector inspection also confirmed no Interfaces, interface pages, record detail pages, or standalone Forms for base `appE30EGZv8OzssDx`.
+
+What is now true:
+- Live Merchandise schema no longer includes `Production Type` (`fldSwUluDDqwe6MVs`).
+- Live Merchandise schema no longer includes `Deprecated Airtable Photos - Do Not Use` (`fldtTr7eNQrT6iVrS`).
+- `Deliverables` remains `multipleSelects` with exactly `Packaging Photo`, `Ecomm Photo`, and `Thr3d`.
+- `Photo Metadata` remains on Merchandise and is unchanged as the canonical R2-backed image manifest field.
+- Live Merchandise record `recVk8YYAj7vcl2B4` (`Pants`) still has canonical `Deliverables = Packaging Photo, Ecomm Photo, Thr3d` and populated `Photo Metadata`.
+- Sampled Merchandise records retained `Deliverables` and `Photo Metadata`; no data loss was observed.
+
+Validation:
+- `backend/.venv/bin/python backend/ensure_intake_decision_fields.py` reused `Deliverables` and `Merchandise Resolution`; it did not recreate `Production Type`.
+- `backend/.venv/bin/python -m unittest discover -s tests` passed, 178 tests.
+- `npm run build` in `frontend/` passed.
+- Local frontend route smoke returned HTTP 200 for `/imports`, `/receiving`, `/merchandise`, `/merchandise/review`, and `/intake` on port 5175.
+- Repository searches were run for both legacy field names and IDs.
+- `git diff --check`
+
+## 2026-07-20 Intake Deliverables Multi-Select
+
+Intake now treats required outputs as Deliverables, not as a single workflow choice.
+
+What is now true:
+- Deliverables belongs on Merchandise because it is a PM Intake decision for a physical Merchandise record.
+- The live Merchandise table contains `Deliverables`, field ID `fldKdarVfwSHu70Sa`.
+- `Deliverables` is a multiple-select field with exactly `Packaging Photo`, `Ecomm Photo`, and `Thr3d`.
+- The application serializes the field as `deliverables`.
+- The Intake UI renders exactly three compact checkbox-card options: `Packaging Photo`, `Ecomm Photo`, and `Thr3d`.
+- Multiple deliverables may be selected for one Merchandise record, including `Packaging Photo + Ecomm Photo` and `Thr3d + Ecomm Photo`.
+- Backend validation accepts only `Packaging Photo`, `Ecomm Photo`, and `Thr3d`; blank remains allowed during Intake.
+- Backend and frontend normalization gracefully read legacy values such as `Packaging`, `Ecomm`, `eCommerce`, `THR3D`, Airtable multi-select objects, arrays, nested arrays, JSON-stringified arrays, quote-wrapped values, quote-only strings, nulls, and comma-separated strings, then normalize internally to `Packaging Photo`, `Ecomm Photo`, and `Thr3d`.
+- Airtable update payloads use plain canonical string arrays in the Merchandise `Deliverables` field. Clearing Deliverables sends `[]`. The app must not send JSON-stringified arrays, select-option objects, comma-delimited strings, null values, empty strings, quote-only strings, or use Airtable `typecast` for Deliverables.
+- If malformed or unknown Deliverables values reach the backend, the backend logs the raw payload details and returns validation without passing unknown options to Airtable.
+- Deliverables save failures show `Could not save Deliverables. Try again.` in production and include the HTTP status or concise backend reason in development.
+- Deliverables selections update immediately in local UI state. The user saves the final selected array with a compact `Save Deliverables` action, avoiding competing autosave requests when multiple checkboxes are selected quickly.
+- Failed Deliverables saves keep the visible selection in place and show an inline `Retry` action.
+- If `Thr3d` is selected while Merchandise Resolution is blank, Merchandise Resolution defaults to `Ship to Kentucky`.
+- Removing `Thr3d` does not clear Merchandise Resolution.
+- Production Readiness now requires at least one Deliverable selected.
+- Dragging or moving a record to Send to THR3D adds `Thr3d` to the Deliverables list without removing existing selected deliverables.
+- Deliverable badges no longer render inner dots; color is conveyed through text, outline, and light background. The selector uses native checkbox inputs inside associated labels with visible keyboard focus, disabled styling, and checked state as the primary selected indicator.
+- No new Deliverables table, configuration table, client-specific rule table, workflow table, Production behavior, or Release to Production behavior was added.
+
+Parser error root cause:
+- The frontend requested API property `productionTypes`/`deliverables`.
+- The backend shaped that value from the Merchandise Airtable field configured as `Production Type`.
+- Live Airtable had Merchandise field `fldSwUluDDqwe6MVs`, name `Production Type`, type `singleSelect`, with old choices `eCommerce`, `Packaging`, and `THR3D`.
+- Airtable rejected multi-select payloads against that single-select field, producing parse errors such as "Cannot parse value for field Production Type."
+- The app now maps to Merchandise field `Deliverables` instead.
+
+Legacy data:
+- The old Merchandise `Production Type` field existed during the Deliverables migration but is no longer used by active application code; the later 2026-07-21 removal section records its deletion.
+- One existing old value was copied into the new `Deliverables` field after normalization.
+
+Latest save-path correction:
+- Root cause: the previous normalization path could allow over-quoted or quote-only Deliverables strings to survive into the Airtable multiple-select payload.
+- Malformed Airtable payload shape before the fix: `{"fields": {"Deliverables": ["\"\"\""]}}`, which made Airtable try to create a new select option named `"""` and fail with insufficient permissions.
+- Correct Airtable payload shape after the fix: `{"fields": {"Deliverables": ["Packaging Photo", "Ecomm Photo"]}}`, or `{"fields": {"Deliverables": []}}` when cleared.
+- Live save-path verification on the running backend confirmed `PATCH /api/merchandise/recVk8YYAj7vcl2B4/intake-decisions` persisted `Packaging Photo`, `Ecomm Photo`, `Thr3d`, combined selections, removal from multiple selections, and clearing. Each response was re-read directly from Airtable and restored to the record's original `Ecomm Photo + Thr3d` value afterward.
+- The running backend uses Merchandise table `tblWALCoKwvT6Nl8A` and field `Deliverables` / `fldKdarVfwSHu70Sa`.
+- The canonical live request body is `{"deliverables": ["Packaging Photo", "Ecomm Photo"]}` and the Airtable fields payload is `{"Deliverables": ["Packaging Photo", "Ecomm Photo"]}`.
+- A direct unauthenticated call to the same running backend returns `401 Authentication required`; authenticated calls with the same route, record ID, and payload succeed.
+
+Validation:
+- `backend/.venv/bin/python -m unittest tests.test_intake_decisions`
+- `backend/.venv/bin/python -m unittest tests.test_frontend_routing tests.test_intake_decisions`
+- `backend/.venv/bin/python -m unittest tests.test_intake_decisions tests.test_release_to_production tests.test_frontend_routing tests.test_job_item_schema`
+- `backend/.venv/bin/python -m unittest discover -s tests`
+- `backend/.venv/bin/python backend/ensure_intake_decision_fields.py` reused Merchandise `Deliverables`.
+- Live metadata read-back showed `Deliverables` is `multipleSelects` with choices `Packaging Photo`, `Ecomm Photo`, and `Thr3d`.
+- Live authenticated HTTP and direct Airtable read-back verified the requested Deliverables persistence matrix.
+- `npm run build` in `frontend/`
+- `git diff --check`
+
+## 2026-07-20 Production Readiness And Release To Production
+
+Intake now supports the final PM readiness handoff without becoming a workflow engine.
+
+What is now true:
+- Baseline Production Readiness is evaluated from existing Merchandise and Product data.
+- The universal readiness requirements are:
+  - Product linked
+  - Product Name present
+  - Product Identifier present, using the existing canonical Product `Identifier` field
+  - At least one Deliverable selected
+  - Merchandise Resolution present
+- Artwork, activation, job numbers, client-specific rules, approvals, scheduling, resources, and workflow transitions are not part of this baseline.
+- Merchandise API serialization includes `productionReadiness`, `releaseReady`, `released`, `released_at`, `releasedAt`, and `releasedByIds`.
+- `POST /api/merchandise/<entry_id>/release` and `/api/merchandise/review/<entry_id>/release` validate readiness server-side before release.
+- Release is idempotent. Already released Merchandise returns success without changing `Released At` or `Released By`.
+- Released Merchandise leaves the active Intake queue.
+- Released Merchandise remains visible in Inventory because Inventory is the warehouse perspective over physical goods.
+- No Work Orders, workflow transitions, Production records, Creative Force records, scheduling records, or configuration tables are created.
+
+Live Airtable fields:
+- `Released` (`fldkoRrdLxg9kpcST`) checkbox
+- `Released At` (`fldiJsIx7TmAHee0r`) single-line timestamp
+- `Released By` (`fldXcJ4bnd6YEhrKL`) link to Users
+
+Field decision:
+- `Released` was not added as an `Intake Status` option because `Intake Status` intentionally remains the four-state Intake model: `Needs Review`, `Waiting on Information`, `Ready to Release`, and `Closed`.
+- Release ownership is represented by the Merchandise-owned `Released` flag and audit fields. On release, `Intake Status` is set to `Closed`.
+
+Migration artifact:
+- `docs/migrations/2026-07-20-release-to-production.md`
+
+Validation:
+- Live Airtable metadata read-back confirmed `Released`, `Released At`, and `Released By`.
+- `backend/.venv/bin/python backend/ensure_release_to_production_fields.py --dry-run`
+- `backend/.venv/bin/python backend/ensure_release_to_production_fields.py`
+- `backend/.venv/bin/python backend/ensure_release_to_production_fields.py`
+- `backend/.venv/bin/python -m unittest tests.test_release_to_production tests.test_intake_status tests.test_intake_decisions tests.test_merchandise_review tests.test_merchandise_inventory tests.test_receiving tests.test_frontend_routing tests.test_job_item_schema tests.test_workflow_templates tests.test_work_order_types`
+- `backend/.venv/bin/python -m unittest discover -s tests`
+- `npm run build` in `frontend/`
+- `git diff --check`
+- Local frontend route smoke returned HTTP 200 for `/intake` and `/merchandise` on the running Vite server at port 5175.
+
+## 2026-07-20 Intake Status Cleanup
+
+Intake state now has a durable Merchandise-owned field instead of relying on a Notes marker.
+
+What is now true:
+- The live Merchandise table contains `Intake Status`, field ID `fldPjABnLlNhZlmwY`.
+- `Intake Status` is a single-select field with exactly `Needs Review`, `Waiting on Information`, `Ready to Release`, and `Closed`.
+- `Merch Status` was not reused because it still drives inventory and review compatibility with `Received`, `Matched`, `Validated`, and `Issue`.
+- Merchandise API serialization includes `intake_status` and `intakeStatus`.
+- `PATCH /api/merchandise/<entry_id>/intake-state` and `/api/merchandise/review/<entry_id>/intake-state` write `Intake Status` for canonical Intake state.
+- The active Intake board derives:
+  - Review from `Intake Status = Needs Review` or otherwise active Merchandise not caught by a special branch.
+  - Waiting for Information from `Intake Status = Waiting on Information`.
+  - Send to THR3D from Deliverables including `Thr3d`.
+  - Waiting for Activation from the existing matched Merchandise condition.
+  - Ready for Production from `Intake Status = Ready to Release`.
+- Newly received Merchandise enters Intake as `Needs Review`.
+- Missing readiness requirements do not automatically move Merchandise to Waiting for Information. Missing fields appear in the Readiness panel until a PM explicitly chooses Waiting for Information.
+- Notes are no longer parsed or written for active Intake state.
+- Existing normal Notes editing remains unchanged.
+- The legacy Merchandise Review V1 "Waiting for Product Data" label remains a compatibility label, now derived from `Intake Status = Waiting on Information`.
+- New Merchandise created during Receiving receives `Intake Status = Needs Review`.
+
+Migration results:
+- Dry run scanned 5 Merchandise records, planned to create `Intake Status`, and planned 5 safe defaults.
+- First live run created `Intake Status` and defaulted 5 active records.
+- Second live run made no schema changes and no record updates.
+- No records contained the exact `[Waiting for Product Data]` marker during the live migration, so no Notes cleanup was needed.
+
+What did not change:
+- No readiness rules were added.
+- Release to Production was not implemented in the Intake Status cleanup phase; the later Production Readiness and Release phase supersedes this limitation.
+- Workflow Templates, Workflow Stages, Work Order Types, Work Orders, and Workstreams remain untouched legacy compatibility infrastructure and remain hidden from Admin.
+- Merchandise Review V1, Merchandise inventory, Receiving workflow behavior, Product linking, Product editing, Production Type, Merchandise Resolution, board layout, drag/drop, filters, selected-card behavior, and detail surfaces remain in place.
+
+Migration artifact:
+- `docs/migrations/2026-07-20-intake-status-cleanup.md`
+
+Validation:
+- Live Airtable metadata read-back confirmed `Intake Status` field ID `fldPjABnLlNhZlmwY` and exact allowed options.
+- `backend/.venv/bin/python backend/ensure_intake_status_field.py --dry-run`
+- `backend/.venv/bin/python backend/ensure_intake_status_field.py`
+- `backend/.venv/bin/python backend/ensure_intake_status_field.py`
+- `backend/.venv/bin/python -m unittest tests.test_intake_status tests.test_intake_decisions tests.test_merchandise_review tests.test_frontend_routing tests.test_job_item_schema`
+- `backend/.venv/bin/python -m unittest tests.test_workflow_templates tests.test_work_order_types tests.test_intake_status tests.test_intake_decisions tests.test_merchandise_review tests.test_frontend_routing tests.test_job_item_schema`
+- `backend/.venv/bin/python -m unittest discover -s tests`
+- `npm run build` in `frontend/`
+- `git diff --check`
+- Local frontend route smoke returned HTTP 200 for `/intake`, `/merchandise`, and `/admin` on the running Vite server at port 5175.
 
 ## 2026-07-20 Intake Workflow Simplification
 
@@ -70,9 +401,9 @@ What is now true:
 - Intake board cards are derived from Merchandise records returned by `GET /api/merchandise/review`.
 - The canonical active Intake state is Merchandise-owned:
   - `Merch Status` remains the primary status field, using existing values `Received`, `Matched`, `Validated`, and `Issue`.
-  - `Notes` with `[Waiting for Product Data]` remains the existing marker for the Waiting for Information queue.
-  - `Production Type = THR3D` drives the Send to THR3D queue.
-  - `Production Type` and `Merchandise Resolution` remain the persisted Intake decision fields.
+  - The later Intake Status Cleanup supersedes the temporary `Notes` marker for active Intake state.
+  - Deliverables including `Thr3d` drive the Send to THR3D queue.
+  - At this phase, the Airtable field still named `Production Type` and `Merchandise Resolution` remained the persisted Intake decision fields. Later phases superseded `Production Type` with `Deliverables`.
 - `PATCH /api/merchandise/<entry_id>/intake-state` and `/api/merchandise/review/<entry_id>/intake-state` update active Intake state from Merchandise fields.
 - New Intake actions do not create Work Orders.
 - Intake no longer calls frontend Work Order APIs such as `listWorkOrders`, `saveMerchandiseReviewWorkOrders`, or `updateWorkOrder`.
@@ -86,7 +417,7 @@ What did not change:
 - Merchandise inventory did not change.
 - Receiving did not change.
 - Product linking, Product editing, Production Type, Merchandise Resolution, board columns, filters, selected-card behavior, detail surfaces, and sticky actions remain in place.
-- Readiness rules and Release to Production were not implemented.
+- Readiness rules and Release to Production were not implemented in the workflow simplification phase; the later Production Readiness and Release phase supersedes this limitation.
 
 Migration artifact:
 - `docs/migrations/2026-07-20-workflow-simplification.md`
@@ -105,7 +436,7 @@ Validation:
 Unresolved risks:
 - Backend compatibility APIs for Work Orders, Workflow Templates, Workflow Stages, Work Order Types, and Workstreams still exist intentionally. A later cleanup pass must verify historical data and external callers before removing them.
 - `workflowEngine.js` still contains compatibility naming such as Work Orders and Workstreams because the active board uses its static gate/card/readiness helpers. A later naming cleanup can simplify those internals after readiness is defined.
-- Production Readiness and Release to Production remain unimplemented.
+- Production Readiness and Release to Production were implemented in the later Production Readiness and Release phase above.
 
 ## 2026-07-20 Intake Production Type And Merchandise Resolution
 
@@ -117,14 +448,14 @@ What is now true:
 - `Merchandise Resolution` is a single-select field on Merchandise.
 - Allowed Merchandise Resolution values are `Keep at Walnut`, `Ship to Kentucky`, `Hold`, `Replacement Requested`, `Return to Client`, and `Dispose`.
 - Live Airtable field IDs are `fldSwUluDDqwe6MVs` for `Production Type` and `fldbZ64EUZdWZS5nW` for `Merchandise Resolution`.
-- `backend/ensure_intake_decision_fields.py` is idempotent. The first live run created both fields; the second live run reused both and created nothing.
+- `backend/ensure_intake_decision_fields.py` was idempotent while both fields were single-select. The later Deliverables phase above requires manually converting `Production Type` to `multipleSelects` because Airtable rejected public Metadata API type conversion.
 - Merchandise API serialization includes `production_type`, `productionType`, `merchandise_resolution`, and `merchandiseResolution`.
 - `PATCH /api/merchandise/<entry_id>/intake-decisions` and `PATCH /api/merchandise/review/<entry_id>/intake-decisions` save Intake decisions with server-side validation.
 - Empty values remain allowed.
 - Unknown values are rejected.
 - Setting Production Type to `THR3D` defaults Merchandise Resolution to `Ship to Kentucky` only when the current resolution is blank.
 - Existing resolutions are not overwritten, and changing away from THR3D does not erase the resolution.
-- Intake UI decision surfaces now show editable `Production Type` and `Merchandise Resolution` selects.
+- Intake UI decision surfaces showed editable `Production Type` and `Merchandise Resolution` selects in this phase. The later Deliverables phase above supersedes the Production Type select with three PM-facing Deliverables chips.
 - The New Items modal no longer creates Work Orders; Production Type remains a Merchandise-level Intake decision.
 
 What did not change:
@@ -160,7 +491,7 @@ What is now true:
 - This alignment phase originally reused the existing Merchandise Review V2 board implementation, Work Order APIs, workflow stages, filters, drag/drop behavior, and save behavior. The later Intake Workflow Simplification phase supersedes that active Work Order dependency.
 - Work Orders, Workflow Templates, Workflow Stages, and Work Order Types remain backend/Airtable compatibility infrastructure and were not renamed or removed.
 - The Intake detail surfaces now group existing information around Product, Production, Merchandise, and Readiness.
-- Production Type and Merchandise Resolution were placeholder areas during this alignment pass, then became real persisted Merchandise fields in the Intake decision phase documented above. Production Readiness remains a restrained placeholder.
+- Production Type and Merchandise Resolution were placeholder areas during this alignment pass, then became real persisted Merchandise fields in the Intake decision phase documented above. Production Readiness became a baseline release evaluator in the later Production Readiness and Release phase.
 
 What did not change:
 - No backend routes changed.

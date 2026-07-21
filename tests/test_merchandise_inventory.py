@@ -114,6 +114,8 @@ class MerchandiseInventoryTests(unittest.TestCase):
                         C.F_RECEIPT_ENTRY_RECEIPT: ["recFreshShipment"],
                         C.F_RECEIPT_ENTRY_ITEM: ["recCompleteProduct"],
                         C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated",
+                        C.F_RECEIPT_ENTRY_RELEASED: True,
+                        C.F_RECEIPT_ENTRY_RELEASED_AT: "2026-07-20T12:00:00Z",
                     },
                 },
                 {
@@ -302,6 +304,7 @@ class MerchandiseInventoryTests(unittest.TestCase):
         by_id = {record["id"]: record for record in records}
         self.assertIn("recCompletedMerch", by_id)
         self.assertEqual(by_id["recCompletedMerch"]["status"], "Complete")
+        self.assertTrue(by_id["recCompletedMerch"]["released"])
         self.assertIn("recOldCompleteMerch", by_id)
         self.assertEqual(by_id["recOldCompleteMerch"]["status"], "Disposition Due")
 

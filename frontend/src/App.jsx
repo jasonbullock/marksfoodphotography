@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react';
+import { useState, useEffect, useCallback, useRef, createContext, useContext, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
@@ -21,6 +21,7 @@ import {
   WORKSPACE_SECTIONS,
   buildWorkOrderCard,
   evaluateMerchandiseReviewAssignment,
+  evaluateMerchandiseReviewRequirements,
   gatesForBoard,
   workstreamFromLegacyValue,
   workstreamLabel,
@@ -121,13 +122,15 @@ const Icon = {
 function useResource(fn, deps = []) {
   const [state, setState] = useState({ data: null, loading: true, error: null });
 
-  const load = useCallback(async () => {
-    setState(s => ({ ...s, loading: true, error: null }));
+  // quiet: true revalidates in the background without flipping `loading`, so callers that
+  // gate on `loading` (e.g. full-page spinners) don't unmount open UI on an in-place save.
+  const load = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setState(s => ({ ...s, loading: true, error: null }));
     try {
       const data = await fn();
       setState({ data, loading: false, error: null });
     } catch (e) {
-      setState({ data: null, loading: false, error: e.message });
+      setState(s => ({ data: quiet ? s.data : null, loading: false, error: e.message }));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
@@ -3933,7 +3936,7 @@ function MerchandiseReviewPage() {
   const entries = useResource(() => api.listMerchandiseReviewEntries());
   const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
-  const records = entries.data?.records ?? [];
+  const records = (entries.data?.records ?? []).filter(record => !record.released);
   const [selectedId, setSelectedId] = useState('');
   const [queueSearch, setQueueSearch] = useState('');
   const [clientFilter, setClientFilter] = useState('');
@@ -4428,6 +4431,19 @@ const MERCH_REVIEW_V2_STORAGE_KEY = 'marks:work-board-board';
 const MERCH_REVIEW_V2_ARTWORK_KEY = 'marks:work-board-artwork-overrides';
 const MERCH_REVIEW_V2_DECISIONS_KEY = 'marks:work-board-workstream-decisions';
 const MERCH_REVIEW_V2_LEGACY_DECISIONS_KEY = 'marks:work-board-production-decisions';
+const PM_QUEUE_STORAGE_KEY = 'marks:planning-board-queues';
+const PM_CONVERSATION_STORAGE_KEY = 'marks:planning-board-conversations';
+const PM_ACTIVITY_STORAGE_KEY = 'marks:planning-board-activity';
+const PM_COMMENT_READ_STORAGE_KEY = 'marks:planning-board-comment-reads';
+const PM_LOCAL_QUEUE_IDS = {
+  planning: GATE_IDS.waitingActivation,
+};
+const PM_QUEUE_COLUMNS = [
+  { id: GATE_IDS.newReview, label: 'New', description: 'New merchandise for PM pickup.' },
+  { id: PM_LOCAL_QUEUE_IDS.planning, label: 'Planning', description: 'Active PM planning work.' },
+  { id: GATE_IDS.waitingInformation, label: 'Waiting', description: 'Waiting on answers, files, or decisions.' },
+  { id: GATE_IDS.readyProduction, label: 'Ready for Photo', description: 'Shared handoff queue for Production.' },
+];
 
 function loadJsonMap(key) {
   try {
@@ -4440,6 +4456,14 @@ function loadJsonMap(key) {
 
 function saveJsonMap(key, value) {
   window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function localNowIso() {
+  return new Date().toISOString();
+}
+
+function pmCommentUserDisplayName(user) {
+  return user?.displayName || user?.name || [user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'Team';
 }
 
 function normalizeWorkstreamSelection(decision = {}, fallbackWorkstream = '') {
@@ -4456,79 +4480,278 @@ function normalizeWorkstreamSelection(decision = {}, fallbackWorkstream = '') {
 }
 
 function intakeRequestedGateForRecord(record) {
-  if (record?.productionType === 'THR3D') return GATE_IDS.sendThr3d;
+  const deliverables = deliverablesForRecord(record);
+  if (deliverables.length === 1 && deliverables[0] === 'Thr3d') return GATE_IDS.sendThr3d;
+  if (record?.intakeStatus === 'Waiting on Information') return GATE_IDS.waitingInformation;
+  if (record?.intakeStatus === 'Ready to Release') return GATE_IDS.readyProduction;
+  if (record?.intakeStatus === 'Needs Review') return GATE_IDS.newReview;
   const reviewState = reviewStateFor(record);
-  if (reviewState === 'Waiting for Product Data') return GATE_IDS.waitingInformation;
   if (reviewState === 'Validated') return GATE_IDS.readyProduction;
   if (record?.merchStatus === 'Matched') return GATE_IDS.waitingActivation;
-  return '';
+  return GATE_IDS.newReview;
 }
 
-function productionTypeWorkstreamLabel(productionType) {
-  const workstreamId = PRODUCTION_TYPE_WORKSTREAM_MAP[productionType];
+function deliverableWorkstreamLabel(deliverable) {
+  const workstreamId = DELIVERABLE_WORKSTREAM_MAP[normalizeDeliverableValue(deliverable)];
   return workstreamId ? workstreamLabel(workstreamId) : '';
 }
 
-function ReadinessIndicators({ items }) {
-  const visibleItems = items.filter(item => item.visible !== false && item.tone !== 'neutral');
+const DELIVERABLE_ALIASES = {
+  packaging: 'Packaging Photo',
+  'packaging photo': 'Packaging Photo',
+  'packaging photography': 'Packaging Photo',
+  ecomm: 'Ecomm Photo',
+  'ecomm photo': 'Ecomm Photo',
+  ecommerce: 'Ecomm Photo',
+  'ecommerce photo': 'Ecomm Photo',
+  'ecommerce photography': 'Ecomm Photo',
+  'gs1 ecomm': 'Ecomm Photo',
+  thr3d: 'Thr3d',
+  '3d': 'Thr3d',
+  thread: 'Thr3d',
+};
+
+function stripSurroundingQuotes(value) {
+  let text = String(value ?? '').trim();
+  while (text.length >= 2 && text[0] === text[text.length - 1] && ['"', "'"].includes(text[0])) {
+    text = text.slice(1, -1).trim();
+  }
+  if (text && [...text].every(character => ['"', "'"].includes(character))) return '';
+  return text;
+}
+
+function flattenDeliverableValues(value) {
+  if (value == null || value === '') return [];
+  if (Array.isArray(value)) return value.flatMap(flattenDeliverableValues);
+  if (typeof value === 'object') {
+    return flattenDeliverableValues(value.name || value.label || value.value || '');
+  }
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!text) return [];
+    if ((text.startsWith('[') && text.endsWith(']')) || (text.startsWith('"') && text.endsWith('"'))) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed !== text) return flattenDeliverableValues(parsed);
+      } catch {
+        // Fall through to quote stripping.
+      }
+    }
+    if (text.includes(',')) return text.split(',').flatMap(flattenDeliverableValues);
+    return [stripSurroundingQuotes(text)];
+  }
+  return [stripSurroundingQuotes(value)];
+}
+
+function normalizeDeliverableValue(value) {
+  const text = stripSurroundingQuotes(value);
+  return DELIVERABLE_ALIASES[text.toLowerCase()] || text;
+}
+
+function normalizeDeliverableList(value) {
+  const normalized = flattenDeliverableValues(value)
+    .map(normalizeDeliverableValue)
+    .filter(value => INTAKE_DELIVERABLE_OPTIONS.includes(value));
+  return normalized.filter((item, index, list) => list.indexOf(item) === index);
+}
+
+function deliverableListsEqual(left = [], right = []) {
+  const normalizedLeft = normalizeDeliverableList(left);
+  const normalizedRight = normalizeDeliverableList(right);
+  return normalizedLeft.length === normalizedRight.length
+    && normalizedLeft.every((value, index) => value === normalizedRight[index]);
+}
+
+function deliverablesSaveErrorMessage(error) {
+  if (import.meta.env.PROD) return 'Could not save Deliverables. Try again.';
+  const detail = error?.status
+    ? `HTTP ${error.status}${error.message ? `: ${error.message}` : ''}`
+    : (error?.message || 'Unknown error');
+  return `Could not save Deliverables. ${detail}`;
+}
+
+function deliverablesForRecord(record = {}) {
+  const deliverables = normalizeDeliverableList(record.deliverables);
+  if (deliverables.length) return deliverables;
+  return [];
+}
+
+function isThr3dOnlyDeliverables(deliverables = []) {
+  const normalized = normalizeDeliverableList(deliverables);
+  return normalized.length === 1 && normalized[0] === 'Thr3d';
+}
+
+function visibleRequirementBlockers(requirements = []) {
+  return requirements.filter(requirement => requirement.visible !== false && !requirement.satisfied);
+}
+
+function requirementLabelForUser(requirement = {}) {
+  const label = requirementBlockerLabel(requirement);
+  return {
+    'Product Information': 'Product not identified',
+    'Required Identifier': 'Package ID / Barcode / SKU',
+    'Merchandise Verified': 'Verify merchandise',
+    'Activation Information': 'Missing campaign or activation information',
+  }[label] || label;
+}
+
+function wizardStateForItem(item, draftDeliverables) {
+  const record = item?.record || {};
+  const product = record.linkedItem || {};
+  const deliverables = normalizeDeliverableList(draftDeliverables ?? record.deliverables);
+  const requirements = deliverableListsEqual(deliverables, record.deliverables)
+    ? item?.readiness || []
+    : evaluateMerchandiseReviewRequirements({ ...record, deliverables });
+  const blockers = visibleRequirementBlockers(requirements);
+  const productLinked = Boolean(product.id || record.itemIds?.length);
+  const merchandiseVerified = Boolean(record.merchandiseVerified) && record.reviewState !== 'Issue' && record.merchStatus !== 'Issue';
+  const missingLabels = blockers.map(requirementLabelForUser);
+  return {
+    merchandiseVerified,
+    productLinked,
+    deliverables,
+    blockers,
+    missingLabels,
+    thr3dOnly: isThr3dOnlyDeliverables(deliverables),
+    photoDeliverables: deliverables.filter(value => value === 'Packaging Photo' || value === 'Ecomm Photo'),
+  };
+}
+
+function deliverableToneClass(value) {
+  return {
+    'Packaging Photo': 'is-packaging-photo',
+    'Ecomm Photo': 'is-ecomm-photo',
+    Thr3d: 'is-thr3d',
+  }[normalizeDeliverableValue(value)] || 'is-neutral';
+}
+
+function DeliverableBadges({ values = [] }) {
+  const deliverables = normalizeDeliverableList(values);
+  if (!deliverables.length) return null;
   return (
-    <div className="readiness-indicators" aria-label="Readiness indicators">
+    <div className="deliverable-badge-row" aria-label="Deliverables">
+      {deliverables.map(deliverable => (
+        <span className={`deliverable-badge ${deliverableToneClass(deliverable)}`} key={deliverable}>
+          {deliverable}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ReadinessIndicators({ items }) {
+  const visibleItems = (items || []).filter(item => item.visible !== false && item.tone !== 'neutral');
+  if (!visibleItems.length) return null;
+  const doneCount = visibleItems.filter(item => item.satisfied).length;
+  return (
+    <div className="readiness-indicators" aria-label={`${doneCount} of ${visibleItems.length} steps complete`}>
       {visibleItems.map(item => (
         <span
           key={item.key}
-          className={`readiness-dot is-${item.tone} ${item.overridden ? 'is-overridden' : ''}`}
-          title={item.tooltip || `${item.label}\n${item.detail}`}
-          tabIndex={0}
-          aria-label={`${item.label}: ${item.detail}`}
+          className={`readiness-dot ${item.satisfied ? 'is-done' : 'is-todo'}`}
+          title={`${item.label}: ${item.satisfied ? 'Complete' : (item.detail || 'Not done')}`}
         />
       ))}
     </div>
   );
 }
 
+function requiredToShootSummary(item) {
+  const requirements = (item.readiness || []).filter(requirement => requirement.visible !== false && requirement.tone !== 'neutral');
+  const complete = requirements.filter(requirement => requirement.satisfied).length;
+  const total = requirements.length;
+  const missing = requirements.filter(requirement => !requirement.satisfied).map(requirementLabelForUser);
+  return {
+    complete,
+    total,
+    missing,
+    label: total ? `${complete} / ${total}` : 'Not set',
+  };
+}
+
 function KanbanCard({ item, selected, onSelect }) {
+  const blockers = visibleRequirementBlockers(item.readiness || []);
+  const flagged = item.issueBadge === 'Issue';
+  const validated = !flagged && item.statusBadge === 'Validated';
+  const ready = !flagged && blockers.length === 0;
+  const required = requiredToShootSummary(item);
+  const status = flagged ? 'flag' : ready ? 'ready' : 'todo';
+  const statusLabel = flagged
+    ? 'Flagged'
+    : ready
+      ? 'Required to Shoot complete'
+      : `${blockers.length} still needed`;
   return (
     <button
       type="button"
-      className={`kanban-card ${selected ? 'is-selected' : ''}`}
+      className={`kanban-card status-${status} ${selected ? 'is-selected' : ''}`}
       onClick={() => onSelect?.(item.id)}
-      aria-label={`Open ${item.title}`}
+      draggable
+      onDragStart={event => {
+        event.dataTransfer.setData('text/plain', item.id);
+        event.dataTransfer.effectAllowed = 'move';
+      }}
+      aria-label={`Open ${item.title}${flagged ? ' (flagged)' : ''}`}
     >
       <div className="kanban-card-media">
         <RecordThumbnail record={item.record} />
+        {flagged && <span className="kanban-card-flag" aria-label="Flagged for an issue">⚑ Flagged</span>}
+        {validated && <span className="kanban-card-validated">✓ Validated</span>}
         <ReadinessIndicators items={item.readiness} />
       </div>
       <div className="kanban-card-body">
-        <div className="kanban-card-title-row">
-          <h3>{item.title}</h3>
-          {(item.issueBadge || item.statusBadge) && <span className="kanban-card-badge">{item.issueBadge || item.statusBadge}</span>}
+        <h3>{item.title}</h3>
+        <p className="kanban-card-meta">{item.client}{item.record?.merchStatus ? ` · Merchandise ${item.record.merchStatus}` : ''}</p>
+        {item.deliverables?.length ? <DeliverableBadges values={item.deliverables} /> : (item.workstream && <strong className="kanban-card-workstream">{item.workstream}</strong>)}
+        <div className="kanban-required-line">
+          <span>Required to Shoot</span>
+          <strong>{required.label}</strong>
+          {!ready && required.missing[0] && <em>{required.missing[0]}</em>}
         </div>
-        <p>{item.client}</p>
-        {item.workstream && <strong className="kanban-card-workstream">{item.workstream}</strong>}
-        <dl>
-          <div><dt>Identifier</dt><dd>{item.identifier || '-'}</dd></div>
-          <div><dt>Storage</dt><dd>{item.location || '-'}</dd></div>
-          <div><dt>Time Here</dt><dd>{item.timeHere || 'Unknown'}</dd></div>
-          {item.quantity ? <div><dt>Qty</dt><dd>{item.quantity}</dd></div> : null}
-        </dl>
+        <div className="kanban-card-footer">
+          <span className={`kanban-status-chip is-${status}`}>{statusLabel}</span>
+          <span className="kanban-card-signals">
+            {item.unreadComments > 0 && <span className="kanban-unread-dot" aria-label={`${item.unreadComments} new comments`} />}
+            <span>{item.commentCount ? `Comments ${item.commentCount}` : 'No comments'}</span>
+            <span>{item.timeHere || '—'}</span>
+          </span>
+        </div>
       </div>
     </button>
   );
 }
 
-function KanbanColumn({ column, items, selectedId, onSelect }) {
+function KanbanColumn({ column, items, selectedId, onSelect, onMove }) {
   const title = column.label || column.displayName || column.title || column.name;
+  const missingArtwork = items.filter(item => requiredToShootSummary(item).missing.some(label => /artwork/i.test(label))).length;
+  const withComments = items.filter(item => item.commentCount > 0).length;
   return (
-    <section className="kanban-column" aria-label={title}>
+    <section
+      className="kanban-column"
+      aria-label={title}
+      onDragOver={event => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+      }}
+      onDrop={event => {
+        event.preventDefault();
+        const itemId = event.dataTransfer.getData('text/plain');
+        if (itemId) onMove?.(itemId, column.id);
+      }}
+    >
       <header className="kanban-column-header">
         <div>
           <h2>{title}</h2>
           <p title={column.description}>{column.description}</p>
+          <div className="kanban-column-summary">
+            <span>{items.length} item{items.length === 1 ? '' : 's'}</span>
+            {missingArtwork > 0 && <span>{missingArtwork} missing artwork</span>}
+            {withComments > 0 && <span>{withComments} with comments</span>}
+          </div>
         </div>
-        <span>{items.length}</span>
       </header>
       <div className="kanban-column-list">
-        {items.length === 0 && <div className="kanban-empty">No merchandise currently meets this gate's rules.</div>}
+        {items.length === 0 && <div className="kanban-empty">No cards in this queue.</div>}
         {items.map(item => (
           <KanbanCard item={item} key={item.id} selected={selectedId === item.id} onSelect={onSelect} />
         ))}
@@ -4537,9 +4760,9 @@ function KanbanColumn({ column, items, selectedId, onSelect }) {
   );
 }
 
-function KanbanBoard({ columns, itemsByColumn, selectedId, onSelect }) {
+function KanbanBoard({ columns, itemsByColumn, selectedId, onSelect, onMove }) {
   return (
-    <div className="kanban-board" role="list" aria-label="Workflow board">
+    <div className="kanban-board" role="list" aria-label="Planning Board">
       {columns.map(column => (
         <KanbanColumn
           column={column}
@@ -4547,6 +4770,7 @@ function KanbanBoard({ columns, itemsByColumn, selectedId, onSelect }) {
           key={column.id}
           selectedId={selectedId}
           onSelect={onSelect}
+          onMove={onMove}
         />
       ))}
     </div>
@@ -4590,7 +4814,7 @@ function workflowSectionTitle(section) {
     [WORKSPACE_SECTIONS.shipment]: 'Shipment',
     [WORKSPACE_SECTIONS.issues]: 'Issues',
     [WORKSPACE_SECTIONS.history]: 'History',
-    [WORKSPACE_SECTIONS.readinessSummary]: 'Readiness',
+    [WORKSPACE_SECTIONS.readinessSummary]: 'Required Information',
     [WORKSPACE_SECTIONS.merchandiseSummary]: 'Merchandise',
     [WORKSPACE_SECTIONS.productSummary]: 'Product',
   }[section] || section;
@@ -4598,6 +4822,70 @@ function workflowSectionTitle(section) {
 
 function WorkflowFact({ label, value }) {
   return <div><span>{label}</span><strong>{value || '-'}</strong></div>;
+}
+
+function productionReadinessForItem(item = {}) {
+  const readiness = item.record?.productionReadiness;
+  if (readiness?.requirements) return readiness;
+  return {
+    ready: false,
+    complete: false,
+    completeCount: 0,
+    totalCount: 5,
+    summary: '0 of 5 Complete',
+    missing: ['Product Linked', 'Product Name', 'Identifier', 'Deliverables', 'Merchandise Resolution'],
+    requirements: [
+      { key: 'product-linked', label: 'Product Linked', ready: false, missing: 'Link a Product.' },
+      { key: 'product-name', label: 'Product Name', ready: false, missing: 'Add Product Name.' },
+      { key: 'identifier', label: 'Identifier', ready: false, missing: 'Add the Product Identifier.' },
+      { key: 'deliverables', label: 'Deliverables', ready: false, missing: 'Select at least one Deliverable.' },
+      { key: 'merchandise-resolution', label: 'Merchandise Resolution', ready: false, missing: 'Select Merchandise Resolution.' },
+    ],
+  };
+}
+
+function ProductionReadinessPanel({ item }) {
+  const readiness = productionReadinessForItem(item);
+  const requirements = readiness.ready
+    ? readiness.requirements
+    : readiness.requirements.filter(requirement => !requirement.ready);
+  return (
+    <section className={`production-readiness-panel ${readiness.ready ? 'is-ready' : 'is-incomplete'}`}>
+      <div className="production-readiness-header">
+        <h3>Required Information</h3>
+        <strong>{readiness.summary}</strong>
+      </div>
+      {readiness.ready ? (
+        <p>Required information is complete.</p>
+      ) : (
+        <p>Still needed</p>
+      )}
+      <ul className="production-readiness-list">
+        {requirements.map(requirement => (
+          <li key={requirement.key} className={requirement.ready ? 'is-ready' : 'is-missing'}>
+            <span aria-hidden="true">{requirement.ready ? '✓' : '×'}</span>
+            <strong>{requirement.label}</strong>
+            {!requirement.ready && <em>{requirement.missing || requirement.detail}</em>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ReleaseToProductionAction({ item, onRelease, busy }) {
+  const readiness = productionReadinessForItem(item);
+  const released = Boolean(item.record?.released);
+  const disabled = released || busy || !readiness.ready;
+  return (
+    <div className="release-to-production-action">
+      <button type="button" className="btn btn-primary" onClick={() => onRelease?.(item)} disabled={disabled}>
+        {busy ? 'Releasing...' : released ? 'Released to Production' : 'Release to Production'}
+      </button>
+      {!released && !readiness.ready && <span>Complete all readiness requirements.</span>}
+      {released && <span>Released {formatInventoryDate(item.record?.releasedAt)}</span>}
+    </div>
+  );
 }
 
 function WorkflowWorkspaceSection({ section, item, photos, activePhotoUrl, photoIndex, setPhotoIndex, override }) {
@@ -4688,17 +4976,7 @@ function WorkflowWorkspaceSection({ section, item, photos, activePhotoUrl, photo
         ) : <div className="workflow-empty-inline">No blocking Merchandise issues are attached.</div>
       )}
       {section === WORKSPACE_SECTIONS.readinessSummary && (
-        <>
-          <div className="workflow-empty-inline">Readiness checks are not configured yet.</div>
-          <ul className="workflow-requirement-list">
-            {item.readiness.map(requirement => (
-              <li key={requirement.key} className={`is-${requirement.tone}`}>
-                <strong>{requirement.label}</strong>
-                <span>{requirement.visible === false ? 'Not applicable' : requirement.detail}</span>
-              </li>
-            ))}
-          </ul>
-        </>
+        <ProductionReadinessPanel item={item} />
       )}
       {section === WORKSPACE_SECTIONS.history && (
         <div className="workflow-empty-inline">History will appear here when durable workflow events are available.</div>
@@ -4761,7 +5039,7 @@ function referenceDataValue(product = {}, labels = []) {
   return '';
 }
 
-function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveContinue, onRefresh, feedback, photos, photoIndex, setPhotoIndex, nextItem }) {
+function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveContinue, onRelease, releaseBusy, onRefresh, feedback, photos, photoIndex, setPhotoIndex, nextItem }) {
   const record = item.record || {};
   const product = record.linkedItem || {};
   const activePhotoUrl = receivingPhotoUrl(photos[photoIndex] || photos[0]);
@@ -4773,18 +5051,23 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
   const [localFeedback, setLocalFeedback] = useState('');
   const [productDraft, setProductDraft] = useState(() => productInformationFields(product, record));
   const [intakeDraft, setIntakeDraft] = useState(() => ({
-    productionType: record.productionType || '',
+    deliverables: deliverablesForRecord(record),
     merchandiseResolution: record.merchandiseResolution || '',
   }));
+  const [lastSavedDeliverables, setLastSavedDeliverables] = useState(() => deliverablesForRecord(record));
   const [intakeSaving, setIntakeSaving] = useState('');
+  const intakeSaveInFlight = useRef(false);
+  const [deliverablesError, setDeliverablesError] = useState('');
 
   useEffect(() => {
     setProductQuery(product.identifier || record.skuId || record.productName || '');
     setProductDraft(productInformationFields(product, record));
     setIntakeDraft({
-      productionType: record.productionType || '',
+      deliverables: deliverablesForRecord(record),
       merchandiseResolution: record.merchandiseResolution || '',
     });
+    setLastSavedDeliverables(deliverablesForRecord(record));
+    setDeliverablesError('');
     setProductMatches([]);
     setLocalFeedback('');
   }, [item.id]);
@@ -4859,30 +5142,59 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
   }
 
   async function saveIntakeDecision(field, value) {
-    const nextDraft = { ...intakeDraft, [field]: value };
-    if (field === 'productionType' && value === 'THR3D' && !nextDraft.merchandiseResolution) {
+    if (intakeSaveInFlight.current) return;
+    intakeSaveInFlight.current = true;
+    const previousDraft = intakeDraft;
+    const cleanValue = field === 'deliverables' ? normalizeDeliverableList(value) : value;
+    const nextDraft = { ...intakeDraft, [field]: cleanValue };
+    if (field === 'deliverables' && cleanValue.includes('Thr3d') && !nextDraft.merchandiseResolution) {
       nextDraft.merchandiseResolution = 'Ship to Kentucky';
     }
     setIntakeDraft(nextDraft);
     setIntakeSaving(field);
     setLocalFeedback('');
+    if (field === 'deliverables') setDeliverablesError('');
     try {
-      const payload = field === 'productionType'
-        ? { productionType: value, merchandiseResolution: nextDraft.merchandiseResolution }
+      const payload = field === 'deliverables'
+        ? { deliverables: cleanValue }
         : { merchandiseResolution: value };
       const updated = await api.updateMerchandiseIntakeDecisions(item.merchandiseId, payload);
+      const updatedDeliverables = deliverablesForRecord(updated);
       setIntakeDraft({
-        productionType: updated.productionType || '',
+        deliverables: updatedDeliverables,
         merchandiseResolution: updated.merchandiseResolution || '',
       });
+      if (field === 'deliverables') {
+        setLastSavedDeliverables(updatedDeliverables);
+        setDeliverablesError('');
+      }
       await onRefresh?.();
-      setLocalFeedback('Intake decision saved.');
+      setLocalFeedback('Planning decision saved.');
     } catch (error) {
-      setLocalFeedback(error.message || 'Could not save Intake decision.');
+      if (field === 'deliverables') {
+        setDeliverablesError(deliverablesSaveErrorMessage(error));
+      } else {
+        setIntakeDraft(previousDraft);
+        setLocalFeedback(error.message || 'Could not save Planning decision.');
+      }
     } finally {
+      intakeSaveInFlight.current = false;
       setIntakeSaving('');
     }
   }
+
+  function stageDeliverables(value) {
+    const cleanValue = normalizeDeliverableList(value);
+    setIntakeDraft(draft => {
+      const nextDraft = { ...draft, deliverables: cleanValue };
+      if (cleanValue.includes('Thr3d') && !nextDraft.merchandiseResolution) {
+        nextDraft.merchandiseResolution = 'Ship to Kentucky';
+      }
+      return nextDraft;
+    });
+  }
+
+  const deliverablesDirty = !deliverableListsEqual(intakeDraft.deliverables, lastSavedDeliverables);
 
   return (
     <div className="workflow-workspace-backdrop" onClick={onClose} role="presentation">
@@ -4958,15 +5270,31 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
           </section>
 
           <section className="workflow-workspace-section">
-            <h3>Production</h3>
-            <IntakeDecisionSelect
-              label="Production Type"
-              value={intakeDraft.productionType}
-              placeholder="Select production type"
-              options={INTAKE_PRODUCTION_TYPE_OPTIONS}
-              onChange={value => saveIntakeDecision('productionType', value)}
-              disabled={Boolean(intakeSaving)}
+            <h3>Deliverables</h3>
+            <DeliverablesSelector
+              values={intakeDraft.deliverables}
+              onChange={stageDeliverables}
+              disabled={false}
             />
+            <div className="deliverables-save-row">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => saveIntakeDecision('deliverables', intakeDraft.deliverables)}
+                disabled={intakeSaving === 'deliverables' || !deliverablesDirty}
+              >
+                {intakeSaving === 'deliverables' ? 'Saving...' : 'Save Deliverables'}
+              </button>
+              {deliverablesDirty && <span className="deliverables-save-hint">Unsaved changes</span>}
+            </div>
+            {deliverablesError && (
+              <div className="deliverables-inline-error">
+                <span>{deliverablesError}</span>
+                <button type="button" onClick={() => saveIntakeDecision('deliverables', intakeDraft.deliverables)} disabled={intakeSaving === 'deliverables'}>
+                  Retry
+                </button>
+              </div>
+            )}
             <div className="workflow-fact-grid">
               <WorkflowFact label="Workstream" value={item.workstream || item.workOrder.workflowName} />
               <WorkflowFact label="Current Stage" value={item.workOrder.currentGateName} />
@@ -5013,19 +5341,7 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
           </section>
 
           <section className="workflow-workspace-section">
-            <h3>Readiness</h3>
-            <div className="workflow-empty-inline">Readiness checks are not configured yet.</div>
-            <ul className="workflow-requirement-list waiting-readiness-list">
-              {item.readiness.map(requirement => (
-                <li key={requirement.key} className={`is-${requirement.tone}`}>
-                  <strong>{requirement.label}</strong>
-                  <span>Color: {readinessToneLabel(requirement)}</span>
-                  <span>Reason: {requirement.visible === false ? 'Not applicable' : requirement.detail}</span>
-                  <span>Missing fields: {readinessMissingFields(requirement).join(', ') || 'None'}</span>
-                  <span>Suggested resolution: {readinessResolution(requirement)}</span>
-                </li>
-              ))}
-            </ul>
+            <ProductionReadinessPanel item={item} />
           </section>
 
           {activePhotoUrl && (
@@ -5044,6 +5360,7 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
           <div className="workflow-transition-actions">
             <button type="button" className="btn btn-secondary" onClick={() => onSave(item)}>Save</button>
             <button type="button" className="btn btn-primary" onClick={() => onSaveContinue(item)} disabled={!nextItem}>Save & Continue</button>
+            <ReleaseToProductionAction item={item} onRelease={onRelease} busy={releaseBusy} />
             {item.workOrder.validNextGates.map(next => (
               <button type="button" className="btn btn-ghost" onClick={() => onMove(item, next.gate.id)} key={next.gate.id}>
                 {next.gate.label}
@@ -5063,7 +5380,7 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
   );
 }
 
-function WorkflowWorkspaceDrawer({ item, onClose, onMove, onSave, onSaveContinue, onRefresh, feedback, override, photos, photoIndex, setPhotoIndex, nextItem, readonly = false }) {
+function WorkflowWorkspaceDrawer({ item, onClose, onMove, onSave, onSaveContinue, onRelease, releaseBusy, onRefresh, feedback, override, photos, photoIndex, setPhotoIndex, nextItem, readonly = false }) {
   if (!item) return null;
   if (item.workOrder.currentGate === GATE_IDS.waitingInformation) {
     return (
@@ -5073,6 +5390,8 @@ function WorkflowWorkspaceDrawer({ item, onClose, onMove, onSave, onSaveContinue
         onMove={onMove}
         onSave={onSave}
         onSaveContinue={onSaveContinue}
+        onRelease={onRelease}
+        releaseBusy={releaseBusy}
         onRefresh={onRefresh}
         feedback={feedback}
         photos={photos}
@@ -5135,6 +5454,7 @@ function WorkflowWorkspaceDrawer({ item, onClose, onMove, onSave, onSaveContinue
             </div>
             <div className="workflow-transition-actions">
               {item.workOrder.validNextGates.length === 0 && <span>No valid next gates from the current state.</span>}
+              <ReleaseToProductionAction item={item} onRelease={onRelease} busy={releaseBusy} />
               {item.workOrder.validNextGates.map(next => (
                 <button type="button" className="btn btn-primary" onClick={() => onMove(item, next.gate.id)} key={next.gate.id}>
                   Move to {next.gate.label}
@@ -5182,13 +5502,52 @@ function WorkstreamSelector({ values = [], options = WORKSTREAMS, onChange }) {
   );
 }
 
-const INTAKE_PRODUCTION_TYPE_OPTIONS = ['eCommerce', 'Packaging', 'THR3D'];
+const INTAKE_DELIVERABLE_OPTIONS = ['Packaging Photo', 'Ecomm Photo', 'Thr3d'];
 const INTAKE_MERCHANDISE_RESOLUTION_OPTIONS = ['Keep at Walnut', 'Ship to Kentucky', 'Hold', 'Replacement Requested', 'Return to Client', 'Dispose'];
-const PRODUCTION_TYPE_WORKSTREAM_MAP = {
-  eCommerce: 'ecomm-photo',
-  Packaging: 'packaging-photo',
-  THR3D: 'thr3d',
+const DELIVERABLE_WORKSTREAM_MAP = {
+  'Ecomm Photo': 'ecomm-photo',
+  'Packaging Photo': 'packaging-photo',
+  Thr3d: 'thr3d',
 };
+
+function DeliverablesSelector({ values = [], onChange, disabled = false }) {
+  const normalizedValues = normalizeDeliverableList(values);
+  const selectedValues = new Set(normalizedValues);
+
+  function toggle(option) {
+    if (disabled) return;
+    const nextValues = selectedValues.has(option)
+      ? normalizedValues.filter(value => value !== option)
+      : [...normalizedValues, option];
+    onChange(nextValues);
+  }
+
+  return (
+    <fieldset className="intake-deliverables-field">
+      <legend className="sr-only">Deliverables</legend>
+      <div className="intake-deliverable-options">
+        {INTAKE_DELIVERABLE_OPTIONS.map(option => {
+          const selected = selectedValues.has(option);
+          return (
+            <label
+              className={`intake-deliverable-option ${selected ? 'is-selected' : ''}`}
+              key={option}
+            >
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={() => toggle(option)}
+                disabled={disabled}
+              />
+              <span className="intake-deliverable-check" aria-hidden="true" />
+              {option}
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
 
 function IntakeDecisionSelect({ label, value, placeholder, options, onChange, disabled = false }) {
   return (
@@ -5209,6 +5568,7 @@ function NewReviewProductIdentification({ item, product, onRefresh }) {
   const [draft, setDraft] = useState(() => productInformationFields(product, record));
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     setQuery(product.identifier || record.skuId || record.productName || '');
@@ -5286,83 +5646,523 @@ function NewReviewProductIdentification({ item, product, onRefresh }) {
     }
   }
 
+  async function unlinkProduct() {
+    setBusy(true);
+    setNotice('');
+    try {
+      await api.removeMerchandiseReviewMatch(item.merchandiseId);
+      await onRefresh?.();
+    } catch (error) {
+      setNotice(error.message || 'Could not unlink Product.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const linked = Boolean(product.id);
+  const compareRows = linked ? productMatchRows(record, product) : [];
+  const warnings = compareRows.filter(row => row.status === 'warn');
+  const cleanedQuery = query.trim();
+
   return (
-    <section className="production-decision-section new-review-product-id">
-      <h3>Product</h3>
-      <div className="workflow-fact-grid">
-        <WorkflowFact label="Linked Product" value={product.product || product.name || 'Not linked'} />
-        <WorkflowFact label="Identifier" value={product.identifier || product.productId || product.gtinUpc} />
-        <WorkflowFact label="Brand" value={product.brand} />
-        <WorkflowFact label="Description" value={product.description} />
-      </div>
-      <label>
-        Search Product
-        <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by product, brand, or identifier" />
-      </label>
-      {matches.length > 0 && (
-        <div className="waiting-product-results">
-          <strong>Link Product</strong>
-          {matches.slice(0, 4).map(match => (
-            <button type="button" onClick={() => linkProduct(match.id)} disabled={busy} key={match.id}>
-              <strong>{match.product || match.name || 'Unnamed Product'}</strong>
-              <span>{[match.identifier, match.brand].filter(Boolean).join(' • ') || 'No identifier'}</span>
-            </button>
-          ))}
+    <div className="new-review-product-id">
+      {!linked && <p className="review-step-lead">Match this item to a Product record so downstream work knows what it is. Can’t find it? Create an incomplete one.</p>}
+
+      {linked ? (
+        <div className="merch-compare">
+          <div className="merch-compare-grid" role="table" aria-label="Merch versus product record">
+            <span className="mc-h" role="columnheader">Field</span>
+            <span className="mc-h" role="columnheader">Merch observed</span>
+            <span className="mc-h" role="columnheader">Product record</span>
+            <span className="mc-h" aria-hidden="true"></span>
+            {compareRows.map(row => (
+              <Fragment key={row.label}>
+                <span className="mc-label">{row.label}</span>
+                <span className="mc-val">{row.merch || '—'}</span>
+                <span className="mc-val">{row.prod || '—'}</span>
+                <span className={`mc-mark is-${row.status}`} title={row.status}>{row.status === 'match' ? '✓' : row.status === 'warn' ? '⚠' : '·'}</span>
+              </Fragment>
+            ))}
+          </div>
+          {warnings.length > 0 && (
+            <p className="merch-compare-warn">⚠ {warnings.map(row => row.label).join(', ')} differ{warnings.length === 1 ? 's' : ''} between the merch and the linked Product. Confirm this is the right match.</p>
+          )}
+          <div className="merch-compare-foot">
+            <button type="button" className="btn btn-sm" onClick={unlinkProduct} disabled={busy}>Unlink</button>
+          </div>
         </div>
+      ) : (
+        <>
+          <label>
+            Match to a Product record
+            <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by barcode, product, or brand" />
+          </label>
+          {cleanedQuery.length >= 3 && (
+            matches.length > 0 ? (
+              <div className="waiting-product-results">
+                <strong>{matches.length} match{matches.length > 1 ? 'es' : ''} for “{cleanedQuery}”</strong>
+                {matches.slice(0, 4).map(match => (
+                  <button type="button" onClick={() => linkProduct(match.id)} disabled={busy} key={match.id}>
+                    <strong>{match.product || match.name || 'Unnamed Product'}</strong>
+                    <span>{[match.identifier, match.brand].filter(Boolean).join(' • ') || 'No identifier'}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              !busy && <p className="merch-compare-empty">No Products match “{cleanedQuery}”. Create one below.</p>
+            )
+          )}
+          <div className="merch-create-alt">
+            <button type="button" className="merch-link-btn" onClick={() => setCreateOpen(open => !open)}>
+              {createOpen ? 'Hide' : 'Can’t find it? Create an incomplete Product'}
+            </button>
+          </div>
+          {createOpen && (
+            <>
+              <div className="waiting-product-fields">
+                <label>Product Name<input value={draft.name} onChange={event => setField('name', event.target.value)} /></label>
+                <label>Product/File Name<input value={draft.product} onChange={event => setField('product', event.target.value)} /></label>
+                <label>Identifier<input value={draft.productId} onChange={event => setField('productId', event.target.value)} /></label>
+                <label>Brand<input value={draft.brand} onChange={event => setField('brand', event.target.value)} /></label>
+              </div>
+              <button type="button" className="btn btn-secondary" onClick={saveProduct} disabled={busy}>Create &amp; Link Incomplete Product</button>
+            </>
+          )}
+        </>
       )}
-      <div className="waiting-product-fields">
-        <label>Product Name<input value={draft.name} onChange={event => setField('name', event.target.value)} /></label>
-        <label>Product/File Name<input value={draft.product} onChange={event => setField('product', event.target.value)} /></label>
-        <label>Identifier<input value={draft.productId} onChange={event => setField('productId', event.target.value)} /></label>
-        <label>Brand<input value={draft.brand} onChange={event => setField('brand', event.target.value)} /></label>
-      </div>
-      <button type="button" className="btn btn-secondary" onClick={saveProduct} disabled={busy}>
-        {product.id ? 'Save Product Information' : 'Create Incomplete Product'}
-      </button>
       {notice && <span className="new-review-inline-status">{notice}</span>}
-    </section>
+    </div>
   );
 }
 
-function NewReviewReadinessSummary({ item }) {
-  const requirements = item.readiness.filter(requirement => requirement.visible !== false);
+function productMatchRows(record, product) {
+  const alnum = value => String(value || '').replace(/[^0-9a-z]/gi, '').toLowerCase();
+  const norm = value => String(value || '').trim().toLowerCase();
+  const rows = [
+    { label: 'Barcode', merch: record.skuId || record.observedIdentifier || '', prod: product.identifier || product.productId || product.gtinUpc || '', compare: alnum },
+    { label: 'Name', merch: record.productName || record.description || '', prod: product.product || product.name || '', compare: norm },
+    { label: 'Brand', merch: record.brand || '', prod: product.brand || '', compare: norm },
+  ];
+  return rows.map(row => {
+    const merchKey = row.compare(row.merch);
+    const prodKey = row.compare(row.prod);
+    let status = 'info';
+    if (merchKey && prodKey) status = merchKey === prodKey ? 'match' : 'warn';
+    return { label: row.label, merch: row.merch, prod: row.prod, status };
+  });
+}
+
+function ReadinessStrip({ item, state }) {
+  const flagged = item.record?.reviewState === 'Issue' || item.record?.merchStatus === 'Issue' || Boolean(item.record?.blockingIssues?.length);
+  const requiredDone = state.deliverables.length > 0 && (state.thr3dOnly || state.blockers.length === 0);
+  const chips = [
+    {
+      label: 'Verify merchandise',
+      done: state.merchandiseVerified && !flagged,
+      issue: flagged,
+      hint: flagged ? 'Resolve the issue' : state.merchandiseVerified ? 'Confirmed' : 'Confirm the item',
+    },
+    {
+      label: 'Identify product',
+      done: state.productLinked,
+      hint: state.productLinked ? 'Linked' : 'Link a product',
+    },
+    {
+      label: 'Choose deliverables',
+      done: state.deliverables.length > 0,
+      hint: state.deliverables.length ? state.deliverables.join(', ') : 'Pick at least one',
+    },
+    {
+      label: 'Required to Shoot',
+      done: state.deliverables.length > 0 && requiredDone,
+      hint: state.deliverables.length === 0
+        ? 'Choose deliverables first'
+        : state.thr3dOnly
+          ? 'Thr3d route'
+          : state.blockers.length === 0
+            ? 'Complete'
+            : `${state.blockers.length} still needed`,
+    },
+  ];
+  const remaining = chips.filter(chip => !chip.done && !chip.issue).length;
+  const hasIssue = chips.some(chip => chip.issue);
+  const summary = hasIssue
+    ? 'Resolve the flagged issue to continue'
+    : remaining === 0
+      ? 'Everything checks out - ready to finish'
+      : `${remaining} ${remaining === 1 ? 'step' : 'steps'} left to finish`;
   return (
-    <section className="production-decision-section">
-      <h3>Readiness</h3>
-      <div className="workflow-empty-inline">Readiness checks are not configured yet.</div>
-      <ReadinessIndicators items={item.readiness} />
-      <ul className="workflow-requirement-list">
-        {requirements.map(requirement => (
-          <li key={requirement.key} className={`is-${requirement.tone}`}>
-            <strong>{requirement.label}</strong>
-            <span>{requirement.visible === false ? 'Not applicable' : requirement.detail}</span>
+    <div className="new-review-readiness">
+      <div className={`readiness-summary ${hasIssue ? 'is-issue' : remaining === 0 ? 'is-ready' : ''}`}>
+        <span aria-hidden="true">{hasIssue ? '⚑' : remaining === 0 ? '✓' : '○'}</span>
+        {summary}
+      </div>
+      <ol className="new-review-readiness-strip" aria-label="Required to Shoot">
+        {chips.map(chip => (
+          <li className={chip.issue ? 'is-issue' : chip.done ? 'is-done' : 'is-todo'} key={chip.label}>
+            <span className="readiness-mark" aria-hidden="true">{chip.issue ? '!' : chip.done ? '✓' : ''}</span>
+            <span className="readiness-text"><strong>{chip.label}</strong><small>{chip.hint}</small></span>
           </li>
         ))}
-      </ul>
+      </ol>
+    </div>
+  );
+}
+
+function CommentComposer({ onSubmit }) {
+  const [draft, setDraft] = useState('');
+  function submit(event) {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+    onSubmit?.(text);
+    setDraft('');
+  }
+  return (
+    <form className="conversation-composer" onSubmit={submit}>
+      <textarea value={draft} onChange={event => setDraft(event.target.value)} placeholder="Add a comment" />
+      <button type="submit" className="btn btn-primary btn-sm" disabled={!draft.trim()}>Comment</button>
+    </form>
+  );
+}
+
+function ConversationPanel({ comments = [], onAddComment }) {
+  return (
+    <section className="review-step is-open conversation-panel">
+      <header className="review-step-head"><span className="review-step-num review-step-num-plain">·</span><h3>Conversation</h3></header>
+      <div className="conversation-list">
+        {comments.length === 0 && <p className="conversation-empty">No comments yet.</p>}
+        {comments.map(comment => (
+          <article className="conversation-comment" key={comment.id}>
+            <header><strong>{comment.authorName}</strong><span>{formatInventoryDate(comment.createdAt)}</span></header>
+            <p>{comment.body}</p>
+          </article>
+        ))}
+      </div>
+      <CommentComposer onSubmit={onAddComment} />
     </section>
   );
 }
 
-function NewReviewModal({ item, decision, onDecisionChange, onSave, onSaveContinue, onClose, previousItem, nextItem, onSelectItem, onRefresh, photos, photoIndex, setPhotoIndex }) {
+function ActivityPanel({ events = [] }) {
+  return (
+    <section className="review-step is-open activity-panel">
+      <header className="review-step-head"><span className="review-step-num review-step-num-plain">·</span><h3>Activity</h3></header>
+      <div className="activity-list">
+        {events.length === 0 && <p className="conversation-empty">No activity yet.</p>}
+        {events.map(event => (
+          <div className="activity-event" key={event.id}>
+            <span>{formatInventoryDate(event.createdAt)}</span>
+            <strong>{event.body}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// Collapsing step: when its work is done it folds to a one-line summary, so the
+// pane always keeps the open/actionable steps loud and the finished ones quiet.
+function ReviewStep({ n, title, done, flagged, statusText, statusTone, summary, children }) {
+  const [manualOpen, setManualOpen] = useState(false);
+  useEffect(() => { if (!done) setManualOpen(false); }, [done]);
+  const collapsed = done && !flagged && !manualOpen;
+  const mark = flagged ? '⚑' : done ? '✓' : n;
+  return (
+    <section className={`review-step ${collapsed ? 'is-collapsed' : 'is-open'} ${done ? 'is-done' : ''} ${flagged ? 'is-flagged' : ''}`}>
+      <header
+        className="review-step-head"
+        onClick={collapsed ? () => setManualOpen(true) : undefined}
+        role={collapsed ? 'button' : undefined}
+        tabIndex={collapsed ? 0 : undefined}
+        onKeyDown={collapsed ? (event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setManualOpen(true); } }) : undefined}
+      >
+        <span className="review-step-num">{mark}</span>
+        <h3>{title}</h3>
+        {collapsed
+          ? <span className="review-step-edit">Edit</span>
+          : (statusText ? <span className={`merch-verify-status ${statusTone}`}>{statusText}</span> : null)}
+      </header>
+      {collapsed ? <div className="review-step-summary">{summary}</div> : <div className="review-step-body">{children}</div>}
+    </section>
+  );
+}
+
+const MERCH_FLAG_REASONS = ['Wrong item', 'Damaged', 'Missing barcode', 'Quantity mismatch', 'Duplicate', 'Other'];
+
+function MerchandiseVerifyPanel({ item, onRefresh, onFeedback }) {
+  const record = item.record || {};
+  const flagged = record.reviewState === 'Issue' || record.merchStatus === 'Issue' || Boolean(record.blockingIssues?.length);
+  const verified = Boolean(record.merchandiseVerified) && !flagged;
+  const [draft, setDraft] = useState(() => ({
+    packageName: record.productName || record.description || '',
+    identifier: record.skuId || record.observedIdentifier || '',
+  }));
+  const [busy, setBusy] = useState('');
+  const [notice, setNotice] = useState('');
+  const [flagOpen, setFlagOpen] = useState(false);
+  const [flagReason, setFlagReason] = useState(MERCH_FLAG_REASONS[0]);
+  const [flagNote, setFlagNote] = useState('');
+
+  useEffect(() => {
+    setDraft({
+      packageName: record.productName || record.description || '',
+      identifier: record.skuId || record.observedIdentifier || '',
+    });
+    setNotice('');
+    setFlagOpen(false);
+    setFlagNote('');
+  }, [item.id]);
+
+  async function confirmMerchandise() {
+    setBusy('confirm');
+    setNotice('');
+    try {
+      await api.verifyMerchandise(item.merchandiseId, { packageName: draft.packageName, identifier: draft.identifier });
+      await onRefresh?.();
+      onFeedback?.('Merchandise verified.');
+    } catch (error) {
+      setNotice(error.message || 'Could not verify merchandise.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function undoVerification() {
+    setBusy('undo');
+    setNotice('');
+    try {
+      await api.unverifyMerchandise(item.merchandiseId);
+      await onRefresh?.();
+    } catch (error) {
+      setNotice(error.message || 'Could not undo verification.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function submitFlag() {
+    setBusy('flag');
+    setNotice('');
+    try {
+      await api.createMerchandiseReviewIssue(item.merchandiseId, {
+        type: flagReason,
+        description: `${flagReason}${flagNote ? ` — ${flagNote}` : ''}`,
+        notes: flagNote,
+      });
+      await onRefresh?.();
+      onFeedback?.(`Flagged: ${flagReason}.`);
+      setFlagOpen(false);
+    } catch (error) {
+      setNotice(error.message || 'Could not flag merchandise.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  return (
+    <>
+      <p className="review-step-lead">Confirm the item in the photos matches what we recorded — correct the name or barcode if needed, then confirm. Flag it if something's wrong.</p>
+      <div className="merch-verify-fields">
+        <label>Package Name
+          <input value={draft.packageName} onChange={event => setDraft(d => ({ ...d, packageName: event.target.value }))} disabled={verified} />
+        </label>
+        <label>Barcode / SKU
+          <input value={draft.identifier} onChange={event => setDraft(d => ({ ...d, identifier: event.target.value }))} disabled={verified} />
+        </label>
+      </div>
+      <p className="review-context">
+        <span>{record.receipt?.name || '—'}</span>
+        <span>Qty {record.quantity || 1}</span>
+        {record.condition && <span>{record.condition}</span>}
+        {item.timeHere && <span>Here {item.timeHere}</span>}
+      </p>
+
+      {verified ? (
+        <div className="merch-verify-actions">
+          <span className="merch-verify-stamp">✓ Verified{record.merchandiseVerifiedAt ? ` · ${formatInventoryDate(record.merchandiseVerifiedAt)}` : ''}</span>
+          <button type="button" className="btn btn-sm" onClick={undoVerification} disabled={busy === 'undo'}>{busy === 'undo' ? 'Undoing…' : 'Undo'}</button>
+        </div>
+      ) : flagged ? (
+        <div className="merch-verify-actions">
+          <span className="merch-verify-stamp is-flag">⚑ Flagged — resolve the issue, then re-verify.</span>
+          <button type="button" className="btn btn-green btn-sm" onClick={confirmMerchandise} disabled={busy === 'confirm'}>{busy === 'confirm' ? 'Verifying…' : 'Re-verify'}</button>
+        </div>
+      ) : (
+        <div className="merch-verify-actions">
+          <button type="button" className="btn btn-green" onClick={confirmMerchandise} disabled={busy === 'confirm'}>{busy === 'confirm' ? 'Verifying…' : '✓ Confirm Merchandise'}</button>
+          <button type="button" className="btn btn-flag" onClick={() => setFlagOpen(open => !open)} disabled={busy === 'flag'}>⚑ Flag Issue</button>
+        </div>
+      )}
+
+      {flagOpen && !verified && !flagged && (
+        <div className="merch-flag-form">
+          <label>Reason
+            <select value={flagReason} onChange={event => setFlagReason(event.target.value)}>
+              {MERCH_FLAG_REASONS.map(reason => <option value={reason} key={reason}>{reason}</option>)}
+            </select>
+          </label>
+          <input placeholder="Add detail (optional)" value={flagNote} onChange={event => setFlagNote(event.target.value)} />
+          <button type="button" className="btn btn-danger btn-sm" onClick={submitFlag} disabled={busy === 'flag'}>{busy === 'flag' ? 'Flagging…' : 'Flag'}</button>
+        </div>
+      )}
+      {notice && <span className="new-review-inline-status">{notice}</span>}
+    </>
+  );
+}
+
+function NewReviewRequiredInformation({ item, state }) {
+  const requirements = item.readiness.filter(requirement => requirement.visible !== false);
+  if (state.thr3dOnly) {
+    return <p className="review-step-lead">Thr3d-only merchandise needs no photo production info. Once it is verified, it belongs in the Thr3d shipping path.</p>;
+  }
+  if (state.deliverables.length === 0) {
+    return <p className="review-step-lead">Choose deliverables above to see what production needs.</p>;
+  }
+  return (
+    <ul className="production-readiness-list">
+      {requirements.map(requirement => (
+        <li key={requirement.key} className={requirement.satisfied ? 'is-ready' : 'is-missing'}>
+          <span className="req-mark" aria-hidden="true">{requirement.satisfied ? '✓' : '!'}</span>
+          <div className="req-text">
+            <strong>{requirementLabelForUser(requirement)}</strong>
+            {!requirement.satisfied && <em>{requirement.detail || requirement.missing}</em>}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ImageLightbox({ photos, index, setIndex, onClose }) {
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const drag = useRef(null);
+  const url = receivingPhotoUrl(photos[index]);
+  const clamp = value => Math.min(5, Math.max(1, Number(value.toFixed(2))));
+
+  useEffect(() => { setZoom(1); setOffset({ x: 0, y: 0 }); }, [index]);
+  useEffect(() => { if (zoom <= 1) setOffset({ x: 0, y: 0 }); }, [zoom]);
+
+  useEffect(() => {
+    function onKey(event) {
+      if (event.key === 'Escape') onClose();
+      else if (event.key === 'ArrowLeft') setIndex(i => Math.max(0, i - 1));
+      else if (event.key === 'ArrowRight') setIndex(i => Math.min(photos.length - 1, i + 1));
+      else if (event.key === '+' || event.key === '=') setZoom(z => clamp(z + 0.25));
+      else if (event.key === '-') setZoom(z => clamp(z - 0.25));
+      else if (event.key === '0') setZoom(1);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [photos.length, onClose, setIndex]);
+
+  function onWheel(event) {
+    event.preventDefault();
+    if (event.ctrlKey || event.metaKey) {
+      setZoom(z => clamp(z - event.deltaY * 0.01));
+    } else if (zoom > 1) {
+      setOffset(o => ({ x: o.x - event.deltaX, y: o.y - event.deltaY }));
+    } else {
+      setZoom(z => clamp(z + (event.deltaY < 0 ? 0.2 : -0.2)));
+    }
+  }
+  function onPointerDown(event) {
+    if (zoom <= 1) return;
+    drag.current = { x: event.clientX, y: event.clientY, ox: offset.x, oy: offset.y };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+  function onPointerMove(event) {
+    if (!drag.current) return;
+    setOffset({ x: drag.current.ox + (event.clientX - drag.current.x), y: drag.current.oy + (event.clientY - drag.current.y) });
+  }
+  function endDrag() { drag.current = null; }
+
+  if (!url) return null;
+
+  return createPortal(
+    <div className="nr-lightbox" role="dialog" aria-modal="true" aria-label="Merchandise image viewer" onClick={event => event.stopPropagation()}>
+      <div className="nr-lightbox-topbar">
+        <span className="nr-lightbox-count">{index + 1} / {photos.length}</span>
+        <div className="nr-lightbox-zoom">
+          <button type="button" onClick={() => setZoom(z => clamp(z - 0.25))} disabled={zoom <= 1} aria-label="Zoom out">−</button>
+          <span>{Math.round(zoom * 100)}%</span>
+          <button type="button" onClick={() => setZoom(z => clamp(z + 0.25))} disabled={zoom >= 5} aria-label="Zoom in">+</button>
+          <button type="button" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }); }} disabled={zoom === 1}>Reset</button>
+        </div>
+        <button type="button" className="nr-lightbox-close" onClick={onClose} aria-label="Close image viewer">✕</button>
+      </div>
+      <div className="nr-lightbox-stage" onWheel={onWheel} onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+        {index > 0 && <button type="button" className="nr-lightbox-nav prev" onClick={() => setIndex(i => Math.max(0, i - 1))} aria-label="Previous image">‹</button>}
+        <img
+          src={url}
+          alt=""
+          className={`nr-lightbox-img ${zoom > 1 ? 'is-zoomed' : ''}`}
+          style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onDoubleClick={() => setZoom(z => (z > 1 ? 1 : 2))}
+          draggable={false}
+        />
+        {index < photos.length - 1 && <button type="button" className="nr-lightbox-nav next" onClick={() => setIndex(i => Math.min(photos.length - 1, i + 1))} aria-label="Next image">›</button>}
+      </div>
+      {photos.length > 1 && (
+        <div className="nr-lightbox-thumbs">
+          {photos.map((photo, i) => {
+            const thumb = receivingPhotoUrl(photo);
+            return thumb ? (
+              <button type="button" className={i === index ? 'is-active' : ''} onClick={() => setIndex(i)} key={`${thumb}-${i}`}>
+                <img src={thumb} alt="" />
+              </button>
+            ) : null;
+          })}
+        </div>
+      )}
+    </div>,
+    document.body
+  );
+}
+
+function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, previousItem, nextItem, onSelectItem, onRefresh, photos, photoIndex, setPhotoIndex, comments, activity, onAddComment, onMarkCommentsRead }) {
+  const auth = useAuth();
   const [zoom, setZoom] = useState(1);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [intakeDraft, setIntakeDraft] = useState(() => ({
-    productionType: item.record?.productionType || '',
+    deliverables: deliverablesForRecord(item.record),
     merchandiseResolution: item.record?.merchandiseResolution || '',
   }));
   const [intakeSaving, setIntakeSaving] = useState('');
+  const intakeSaveInFlight = useRef(false);
+  const deliverablesAutosaveTimer = useRef(null);
   const [intakeFeedback, setIntakeFeedback] = useState('');
-  const [noteDraft, setNoteDraft] = useState(decision.notes || '');
+  const [deliverablesError, setDeliverablesError] = useState('');
+  const [finishState, setFinishState] = useState({ status: 'idle', message: '' });
   const product = item.record?.linkedItem || {};
   const activePhoto = photos[photoIndex] || photos[0];
   const activePhotoUrl = receivingPhotoUrl(activePhoto);
+  const wizardState = wizardStateForItem(item, intakeDraft.deliverables);
+  const finishBusy = finishState.status === 'loading';
+  const routeDestination = wizardState.thr3dOnly && wizardState.blockers.length === 0
+    ? 'Ready for Thr3d'
+    : wizardState.blockers.length === 0 && wizardState.photoDeliverables.length
+    ? 'Ready for Photo'
+      : 'Waiting for Information';
+  const finishDisabled = finishBusy || intakeSaving === 'deliverables' || !wizardState.merchandiseVerified || wizardState.deliverables.length === 0;
+  const finishLabel = !wizardState.merchandiseVerified
+    ? 'Verify to continue'
+    : wizardState.deliverables.length === 0
+      ? 'Choose deliverables'
+      : `Finish → ${routeDestination}`;
 
   useEffect(() => {
     function handleKeyDown(event) {
       const targetTag = event.target?.tagName?.toLowerCase();
       if (['input', 'textarea', 'select'].includes(targetTag)) return;
+      if (lightboxOpen) return; // the lightbox owns keyboard control while open
       if (event.key === 'Escape') {
-        lightboxOpen ? setLightboxOpen(false) : onClose();
+        onClose(item);
       }
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
@@ -5375,67 +6175,152 @@ function NewReviewModal({ item, decision, onDecisionChange, onSave, onSaveContin
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [lightboxOpen, onClose, photos.length, setPhotoIndex]);
+  }, [item, lightboxOpen, onClose, photos.length, setPhotoIndex]);
 
   useEffect(() => {
     setIntakeDraft({
-      productionType: item.record?.productionType || '',
+      deliverables: deliverablesForRecord(item.record),
       merchandiseResolution: item.record?.merchandiseResolution || '',
     });
     setIntakeFeedback('');
-    setNoteDraft(decision.notes || '');
+    setDeliverablesError('');
+    setFinishState({ status: 'idle', message: '' });
+    onMarkCommentsRead?.(item.merchandiseId);
   }, [item.id]);
 
+  useEffect(() => () => {
+    if (deliverablesAutosaveTimer.current) clearTimeout(deliverablesAutosaveTimer.current);
+  }, []);
+
   async function saveIntakeDecision(field, value) {
-    const nextDraft = { ...intakeDraft, [field]: value };
-    if (field === 'productionType' && value === 'THR3D' && !nextDraft.merchandiseResolution) {
+    if (intakeSaveInFlight.current) return;
+    intakeSaveInFlight.current = true;
+    const previousDraft = intakeDraft;
+    const cleanValue = field === 'deliverables' ? normalizeDeliverableList(value) : value;
+    const nextDraft = { ...intakeDraft, [field]: cleanValue };
+    if (field === 'deliverables' && cleanValue.includes('Thr3d') && !nextDraft.merchandiseResolution) {
       nextDraft.merchandiseResolution = 'Ship to Kentucky';
     }
     setIntakeDraft(nextDraft);
     setIntakeSaving(field);
     setIntakeFeedback('');
+    if (field === 'deliverables') setDeliverablesError('');
     try {
-      const payload = field === 'productionType'
-        ? { productionType: value, merchandiseResolution: nextDraft.merchandiseResolution }
+      const payload = field === 'deliverables'
+        ? { deliverables: cleanValue }
         : { merchandiseResolution: value };
       const updated = await api.updateMerchandiseIntakeDecisions(item.merchandiseId, payload);
+      const updatedDeliverables = deliverablesForRecord(updated);
       setIntakeDraft({
-        productionType: updated.productionType || '',
+        deliverables: updatedDeliverables,
         merchandiseResolution: updated.merchandiseResolution || '',
       });
+      if (field === 'deliverables') {
+        setDeliverablesError('');
+      }
       await onRefresh?.();
-      setIntakeFeedback('Intake decision saved.');
+      setIntakeFeedback(field === 'deliverables' ? 'Deliverables saved.' : 'Saved.');
     } catch (error) {
-      setIntakeFeedback(error.message || 'Could not save Intake decision.');
+      if (field === 'deliverables') {
+        setDeliverablesError(deliverablesSaveErrorMessage(error));
+      } else {
+        setIntakeDraft(previousDraft);
+        setIntakeFeedback(error.message || 'Could not save Planning decision.');
+      }
     } finally {
+      intakeSaveInFlight.current = false;
       setIntakeSaving('');
     }
   }
 
+  function stageDeliverables(value) {
+    const cleanValue = normalizeDeliverableList(value);
+    setIntakeDraft(draft => {
+      const nextDraft = { ...draft, deliverables: cleanValue };
+      if (cleanValue.includes('Thr3d') && !nextDraft.merchandiseResolution) {
+        nextDraft.merchandiseResolution = 'Ship to Kentucky';
+      }
+      return nextDraft;
+    });
+    setDeliverablesError('');
+    setIntakeFeedback('Saving...');
+    if (deliverablesAutosaveTimer.current) clearTimeout(deliverablesAutosaveTimer.current);
+    deliverablesAutosaveTimer.current = setTimeout(() => {
+      saveIntakeDecision('deliverables', cleanValue);
+    }, 350);
+  }
+
+  async function flushPendingDeliverablesSave() {
+    if (deliverablesAutosaveTimer.current) {
+      clearTimeout(deliverablesAutosaveTimer.current);
+      deliverablesAutosaveTimer.current = null;
+      await saveIntakeDecision('deliverables', intakeDraft.deliverables);
+    }
+  }
+
+  async function finishCurrentVerification() {
+    if (finishBusy) return;
+    setFinishState({ status: 'loading', message: 'Finishing verification...' });
+    try {
+      await flushPendingDeliverablesSave();
+      const result = await onFinish?.(item, wizardStateForItem(item, intakeDraft.deliverables));
+      if (result?.ok === false) {
+        setFinishState({ status: 'error', message: result.message || 'Could not finish verification. Try again.' });
+        return;
+      }
+      setFinishState({ status: 'success', message: result?.message || 'Verification finished.' });
+    } catch (error) {
+      setFinishState({ status: 'error', message: error.message || 'Could not finish verification. Try again.' });
+    }
+  }
+
+  const stepFlagged = item.record?.reviewState === 'Issue' || item.record?.merchStatus === 'Issue' || Boolean(item.record?.blockingIssues?.length);
+  const identifyWarnings = product.id ? productMatchRows(item.record || {}, product).filter(row => row.status === 'warn').length : 0;
+  const verifyDone = wizardState.merchandiseVerified && !stepFlagged;
+  const identifyDone = wizardState.productLinked && identifyWarnings === 0;
+  const deliverablesDone = wizardState.deliverables.length > 0;
+  const requiredDone = deliverablesDone && (wizardState.thr3dOnly || wizardState.blockers.length === 0);
+
   return (
-    <div className="new-review-modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="new-review-modal-backdrop" role="presentation" onClick={() => onClose(item)}>
       <section className="new-review-modal" role="dialog" aria-modal="true" aria-label="New item intake review" onClick={event => event.stopPropagation()}>
         <header className="new-review-modal-header">
-          <div>
-            <span>{item.client}</span>
+          <div className="new-review-modal-heading">
+            <span className="nr-eyebrow">{item.client}</span>
             <h2>{item.title}</h2>
-            <p>Intake · {item.workOrder.currentGateName}</p>
+            <span className="nr-gate-pill">Queue: {item.queueLabel || item.workOrder.currentGateName}</span>
           </div>
-          <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close intake review">
+          <button type="button" className="merchandise-detail-close" onClick={() => onClose(item)} aria-label="Close intake review">
             <Icon.Close />
           </button>
         </header>
 
+        <ReadinessStrip item={item} state={wizardState} />
+
         <div className="new-review-modal-body">
           <section className="new-review-image-pane" aria-label="Merchandise images">
-            <div className="new-review-image-stage">
-              {activePhotoUrl ? (
-                <button type="button" className="new-review-main-image" onClick={() => setLightboxOpen(true)} style={{ '--review-zoom': zoom }}>
-                  <img src={activePhotoUrl} alt="" />
-                </button>
-              ) : (
-                <div className="workflow-empty-inline">No R2-backed photos available.</div>
+            <div className="new-review-image-layout">
+              {photos.length > 1 && (
+                <div className="new-review-thumbnail-strip" aria-label="Merchandise photo thumbnails">
+                  {photos.map((photo, index) => {
+                    const url = receivingPhotoUrl(photo);
+                    return url ? (
+                      <button type="button" className={photoIndex === index ? 'is-active' : ''} onClick={() => setPhotoIndex(index)} key={`${url}-${index}`}>
+                        <img src={url} alt="" />
+                      </button>
+                    ) : null;
+                  })}
+                </div>
               )}
+              <div className="new-review-image-stage">
+                {activePhotoUrl ? (
+                  <button type="button" className="new-review-main-image" onClick={() => setLightboxOpen(true)} style={{ '--review-zoom': zoom }}>
+                    <img src={activePhotoUrl} alt="" />
+                  </button>
+                ) : (
+                  <div className="workflow-empty-inline">No R2-backed photos available.</div>
+                )}
+              </div>
             </div>
             <div className="new-review-image-controls">
               <button type="button" className="btn" onClick={() => setPhotoIndex(index => Math.max(0, index - 1))} disabled={photoIndex <= 0}>Previous</button>
@@ -5444,79 +6329,93 @@ function NewReviewModal({ item, decision, onDecisionChange, onSave, onSaveContin
               <button type="button" className="btn" onClick={() => setZoom(value => Math.max(1, Number((value - 0.2).toFixed(1))))}>-</button>
               <button type="button" className="btn" onClick={() => setZoom(value => Math.min(2.4, Number((value + 0.2).toFixed(1))))}>+</button>
             </div>
-            {photos.length > 1 && (
-              <div className="new-review-thumbnail-strip">
-                {photos.map((photo, index) => {
-                  const url = receivingPhotoUrl(photo);
-                  return url ? (
-                    <button type="button" className={photoIndex === index ? 'is-active' : ''} onClick={() => setPhotoIndex(index)} key={`${url}-${index}`}>
-                      <img src={url} alt="" />
-                    </button>
-                  ) : null;
-                })}
-              </div>
-            )}
           </section>
 
-          <aside className="new-review-decision-pane" aria-label="Intake decision">
-            <section className="production-decision-section">
-              <h3>Merchandise</h3>
-              <div className="workflow-fact-grid">
-                <WorkflowFact label={DOMAIN_TERMS.shipment} value={item.record.receipt?.name} />
-                <WorkflowFact label="Client" value={item.client} />
-                <WorkflowFact label="Observed Package Name" value={item.record.productName} />
-                <WorkflowFact label="Observed Identifier" value={item.record.skuId} />
-                <WorkflowFact label="Quantity" value={item.record.quantity || 1} />
-                <WorkflowFact label="Storage" value={item.location} />
-                <WorkflowFact label="Condition" value={item.record.condition} />
-                <WorkflowFact label="Time Here" value={item.timeHere} />
-              </div>
-              <IntakeDecisionSelect
-                label="Merchandise Resolution"
-                value={intakeDraft.merchandiseResolution}
-                placeholder="Select resolution"
-                options={INTAKE_MERCHANDISE_RESOLUTION_OPTIONS}
-                onChange={value => saveIntakeDecision('merchandiseResolution', value)}
-                disabled={Boolean(intakeSaving)}
+          <aside className="new-review-decision-pane" aria-label="Planning decision">
+            <ReviewStep
+              n={1}
+              title="Verify Merchandise"
+              done={verifyDone}
+              flagged={stepFlagged}
+              statusText={stepFlagged ? '⚑ Flagged' : verifyDone ? '✓ Verified' : 'Not verified'}
+              statusTone={stepFlagged ? 'flag' : verifyDone ? 'ok' : 'wait'}
+              summary={`${item.record?.productName || item.record?.description || 'Unnamed'} · ${item.record?.skuId || 'no barcode'}`}
+            >
+              <MerchandiseVerifyPanel item={item} onRefresh={onRefresh} onFeedback={setIntakeFeedback} />
+            </ReviewStep>
+
+            <ReviewStep
+              n={2}
+              title="Identify Product"
+              done={identifyDone}
+              statusText={wizardState.productLinked ? (identifyWarnings ? `✓ Linked · ${identifyWarnings} warning${identifyWarnings > 1 ? 's' : ''}` : '✓ Linked') : 'Not linked'}
+              statusTone={wizardState.productLinked && !identifyWarnings ? 'ok' : 'wait'}
+              summary={product.product || product.name || product.identifier || '—'}
+            >
+              <NewReviewProductIdentification item={item} product={product} onRefresh={onRefresh} />
+            </ReviewStep>
+
+            <ReviewStep
+              n={3}
+              title="Deliverables"
+              done={deliverablesDone}
+              statusText={deliverablesDone ? `✓ ${wizardState.deliverables.length} chosen` : 'Choose at least one'}
+              statusTone={deliverablesDone ? 'ok' : 'wait'}
+              summary={wizardState.deliverables.join(', ') || '—'}
+            >
+              <DeliverablesSelector
+                values={intakeDraft.deliverables}
+                onChange={stageDeliverables}
+                disabled={intakeSaving === 'deliverables'}
               />
-            </section>
-            <NewReviewProductIdentification item={item} product={product} onRefresh={onRefresh} />
-            <section className="production-decision-section">
-              <h3>Production</h3>
-              <IntakeDecisionSelect
-                label="Production Type"
-                value={intakeDraft.productionType}
-                placeholder="Select production type"
-                options={INTAKE_PRODUCTION_TYPE_OPTIONS}
-                onChange={value => saveIntakeDecision('productionType', value)}
-                disabled={Boolean(intakeSaving)}
-              />
+              {deliverablesError && (
+                <div className="deliverables-inline-error">
+                  <span>{deliverablesError}</span>
+                  <button type="button" onClick={() => saveIntakeDecision('deliverables', intakeDraft.deliverables)} disabled={intakeSaving === 'deliverables'}>
+                    Retry
+                  </button>
+                </div>
+              )}
               {intakeFeedback && <span className="new-review-inline-status">{intakeFeedback}</span>}
-            </section>
-            <NewReviewReadinessSummary item={item} />
-            <section className="production-decision-section">
-              <h3>Notes</h3>
-              <textarea
-                value={noteDraft}
-                onChange={event => setNoteDraft(event.target.value)}
-                placeholder="Intake notes"
-              />
-            </section>
+            </ReviewStep>
+
+            <ReviewStep
+              n={4}
+              title="Required to Shoot"
+              done={requiredDone}
+              statusText={requiredDone ? '✓ Complete' : `${wizardState.blockers.length} still needed`}
+              statusTone={requiredDone ? 'ok' : 'wait'}
+              summary="All required info complete"
+            >
+              <NewReviewRequiredInformation item={item} state={wizardState} />
+            </ReviewStep>
+
+            <ConversationPanel
+              comments={comments}
+              onAddComment={body => onAddComment?.(item.merchandiseId, {
+                body,
+                authorId: auth?.user?.id || '',
+                authorName: pmCommentUserDisplayName(auth?.user),
+              })}
+            />
+            <ActivityPanel events={activity} />
           </aside>
         </div>
 
         <footer className="new-review-modal-footer">
           <button type="button" className="btn" onClick={() => previousItem && onSelectItem(previousItem.id)} disabled={!previousItem}>Previous Merchandise</button>
-          <button type="button" className="btn btn-primary" onClick={() => onSave(item)}>Save</button>
-          <button type="button" className="btn btn-primary" onClick={() => onSaveContinue(item)} disabled={!nextItem}>Save & Continue</button>
+          <div className="new-review-finish-summary">
+            <span>Routes to <strong>{routeDestination}</strong></span>
+            {finishState.message && <strong className={`is-${finishState.status}`}>{finishState.message}</strong>}
+          </div>
+          <button type="button" className="btn btn-primary" onClick={finishCurrentVerification} disabled={finishDisabled}>
+            {finishBusy ? 'Finishing...' : finishLabel}
+          </button>
           <button type="button" className="btn" onClick={() => nextItem && onSelectItem(nextItem.id)} disabled={!nextItem}>Next Merchandise</button>
         </footer>
       </section>
       {lightboxOpen && activePhotoUrl && (
-        <div className="new-review-lightbox" role="dialog" aria-modal="true" aria-label="Merchandise image lightbox" onClick={event => { event.stopPropagation(); setLightboxOpen(false); }}>
-          <button type="button" onClick={() => setLightboxOpen(false)}>Close</button>
-          <img src={activePhotoUrl} alt="" />
-        </div>
+        <ImageLightbox photos={photos} index={photoIndex} setIndex={setPhotoIndex} onClose={() => setLightboxOpen(false)} />
       )}
     </div>
   );
@@ -5528,8 +6427,12 @@ function MerchandiseReviewV2Page() {
   const locations = useResource(() => api.listLocations());
   const records = entries.data?.records ?? [];
   const defaultWorkflow = MERCHANDISE_REVIEW_WORKFLOW;
-  const workflowGates = gatesForBoard(defaultWorkflow);
+  const workflowGates = PM_QUEUE_COLUMNS;
   const [artworkOverrides] = useState(() => loadJsonMap(MERCH_REVIEW_V2_ARTWORK_KEY));
+  const [queueOverrides, setQueueOverrides] = useState(() => loadJsonMap(PM_QUEUE_STORAGE_KEY));
+  const [conversations, setConversations] = useState(() => loadJsonMap(PM_CONVERSATION_STORAGE_KEY));
+  const [activityByMerchandise, setActivityByMerchandise] = useState(() => loadJsonMap(PM_ACTIVITY_STORAGE_KEY));
+  const [commentReads, setCommentReads] = useState(() => loadJsonMap(PM_COMMENT_READ_STORAGE_KEY));
   const [legacyWorkstreamDecisions] = useState(() => ({
     ...loadJsonMap(MERCH_REVIEW_V2_LEGACY_DECISIONS_KEY),
     ...loadJsonMap(MERCH_REVIEW_V2_DECISIONS_KEY),
@@ -5537,6 +6440,8 @@ function MerchandiseReviewV2Page() {
   const [feedback, setFeedback] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [releaseSavingId, setReleaseSavingId] = useState('');
+  const [finishSavingId, setFinishSavingId] = useState('');
   const [photoIndex, setPhotoIndex] = useState(0);
   const [search, setSearch] = useState('');
   const [clientFilter, setClientFilter] = useState('');
@@ -5547,9 +6452,11 @@ function MerchandiseReviewV2Page() {
   const clientMap = Object.fromEntries((clients.data?.records ?? []).map(client => [client.id, client]));
   const locationMap = Object.fromEntries((locations.data?.records ?? []).map(location => [location.id, location]));
   const selectedWorkstreamIdsByMerchandise = records.reduce((map, record) => {
-    const productionWorkstream = PRODUCTION_TYPE_WORKSTREAM_MAP[record.productionType];
-    map[record.id] = productionWorkstream
-      ? [productionWorkstream]
+    const deliverableWorkstreams = deliverablesForRecord(record)
+      .map(deliverable => DELIVERABLE_WORKSTREAM_MAP[deliverable])
+      .filter(Boolean);
+    map[record.id] = deliverableWorkstreams.length
+      ? deliverableWorkstreams.filter((value, index, list) => list.indexOf(value) === index)
       : normalizeWorkstreamSelection(legacyWorkstreamDecisions[record.id] || {}, record.linkedItem?.workstream || record.linkedItem?.output);
     return map;
   }, {});
@@ -5566,15 +6473,31 @@ function MerchandiseReviewV2Page() {
       workflow,
     });
     const card = buildWorkOrderCard(record, { assignment: workOrder, client, location });
-    const productionTypeLabel = productionTypeWorkstreamLabel(record.productionType);
+    const deliverables = deliverablesForRecord(record);
+    const deliverableLabels = deliverables.map(deliverableWorkstreamLabel).filter(Boolean);
+    const deliverableWorkstreams = deliverables.map(deliverable => DELIVERABLE_WORKSTREAM_MAP[deliverable]).filter(Boolean);
+    const comments = Array.isArray(conversations[record.id]) ? conversations[record.id] : [];
+    const readThrough = commentReads[record.id] || '';
+    const unreadComments = comments.filter(comment => comment.createdAt > readThrough).length;
+    const overriddenQueue = queueOverrides[record.id];
+    const columnId = record.intakeStatus === 'Ready to Release'
+      ? GATE_IDS.readyProduction
+      : overriddenQueue && PM_QUEUE_COLUMNS.some(column => column.id === overriddenQueue)
+        ? overriddenQueue
+        : card.columnId;
     return {
       ...card,
       id: record.id,
       merchandiseId: record.id,
-      workstreamId: productionTypeLabel ? PRODUCTION_TYPE_WORKSTREAM_MAP[record.productionType] : card.primaryWorkstream,
+      columnId,
+      queueLabel: workflowGates.find(column => column.id === columnId)?.label || card.currentGateName,
+      workstreamId: deliverableWorkstreams[0] || card.primaryWorkstream,
       selectedWorkstreamIds: selectedWorkstreamIdsByMerchandise[record.id],
       isDraftWorkOrder: false,
-      workstream: productionTypeLabel || selectedWorkstreamIdsByMerchandise[record.id].map(workstreamLabel).filter(Boolean).join(', ') || card.workstream,
+      deliverables,
+      commentCount: comments.length,
+      unreadComments,
+      workstream: deliverableLabels.join(', ') || selectedWorkstreamIdsByMerchandise[record.id].map(workstreamLabel).filter(Boolean).join(', ') || card.workstream,
     };
   });
   const clientOptions = [...new Set(records.map(record => record.clientIds?.[0]).filter(Boolean))]
@@ -5614,18 +6537,87 @@ function MerchandiseReviewV2Page() {
     void nextDecision;
   }
 
+  function recordActivity(merchandiseId, body) {
+    setActivityByMerchandise(current => {
+      const next = {
+        ...current,
+        [merchandiseId]: [
+          { id: `${merchandiseId}:${Date.now()}`, body, createdAt: localNowIso() },
+          ...(Array.isArray(current[merchandiseId]) ? current[merchandiseId] : []),
+        ].slice(0, 40),
+      };
+      saveJsonMap(PM_ACTIVITY_STORAGE_KEY, next);
+      return next;
+    });
+  }
+
+  function markCommentsRead(merchandiseId) {
+    setCommentReads(current => {
+      const next = { ...current, [merchandiseId]: localNowIso() };
+      saveJsonMap(PM_COMMENT_READ_STORAGE_KEY, next);
+      return next;
+    });
+  }
+
+  function addConversationComment(merchandiseId, comment) {
+    setConversations(current => {
+      const next = {
+        ...current,
+        [merchandiseId]: [
+          ...(Array.isArray(current[merchandiseId]) ? current[merchandiseId] : []),
+          {
+            id: `${merchandiseId}:comment:${Date.now()}`,
+            body: comment.body,
+            authorId: comment.authorId,
+            authorName: comment.authorName,
+            createdAt: localNowIso(),
+          },
+        ],
+      };
+      saveJsonMap(PM_CONVERSATION_STORAGE_KEY, next);
+      return next;
+    });
+    recordActivity(merchandiseId, `${comment.authorName || 'Team'} added a comment.`);
+    markCommentsRead(merchandiseId);
+  }
+
   async function moveItemToGate(item, columnId) {
+    const destination = workflowGates.find(column => column.id === columnId);
+    if (!destination || item.columnId === columnId) return;
+    if (columnId === GATE_IDS.readyProduction) {
+      const blockers = visibleRequirementBlockers(item.readiness || []);
+      if (blockers.length) {
+        setFeedback(`Cannot move to Ready for Photo. Missing: ${blockers.map(requirementLabelForUser).join(', ')}`);
+        return;
+      }
+    }
     try {
-      await api.updateMerchandiseIntakeState(item.merchandiseId, {
-        stage: columnId,
-        blockingRequirements: item.readiness.filter(requirement => requirement.visible !== false && !requirement.satisfied).map(requirement => requirement.label),
+      if ([GATE_IDS.newReview, GATE_IDS.waitingInformation, GATE_IDS.readyProduction].includes(columnId)) {
+        await api.updateMerchandiseIntakeState(item.merchandiseId, {
+          stage: columnId,
+          blockingRequirements: item.readiness.filter(requirement => requirement.visible !== false && !requirement.satisfied).map(requirementLabelForUser),
+        });
+      }
+      setQueueOverrides(current => {
+        const next = { ...current };
+        if ([PM_LOCAL_QUEUE_IDS.planning].includes(columnId)) next[item.merchandiseId] = columnId;
+        else delete next[item.merchandiseId];
+        saveJsonMap(PM_QUEUE_STORAGE_KEY, next);
+        return next;
       });
+      recordActivity(item.merchandiseId, `Moved to ${destination.label}.`);
       await refreshV2WorkflowData();
       setSelectedId(item.merchandiseId);
-      setFeedback(`Moved ${item.title || 'merchandise'} to ${workflowGates.find(column => column.id === columnId)?.label}.`);
+      setFeedback(`Moved ${item.title || 'merchandise'} to ${destination.label}.`);
     } catch (error) {
       setFeedback(error.message || 'Could not move Merchandise.');
     }
+  }
+
+  function moveBoardItem(itemId, columnId) {
+    const item = boardItems.find(candidate => candidate.id === itemId);
+    if (!item) return;
+    moveItemToGate(item, columnId);
   }
 
   async function saveIntakeItem(item, { keepSelection = true } = {}) {
@@ -5635,7 +6627,7 @@ function MerchandiseReviewV2Page() {
         setSelectedId(item.merchandiseId);
         setWorkspaceOpen(true);
       }
-      setFeedback('Intake saved. Merchandise refreshed.');
+      setFeedback('Planning saved. Merchandise refreshed.');
       return true;
     } catch (error) {
       setFeedback(error.message);
@@ -5654,8 +6646,8 @@ function MerchandiseReviewV2Page() {
     }
   }
 
-  async function refreshV2WorkflowData() {
-    await entries.reload();
+  async function refreshV2WorkflowData({ quiet = true } = {}) {
+    await entries.reload({ quiet });
   }
 
   async function saveIntakeReadiness(item) {
@@ -5672,6 +6664,25 @@ function MerchandiseReviewV2Page() {
     } catch (error) {
       setFeedback(error.message || 'Could not save this Merchandise.');
       return false;
+    }
+  }
+
+  async function releaseIntakeItem(item) {
+    setReleaseSavingId(item.merchandiseId);
+    setFeedback('');
+    try {
+      await api.releaseMerchandiseToProduction(item.merchandiseId);
+      await refreshV2WorkflowData();
+      setSelectedId('');
+      setWorkspaceOpen(false);
+      setFeedback(`${item.title || 'Merchandise'} released to production.`);
+      return true;
+    } catch (error) {
+      const missing = Array.isArray(error.missing) ? ` Missing: ${error.missing.join(', ')}` : '';
+      setFeedback(`${error.message || 'Cannot release to production.'}${missing}`);
+      return false;
+    } finally {
+      setReleaseSavingId('');
     }
   }
 
@@ -5692,19 +6703,58 @@ function MerchandiseReviewV2Page() {
     setFeedback('');
   }
 
-  function closeWorkflowWorkspace() {
+  async function finishVerification(item, state = wizardStateForItem(item)) {
+    if (finishSavingId) return { ok: false, message: 'Verification is already finishing.' };
+    setFinishSavingId(item.merchandiseId);
+    setFeedback('');
+    const blockers = state.blockers || visibleRequirementBlockers(item.readiness || []);
+    const deliverables = normalizeDeliverableList(state.deliverables || item.deliverables);
+    const stage = state.thr3dOnly && blockers.length === 0
+      ? GATE_IDS.sendThr3d
+      : blockers.length === 0 && state.photoDeliverables.length
+        ? GATE_IDS.readyProduction
+        : GATE_IDS.waitingInformation;
+    try {
+      const updated = await api.updateMerchandiseIntakeState(item.merchandiseId, {
+        stage,
+        deliverables,
+        blockingRequirements: blockers.map(requirementLabelForUser),
+      });
+      await refreshV2WorkflowData();
+      setSelectedId('');
+      setWorkspaceOpen(false);
+      const routedLabel = stage === GATE_IDS.sendThr3d
+        ? 'Thr3d Shipping'
+        : workflowGates.find(column => column.id === stage)?.label || 'Planning';
+      const message = stage === GATE_IDS.waitingInformation
+        ? `Verification saved. Still needed: ${blockers.map(requirementLabelForUser).join(', ') || 'more information'}.`
+        : `Verification finished. Routed to ${routedLabel}.`;
+      setFeedback(message);
+      return { ok: true, message, stage, record: updated };
+    } catch (error) {
+      const missing = Array.isArray(error.payload?.missing) ? ` Missing: ${error.payload.missing.join(', ')}` : '';
+      const message = `${error.message || 'Could not finish verification.'}${missing}`;
+      setFeedback(message);
+      return { ok: false, message };
+    } finally {
+      setFinishSavingId('');
+    }
+  }
+
+  async function closeWorkflowWorkspace(item = selectedItem) {
+    void item;
     setWorkspaceOpen(false);
   }
 
-  if (entries.loading) return <div className="empty-state">Loading Intake board...</div>;
+  if (entries.loading) return <div className="empty-state">Loading Planning board...</div>;
   if (entries.error) return <div className="error-state">{entries.error}</div>;
 
   return (
     <div className="work-board-page">
       <header className="work-board-header">
         <div>
-          <h1>Intake</h1>
-          <p>Prepare merchandise for production.</p>
+          <h1>Planning</h1>
+          <p>Resolve what is required to shoot and hand ready work to Production.</p>
         </div>
       </header>
       <div className="work-board-toolbar">
@@ -5731,14 +6781,14 @@ function MerchandiseReviewV2Page() {
         itemsByColumn={itemsByColumn}
         selectedId={selectedId}
         onSelect={openWorkflowWorkspace}
+        onMove={moveBoardItem}
       />
-      {workspaceOpen && selectedItem && selectedWorkspaceMode === 'modal' ? (
+      {workspaceOpen && selectedItem ? (
         <NewReviewModal
           item={selectedItem}
           decision={selectedDecision}
           onDecisionChange={updateSelectedDecision}
-          onSave={saveIntakeItem}
-          onSaveContinue={saveIntakeItemAndContinue}
+          onFinish={finishVerification}
           onClose={closeWorkflowWorkspace}
           previousItem={previousSelectedItem}
           nextItem={nextSelectedItem}
@@ -5747,14 +6797,20 @@ function MerchandiseReviewV2Page() {
           photos={selectedPhotos}
           photoIndex={photoIndex}
           setPhotoIndex={setPhotoIndex}
+          comments={Array.isArray(conversations[selectedItem.merchandiseId]) ? conversations[selectedItem.merchandiseId] : []}
+          activity={Array.isArray(activityByMerchandise[selectedItem.merchandiseId]) ? activityByMerchandise[selectedItem.merchandiseId] : []}
+          onAddComment={addConversationComment}
+          onMarkCommentsRead={markCommentsRead}
         />
-      ) : (
+      ) : selectedItem ? (
         <WorkflowWorkspaceDrawer
           item={workspaceOpen ? selectedItem : null}
           onClose={closeWorkflowWorkspace}
           onMove={moveItemToGate}
           onSave={saveIntakeReadiness}
           onSaveContinue={saveIntakeReadinessAndContinue}
+          onRelease={releaseIntakeItem}
+          releaseBusy={selectedItem ? releaseSavingId === selectedItem.merchandiseId : false}
           onRefresh={refreshV2WorkflowData}
           feedback={feedback}
           override={selectedOverride}
@@ -5764,7 +6820,7 @@ function MerchandiseReviewV2Page() {
           nextItem={nextSelectedItem}
           readonly={selectedWorkspaceMode === 'readonly'}
         />
-      )}
+      ) : null}
     </div>
   );
 }
@@ -5786,13 +6842,13 @@ const AuthContext = createContext(null);
 function useAuth() { return useContext(AuthContext); }
 
 const ROLE_NAV = {
-  Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/intake', '/products', '/jobs'],
-  Producer:     ['/dashboard', '/imports', '/shipments', '/merchandise', '/intake', '/products', '/jobs'],
+  Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/products', '/jobs'],
+  Producer:     ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/products', '/jobs'],
   Merch:        ['/shipments', '/merchandise'],
   'Merch Receiver': ['/shipments', '/merchandise'],
   Receiver:     ['/shipments', '/merchandise'],
-  User:         ['/dashboard', '/shipments', '/merchandise', '/intake', '/products', '/jobs'],
-  PM:           ['/dashboard', '/merchandise', '/intake', '/products', '/jobs'],
+  User:         ['/dashboard', '/shipments', '/merchandise', '/planning', '/products', '/jobs'],
+  PM:           ['/dashboard', '/merchandise', '/planning', '/products', '/jobs'],
   Photographer: ['/dashboard', '/production', '/products', '/jobs'],
   Retoucher:    ['/dashboard', '/production', '/products', '/jobs'],
   Viewer:       ['/dashboard', '/merchandise', '/products'],
@@ -5828,7 +6884,7 @@ function normalizeRolePermission(role, config, defaults) {
       .map(path => path === '/settings' ? ADMINISTRATION_PATH : path)
       .map(path => path === '/administration' ? ADMINISTRATION_PATH : path)
       .map(path => path === '/verification' ? '/merchandise/review' : path)
-      .map(path => path === '/merchandise-review-v2' || path === '/work' ? '/intake' : path)
+      .map(path => path === '/merchandise-review-v2' || path === '/work' || path === '/intake' ? '/planning' : path)
       .map(path => path === '/receiving' || path === '/receipts' ? '/shipments' : path)
       .map(path => path === '/items' ? '/products' : path)
       .filter(path => path !== ADMINISTRATION_PATH)
@@ -6584,7 +7640,7 @@ const NAV_ITEMS = [
   { path: '/imports', label: 'Import', icon: <Icon.NavImport /> },
   { path: '/shipments', label: 'Receiving', icon: <Icon.NavReceiving /> },
   { path: '/merchandise', label: 'Merchandise', icon: <Icon.NavMerchandise /> },
-  { path: '/intake', label: 'Intake', icon: <Icon.NavWork /> },
+  { path: '/planning', label: 'Planning', icon: <Icon.NavWork /> },
   { path: '/jobs', label: 'Jobs', icon: <Icon.NavJobs /> },
   { path: '/products', label: 'Products', icon: <Icon.NavProducts /> },
 ];
@@ -6600,7 +7656,7 @@ function routeForPage(page, params = {}) {
   const routes = {
     dashboard: '/dashboard',
     imports: '/imports',
-    intake: '/intake',
+    intake: '/planning',
     'import-history': `/imports/history${suffix}`,
     receiving: '/shipments',
     shipments: '/shipments',
@@ -6609,8 +7665,8 @@ function routeForPage(page, params = {}) {
     merchandise: '/merchandise',
     verification: '/merchandise/review',
     'merchandise-review': '/merchandise/review',
-    'merchandise-review-v2': '/intake',
-    work: '/intake',
+    'merchandise-review-v2': '/planning',
+    work: '/planning',
     planning: '/planning',
     production: '/production',
     items: `/products${suffix}`,
@@ -6632,10 +7688,9 @@ function pageTitleForPath(pathname) {
   if (pathname.startsWith('/shipments')) return DOMAIN_TERMS.shipments;
   if (pathname.startsWith('/receiving') || pathname.startsWith('/receipts')) return DOMAIN_TERMS.shipments;
   if (pathname.startsWith('/merchandise/review')) return DOMAIN_TERMS.merchandiseReview;
-  if (pathname.startsWith('/intake') || pathname.startsWith('/work') || pathname.startsWith('/merchandise-review-v2')) return 'Intake';
+  if (pathname.startsWith('/planning') || pathname.startsWith('/intake') || pathname.startsWith('/work') || pathname.startsWith('/merchandise-review-v2')) return 'Planning';
   if (pathname === '/merchandise') return DOMAIN_TERMS.merchandise;
   if (pathname.startsWith('/verification')) return DOMAIN_TERMS.merchandiseReview;
-  if (pathname.startsWith('/planning')) return 'Planning';
   if (pathname.startsWith('/production')) return 'Production';
   if (pathname.startsWith('/products')) return DOMAIN_TERMS.products;
   if (pathname.startsWith('/items')) return DOMAIN_TERMS.products;
@@ -6678,31 +7733,12 @@ function isPrimaryNavActive(item, pathname) {
   if (item.path === '/imports') return pathname.startsWith('/imports');
   if (item.path === '/shipments') return pathname.startsWith('/shipments') || pathname.startsWith('/receiving') || pathname.startsWith('/receipts');
   if (item.path === '/merchandise') return pathname === '/merchandise';
-  if (item.path === '/intake') return pathname.startsWith('/intake') || pathname.startsWith('/work') || pathname.startsWith('/merchandise-review-v2');
+  if (item.path === '/planning') return pathname.startsWith('/planning') || pathname.startsWith('/intake') || pathname.startsWith('/work') || pathname.startsWith('/merchandise-review-v2');
   return pathname === item.path || pathname.startsWith(`${item.path}/`);
 }
 
 function isTopNavVisible(item, allowed) {
   return allowed.includes(item.path) || (item.aliases || []).some(path => allowed.includes(path));
-}
-
-function PlanningPage() {
-  return (
-    <div className="page-stack shell-workspace-page">
-      <WorkspaceHeader
-        title="Planning"
-        description="Plan what Walnut is photographing next."
-      />
-      <WorkspaceLayout
-        queue={<QueuePanel title="Planning Queue" empty="Planning queues are not connected yet." />}
-        inspector={<InspectorPanel title="Planning Inspector" />}
-      >
-        <EmptyState title="Planning workspace not implemented yet.">
-          This shell is ready for scheduling, batch planning, and production readiness work in a later phase.
-        </EmptyState>
-      </WorkspaceLayout>
-    </div>
-  );
 }
 
 function ProductionPage() {
@@ -6908,10 +7944,10 @@ function AppLayout() {
             <Route path="/verification" element={<Navigate to="/merchandise/review" replace />} />
             <Route path="/merchandise" element={<MerchandiseInventoryPage navigate={navigate} />} />
             <Route path="/merchandise/review" element={<MerchandiseReviewPage />} />
-            <Route path="/intake" element={<MerchandiseReviewV2Page />} />
-            <Route path="/work" element={<Navigate to="/intake" replace />} />
-            <Route path="/merchandise-review-v2" element={<Navigate to="/intake" replace />} />
-            <Route path="/planning" element={<PlanningPage />} />
+            <Route path="/planning" element={<MerchandiseReviewV2Page />} />
+            <Route path="/intake" element={<Navigate to="/planning" replace />} />
+            <Route path="/work" element={<Navigate to="/planning" replace />} />
+            <Route path="/merchandise-review-v2" element={<Navigate to="/planning" replace />} />
             <Route path="/production" element={<ProductionPage />} />
             <Route path="/products" element={<RouteProductsPage navigate={navigate} />} />
             <Route path="/items" element={<Navigate to="/products" replace />} />

@@ -1,5 +1,135 @@
 # Product Decisions
 
+## 2026-07-21 - Planning Replaces Intake As The PM Workspace
+
+The PM-owned board is now the `Planning` workspace.
+
+Planning is an architecture refinement of the previous Intake board, not a visual redesign. The existing dark board, compact cards, variable-height columns, unified modal, Conversation, Activity, and Required to Shoot interaction patterns should be preserved unless a later design decision changes them.
+
+Canonical routes:
+- `/planning` is the active Planning route.
+- `/intake`, `/work`, and `/merchandise-review-v2` are compatibility redirects to `/planning`.
+
+Planning owns planning states only:
+- New
+- Planning
+- Waiting
+- Ready for Photo
+
+Cards must not automatically move because fields are completed. PMs explicitly choose where Planning work sits.
+
+`Ready for Photo` is the shared handoff queue between Planning and Production. It is not a duplicated record or a separate Production Request.
+
+While a card is in `Ready for Photo`:
+- Planning work is complete.
+- PM ownership remains until Production accepts the work.
+- The card remains visible on the Planning board.
+- The same Merchandise should later become visible on the Production board.
+
+Future Production board states are:
+- Ready for Photo
+- Scheduled
+- In Production
+- QC
+- Complete
+
+When Production later moves a card from `Ready for Photo` to `Scheduled`, that acceptance should:
+- remove the card from the Planning board
+- show it on the Production board
+- transfer ownership from PM to Production
+- log Activity
+
+Do not build scheduling or a full Production board until the next phase. The current requirement is to keep the model clean enough for that expansion.
+
+## 2026-07-21 - Intake Is A PM Operations Board
+
+Superseded for the active workspace by `2026-07-21 - Planning Replaces Intake As The PM Workspace`.
+
+The Intake board is a PM Operations Board, not an automatic workflow engine.
+
+The board organizes PM work. It does not define the physical state of merchandise.
+
+User-facing language:
+- Use `Queue` for the board placement concept.
+- Use `Merchandise Status` for physical or operational merchandise state.
+- Use `Required to Shoot` for the production-start checklist.
+- Do not use `Readiness` as public PM-facing language.
+
+Queue rules:
+- `New` is the automatic entry queue.
+- `Ready for Photo` is the only gated queue.
+- PMs control every middle queue.
+- Cards must not move automatically because fields were completed.
+- The application may block a move into `Ready for Photo` when Required to Shoot is incomplete.
+
+Target PM queues:
+- New
+- Working
+- Waiting on Client
+- On Hold
+- Ready for Photo
+
+The first implementation may store middle-queue overrides locally while the live Airtable base is audited. The durable target is a Merchandise `Queue` field that is separate from `Merch Status` / Merchandise Status and from release state.
+
+## 2026-07-21 - Required To Shoot Is The Public Production Gate
+
+`Required to Shoot` replaces public `Readiness` language in the active Intake experience.
+
+Required to Shoot is calculated from source facts, not manually maintained as a generic status:
+- Merchandise Verified
+- Deliverables selected
+- Product linked for photo deliverables
+- Product Name for photo deliverables
+- Identifier for photo deliverables
+- Artwork for Packaging Photo and Ecomm Photo
+- Activation or campaign information for Ecomm Photo
+
+The frontend and backend must enforce the same Required to Shoot rules before a card can move to Ready for Photo or be released to production.
+
+Do not create a public `Readiness` Airtable field unless a later reporting/performance decision proves a cached value is necessary.
+
+## 2026-07-21 - Intake Uses One Card Editor
+
+Every active Intake card should open the same editor regardless of queue.
+
+The editor should prioritize:
+- compact image review with fullscreen visual review available on click
+- Product
+- Deliverables
+- Required to Shoot
+- Conversation
+- Activity
+
+Do not maintain separate PM edit experiences for New, Waiting, Working, and Ready cards.
+
+Scattered note fields should be consolidated into a single Conversation model where practical. Conversation is human discussion. Activity is system-generated audit context. They are separate concepts even if a later schema stores them in one physical table.
+
+## 2026-07-21 - Thr3d Leaves Intake Through A Shipping Workspace
+
+Thr3d work should not be forced onto the PM Operations Board.
+
+The PM board prepares merchandise. Once Thr3d is selected and Required to Shoot is complete, the clean target is a dedicated Thr3d Shipping workspace that answers:
+
+> What needs to be boxed and shipped?
+
+Thr3d shipping must stay separate from PM `Queue` and from physical `Merchandise Status`.
+
+## 2026-07-21 - Airtable Cleanup Must Be Staged
+
+The Airtable base should be reduced, but cleanup must be audit-first and delete-second.
+
+Before deleting tables, fields, or records:
+- export or snapshot affected data
+- audit repository dependencies by table name, table ID, field name, and field ID
+- inspect formulas, lookups, rollups, linked records, imports, tests, and docs
+- manually inspect Airtable Interfaces, Automations, Forms, shared views, scripts, extensions, and external syncs
+- migrate required data
+- run tests, build, import checks, and live schema read-back
+
+The live audit on 2026-07-21 classified Products, Jobs, Clients, Shipments, Locations, Users, Issues, Imports, and Merchandise as keep tables. History, Workstreams, Work Orders, Workflow Templates, Workflow Stages, and Work Order Types are archive-review candidates, not approved deletions.
+
+No ambiguous data should be deleted. Ambiguous tables or fields must be flagged for review.
+
 ## 2026-07-20 - Marks Photo Is An Operations Readiness Platform
 
 Marks Photo is an Operations Readiness Platform.
@@ -92,10 +222,27 @@ Production Type, Merchandise Resolution, Readiness, and Release to Production ar
 Active Intake is centered on Merchandise and Product data, not Work Orders or workflow configuration.
 
 Canonical active Intake state lives on Merchandise:
-- `Merch Status` is the primary status field for Received, Matched, Validated, and Issue.
-- The existing `[Waiting for Product Data]` Notes marker represents Waiting for Information.
-- `Production Type = THR3D` represents the Send to THR3D branch.
-- `Production Type` and `Merchandise Resolution` remain Merchandise-level Intake decisions.
+- `Intake Status` is the canonical Intake state field with exactly `Needs Review`, `Waiting on Information`, `Ready to Release`, and `Closed`.
+- `Merch Status` remains a separate compatibility/status field for Received, Matched, Validated, and Issue.
+- Deliverables including `Thr3d` represent the Send to THR3D branch.
+- `Deliverables` and `Merchandise Resolution` remain Merchandise-level Intake decisions.
+
+`Merch Status` was not reused for canonical Intake Status because it already drives inventory and Merchandise Review compatibility behavior. Reusing it would blur physical/status compatibility values with PM Intake state.
+
+Notes are not state. The temporary `[Waiting for Product Data]` marker was migrated out of active Intake behavior and must not be written by new application code.
+
+Newly received Merchandise enters Intake as `Needs Review`. Once a PM starts the Merchandise Verification wizard, incomplete progress is a normal working state. If verification cannot be completed, the system may route the record to `Waiting on Information` and preserve derived missing-information reasons so the PM can resume.
+
+The active PM experience is a guided wizard, not a long form or manual status board. The wizard steps are:
+- Verify Merchandise
+- Identify Product
+- Choose Deliverables
+- Complete Required Information
+- Finish
+
+PMs do not manually choose the final Intake status in the happy path. `Finish Verification` computes the outcome from Merchandise, Product, Deliverables, and derived required information.
+
+The UI should not expose `Readiness`, `Observed`, `Storage Location`, `Merchandise Resolution`, manual status selection, `Save`, `Save & Continue`, or `Release to Production` in the primary wizard path. Those may remain in compatibility code, historical docs, secondary detail, or exception flows when explicitly needed.
 
 New Intake user actions must not create Work Orders, require Work Order Types, require Workflow Templates, or require Workflow Stages.
 
@@ -104,6 +251,70 @@ Workflow Templates, Workflow Stages, Work Order Types, Work Orders, and Workstre
 Admin should not expose Workflow Templates or Work Order Types unless a future documented decision reintroduces configuration after real multi-client variation proves it is needed.
 
 No destructive Airtable cleanup is approved by this decision.
+
+## 2026-07-20 - Intake Uses Deliverables
+
+PMs choose required Deliverables during Intake. They are not choosing a workflow.
+
+Deliverables live on Merchandise using the Airtable field `Deliverables`.
+
+Exactly three Deliverables are currently supported:
+- `Packaging Photo`
+- `Ecomm Photo`
+- `Thr3d`
+
+One Merchandise record may require multiple Deliverables. `Packaging Photo + Ecomm Photo` is common, and `Thr3d + Ecomm Photo` is allowed.
+
+Application code must normalize legacy values such as `Packaging`, `Ecomm`, `eCommerce`, and `THR3D` to the canonical values above. Airtable multi-select objects, arrays, nested arrays, JSON-stringified arrays, quote-wrapped values, quote-only strings, nulls, and comma-separated strings must be handled gracefully.
+
+The active Deliverables payload contract is strict: Airtable receives only a plain array of canonical strings in the Merchandise `Deliverables` field, or an empty array when cleared. Active code must not send JSON-stringified arrays, select-option objects, comma-delimited strings, empty strings, quote-only strings, null values, or use Airtable `typecast` to mask malformed Deliverables payloads. Unknown values should be rejected or discarded at the normalization boundary before Airtable is called.
+
+The Deliverables selector should behave like a compact multi-select form control, not a status badge. Native checkbox semantics are preferred for this control. In the Merchandise Verification wizard, Deliverables autosave after a short debounce and must not require a separate `Save Deliverables` action.
+
+Future Deliverables will only be added when real operational requirements exist. No `Other`, `Lifestyle`, `Video`, `Social`, `CGI`, or `360` option is approved.
+
+Deliverables remain a field, not a table. No Deliverables table, Client Deliverables table, workflow routing table, transition table, or configuration surface is approved by this decision.
+
+Required Information is derived only after Merchandise is verified and Deliverables are selected. `Thr3d`-only merchandise does not require photo readiness items; it can route to the Thr3d shipping workflow once the Merchandise verification requirements are satisfied. `Packaging Photo` and `Ecomm Photo` may have different required information, and combined deliverables use the union of applicable requirements.
+
+When `Thr3d` is selected and Merchandise Resolution is blank, Merchandise Resolution defaults to `Ship to Kentucky`. This default must not overwrite an existing PM-selected resolution, and removing `Thr3d` must not clear Merchandise Resolution.
+
+The older Merchandise field named `Production Type` is legacy data and must not be used by active application code. Active code reads and writes `Deliverables`.
+
+Legacy `Production Type` cleanup must preserve historical intent by migrating any remaining legacy values into `Deliverables` before field deletion. The `Packaging` legacy value maps to `Packaging Photo`, `eCommerce` and `Ecomm` map to `Ecomm Photo`, and `THR3D` or `3D` map to `Thr3d`.
+
+Legacy Merchandise fields may be deleted only after Airtable-side dependencies are confirmed clear. On 2026-07-21, manual Airtable inspection confirmed no references to `Production Type` or `Deprecated Airtable Photos - Do Not Use` in Automations, shared views, scripts, or extensions. Connector inspection confirmed no Interfaces, interface pages, record detail pages, or standalone Forms in the live base. The legacy Merchandise fields `Production Type` (`fldSwUluDDqwe6MVs`) and `Deprecated Airtable Photos - Do Not Use` (`fldtTr7eNQrT6iVrS`) were deleted after migration and dependency verification.
+
+## 2026-07-20 - Release To Production Is A Merchandise-Owned Handoff
+
+Production Readiness is a baseline server-side evaluation over existing Merchandise and Product data.
+
+The universal baseline requirements are:
+- Package Name confirmed
+- Package ID / Barcode / SKU confirmed
+- At least one Deliverable selected
+
+Photo deliverables additionally require:
+- Product linked
+- Product Name present
+- Product Identifier present, using the existing Product `Identifier` field
+
+`Merchandise Resolution` is no longer a universal happy-path readiness requirement. It remains a physical disposition concept for exceptions, compatibility, or later physical-routing work.
+
+Artwork, activation, job numbers, client-specific rules, approvals, scheduling, resources, and workflow transitions are intentionally excluded from the baseline. They may become future client-specific readiness rules only after real operating variation requires them.
+
+Release to Production is represented on Merchandise with:
+- `Released`
+- `Released At`
+- `Released By`
+
+`Released` is not an `Intake Status` value. `Intake Status` remains the four-state Intake model: `Needs Review`, `Waiting on Information`, `Ready to Release`, and `Closed`. Release sets `Intake Status` to `Closed` and records release ownership through the dedicated release fields.
+
+Released Merchandise leaves active Intake but remains visible in Inventory. Release changes ownership from PM Intake to Production; it does not change whether the physical merchandise is still in the warehouse.
+
+Release must not create Work Orders, Production records, workflow transitions, schedules, resources, Creative Force records, approval flows, or configuration tables.
+
+Release is idempotent. Releasing already released Merchandise returns success without changing the original `Released At` or `Released By`.
 
 ## 2026-07-20 - Intake Decisions Start As Merchandise Fields
 
@@ -142,7 +353,7 @@ When Production Type is set to `THR3D`, Merchandise Resolution defaults to `Ship
 
 The Intake UI should show Production Type as the PM-facing production decision. Existing Workstream/Work Order behavior may remain as internal compatibility plumbing, but the UI should avoid presenting Workstream as a duplicate PM-facing decision when Production Type can drive the existing workstream selection.
 
-Readiness requirements and Release to Production remain future work.
+Readiness requirements and Release to Production were future work during this Intake decision phase. The later Release To Production decision supersedes that deferral with a baseline readiness evaluator and Merchandise-owned release handoff.
 
 ## 2026-07-20 - Work Was The Primary Experimental PM Workspace Before Intake Alignment
 

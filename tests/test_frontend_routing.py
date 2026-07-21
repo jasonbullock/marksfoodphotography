@@ -41,8 +41,8 @@ class FrontendRoutingTests(unittest.TestCase):
             'path="/shipments"',
             'path="/merchandise"',
             'path="/merchandise/review"',
-            'path="/intake"',
             'path="/planning"',
+            'path="/intake"',
             'path="/production"',
             'path="/products"',
             'path="/jobs"',
@@ -58,8 +58,9 @@ class FrontendRoutingTests(unittest.TestCase):
             'path="/receiving" element={<Navigate to="/shipments" replace />}',
             'path="/receipts" element={<Navigate to="/shipments" replace />}',
             'path="/verification" element={<Navigate to="/merchandise/review" replace />}',
-            'path="/work" element={<Navigate to="/intake" replace />}',
-            'path="/merchandise-review-v2" element={<Navigate to="/intake" replace />}',
+            'path="/intake" element={<Navigate to="/planning" replace />}',
+            'path="/work" element={<Navigate to="/planning" replace />}',
+            'path="/merchandise-review-v2" element={<Navigate to="/planning" replace />}',
             'path="/items" element={<Navigate to="/products" replace />}',
             'path="/intake/import-history" element={<Navigate to="/imports/history" replace />}',
             'path="/settings" element={<Navigate to={`${ADMINISTRATION_PATH}/system`} replace />}',
@@ -73,7 +74,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "label: 'Import'",
             "label: 'Receiving'",
             "label: 'Merchandise'",
-            "label: 'Intake'",
+            "label: 'Planning'",
             "label: 'Products'",
             "label: 'Jobs'",
         ]:
@@ -96,14 +97,14 @@ class FrontendRoutingTests(unittest.TestCase):
     def test_primary_navigation_uses_operational_shell_model(self):
         nav_section = self.source.split("const NAV_ITEMS = [", 1)[1].split("];", 1)[0]
         self.assertIn("{ path: '/merchandise', label: 'Merchandise'", nav_section)
-        self.assertIn("{ path: '/intake', label: 'Intake'", nav_section)
+        self.assertIn("{ path: '/planning', label: 'Planning'", nav_section)
         self.assertNotIn("{ path: '/merchandise/review', label: 'Merchandise Review'", nav_section)
         self.assertNotIn("{ path: '/merchandise-review-v2', label: 'Merchandise Review V2'", nav_section)
         self.assertIn("function isPrimaryNavActive", self.source)
         self.assertIn("function isTopNavVisible", self.source)
         self.assertIn("item.path === '/merchandise'", self.source)
         self.assertIn("if (pathname.startsWith('/merchandise/review')) return DOMAIN_TERMS.merchandiseReview;", self.source)
-        self.assertIn("if (pathname.startsWith('/intake') || pathname.startsWith('/work') || pathname.startsWith('/merchandise-review-v2')) return 'Intake';", self.source)
+        self.assertIn("if (pathname.startsWith('/planning') || pathname.startsWith('/intake') || pathname.startsWith('/work') || pathname.startsWith('/merchandise-review-v2')) return 'Planning';", self.source)
         self.assertIn("if (pathname === '/merchandise') return DOMAIN_TERMS.merchandise;", self.source)
         self.assertIn("Download as DownloadIcon", self.source)
         for text in [
@@ -127,7 +128,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "{ path: '/imports', label: 'Import', icon: <Icon.NavImport /> }",
             "{ path: '/shipments', label: 'Receiving', icon: <Icon.NavReceiving /> }",
             "{ path: '/merchandise', label: 'Merchandise', icon: <Icon.NavMerchandise /> }",
-            "{ path: '/intake', label: 'Intake', icon: <Icon.NavWork /> }",
+            "{ path: '/planning', label: 'Planning', icon: <Icon.NavWork /> }",
             "{ path: '/jobs', label: 'Jobs', icon: <Icon.NavJobs /> }",
             "{ path: '/products', label: 'Products', icon: <Icon.NavProducts /> }",
         ]:
@@ -137,7 +138,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "label: 'Import'",
             "label: 'Receiving'",
             "label: 'Merchandise'",
-            "label: 'Intake'",
+            "label: 'Planning'",
             "label: 'Jobs'",
             "label: 'Products'",
         ]
@@ -149,7 +150,7 @@ class FrontendRoutingTests(unittest.TestCase):
         top_nav = self.source.split("const primaryNav = (", 1)[1].split("\n  );\n\n  return (", 1)[0]
         self.assertIn("if (item.path === '/merchandise') return pathname === '/merchandise';", matcher)
         self.assertIn("if (item.path === '/imports') return pathname.startsWith('/imports');", matcher)
-        self.assertIn("if (item.path === '/intake') return pathname.startsWith('/intake') || pathname.startsWith('/work') || pathname.startsWith('/merchandise-review-v2');", matcher)
+        self.assertIn("if (item.path === '/planning') return pathname.startsWith('/planning') || pathname.startsWith('/intake') || pathname.startsWith('/work') || pathname.startsWith('/merchandise-review-v2');", matcher)
         self.assertNotIn("item.path === '/merchandise/review'", matcher)
         self.assertNotIn("item.path === '/merchandise-review-v2'", matcher)
         self.assertNotIn("item.path === '/merchandise') return pathname.startsWith('/merchandise')", matcher)
@@ -180,9 +181,10 @@ class FrontendRoutingTests(unittest.TestCase):
     def test_merchandise_review_uses_shared_subnav_without_equal_width_overrides(self):
         self.assertIn('className="merch-review-subnav"', self.source)
         self.assertIn('<Route path="/merchandise/review" element={<MerchandiseReviewPage />} />', self.source)
-        self.assertIn('<Route path="/intake" element={<MerchandiseReviewV2Page />} />', self.source)
-        self.assertIn('<Route path="/work" element={<Navigate to="/intake" replace />} />', self.source)
-        self.assertIn('<Route path="/merchandise-review-v2" element={<Navigate to="/intake" replace />} />', self.source)
+        self.assertIn('<Route path="/planning" element={<MerchandiseReviewV2Page />} />', self.source)
+        self.assertIn('<Route path="/intake" element={<Navigate to="/planning" replace />} />', self.source)
+        self.assertIn('<Route path="/work" element={<Navigate to="/planning" replace />} />', self.source)
+        self.assertIn('<Route path="/merchandise-review-v2" element={<Navigate to="/planning" replace />} />', self.source)
         self.assertNotIn(".merch-review-subnav .subnav-tabs", self.styles)
         self.assertNotIn(".merch-review-subnav .subnav-tab", self.styles)
         self.assertNotIn("flex: 1 1 0;\n  justify-content: center;", self.styles)
@@ -191,6 +193,7 @@ class FrontendRoutingTests(unittest.TestCase):
         for text in [
             "function MerchandiseReviewV2Page",
             "ReadinessIndicators",
+            "requiredToShootSummary",
             "KanbanBoard",
             "KanbanColumn",
             "KanbanCard",
@@ -203,9 +206,11 @@ class FrontendRoutingTests(unittest.TestCase):
             "workflowForClient",
             "buildWorkOrderCard",
             "MERCH_REVIEW_V2_DECISIONS_KEY",
-            "Save & Continue",
+            "PM_QUEUE_COLUMNS",
+            "ConversationPanel",
+            "ActivityPanel",
             "api.listMerchandiseReviewEntries()",
-            '<Route path="/intake" element={<MerchandiseReviewV2Page />} />',
+            '<Route path="/planning" element={<MerchandiseReviewV2Page />} />',
         ]:
             self.assertIn(text, self.source)
         self.assertIn(".work-board-page", self.styles)
@@ -217,17 +222,19 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn(".workflow-transition-panel", self.styles)
         self.assertIn(".new-review-modal", self.styles)
         self.assertIn(".new-review-image-pane", self.styles)
+        self.assertIn(".new-review-image-layout", self.styles)
+        self.assertIn(".verification-wizard-progress", self.styles)
         self.assertIn(".new-review-modal-footer", self.styles)
         self.assertIn(".readiness-dot.is-overridden::after", self.styles)
         self.assertIn("recordPhotos(selectedItem?.record)", self.source)
         self.assertIn("setSelectedId", self.source)
         self.assertIn("workspaceOpen", self.source)
         for text in [
-            "Review",
-            "Waiting for Information",
-            "Send to THR3D",
-            "Waiting for Activation",
-            "Ready for Production",
+            "New",
+            "Waiting",
+            "Ready for Thr3d Shipping",
+            "Planning",
+            "Ready for Photo",
         ]:
             self.assertIn(text, self.workflow_engine)
 
@@ -243,6 +250,8 @@ class FrontendRoutingTests(unittest.TestCase):
             "GATE_IDS",
             "WORKSPACE_SECTIONS",
             "CARD_FIELDS",
+            "WORKFLOW_BOARD_IDS",
+            "WORKFLOW_BOARD_STATE_MODEL",
             "WORKFLOW_REGISTRY",
             "MERCHANDISE_REVIEW_WORKFLOW",
             "evaluateMerchandiseReviewRequirements",
@@ -274,6 +283,13 @@ class FrontendRoutingTests(unittest.TestCase):
             "currentGate",
             "currentOwner",
             "currentStatus",
+            "productionScheduled: 'production-scheduled'",
+            "productionInProgress: 'production-in-progress'",
+            "productionQc: 'production-qc'",
+            "productionComplete: 'production-complete'",
+            "label: 'Planning Board'",
+            "label: 'Production Board'",
+            "shared: [GATE_IDS.readyProduction]",
         ]:
             self.assertIn(text, self.workflow_engine)
         self.assertIn("from './workflowEngine'", self.source)
@@ -306,34 +322,34 @@ class FrontendRoutingTests(unittest.TestCase):
 
     def test_new_review_gate_uses_modal_and_workstream_decisions(self):
         for text in [
-            "selectedWorkspaceMode === 'modal'",
+            "workspaceOpen && selectedItem",
             "workspaceModeForGate(selectedItem?.workOrder?.gate)",
             "NewReviewProductIdentification",
-            "NewReviewReadinessSummary",
-            "IntakeDecisionSelect",
-            "INTAKE_PRODUCTION_TYPE_OPTIONS",
-            "INTAKE_MERCHANDISE_RESOLUTION_OPTIONS",
-            "PRODUCTION_TYPE_WORKSTREAM_MAP",
-            "Merchandise",
-            "Product",
+            "NewReviewRequiredInformation",
+            "ReadinessStrip",
+            "DeliverablesSelector",
+            "INTAKE_DELIVERABLE_OPTIONS",
+            "DELIVERABLE_WORKSTREAM_MAP",
+            "Verify Merchandise",
+            "Identify Product",
             "Linked Product",
             "Search Product",
             "Create Incomplete Product",
-            "Production",
-            "Production Type",
-            "Merchandise Resolution",
-            "Select production type",
-            "Select resolution",
+            "Deliverables",
+            "deliverables",
             "api.updateMerchandiseIntakeDecisions",
-            "Readiness",
-            "Readiness checks are not configured yet.",
-            "Intake notes",
+            "Required to Shoot",
+            "Package Name",
+            "Package ID / Barcode / SKU",
+            "Conversation",
+            "Activity",
+            "Add a comment",
             "Previous Merchandise",
-            "Save & Continue",
+            "finishCurrentVerification",
             "Next Merchandise",
             "setWorkspaceOpen(false)",
             "recordPhotos(selectedItem?.record)",
-            "new-review-lightbox",
+            "nr-lightbox",
             "api.searchMerchandiseReviewProducts",
             "api.matchMerchandiseReviewEntry",
         ]:
@@ -341,17 +357,65 @@ class FrontendRoutingTests(unittest.TestCase):
         for text in [
             ".new-review-product-id",
             ".new-review-inline-status",
-            ".intake-decision-field",
+            ".intake-deliverable-option",
+            ".intake-deliverable-check",
+            ".intake-deliverable-option.is-selected",
+            ".intake-deliverable-option:has(input:focus-visible)",
+            ".intake-deliverable-option:has(input:disabled)",
+            ".deliverables-inline-error",
+            ".required-information-section",
+            ".new-review-finish-summary",
+            ".conversation-panel",
+            ".activity-panel",
         ]:
             self.assertIn(text, self.styles)
+        deliverables_selector = self.source.split("function DeliverablesSelector", 1)[1].split("function IntakeDecisionSelect", 1)[0]
+        for text in [
+            'type="checkbox"',
+            "checked={selected}",
+            "onChange={() => toggle(option)}",
+            "selected ? 'is-selected' : ''",
+        ]:
+            self.assertIn(text, deliverables_selector)
+        self.assertNotIn("aria-pressed", deliverables_selector)
         modal_section = self.source.split("function NewReviewModal", 1)[1].split("function MerchandiseReviewV2Page", 1)[0]
+        finish_handler = self.source.split("async function finishVerification", 1)[1].split("async function closeWorkflowWorkspace", 1)[0]
+        self.assertNotIn("Save Deliverables", modal_section)
+        self.assertNotIn("Merchandise Resolution", modal_section)
+        self.assertNotIn("Observed Package Name", modal_section)
+        self.assertNotIn("Observed Identifier", modal_section)
+        self.assertNotIn("ReleaseToProductionAction", modal_section)
+        self.assertIn("Retry", self.source)
         self.assertNotIn("<WorkstreamSelector", modal_section)
+        self.assertNotIn("Select production type", modal_section)
+        self.assertNotIn("productionTypes", modal_section)
+        self.assertNotIn("productionType", modal_section)
         self.assertNotIn("WorkOrderPreview", modal_section)
         self.assertNotIn("api.saveMerchandiseReviewWorkOrders", modal_section)
+        self.assertNotIn("Intake notes", modal_section)
+        for text in [
+            "finishCurrentVerification",
+            "flushPendingDeliverablesSave",
+            "finishState.status === 'loading'",
+            "Finishing...",
+            "disabled={finishDisabled}",
+            "is-${finishState.status}",
+        ]:
+            self.assertIn(text, modal_section)
+        for text in [
+            "const blockers = state.blockers || visibleRequirementBlockers(item.readiness || [])",
+            "stage,",
+            "deliverables,",
+            "setSelectedId('')",
+            "setWorkspaceOpen(false)",
+            "return { ok: true, message, stage, record: updated }",
+            "return { ok: false, message }",
+        ]:
+            self.assertIn(text, finish_handler)
         for text in [
             "Ecomm Photo",
             "Packaging Photo",
-            "THR3D",
+            "Thr3d",
             "workflowTemplate",
             "initialGate",
             "subjectType: workstream ? 'work-order' : 'merchandise'",
@@ -377,9 +441,16 @@ class FrontendRoutingTests(unittest.TestCase):
             "api.updateMerchandiseIntakeDecisions",
             "api.updateMerchandiseIntakeState",
             "intakeRequestedGateForRecord(record)",
+            "record?.intakeStatus === 'Waiting on Information'",
+            "record?.intakeStatus === 'Ready to Release'",
+            "record?.intakeStatus === 'Needs Review'",
+            "return GATE_IDS.newReview;",
             "merchandiseId",
             "isDraftWorkOrder",
             "kanban-card-workstream",
+            "PM_QUEUE_STORAGE_KEY",
+            "onDrop={event =>",
+            "Cannot move to Ready for Photo. Missing:",
         ]:
             self.assertIn(text, self.source)
         for text in [
@@ -390,8 +461,11 @@ class FrontendRoutingTests(unittest.TestCase):
             "groupWorkOrdersByMerchandise(workOrders)",
             "workOrderRecordId",
             "activeWorkstreamsForClient(selectedItem.record.clientIds?.[0], workstreamOptions)",
+            "(!product.satisfied || artwork.status === WORKFLOW_STATUS.blocked)",
+            "!activation.satisfied && visibleGateIds.has(GATE_IDS.waitingActivation)",
         ]:
             self.assertNotIn(text, self.source)
+            self.assertNotIn(text, self.workflow_engine)
         for text in [
             "updateMerchandiseIntakeDecisions",
             "/intake-decisions",
@@ -399,6 +473,9 @@ class FrontendRoutingTests(unittest.TestCase):
             "/intake-state",
         ]:
             self.assertIn(text, (ROOT / "frontend" / "src" / "api.js").read_text())
+        api_source = (ROOT / "frontend" / "src" / "api.js").read_text()
+        self.assertIn("error.status = res.status", api_source)
+        self.assertIn("error.payload = payload", api_source)
         for text in [
             "listWorkOrders",
             "saveMerchandiseReviewWorkOrders",
@@ -409,37 +486,17 @@ class FrontendRoutingTests(unittest.TestCase):
             self.assertNotIn(text, (ROOT / "frontend" / "src" / "api.js").read_text())
         self.assertIn(".kanban-card-workstream", self.styles)
 
-    def test_waiting_information_gate_has_work_order_workspace(self):
+    def test_unified_modal_replaces_waiting_information_controls_in_active_intake(self):
         for text in [
             "function WaitingInformationWorkspace",
-            "item.workOrder.currentGate === GATE_IDS.waitingInformation",
-            "Missing Information",
-            "Product",
-            "Search Product",
-            "Link Product",
-            "Create Incomplete Product",
-            "Production",
-            "Production Type",
-            "Select production type",
-            "Merchandise",
-            "Merchandise Resolution",
-            "Select resolution",
-            "api.updateMerchandiseIntakeDecisions",
-            "Artwork Required?",
-            "Artwork Available?",
-            "Artwork Status",
-            "Activation",
-            "Campaign",
-            "Readiness",
-            "Readiness checks are not configured yet.",
-            "Valid Next Stage(s)",
-            "api.searchMerchandiseReviewProducts",
-            "api.matchMerchandiseReviewEntry",
-            "api.updateItem",
-            "api.createItem",
-            "saveIntakeReadiness",
-            "saveIntakeReadinessAndContinue",
-            "Ready for:",
+            "function NewReviewModal",
+            "ConversationPanel",
+            "ActivityPanel",
+            "workspaceOpen && selectedItem",
+            "PM_LOCAL_QUEUE_IDS",
+            "markCommentsRead",
+            "addConversationComment",
+            "Required to Shoot",
         ]:
             self.assertIn(text, self.source)
         waiting_gate = self.workflow_engine.split("id: GATE_IDS.waitingInformation", 1)[1].split("gate({", 1)[0]
@@ -639,9 +696,9 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("item.path === '/shipments'", self.source)
 
     def test_role_navigation_uses_canonical_paths(self):
-        self.assertIn("Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/intake', '/products', '/jobs']", self.source)
+        self.assertIn("Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/products', '/jobs']", self.source)
         self.assertIn("Receiver:     ['/shipments', '/merchandise']", self.source)
-        self.assertIn("PM:           ['/dashboard', '/merchandise', '/intake', '/products', '/jobs']", self.source)
+        self.assertIn("PM:           ['/dashboard', '/merchandise', '/planning', '/products', '/jobs']", self.source)
 
     def test_merchandise_inventory_page_has_required_filters(self):
         for text in [

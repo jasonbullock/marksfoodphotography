@@ -559,6 +559,7 @@ class ReceivingTests(unittest.TestCase):
             {
                 C.F_RECEIPT_ENTRY_ITEM: ["recItem"],
                 C.F_RECEIPT_ENTRY_MERCH_STATUS: "Matched",
+                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review",
             },
             by_field_id=False,
         )

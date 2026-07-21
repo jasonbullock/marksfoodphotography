@@ -10,7 +10,7 @@ Merchandise is the center of the operational model.
 
 Marks Photo exists because physical merchandise arrives, creates uncertainty, and must be transformed into production-ready work.
 
-The application presents different perspectives of the same merchandise. Receiving, Inventory, Intake, Production, and PhotoTrack should not duplicate merchandise. They should reveal different operational truths about it.
+The application presents different perspectives of the same merchandise. Receiving, Inventory, Planning, Production, and PhotoTrack should not duplicate merchandise. They should reveal different operational truths about it.
 
 ## Merchandise
 
@@ -19,6 +19,42 @@ Merchandise is the physical sample or physical goods moving through Walnut Studi
 Merchandise can be known or unknown, complete or incomplete, ready or blocked, stored or in motion. It may have product information, client requirements, photos, notes, storage information, and production intent associated with it.
 
 Merchandise is not the same as Product. Merchandise is the physical thing in the studio. Product is supporting information about what that thing is.
+
+## Merchandise Verification
+
+Merchandise Verification is the PM decision process that turns newly received Merchandise into a routed operational outcome.
+
+Verification asks:
+
+- Is the physical Merchandise correct?
+- Can it be matched to a Product?
+- Which Deliverables are required?
+- What information is still missing for those Deliverables?
+- Should the Merchandise wait, route to photo production, route to Thr3d, or become an Issue?
+
+Verification does not require every fact to be known in one sitting. If a PM has started verification but cannot finish, the Merchandise can wait for information with the current progress and missing reasons preserved.
+
+## Queue
+
+Queue is the PM-owned board placement for Planning work.
+
+Queue is not Merchandise Status. Queue describes where the PM wants the card to sit while work is being organized. Merchandise Status describes the physical or operational condition of the sample.
+
+Canonical Planning Queue values are New, Planning, Waiting, and Ready for Photo.
+
+New is automatic. Ready for Photo is gated by Required to Shoot. Planning and Waiting are PM-controlled and should not be changed automatically because data was entered.
+
+Ready for Photo is shared with the future Production board. It is one queue over one Merchandise record, not a duplicated Production Request.
+
+## Required to Shoot
+
+Required to Shoot is the user-facing production gate.
+
+It answers:
+
+> What is still required before production can begin?
+
+Required to Shoot is calculated from underlying Merchandise, Product, Deliverables, artwork, and activation/campaign facts. It is not a generic manually maintained status.
 
 ## Product
 
@@ -42,7 +78,7 @@ Shipment supports Receiving. It does not own the lifecycle after merchandise has
 
 Client defines operational expectations.
 
-Client requirements answer what must be true before merchandise can be released to production. Different clients may require different identifiers, artwork, activation information, production types, or reporting references.
+Client requirements answer what must be true before merchandise can be released to production. Different clients may require different identifiers, artwork, activation information, deliverabless, or reporting references.
 
 Configuration should exist only when multiple clients genuinely require different behavior.
 
@@ -54,13 +90,13 @@ Jobs may help group production, connect work to external systems, or support rep
 
 Marks Photo is not a project management tool. Jobs are supporting context, not the center of the product.
 
-## Production Type
+## deliverables
 
-Production Type describes what kind of production work is needed.
+deliverables describes what kind of production work is needed.
 
 Examples may include photography, packaging photography, THR3D, or other production modes, but the model should not seed speculative types until the operating need is proven.
 
-Production Type helps determine readiness requirements, planning needs, resources, and downstream handoff expectations.
+deliverables helps determine readiness requirements, planning needs, resources, and downstream handoff expectations.
 
 ## Merchandise Resolution
 
@@ -70,17 +106,19 @@ Examples may include proceed, wait, request replacement, hold, purge, return, no
 
 Merchandise Resolution is about the physical object and its operational fate. It is separate from Product information and separate from production execution status.
 
-## Production Readiness
+## Ready for Photo Handoff
 
-Production Readiness is the determination that merchandise can be released into production.
+Ready for Photo is the shared Planning-to-Production handoff.
 
-Readiness asks whether required merchandise facts, product facts, client requirements, production type, artwork, activation information, replacement decisions, and other blockers have been resolved.
+It asks whether required merchandise facts, product facts, client requirements, deliverables, artwork, activation information, replacement decisions, and other blockers have been resolved.
 
-Readiness is not the same as workflow. Readiness is a business truth:
+Ready for Photo is not the same as workflow. It is a business truth:
 
-> Can production begin with confidence?
+> Can Production accept this work with confidence?
 
 If the answer is no, Marks Photo should explain what is missing.
+
+Production acceptance is a later action. When Production eventually moves shared `Ready for Photo` work to `Scheduled`, ownership should transfer from Project Management to Production and the card should leave the Planning board.
 
 ## Production
 
@@ -102,11 +140,11 @@ Client defines what information and conditions are required.
 
 Job provides production or reporting grouping when needed.
 
-Production Type describes the kind of production work required.
+deliverables describes the kind of production work required.
 
 Merchandise Resolution describes what should happen to the physical sample.
 
-Production Readiness determines whether Merchandise can leave Intake and enter Production.
+Ready for Photo determines whether Merchandise can bridge from Planning into Production.
 
 Production executes the released work.
 
@@ -116,8 +154,8 @@ The same Merchandise appears differently depending on the workspace:
 
 - Receiving perspective: arrival and observation
 - Inventory perspective: physical presence and storage
-- Intake perspective: decisions, blockers, and readiness
-- Production perspective: execution planning
+- Planning perspective: decisions, blockers, and Required to Shoot
+- Production perspective: acceptance, scheduling, and execution
 - PhotoTrack perspective: production success
 
 These are perspectives over one operational object. They should not become duplicate records or disconnected workflows.
