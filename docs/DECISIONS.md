@@ -1,5 +1,28 @@
 # Product Decisions
 
+## 2026-07-21 - Planning Quality Is Polish, Not Architecture
+
+Planning board quality passes should refine the existing experience instead of reopening workflow architecture.
+
+Preserve:
+- Planning states: New, Planning, Waiting, Ready for Photo
+- Ready for Photo as the shared Planning-to-Production handoff
+- explicit PM movement between queues
+- the unified card editor
+- Conversation and Activity as separate concepts
+- Required to Shoot as the public checklist language
+
+Improve:
+- card density and hierarchy
+- Required to Shoot checklist presentation
+- aging and comment signals
+- chat-like Conversation readability
+- system Activity scanability
+- hover, selected, drop-target, empty-state, focus, and loading polish
+- rendering efficiency where practical
+
+Do not use polish passes to add workflow states, build Production, create placeholder scheduling, redesign navigation, or change Airtable schema.
+
 ## 2026-07-21 - Planning Replaces Intake As The PM Workspace
 
 The PM-owned board is now the `Planning` workspace.

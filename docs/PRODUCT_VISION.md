@@ -79,6 +79,8 @@ Planning is the PM preparation perspective. Its board is a freeform PM workspace
 
 The PM-facing Planning experience should guide Merchandise Verification step by step. The interface should show `Required to Shoot` and the next business outcome rather than asking PMs to manage a generic readiness gate.
 
+Planning should feel like polished operations software: fast to scan, calm to use, and clear about age, comments, deliverables, and what is still required to shoot.
+
 Queue is separate from Merchandise Status. Queue organizes PM work; Merchandise Status describes the physical or operational state of the sample.
 
 ### Ready for Photo

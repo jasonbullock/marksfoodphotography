@@ -31,7 +31,40 @@ What did not change:
 - The existing Intake-named backend endpoints and Airtable compatibility fields remain in place until a staged schema/API migration is approved.
 
 Validation:
-- pending for this refinement pass.
+- `backend/.venv/bin/python -m unittest tests.test_frontend_routing`
+- `backend/.venv/bin/python -m unittest discover -s tests`
+- `npm run build` in `frontend/`
+- `git diff --check`
+- Local route smoke returned HTTP 200 for `/planning` and legacy `/intake`.
+
+## 2026-07-21 Planning Board Polish Pass
+
+The Planning architecture did not change in this pass.
+
+What is now true:
+- The Planning board keeps the existing dark canvas, compact cards, variable-height columns, unified modal, Conversation, Activity, and Required to Shoot model.
+- Planning cards now emphasize the scannable order: thumbnail, product/package name, client plus quantity, deliverables, Required to Shoot checks, age, comments, and unread signal.
+- Required to Shoot on cards appears as compact checklist indicators rather than plain summary text.
+- Age badges use stronger visual hierarchy so older work draws attention without adding new state.
+- Comment count and unread indicators are tighter and more obvious on cards.
+- Conversation now behaves more like a lightweight chat with avatars, timestamps, count, and auto-scroll to the newest comment.
+- Activity remains system-generated and scans as actor, action, timestamp.
+- Drag/drop feedback, hover state, selected state, empty columns, focus states, and textarea focus styling were refined without changing workflow behavior.
+- `KanbanCard` is memoized to reduce unnecessary card rerenders during board interactions.
+
+What did not change:
+- No workflow states were added.
+- Production was not built.
+- Navigation and route architecture were not redesigned.
+- No Airtable schema or data changes were made.
+
+Validation:
+- `backend/.venv/bin/python -m unittest tests.test_frontend_routing`
+- `backend/.venv/bin/python -m unittest discover -s tests`
+- `npm run build` in `frontend/`
+- `git diff --check`
+- Local route smoke returned HTTP 200 for `/planning` and legacy `/intake`.
+- Browser smoke reached `/planning` but stopped at the expected unauthenticated `Who's working today?` gate, so authenticated board visual inspection was not completed in this pass.
 
 ## 2026-07-21 PM Operations Board First Pass
 

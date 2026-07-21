@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, createContext, useContext, Fragment } from 'react';
+import { useState, useEffect, useCallback, useRef, createContext, useContext, Fragment, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
@@ -4669,18 +4669,59 @@ function requiredToShootSummary(item) {
   };
 }
 
-function KanbanCard({ item, selected, onSelect }) {
+function compactRequirementKey(label = '') {
+  if (/product|identifier|barcode|sku/i.test(label)) return 'Product';
+  if (/deliverable/i.test(label)) return 'Deliverables';
+  if (/artwork/i.test(label)) return 'Artwork';
+  if (/activation|campaign|client/i.test(label)) return 'Client Req';
+  if (/merchandise|verify/i.test(label)) return 'Merch';
+  return label.split(/\s+/).slice(0, 2).join(' ');
+}
+
+function RequiredToShootPreview({ item, ready }) {
+  const requirements = (item.readiness || [])
+    .filter(requirement => requirement.visible !== false && requirement.tone !== 'neutral')
+    .slice(0, 4);
+  if (!requirements.length) return (
+    <div className="kanban-required-checks is-empty">
+      <span>Required to Shoot</span>
+      <strong>Not set</strong>
+    </div>
+  );
+  return (
+    <div className={`kanban-required-checks ${ready ? 'is-ready' : ''}`} aria-label="Required to Shoot">
+      {requirements.map(requirement => (
+        <span className={requirement.satisfied ? 'is-complete' : 'is-missing'} key={requirement.key}>
+          <i aria-hidden="true">{requirement.satisfied ? '✓' : '×'}</i>
+          {compactRequirementKey(requirementLabelForUser(requirement))}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ageBucketForItem(item) {
+  const days = Number(item.record?.daysInHouse ?? item.record?.daysHere ?? item.record?.ageDays ?? 0);
+  const label = item.timeHere || (days ? `${days}d` : '—');
+  if (days >= 14 || /\b(1[4-9]|[2-9][0-9])d\b/i.test(label)) return { label, tone: 'old' };
+  if (days >= 7 || /\b([7-9]|1[0-3])d\b/i.test(label)) return { label, tone: 'aging' };
+  return { label, tone: 'fresh' };
+}
+
+function KanbanCardComponent({ item, selected, onSelect }) {
   const blockers = visibleRequirementBlockers(item.readiness || []);
   const flagged = item.issueBadge === 'Issue';
   const validated = !flagged && item.statusBadge === 'Validated';
   const ready = !flagged && blockers.length === 0;
   const required = requiredToShootSummary(item);
+  const age = ageBucketForItem(item);
   const status = flagged ? 'flag' : ready ? 'ready' : 'todo';
   const statusLabel = flagged
     ? 'Flagged'
     : ready
       ? 'Required to Shoot complete'
       : `${blockers.length} still needed`;
+  const quantity = item.record?.quantity || 1;
   return (
     <button
       type="button"
@@ -4701,19 +4742,21 @@ function KanbanCard({ item, selected, onSelect }) {
       </div>
       <div className="kanban-card-body">
         <h3>{item.title}</h3>
-        <p className="kanban-card-meta">{item.client}{item.record?.merchStatus ? ` · Merchandise ${item.record.merchStatus}` : ''}</p>
+        <p className="kanban-card-meta">
+          <span>{item.client || 'Unknown client'}</span>
+          <span>Qty {quantity}</span>
+        </p>
         {item.deliverables?.length ? <DeliverableBadges values={item.deliverables} /> : (item.workstream && <strong className="kanban-card-workstream">{item.workstream}</strong>)}
-        <div className="kanban-required-line">
-          <span>Required to Shoot</span>
-          <strong>{required.label}</strong>
-          {!ready && required.missing[0] && <em>{required.missing[0]}</em>}
-        </div>
+        <RequiredToShootPreview item={item} ready={ready} />
         <div className="kanban-card-footer">
           <span className={`kanban-status-chip is-${status}`}>{statusLabel}</span>
           <span className="kanban-card-signals">
-            {item.unreadComments > 0 && <span className="kanban-unread-dot" aria-label={`${item.unreadComments} new comments`} />}
-            <span>{item.commentCount ? `Comments ${item.commentCount}` : 'No comments'}</span>
-            <span>{item.timeHere || '—'}</span>
+            <span className={`kanban-age-badge is-${age.tone}`} aria-label={`Age ${age.label}`}>{age.label}</span>
+            <span className={`kanban-comment-signal ${item.unreadComments > 0 ? 'has-unread' : ''}`} aria-label={`${item.commentCount || 0} comments${item.unreadComments > 0 ? `, ${item.unreadComments} new` : ''}`}>
+              {item.unreadComments > 0 && <span className="kanban-unread-dot" aria-hidden="true" />}
+              <span aria-hidden="true">💬</span>
+              {item.commentCount || 0}
+            </span>
           </span>
         </div>
       </div>
@@ -4721,20 +4764,28 @@ function KanbanCard({ item, selected, onSelect }) {
   );
 }
 
+const KanbanCard = memo(KanbanCardComponent);
+
 function KanbanColumn({ column, items, selectedId, onSelect, onMove }) {
+  const [dragState, setDragState] = useState('');
   const title = column.label || column.displayName || column.title || column.name;
   const missingArtwork = items.filter(item => requiredToShootSummary(item).missing.some(label => /artwork/i.test(label))).length;
   const withComments = items.filter(item => item.commentCount > 0).length;
   return (
     <section
-      className="kanban-column"
+      className={`kanban-column ${dragState ? `is-${dragState}` : ''}`}
       aria-label={title}
       onDragOver={event => {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
+        setDragState('drag-target');
+      }}
+      onDragLeave={event => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setDragState('');
       }}
       onDrop={event => {
         event.preventDefault();
+        setDragState('');
         const itemId = event.dataTransfer.getData('text/plain');
         if (itemId) onMove?.(itemId, column.id);
       }}
@@ -5826,16 +5877,33 @@ function CommentComposer({ onSubmit }) {
   );
 }
 
+function initialsForName(name = 'Team') {
+  const parts = String(name || 'Team').trim().split(/\s+/).filter(Boolean);
+  return (parts[0]?.[0] || 'T') + (parts.length > 1 ? parts[parts.length - 1][0] : '');
+}
+
 function ConversationPanel({ comments = [], onAddComment }) {
+  const listRef = useRef(null);
+  useEffect(() => {
+    const list = listRef.current;
+    if (list) list.scrollTop = list.scrollHeight;
+  }, [comments.length]);
   return (
     <section className="review-step is-open conversation-panel">
-      <header className="review-step-head"><span className="review-step-num review-step-num-plain">·</span><h3>Conversation</h3></header>
-      <div className="conversation-list">
+      <header className="review-step-head">
+        <span className="review-step-num review-step-num-plain">·</span>
+        <h3>Conversation</h3>
+        {comments.length > 0 && <span className="conversation-count">{comments.length}</span>}
+      </header>
+      <div className="conversation-list" ref={listRef}>
         {comments.length === 0 && <p className="conversation-empty">No comments yet.</p>}
         {comments.map(comment => (
           <article className="conversation-comment" key={comment.id}>
-            <header><strong>{comment.authorName}</strong><span>{formatInventoryDate(comment.createdAt)}</span></header>
-            <p>{comment.body}</p>
+            <span className="conversation-avatar" aria-hidden="true">{initialsForName(comment.authorName)}</span>
+            <div className="conversation-bubble">
+              <header><strong>{comment.authorName}</strong><span>{formatInventoryDate(comment.createdAt)}</span></header>
+              <p>{comment.body}</p>
+            </div>
           </article>
         ))}
       </div>
@@ -5852,8 +5920,9 @@ function ActivityPanel({ events = [] }) {
         {events.length === 0 && <p className="conversation-empty">No activity yet.</p>}
         {events.map(event => (
           <div className="activity-event" key={event.id}>
-            <span>{formatInventoryDate(event.createdAt)}</span>
-            <strong>{event.body}</strong>
+            <span>{event.actor || 'System'}</span>
+            <strong>{event.action || event.body}</strong>
+            <time>{formatInventoryDate(event.createdAt)}</time>
           </div>
         ))}
       </div>
@@ -6537,12 +6606,18 @@ function MerchandiseReviewV2Page() {
     void nextDecision;
   }
 
-  function recordActivity(merchandiseId, body) {
+  function recordActivity(merchandiseId, body, options = {}) {
     setActivityByMerchandise(current => {
       const next = {
         ...current,
         [merchandiseId]: [
-          { id: `${merchandiseId}:${Date.now()}`, body, createdAt: localNowIso() },
+          {
+            id: `${merchandiseId}:${Date.now()}`,
+            actor: options.actor || 'System',
+            action: options.action || body,
+            body,
+            createdAt: localNowIso(),
+          },
           ...(Array.isArray(current[merchandiseId]) ? current[merchandiseId] : []),
         ].slice(0, 40),
       };
@@ -6577,7 +6652,7 @@ function MerchandiseReviewV2Page() {
       saveJsonMap(PM_CONVERSATION_STORAGE_KEY, next);
       return next;
     });
-    recordActivity(merchandiseId, `${comment.authorName || 'Team'} added a comment.`);
+    recordActivity(merchandiseId, 'Added a comment.', { actor: comment.authorName || 'Team', action: 'Added a comment.' });
     markCommentsRead(merchandiseId);
   }
 
@@ -6605,7 +6680,7 @@ function MerchandiseReviewV2Page() {
         saveJsonMap(PM_QUEUE_STORAGE_KEY, next);
         return next;
       });
-      recordActivity(item.merchandiseId, `Moved to ${destination.label}.`);
+      recordActivity(item.merchandiseId, `Moved to ${destination.label}.`, { actor: 'Planning', action: `Moved to ${destination.label}.` });
       await refreshV2WorkflowData();
       setSelectedId(item.merchandiseId);
       setFeedback(`Moved ${item.title || 'merchandise'} to ${destination.label}.`);

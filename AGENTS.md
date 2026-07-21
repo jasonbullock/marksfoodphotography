@@ -16,6 +16,8 @@ Never require PMs to manually create Jobs, Projects, Production Requests, or adm
 
 Prefer the smallest safe change. Do not redesign unrelated navigation, routes, styles, schema, or behavior.
 
+Planning polish passes must preserve the canonical Planning workflow (`New`, `Planning`, `Waiting`, `Ready for Photo`) and the future Production separation. Improve density, clarity, accessibility, and responsiveness without adding workflow states or placeholder Production features.
+
 Before implementation:
 - Inspect the current code and schema.
 - Summarize the relevant current state.

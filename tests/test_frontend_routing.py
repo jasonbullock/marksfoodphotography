@@ -217,6 +217,12 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn(".kanban-board", self.styles)
         self.assertIn(".kanban-column", self.styles)
         self.assertIn(".kanban-card", self.styles)
+        self.assertIn(".kanban-required-checks", self.styles)
+        self.assertIn(".kanban-age-badge", self.styles)
+        self.assertIn(".kanban-comment-signal", self.styles)
+        self.assertIn(".conversation-avatar", self.styles)
+        self.assertIn(".conversation-count", self.styles)
+        self.assertIn(".activity-event time", self.styles)
         self.assertIn(".workflow-workspace-drawer", self.styles)
         self.assertIn(".waiting-info-drawer", self.styles)
         self.assertIn(".workflow-transition-panel", self.styles)
@@ -229,6 +235,11 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("recordPhotos(selectedItem?.record)", self.source)
         self.assertIn("setSelectedId", self.source)
         self.assertIn("workspaceOpen", self.source)
+        self.assertIn("function RequiredToShootPreview", self.source)
+        self.assertIn("function ageBucketForItem", self.source)
+        self.assertIn("const KanbanCard = memo(KanbanCardComponent)", self.source)
+        self.assertIn("setDragState('drag-target')", self.source)
+        self.assertIn("list.scrollTop = list.scrollHeight", self.source)
         for text in [
             "New",
             "Waiting",

@@ -5003,7 +5003,7 @@ input[type="checkbox"]:disabled {
   font-weight: 850;
 }
 
-/* Intake experimental Kanban board */
+/* Planning Kanban board */
 .work-board-page {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
@@ -5100,18 +5100,21 @@ input[type="checkbox"]:disabled {
 .kanban-board {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(280px, 320px);
+  grid-auto-columns: minmax(272px, 312px);
   grid-template-columns: none;
   align-items: start;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
   height: auto;
   min-height: 0;
   overflow-x: auto;
   overflow-y: auto;
-  padding: 14px;
+  padding: 12px;
   border-radius: 10px;
-  background: #111827;
+  background:
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 28%),
+    #111827;
+  scroll-behavior: smooth;
 }
 
 .kanban-column {
@@ -5125,11 +5128,13 @@ input[type="checkbox"]:disabled {
   background: #1f2937;
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
   overflow: hidden;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
 }
 
 .kanban-column.is-drag-target {
-  border-color: rgba(5, 150, 105, 0.48);
-  box-shadow: inset 0 0 0 2px rgba(5, 150, 105, 0.12);
+  border-color: rgba(37, 99, 235, 0.58);
+  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.16), 0 18px 42px rgba(37, 99, 235, 0.12);
+  transform: translateY(-1px);
 }
 
 .kanban-column.is-rejected {
@@ -5140,7 +5145,7 @@ input[type="checkbox"]:disabled {
 .kanban-column-header {
   display: grid;
   gap: 8px;
-  padding: 12px;
+  padding: 11px 11px 10px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.16);
   background: #273244;
 }
@@ -5180,37 +5185,49 @@ input[type="checkbox"]:disabled {
 .kanban-column-list {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 7px;
   min-height: 0;
   overflow-y: visible;
-  padding: 8px;
+  padding: 7px;
 }
 
 .kanban-empty {
-  padding: 12px;
+  min-height: 72px;
+  padding: 16px 12px;
+  border: 1px dashed rgba(203, 213, 225, 0.24);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.2);
   color: #cbd5e1;
   font-size: 12px;
   font-weight: 750;
+  text-align: center;
 }
 
 .kanban-card {
   display: grid;
   width: 100%;
-  gap: 8px;
-  padding: 8px;
+  gap: 7px;
+  padding: 7px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 8px;
   background: #fff;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
   color: inherit;
   text-align: left;
   cursor: pointer;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease, background 0.14s ease;
 }
 
 .kanban-card:hover,
 .kanban-card.is-selected {
   border-color: rgba(245, 158, 11, 0.44);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.11);
+  box-shadow: 0 13px 28px rgba(15, 23, 42, 0.18);
+  transform: translateY(-1px);
+}
+
+.kanban-card.is-selected {
+  border-color: rgba(37, 99, 235, 0.58);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16), 0 14px 30px rgba(15, 23, 42, 0.18);
 }
 
 .kanban-card:focus-visible {
@@ -5227,7 +5244,7 @@ input[type="checkbox"]:disabled {
 
 .kanban-card-media .record-thumb {
   width: 100%;
-  height: 112px;
+  height: 104px;
   border-radius: 0;
 }
 
@@ -5243,7 +5260,7 @@ input[type="checkbox"]:disabled {
   right: 8px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   padding: 4px 5px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.92);
@@ -5276,7 +5293,7 @@ input[type="checkbox"]:disabled {
 
 .kanban-card-body {
   display: grid;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -5292,7 +5309,7 @@ input[type="checkbox"]:disabled {
   min-width: 0;
   margin: 0;
   color: var(--text);
-  font-size: 14px;
+  font-size: 13.5px;
   line-height: 1.25;
   letter-spacing: 0;
   overflow-wrap: anywhere;
@@ -5466,10 +5483,21 @@ input[type="checkbox"]:disabled {
 }
 
 .kanban-card-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
   margin: 0;
   color: var(--text-3);
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11.5px;
+  font-weight: 760;
+}
+
+.kanban-card-meta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kanban-card-footer {
@@ -5480,34 +5508,63 @@ input[type="checkbox"]:disabled {
   min-width: 0;
 }
 
-.kanban-required-line {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 2px 8px;
+.kanban-required-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
   min-width: 0;
-  padding: 7px;
+  padding: 6px;
   border-radius: 7px;
   background: #f8fafc;
 }
 
-.kanban-required-line span,
-.kanban-required-line em {
+.kanban-required-checks > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  padding: 2px 5px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 820;
+  line-height: 1;
+}
+
+.kanban-required-checks i {
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: var(--green-bg);
+  color: var(--green-text);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.kanban-required-checks .is-missing i {
+  background: var(--amber-bg);
+  color: var(--amber-text);
+}
+
+.kanban-required-checks.is-ready {
+  background: rgba(240, 253, 244, 0.86);
+}
+
+.kanban-required-checks.is-empty {
+  justify-content: space-between;
   color: var(--text-3);
   font-size: 11px;
-  font-style: normal;
-  font-weight: 750;
+  font-weight: 760;
 }
 
-.kanban-required-line strong {
+.kanban-required-checks.is-empty strong {
   color: var(--text);
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.kanban-required-line em {
-  grid-column: 1 / -1;
-  color: #b45309;
-  overflow-wrap: anywhere;
+  font-size: 11px;
 }
 
 .kanban-status-chip {
@@ -5515,10 +5572,10 @@ input[type="checkbox"]:disabled {
   align-items: center;
   gap: 5px;
   flex: 0 0 auto;
-  padding: 3px 9px;
+  padding: 3px 7px;
   border-radius: 999px;
   border: 1px solid transparent;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 800;
   letter-spacing: 0.01em;
 }
@@ -5556,7 +5613,7 @@ input[type="checkbox"]:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
   color: var(--text-3);
   font-size: 11px;
@@ -5574,6 +5631,40 @@ input[type="checkbox"]:disabled {
   border-radius: 999px;
   background: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+}
+
+.kanban-age-badge,
+.kanban-comment-signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 21px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  background: #f8fafc;
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.kanban-age-badge.is-aging {
+  border-color: var(--amber-border);
+  background: var(--amber-bg);
+  color: var(--amber-text);
+}
+
+.kanban-age-badge.is-old {
+  border-color: var(--red-border);
+  background: var(--red-bg);
+  color: var(--red-text);
+}
+
+.kanban-comment-signal.has-unread {
+  border-color: rgba(37, 99, 235, 0.38);
+  background: rgba(239, 246, 255, 0.95);
+  color: #1d4ed8;
 }
 
 .work-board-override-panel {
@@ -6690,10 +6781,27 @@ input[type="checkbox"]:disabled {
   gap: 10px;
 }
 
+.conversation-count {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--blue-bg);
+  color: var(--blue-text);
+  font-size: 11px;
+  font-weight: 850;
+}
+
 .conversation-list,
 .activity-list {
   display: grid;
-  gap: 8px;
+  gap: 7px;
+}
+
+.conversation-list {
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 2px;
+  scroll-behavior: smooth;
 }
 
 .conversation-empty {
@@ -6705,15 +6813,35 @@ input[type="checkbox"]:disabled {
 
 .conversation-comment {
   display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.conversation-avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: #111827;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.conversation-bubble {
+  display: grid;
   gap: 5px;
-  padding: 9px;
+  min-width: 0;
+  padding: 8px 9px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #f8fafc;
 }
 
-.conversation-comment header,
-.activity-event {
+.conversation-comment header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -6726,7 +6854,7 @@ input[type="checkbox"]:disabled {
   font-size: 12px;
 }
 
-.conversation-comment span,
+.conversation-comment header span,
 .activity-event span {
   color: var(--text-3);
   font-size: 11px;
@@ -6755,6 +6883,13 @@ input[type="checkbox"]:disabled {
   font: inherit;
   font-size: 13px;
   resize: vertical;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.conversation-composer textarea:focus {
+  border-color: rgba(37, 99, 235, 0.42);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  outline: none;
 }
 
 .conversation-composer button {
@@ -6762,12 +6897,23 @@ input[type="checkbox"]:disabled {
 }
 
 .activity-event {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
   padding: 7px 0;
   border-bottom: 1px solid var(--border);
 }
 
 .activity-event:last-child {
   border-bottom: 0;
+}
+
+.activity-event time {
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .merch-flag-form input { flex: 1; min-width: 140px; }

@@ -46,6 +46,8 @@ New is automatic. Ready for Photo is gated by Required to Shoot. Planning and Wa
 
 Ready for Photo is shared with the future Production board. It is one queue over one Merchandise record, not a duplicated Production Request.
 
+Queue presentation is a user-experience concern, not a separate domain concept. Better card density, aging emphasis, comment signals, drag feedback, and checklist presentation should make Planning easier to use without creating new Queue values.
+
 ## Required to Shoot
 
 Required to Shoot is the user-facing production gate.
@@ -55,6 +57,8 @@ It answers:
 > What is still required before production can begin?
 
 Required to Shoot is calculated from underlying Merchandise, Product, Deliverables, artwork, and activation/campaign facts. It is not a generic manually maintained status.
+
+In Planning UI, Required to Shoot may be summarized with compact checklist indicators, but those indicators must remain derived from the same source facts.
 
 ## Product
 

@@ -79,6 +79,8 @@ The public checklist language is `Required to Shoot`, not `Readiness`.
 
 Planning is the PM preparation perspective. It is where Project Management determines what a piece of merchandise is, what the client requires, what kind of production is needed, and whether anything blocks Production from accepting the work.
 
+The Planning board should feel like high-quality operations software: dense, responsive, clear, and calm. Cards should quickly show what the merchandise is, the client, quantity, deliverables, Required to Shoot progress, age, comments, and unread signals without changing the underlying Planning state model.
+
 Active Planning state should be derived from Merchandise and supporting Product data. Planning should not require PMs to create Work Orders, choose Workflow Templates, maintain Workflow Stages, or manage Work Order Types before merchandise can move toward readiness.
 
 The canonical Intake state field is Merchandise `Intake Status`. Supporting Merchandise fields such as `deliverables`, `Merchandise Resolution`, and existing matched/validated compatibility status may create specialized views, but they should not multiply workflow-specific status values.

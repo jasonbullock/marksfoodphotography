@@ -88,6 +88,8 @@ Planning should make uncertainty actionable.
 
 The primary PM Planning experience should guide verification rather than expose a database form. Use progressive steps when the PM must first verify Merchandise, identify Product, choose Deliverables, then resolve only the required missing information for those Deliverables.
 
+Planning should feel polished through density, responsiveness, hierarchy, and clarity rather than through new architecture. Refine cards, drag feedback, empty columns, comments, Activity, aging badges, and focus states before adding new workflow concepts.
+
 ## 11. Production Is An Execution Perspective
 
 Production answers how the studio will execute accepted work.
@@ -137,6 +139,8 @@ For the Planning board, prefer:
 Avoid public board labels such as Board Status, Readiness, workflow gate, transition, and assignment.
 
 The PM board should feel like a workspace. Cards should not disappear or change queues merely because a PM completed a field.
+
+Premium Planning polish means the board is easy to scan and act on: compact cards, obvious Required to Shoot status, clear aging and comment signals, readable Conversation, and system Activity that stays separate from human discussion.
 
 ## 14. Existing Systems Keep Their Jobs
 
