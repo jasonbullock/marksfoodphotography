@@ -1,5 +1,168 @@
 # Product Decisions
 
+## 2026-07-20 - Marks Photo Is An Operations Readiness Platform
+
+Marks Photo is an Operations Readiness Platform.
+
+The mission is to transform incoming merchandise into production-ready work by removing uncertainty before production begins.
+
+Marks Photo is not a workflow engine, project management tool, Creative Force replacement, or PhotoTrack replacement.
+
+The foundational operating model is documented in:
+- `docs/PRODUCT_VISION.md`
+- `docs/WORKSPACES.md`
+- `docs/DOMAIN_MODEL.md`
+- `docs/DESIGN_PRINCIPLES.md`
+
+Long-term product architecture:
+- Merchandise is the center of the operational model.
+- The application presents different perspectives of the same merchandise.
+- Workspace means business question.
+- Views are different ways to visualize the same data.
+- New workspaces should be rare; new views should be common.
+- Build perspectives, not duplicate data.
+- Readiness is the product concept; workflow is implementation scaffolding.
+- Inventory is a warehouse perspective.
+- Intake is a decision perspective.
+- Production is an execution perspective.
+- There is one Release to Production handoff.
+- Prefer fields over tables.
+- Configuration should exist only when multiple clients genuinely require different behavior.
+
+The intended lifecycle is Shipment -> Receiving -> Inventory -> Intake -> Release to Production -> Production -> Creative Force -> PhotoTrack.
+
+## 2026-07-20 - Primary Navigation Uses Singular Import Label
+
+The primary navigation label for the existing `/imports` workspace is `Import`.
+
+This decision originally used Dashboard, Import, Receiving, Merchandise, Work, Jobs, and Products. The later Intake alignment decision supersedes the Work label while preserving the Import label and icon decision.
+
+Primary navigation icons are a visual system cue: Dashboard and Admin keep their existing icons, Import uses Download, Receiving uses PackageOpen, Merchandise uses ClipboardList, Work uses Workflow, Jobs uses Layers, and Products uses Tag.
+
+This is a visual/navigation polish decision only. It does not rename the route, backend endpoints, Airtable tables, import history, or import workflow behavior.
+
+## 2026-07-20 - Work Orders Are The Experimental Workflow Work Item
+
+Superseded for active Intake by `2026-07-20 - Active Intake Is Merchandise-Driven`.
+
+The experimental V2 PM workflow was named Work in user-facing navigation during this phase, and Work Orders remain the domain/backend work item. The later Intake alignment decision supersedes the user-facing Work workspace name.
+
+Work Order replaces the previous Workstream Assignment terminology. A Work Order is the operational work item connecting one Merchandise record to one Workstream. One Merchandise record may have many Work Orders. Work Orders may link to Jobs for reporting or production grouping, but Jobs are not required before work can begin.
+
+The canonical domain chain is:
+- Shipment
+- Merchandise
+- Work Order(s)
+- Workstream
+- Workflow Template
+
+The live Airtable table was renamed in place from `Workstream Assignments` to `Work Orders`, preserving table ID `tbl9EkXDtQSc8CEyL`. The primary field is now `Work Order` (`fldAiYGCELRCY3bYh`), and the workflow position field is now `Current Stage` (`flddqh4KN4j6FflKW`). Reciprocal linked fields on Merchandise, Workstreams, and Jobs are named `Work Orders`.
+
+Canonical backend/API terminology should use Work Orders. One-cycle compatibility aliases may remain for old `workstream-assignments` endpoints, constants, and payload names where removing them would break existing clients. New code should prefer `WORK_ORDERS_TABLE`, `/work-orders`, and `currentStage`.
+
+## 2026-07-20 - Intake Is The Canonical PM Readiness Workspace
+
+The experimental PM readiness workspace is now user-facing `Intake`.
+
+`/intake` is the canonical frontend route. `/work` and `/merchandise-review-v2` remain compatibility redirects to `/intake`.
+
+Intake answers the business question: "What still needs to happen before this can be produced?"
+
+The existing Work Order table, Work Order APIs, Workflow Templates, Workflow Stages, Work Order Types, internal workflow IDs, and backend route contracts remain in place as compatibility infrastructure. This decision changes user-facing workspace terminology and frontend route ownership only.
+
+The primary navigation is:
+- Dashboard
+- Import
+- Receiving
+- Merchandise
+- Intake
+- Jobs
+- Products
+
+Admin remains a utility navigation item on the right side of the top navigation, adjacent to the user/profile control.
+
+The Merchandise tab is active only for the inventory workspace route `/merchandise`. It must not become active for `/merchandise/review`, `/merchandise-review-v2`, `/work`, `/intake`, or any review/intake route. Intake is active for `/intake` and compatibility review/work routes. Only one primary navigation item may be active at a time.
+
+The first visible Intake board stage is `Review`. The stable internal stage ID may remain `new-review` during compatibility.
+
+Production Type, Merchandise Resolution, Readiness, and Release to Production are product concepts for upcoming phases. This alignment pass may reserve UI space for them, but it must not create schema, persisted placeholder values, fake readiness percentages, workflow actions, production-planning behavior, or configurable transition systems.
+
+## 2026-07-20 - Active Intake Is Merchandise-Driven
+
+Active Intake is centered on Merchandise and Product data, not Work Orders or workflow configuration.
+
+Canonical active Intake state lives on Merchandise:
+- `Merch Status` is the primary status field for Received, Matched, Validated, and Issue.
+- The existing `[Waiting for Product Data]` Notes marker represents Waiting for Information.
+- `Production Type = THR3D` represents the Send to THR3D branch.
+- `Production Type` and `Merchandise Resolution` remain Merchandise-level Intake decisions.
+
+New Intake user actions must not create Work Orders, require Work Order Types, require Workflow Templates, or require Workflow Stages.
+
+Workflow Templates, Workflow Stages, Work Order Types, Work Orders, and Workstreams remain in Airtable and backend compatibility services for historical records and rollback safety. They are not exposed in Admin and are not required by the active PM Intake experience.
+
+Admin should not expose Workflow Templates or Work Order Types unless a future documented decision reintroduces configuration after real multi-client variation proves it is needed.
+
+No destructive Airtable cleanup is approved by this decision.
+
+## 2026-07-20 - Intake Decisions Start As Merchandise Fields
+
+Production Type and Merchandise Resolution are the first persisted Intake decisions.
+
+They live on the existing `Merchandise` table as single-select fields:
+- `Production Type`
+- `Merchandise Resolution`
+
+Production Type answers: "What are we producing?"
+
+Allowed initial values:
+- `eCommerce`
+- `Packaging`
+- `THR3D`
+
+Merchandise Resolution answers: "What happens to the physical merchandise?"
+
+Allowed initial values:
+- `Keep at Walnut`
+- `Ship to Kentucky`
+- `Hold`
+- `Replacement Requested`
+- `Return to Client`
+- `Dispose`
+
+Fields were chosen over tables because these option sets are small, shared, and do not yet have independent lifecycle, ownership, permissions, relationships, or client-specific behavior.
+
+No Production Types table, Merchandise Resolutions table, Client Production Types table, Stage Requirements table, Workflow Actions table, or Transition table is approved by this phase.
+
+The Product `Workstream` field is not reused for Production Type because it is Product-level import/routing compatibility data with legacy values, not the Merchandise-level PM Intake decision.
+
+When Production Type is set to `THR3D`, Merchandise Resolution defaults to `Ship to Kentucky` only if the Merchandise Resolution is currently blank. The default must not overwrite an existing PM-selected resolution, and changing Production Type away from THR3D must not clear resolution.
+
+`Replacement Requested` is only a Merchandise Resolution value in this phase. It does not create replacement records, version chains, parent-child merchandise links, replacement receiving flows, or client communication tracking.
+
+The Intake UI should show Production Type as the PM-facing production decision. Existing Workstream/Work Order behavior may remain as internal compatibility plumbing, but the UI should avoid presenting Workstream as a duplicate PM-facing decision when Production Type can drive the existing workstream selection.
+
+Readiness requirements and Release to Production remain future work.
+
+## 2026-07-20 - Work Was The Primary Experimental PM Workspace Before Intake Alignment
+
+The primary navigation is:
+- Dashboard
+- Imports
+- Receiving
+- Merchandise
+- Work
+- Jobs
+- Products
+
+Admin remains a utility navigation item on the right side of the top navigation, adjacent to the user/profile control.
+
+During this phase, `/work` was the canonical route for the experimental workflow board and `/merchandise-review-v2` redirected to `/work` for compatibility. `/merchandise/review` remained routable for the V1 Merchandise Review workflow but hidden from primary navigation.
+
+This decision was superseded by the Intake alignment decision above. Work Orders remain the backend work item, but Work is no longer the canonical user-facing workspace name or route.
+
+The first visible Work board stage is `Review`. The stable internal stage ID may remain `new-review` during compatibility.
+
 ## 2026-07-16 - Marks Photo Is the Operational Readiness System
 
 Marks Photo is not a project management system, PIM, or system of record.
@@ -231,7 +394,7 @@ V2 exists only as an experimental route for future UX exploration. It must use t
 
 The primary navigation is limited to daily operational workspaces: Dashboard, Imports, Receiving, Merchandise, Merchandise Review, Merchandise Review V2, Products, and Jobs.
 
-Admin is a top-navigation utility entry, not a production workspace. Settings is labeled Admin, and Clients is accessed through Admin rather than primary navigation. Compatibility routes such as `/clients`, `/settings`, and `/administration/:section` may remain.
+Admin is a top-navigation utility entry, not a production workspace. The former Settings workspace is now canonically `/admin`, and Clients is accessed through Admin rather than primary navigation. Compatibility routes such as `/clients`, `/settings`, and `/administration/:section` may remain.
 
 This is a frontend routing and navigation hierarchy decision. It does not change backend behavior, Airtable schema, review workflow behavior, or administrative page functionality.
 
@@ -257,6 +420,36 @@ V2 may derive workflow placement from existing Merchandise Review records, linke
 
 Artwork is the only readiness gate that may be manually overridden in the V2 experiment. Product Information and Activation Information may not be manually overridden.
 
+## 2026-07-20 - Waiting For Information Is Assignment-Focused In Merchandise Review V2
+
+The Merchandise Review V2 `Waiting for Information` gate is the first focused gate workspace in the experimental workflow model.
+
+This workspace operates on the selected Workstream Assignment. Merchandise remains the linked physical object and Product remains supporting information, but the current workflow decision belongs to the Workstream Assignment.
+
+The right-side drawer should answer: "What information is preventing this Workstream Assignment from moving forward?"
+
+The drawer sections are:
+- Missing Information
+- Product Information
+- Artwork
+- Activation
+- Notes
+- Readiness Summary
+
+Missing Information must show only unresolved requirements. Resolved or irrelevant data should not compete with blockers.
+
+Product Information in this gate may search and link existing Products, update existing Product fields, or create a minimally incomplete Product when the existing Product API validation allows it. Product data must stay on Product records and must not be duplicated onto Merchandise.
+
+Artwork override remains a future exception path and is not exposed in this gate iteration.
+
+Activation uses only existing Product/reference fields such as Job, Activation, and Campaign until a future schema decision creates stronger activation structures.
+
+Save updates the Workstream Assignment readiness metadata, blocking requirements, and current status, then recalculates readiness and transitions by reloading V2 data. Save must not automatically move the assignment to another gate. If another gate is valid, the UI may show `Ready for: <Next Gate>` so the PM can explicitly confirm.
+
+Save & Continue should stay inside the current Waiting for Information queue and open the next Workstream Assignment there.
+
+No backend routes, Airtable schema, Merchandise Review V1 behavior, Merchandise Inventory behavior, Receiving behavior, Packaging workflow, THR3D downstream workflow, or Creative Force integration are changed by this decision.
+
 ## 2026-07-20 - Marks Photo Uses A Workflow Engine Architecture
 
 Marks Photo is an orchestration platform.
@@ -272,7 +465,7 @@ The system architecture is separated into four major areas:
 
 Receiving is physical intake. It records observations about shipments and Merchandise, including observed identifiers, quantity, storage, condition, photos, and notes. Receiving does not make workflow decisions.
 
-The Workflow Engine is the Project Management-owned business decision layer. It determines workflow, current gate, required information, artwork requirements, activation requirements, output type, THR3D routing, and production release.
+The Workflow Engine is the Project Management-owned business decision layer. It determines workflow, current gate, required information, artwork requirements, activation requirements, primary Workstream, Workstream Routing, and production release.
 
 Creative Force owns production execution. Marks Photo must not create dozens of production workflow gates for Creative Force states. Production remains a single Marks Photo workflow gate, while Creative Force statuses are synchronized and displayed as production metadata.
 
@@ -287,6 +480,121 @@ Workflow and Status are distinct:
 Future work should move page-specific workflow logic into reusable Workflow Engine definitions and services. Pages, including Merchandise Review V2, should consume Workflow, Gate, Transition, Rule, Requirement, Action, Workflow Assignment, Current Gate, Current Owner, and Current Status concepts rather than hardcoding workflow behavior directly.
 
 Client-configurable workflows are a future architecture goal. A Client should eventually own a Workflow template, allowing one Client to include THR3D or Activation gates while another skips them. This decision does not approve or require an Airtable schema change yet.
+
+## 2026-07-20 - Merchandise Review V2 Renders From Workflow Configuration
+
+Merchandise Review V2 is the experimental workspace for proving configurable workflow behavior while Merchandise Review V1 remains the production review station.
+
+The V2 board must render visible columns from Workflow Engine configuration rather than hardcoding page-local columns. Gate configuration owns label, description, order, board visibility, owner role, entry criteria, exit criteria, allowed next gates, transition mode, card field configuration, and workspace section configuration.
+
+Merchandise remains the workflow work item. The V2 workflow does not create separate work-item records and does not duplicate canonical Product data onto Merchandise.
+
+The first default code-configured workflow includes:
+- New Items for Review
+- Waiting for Information
+- Send to THR3D
+- Waiting for Activation
+- Ready for Production
+
+Workflow assignment, readiness indicators, valid next gates, and blocked transition explanations are centralized in the Workflow Engine. Pages provide records, client/location context, and local experimental state, then render the returned board/workspace model.
+
+Card click opens a right-side workspace over the board. Gate workspace sections are declared by gate configuration. This establishes the shell for gate-specific work without building every future form or action.
+
+Product Information and Activation Information cannot be manually overridden. Artwork remains the only planned PM override path, but durable override storage and audit logging are deferred until a future schema/API decision.
+
+Drag and drop is deferred for this first working board version. Workflow transitions are exposed through centralized validation and button-based moves in the workspace so invalid moves can be explained consistently.
+
+The Admin workflow editor, durable workflow assignments, backend rule evaluation, client-specific workflow configuration UI, and Creative Force production synchronization remain explicitly deferred.
+
+## 2026-07-20 - New Items For Review Uses Image-First Modal
+
+The first Merchandise Review V2 gate, New Items for Review, uses a large modal workspace instead of the standard right drawer.
+
+This is a deliberate workflow decision. New Items for Review is where Project Management answers the primary business question: "What workstream should this Merchandise follow?" That decision benefits from a first-class image review environment, not a compact detail drawer.
+
+Workflow Engine gate configuration owns `workspaceMode`. Supported modes are:
+- `modal`
+- `drawer`
+- `readonly`
+
+The default Merchandise Review V2 workspace modes are:
+- New Items for Review: `modal`
+- Waiting for Information: `drawer`
+- Send to THR3D: `drawer`
+- Waiting for Activation: `drawer`
+- Ready for Production: `readonly`
+
+Workstream Assignments replace the older singular Output Type, Production Path, and Primary Workstream routing concepts for Merchandise Review V2. A Merchandise record remains one physical object; workflow branches by creating one Workstream Assignment per selected Workstream.
+
+The initial Workstream registry is exactly Ecomm Photo, Packaging Photo, and THR3D. Do not seed Video, Other, Styled Photo, GS1 Ecomm, or Packaging Photography as active V2 Workstreams in this iteration.
+
+Deliverables are separate from Workstream. GS1 bundles, hero images, packaging images, marketing assets, and 3D deliverables are downstream production concepts and are intentionally not modeled in the Workflow Engine yet.
+
+Workflow branching is now implemented at the Workstream Assignment persistence layer for Merchandise Review V2. It does not yet synchronize with Creative Force or implement complete downstream Ecomm, Packaging, or THR3D production workflows.
+
+The New Items modal saves selected Workstreams as durable Workstream Assignment records. Browser-local V2 decisions are compatibility fallback hints only and should be replaced by assignment records on save.
+
+Artwork override remains a future exception path. This iteration does not expose a visible override workflow.
+
+## 2026-07-20 - New Items For Review Creates Or Reuses Workstream Assignments
+
+The Merchandise Review V2 `New Items for Review` modal is the first and most important workflow decision point. The PM is deciding what work must happen to the physical Merchandise.
+
+The modal should prioritize reviewing Merchandise, not filling out an administrative form. The left side remains image-first. The right side should guide the PM through Product Identification, Workstream selection, assignment preview, readiness review, and save.
+
+The right-side sections are:
+- Merchandise Summary
+- Product Identification
+- Workstreams
+- Assignment Preview
+- Readiness Summary
+- Notes
+
+Product Identification uses existing Product records, Product endpoints, and Merchandise Review linking behavior. It may create a minimally incomplete Product when existing Product validation rules allow it, but Product data must remain on Product records and must not be duplicated onto Merchandise.
+
+Workstreams are the primary business decision in this gate. The active V2 Workstreams are Packaging Photo, Ecomm Photo, and THR3D as configured in the Workstreams table or fallback registry. Multiple Workstreams may be selected for one physical Merchandise record.
+
+Assignment Preview must come from Workflow Engine preview data, not duplicated page-local workflow labels. It should show the Workstream, Workflow, Initial Stage, and whether that Merchandise + Workstream assignment already exists.
+
+Saving from this modal must create missing Workstream Assignments, reuse existing active Merchandise + Workstream assignments, and avoid duplicate assignment creation. Existing active assignments should remain preserved during save.
+
+Readiness in this modal is displayed per selected Workstream Assignment using the shared readiness requirements. This prepares the UI for assignment-specific rules while the current implementation still uses the existing Product Information, Artwork, and Activation evaluators.
+
+Save persists assignments, refreshes V2 Merchandise and assignment data, refreshes readiness and transitions, and remains on the current Merchandise. Save & Continue saves and opens the next Merchandise in the same current queue while preserving board filters and position.
+
+This decision does not change Merchandise Review V1, Receiving, Merchandise Inventory, Products page behavior, backend schema, downstream Packaging or THR3D workflow behavior, production synchronization, or audit logging.
+
+## 2026-07-20 - Workstream Is The Routing Domain Concept
+
+Workstream is the first-class business concept for production routing decisions in Marks Photo.
+
+The selected Workstreams determine which Workstream Assignments are created. Each assignment owns its workflow template, current gate, current owner, current status, readiness metadata, blockers, optional Job link, and completion metadata.
+
+The canonical current Workstreams are:
+- Ecomm Photo
+- Packaging Photo
+- THR3D
+
+One Merchandise record may have multiple Workstream Assignments. Merchandise is never duplicated to represent parallel production work.
+
+The Airtable Products field formerly named `Output Type` has been renamed in place to `Workstream`, preserving field ID `fldSl0Ctmp7dWtJUO` and existing values. That single-select Product field is a compatibility bridge for imported Product routing data, not the durable Merchandise Review V2 workflow state. Durable workflow state lives in Workstream Assignment records.
+
+## 2026-07-20 - Workstream Assignments Are The Durable V2 Workflow Branch
+
+Merchandise is the physical object. Workstream is the configured kind of production work. Workstream Assignment is the operational work item.
+
+Merchandise Review V2 uses additive Airtable tables for the experimental workflow architecture:
+- `Workstreams`
+- `Workstream Assignments`
+
+The `Workstreams` table stores active Workstream definitions and workflow-template configuration. The `Workstream Assignments` table connects one Merchandise record to one Workstream and owns current workflow state.
+
+Initial seeded Workstream records are:
+- Ecomm Photo
+- Packaging Photo
+- THR3D
+
+This decision intentionally preserves Merchandise Review V1, Receiving behavior, Merchandise Inventory, Product linking, R2 image storage, and Creative Force integration. Full downstream Ecomm, Packaging, THR3D, Admin configuration, audit logging, and production synchronization remain future work.
 
 ## 2026-07-20 - Application Code Uses Canonical Domain Table Concepts
 
@@ -322,3 +630,47 @@ Relationship fields were renamed to Product, Products, Shipment, Shipments, and 
 Application defaults now point to the canonical physical table names. Deprecated code aliases such as `ITEMS_TABLE`, `RECEIPTS_TABLE`, `RECEIPT_ENTRIES_TABLE`, `listItems`, `listReceipts`, `itemIds`, and `receiptIds` may remain for one migration cycle to protect compatibility and rollback, but new work should not introduce new user-facing Item, Receipt, or Receipt Entry language.
 
 The migration was performed by Airtable Metadata API in-place renames by table ID and field ID. Records were not copied or duplicated.
+
+## 2026-07-20 - Workflow Templates Are Additive Compatibility Configuration
+
+Superseded for active Intake by `2026-07-20 - Active Intake Is Merchandise-Driven`. Workflow Templates may remain only as legacy compatibility infrastructure until a later cleanup decision.
+
+Phase 1 of the configurable workflow engine is additive.
+
+Workflow Templates and Workflow Stages are now the durable configuration layer for Work Order stage metadata, but the existing `Current Stage` string on Work Orders remains the compatibility field for current workflows.
+
+Rules:
+- Do not remove or rename `Current Stage` during Phase 1.
+- Do not rename the current stage keys: `new-review`, `waiting-information`, `send-thr3d`, `waiting-activation`, or `ready-production`.
+- Work Order code should prefer linked `Current Workflow Stage` when present and fall back to legacy `Current Stage`.
+- Any Work Order stage change should keep writing `Current Stage` and write the linked Workflow Template / Workflow Stage when the configured default can be resolved.
+- Template/stage mutations belong in Admin and require Admin access.
+- A stage linked to active Work Orders, including through legacy `Current Stage`, must not be deactivated.
+- Duplicating a template creates an inactive, non-default copy with independent stage records.
+
+This phase intentionally does not add Work Order Types, Client Defaults, stage requirements, workflow actions, automation rules, route changes, Work board redesign, or downstream production workflow changes. The recommended next phase is Work Order Types.
+
+## 2026-07-20 - Work Order Types Own Business Purpose
+
+Superseded for active Intake by `2026-07-20 - Active Intake Is Merchandise-Driven`. Work Order Types may remain only as legacy compatibility infrastructure until a later cleanup decision.
+
+Phase 2 adds Work Order Types as the configuration layer above Workflow Templates.
+
+Separation of responsibility:
+- Workflow Template owns stages and workflow structure.
+- Work Order Type owns the business purpose and configuration for a kind of Work Order.
+- Work Order is the individual operational work instance.
+
+The initial seeded Work Order Type is only `Merchandise Review` with key `merchandise-review`. Do not seed Photo Shoot, Retouch, Approval, THR3D, Packaging, Ecomm, or other speculative types until the operating model is approved.
+
+Compatibility rules:
+- Existing Work Orders without a Work Order Type must keep working.
+- New Merchandise Review Work Orders should receive the active default Work Order Type when it can be resolved.
+- Work Order Type resolution must not replace `Current Stage`, `Workflow Template`, or `Current Workflow Stage`.
+- Work Order responses may include optional type/template metadata, but existing fields and compatibility aliases must remain.
+- The active default Work Order Type cannot be deactivated.
+- A Work Order Type referenced by active Work Orders should not be deactivated.
+- A Work Order Type key should not be changed while active Work Orders reference that type.
+- Duplicating a Work Order Type creates an inactive, non-default copy with a unique key.
+
+This phase intentionally does not redesign the Work board, expose type selection in Work, add Client Defaults, implement stage requirements/actions, or add workflow automation. A likely Phase 3 is explicit configurable Work Order creation rules or configurable workflow transitions/actions, but no Phase 3 behavior is approved by this decision.

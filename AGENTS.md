@@ -3,11 +3,12 @@
 Before changing code, always read:
 
 1. docs/PRODUCT_VISION.md
-2. docs/PRINCIPLES.md
+2. docs/WORKSPACES.md
 3. docs/DOMAIN_MODEL.md
-4. docs/CURRENT_STATE.md
-5. docs/DECISIONS.md
-6. Any documentation for the specific feature being changed
+4. docs/DESIGN_PRINCIPLES.md
+5. docs/CURRENT_STATE.md
+6. docs/DECISIONS.md
+7. Any documentation for the specific feature being changed
 
 Do not implement a request that conflicts with PRODUCT_VISION.md without explicitly identifying the conflict.
 

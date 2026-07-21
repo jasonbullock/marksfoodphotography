@@ -8,7 +8,7 @@ The app should answer: "What do we need to do with this Merchandise right now?"
 
 ## Structure
 
-- `frontend/` - Vite React app for the operational shell, dashboard, receiving, merchandise, planning, production, inventory, supporting data, clients, and settings.
+- `frontend/` - Vite React app for the operational shell, dashboard, imports, receiving, merchandise inventory, Work, supporting Products and Jobs, and Admin utilities.
 - `backend/` - Flask API with environment loading, CORS support, Airtable helpers, and route blueprints.
 - `.env.example` - root-level configuration reference for local development.
 
@@ -46,16 +46,17 @@ The app uses React Router with these bookmarkable routes:
 - `/imports/history`
 - `/shipments`
 - `/merchandise`
+- `/work`
 - `/merchandise/review`
-- `/planning`
-- `/production`
 - `/products`
 - `/jobs`
 - `/jobs/new`
 - `/clients`
+- `/admin`
+- `/admin/:section`
 - `/settings`
 
-Compatibility redirects remain for older routes such as `/receiving`, `/receipts`, `/verification`, `/items`, and `/intake`.
+Compatibility redirects remain for older routes such as `/receiving`, `/receipts`, `/verification`, `/items`, `/intake`, and `/merchandise-review-v2`. The V1 Merchandise Review route `/merchandise/review` remains routable but is no longer a primary navigation item.
 
 Static hosting must serve `index.html` for client-side routes while leaving `/api/*` for the backend. The Netlify-style fallback in `frontend/public/_redirects` is:
 
@@ -114,12 +115,14 @@ The live Airtable schema now uses the canonical physical table names:
 AIRTABLE_PRODUCTS_TABLE=Products
 AIRTABLE_SHIPMENTS_TABLE=Shipments
 AIRTABLE_MERCHANDISE_TABLE=Merchandise
+AIRTABLE_WORK_ORDERS_TABLE=Work Orders
 ```
 
 The backend reads Airtable through canonical table constants. Deprecated legacy environment aliases such as `AIRTABLE_ITEMS_TABLE`, `AIRTABLE_RECEIPTS_TABLE`, and `AIRTABLE_RECEIPT_ENTRIES_TABLE` may remain for one rollback cycle, but new configuration should use the canonical variable names above.
+`AIRTABLE_WORKSTREAM_ASSIGNMENTS_TABLE` remains a one-cycle compatibility alias for `AIRTABLE_WORK_ORDERS_TABLE`.
 
 ## Current Scope
 
-Marks Photo currently includes a top-navigation operational shell, dashboard, imports, receiving/shipments, physical Merchandise Inventory, Merchandise Review, placeholder Planning and Production workspaces, supporting Product and Job views, client administration, settings, and Airtable connection status.
+Marks Photo currently includes a top-navigation operational shell, dashboard, imports, receiving/shipments, physical Merchandise Inventory, the experimental Work board, supporting Product and Job views, Admin with Clients and system utilities, and Airtable connection status.
 
 Airtable table and field IDs are currently configured for the Marks Photo base. The physical Airtable schema now uses the Merchandise-centered language through the canonical table mapping layer.

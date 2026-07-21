@@ -5003,27 +5003,54 @@ input[type="checkbox"]:disabled {
   font-weight: 850;
 }
 
-/* Merchandise Review V2 experimental Kanban board */
-.merch-review-v2-page {
+/* Intake experimental Kanban board */
+.work-board-page {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 10px;
   min-height: calc(100vh - var(--topbar-h) - 24px);
   margin: -4px;
   overflow: hidden;
 }
 
-.merch-review-v2-toolbar {
+.work-board-header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 14px;
-  min-width: 0;
-  padding: 8px 10px;
+  gap: 16px;
+  padding: 2px 10px 0;
 }
 
-.merch-review-v2-toolbar span,
-.merch-review-v2-override-panel header span {
+.work-board-header h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.work-board-header p {
+  margin: 4px 0 0;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.work-board-toolbar {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(150px, 0.7fr)) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(248, 250, 252, 0.94);
+  backdrop-filter: blur(12px);
+}
+
+.work-board-override-panel header span {
   color: var(--text-3);
   font-size: 10px;
   font-weight: 850;
@@ -5031,31 +5058,37 @@ input[type="checkbox"]:disabled {
   text-transform: uppercase;
 }
 
-.merch-review-v2-toolbar h1 {
-  margin: 2px 0 0;
+.work-board-toolbar input,
+.work-board-toolbar select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 7px;
+  background: #fff;
   color: var(--text);
-  font-size: 20px;
-  line-height: 1.15;
-  letter-spacing: 0;
+  font: inherit;
+  font-size: 12px;
 }
 
-.merch-review-v2-toolbar strong,
-.merch-review-v2-blocker {
+.work-board-toolbar strong,
+.work-board-blocker {
   color: var(--text-3);
   font-size: 12px;
   font-weight: 800;
 }
 
-.merch-review-v2-toolbar strong.is-error,
-.merch-review-v2-blocker {
+.work-board-toolbar strong.is-error,
+.work-board-blocker {
   color: var(--red-text);
 }
 
-.merch-review-v2-toolbar strong.is-success {
+.work-board-toolbar strong.is-success {
   color: #047857;
 }
 
-.merch-review-v2-blocker {
+.work-board-blocker {
   margin: 0 10px;
   padding: 10px 12px;
   border: 1px solid rgba(220, 38, 38, 0.24);
@@ -5066,9 +5099,12 @@ input[type="checkbox"]:disabled {
 
 .kanban-board {
   display: grid;
-  grid-template-columns: repeat(5, minmax(250px, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(280px, 320px);
+  grid-template-columns: none;
   gap: 10px;
   min-width: 0;
+  height: 100%;
   min-height: 0;
   overflow-x: auto;
   overflow-y: hidden;
@@ -5078,7 +5114,7 @@ input[type="checkbox"]:disabled {
 .kanban-column {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  min-width: 250px;
+  min-width: 280px;
   min-height: 0;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 8px;
@@ -5153,17 +5189,22 @@ input[type="checkbox"]:disabled {
 
 .kanban-card {
   display: grid;
+  width: 100%;
   gap: 8px;
   padding: 8px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
-  cursor: grab;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.kanban-card:active {
-  cursor: grabbing;
+.kanban-card:hover,
+.kanban-card.is-selected {
+  border-color: rgba(245, 158, 11, 0.44);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.11);
 }
 
 .kanban-card:focus-visible {
@@ -5215,6 +5256,7 @@ input[type="checkbox"]:disabled {
 .readiness-dot.is-red { background: #dc2626; }
 .readiness-dot.is-orange { background: #f59e0b; }
 .readiness-dot.is-green { background: #16a34a; }
+.readiness-dot.is-neutral { background: #94a3b8; }
 
 .readiness-dot.is-overridden::after {
   content: "";
@@ -5254,6 +5296,19 @@ input[type="checkbox"]:disabled {
   color: var(--text-2);
   font-size: 12px;
   font-weight: 800;
+}
+
+.kanban-card-workstream {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
 }
 
 .kanban-card-badge {
@@ -5299,7 +5354,7 @@ input[type="checkbox"]:disabled {
   white-space: nowrap;
 }
 
-.merch-review-v2-override-panel {
+.work-board-override-panel {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) 220px minmax(240px, 1.4fr) auto minmax(240px, 1.4fr);
   gap: 8px;
@@ -5310,19 +5365,19 @@ input[type="checkbox"]:disabled {
   background: var(--surface);
 }
 
-.merch-review-v2-override-panel header {
+.work-board-override-panel header {
   display: grid;
   gap: 2px;
   align-self: center;
 }
 
-.merch-review-v2-override-panel header strong {
+.work-board-override-panel header strong {
   color: var(--text);
   font-size: 13px;
 }
 
-.merch-review-v2-override-panel select,
-.merch-review-v2-override-panel textarea {
+.work-board-override-panel select,
+.work-board-override-panel textarea {
   width: 100%;
   min-height: 36px;
   padding: 7px 9px;
@@ -5334,12 +5389,12 @@ input[type="checkbox"]:disabled {
   font-size: 12px;
 }
 
-.merch-review-v2-override-panel textarea {
+.work-board-override-panel textarea {
   min-height: 42px;
   resize: vertical;
 }
 
-.merch-review-v2-audit {
+.work-board-audit {
   display: grid;
   gap: 5px;
   max-height: 92px;
@@ -5348,7 +5403,7 @@ input[type="checkbox"]:disabled {
   font-size: 11px;
 }
 
-.merch-review-v2-audit div {
+.work-board-audit div {
   display: grid;
   gap: 2px;
   padding: 6px;
@@ -5356,13 +5411,783 @@ input[type="checkbox"]:disabled {
   background: rgba(237, 240, 244, 0.74);
 }
 
-.merch-review-v2-audit strong {
+.work-board-audit strong {
   color: var(--text);
   font-size: 12px;
 }
 
-.merch-review-v2-audit p {
+.work-board-audit p {
   margin: 0;
+}
+
+.workflow-workspace-backdrop {
+  position: fixed;
+  inset: var(--topbar-h) 0 0 0;
+  z-index: 30;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(15, 23, 42, 0.24);
+}
+
+.workflow-workspace-drawer {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  width: min(680px, 96vw);
+  min-height: 0;
+  border-left: 1px solid rgba(148, 163, 184, 0.34);
+  background: #fff;
+  box-shadow: -18px 0 42px rgba(15, 23, 42, 0.18);
+}
+
+.workflow-workspace-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.workflow-workspace-header span,
+.workflow-workspace-section h3,
+.workflow-transition-panel strong {
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.workflow-workspace-header h2 {
+  margin: 3px 0 5px;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.workflow-workspace-header p {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.workflow-workspace-summary,
+.workflow-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.workflow-workspace-summary {
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(248, 250, 252, 0.75);
+}
+
+.workflow-workspace-summary div,
+.workflow-fact-grid div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.workflow-workspace-summary span,
+.workflow-fact-grid span {
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.workflow-workspace-summary strong,
+.workflow-fact-grid strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.workflow-gate-purpose {
+  display: grid;
+  gap: 4px;
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.workflow-gate-purpose strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.workflow-gate-purpose span {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.workflow-workspace-scroll {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 18px;
+}
+
+.workflow-workspace-section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.workflow-workspace-section h3 {
+  margin: 0;
+}
+
+.waiting-info-drawer {
+  width: min(760px, 96vw);
+}
+
+.waiting-info-missing {
+  border-color: rgba(245, 158, 11, 0.32);
+  background: rgba(255, 251, 235, 0.42);
+}
+
+.waiting-product-search {
+  display: grid;
+  gap: 8px;
+}
+
+.waiting-product-search label,
+.waiting-product-fields label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.waiting-product-search input,
+.waiting-product-fields input,
+.waiting-product-fields textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 7px;
+  padding: 9px 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  background: #fff;
+}
+
+.waiting-product-search input:focus,
+.waiting-product-fields input:focus,
+.waiting-product-fields textarea:focus {
+  outline: 2px solid rgba(245, 158, 11, 0.24);
+  border-color: rgba(245, 158, 11, 0.72);
+}
+
+.waiting-product-search > span {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.waiting-product-results {
+  display: grid;
+  gap: 6px;
+}
+
+.waiting-product-results button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 7px;
+  text-align: left;
+  background: rgba(248, 250, 252, 0.9);
+  cursor: pointer;
+}
+
+.waiting-product-results button:hover,
+.waiting-product-results button:focus-visible {
+  border-color: rgba(245, 158, 11, 0.72);
+  background: #fffaf0;
+  outline: none;
+}
+
+.waiting-product-results strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.waiting-product-results span {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.waiting-product-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.waiting-product-fields label:has(textarea) {
+  grid-column: 1 / -1;
+}
+
+.waiting-readiness-list li {
+  border-left: 3px solid rgba(148, 163, 184, 0.45);
+}
+
+.waiting-readiness-list li.is-red {
+  border-left-color: #dc2626;
+}
+
+.waiting-readiness-list li.is-orange {
+  border-left-color: #f59e0b;
+}
+
+.waiting-readiness-list li.is-green {
+  border-left-color: #16a34a;
+}
+
+.waiting-info-footer {
+  position: sticky;
+  bottom: 0;
+}
+
+.workflow-photo-section {
+  display: grid;
+  gap: 10px;
+}
+
+.workflow-photo-section > img {
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.workflow-thumbnail-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.workflow-thumbnail-row button {
+  flex: 0 0 58px;
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.workflow-thumbnail-row button.is-active {
+  border-color: var(--accent);
+}
+
+.workflow-thumbnail-row img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.workflow-empty-inline {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.workflow-requirement-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workflow-requirement-list li {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 7px;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.workflow-requirement-list strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.workflow-requirement-list span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.workflow-transition-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(248, 250, 252, 0.94);
+}
+
+.workflow-transition-panel > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workflow-transition-panel .is-error {
+  color: var(--red-text);
+}
+
+.workflow-transition-panel .is-success {
+  color: #047857;
+}
+
+.workflow-transition-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workflow-transition-actions > span {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.workflow-blocked-transitions {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.workflow-blocked-transitions p {
+  margin: 6px 0 0;
+  white-space: pre-line;
+}
+
+.new-review-modal-backdrop {
+  position: fixed;
+  inset: var(--topbar-h) 0 0 0;
+  z-index: 35;
+  display: grid;
+  place-items: center;
+  padding: clamp(14px, 2.4vw, 28px) clamp(14px, 2.4vw, 28px) clamp(24px, 3.4vw, 40px);
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.new-review-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(95vw, 1480px);
+  height: min(90vh, 980px);
+  max-height: calc(100vh - var(--topbar-h) - clamp(52px, 5.8vw, 68px));
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28);
+}
+
+.new-review-modal-header,
+.new-review-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.new-review-modal-header {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.new-review-modal-header span {
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.new-review-modal-header h2 {
+  margin: 2px 0 4px;
+  color: var(--text);
+  font-size: clamp(20px, 2vw, 28px);
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+.new-review-modal-header p {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.new-review-modal-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(360px, 0.95fr);
+  min-height: 0;
+}
+
+.new-review-image-pane {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px;
+  background: #0f172a;
+}
+
+.new-review-image-stage {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #020617;
+}
+
+.new-review-main-image {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.new-review-main-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: scale(var(--review-zoom, 1));
+  transition: transform 120ms ease;
+}
+
+.new-review-image-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.new-review-image-controls .btn {
+  border-color: rgba(226, 232, 240, 0.28);
+  background: rgba(15, 23, 42, 0.84);
+  color: #f8fafc;
+}
+
+.new-review-thumbnail-strip {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.new-review-thumbnail-strip button {
+  flex: 0 0 74px;
+  width: 74px;
+  height: 58px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #111827;
+}
+
+.new-review-thumbnail-strip button.is-active {
+  border-color: var(--accent);
+}
+
+.new-review-thumbnail-strip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.new-review-decision-pane {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  background: #fff;
+}
+
+.production-decision-section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.production-decision-section h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.new-review-product-id label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.new-review-product-id input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 7px;
+  padding: 9px 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  background: #fff;
+}
+
+.new-review-product-id input:focus {
+  outline: 2px solid rgba(245, 158, 11, 0.24);
+  border-color: rgba(245, 158, 11, 0.72);
+}
+
+.new-review-inline-status {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.production-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.production-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.production-choice.is-selected {
+  border-color: rgba(245, 158, 11, 0.58);
+  background: rgba(255, 251, 235, 0.9);
+}
+
+.production-choice input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
+.intake-decision-field {
+  display: grid;
+  gap: 6px;
+}
+
+.intake-decision-field span {
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.intake-decision-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.intake-decision-field select:focus {
+  outline: 2px solid rgba(245, 158, 11, 0.24);
+  border-color: rgba(245, 158, 11, 0.72);
+}
+
+.production-routing-preview {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: rgba(255, 251, 235, 0.84);
+}
+
+.production-routing-preview strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.production-routing-preview span,
+.production-decision-section textarea {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.workstream-preview-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workstream-preview-list li {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.workstream-preview-list li > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.workstream-preview-list li > div > strong {
+  font-size: 12px;
+}
+
+.workstream-preview-list em {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #92400e;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 850;
+  background: rgba(251, 191, 36, 0.22);
+}
+
+.workstream-preview-list li > span {
+  display: block;
+}
+
+.new-review-readiness-by-workstream {
+  display: grid;
+  gap: 10px;
+}
+
+.new-review-readiness-by-workstream > div {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.new-review-readiness-by-workstream > div > strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.production-decision-section textarea {
+  width: 100%;
+  min-height: 82px;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.production-decision-section .readiness-indicators {
+  position: static;
+  justify-self: start;
+  background: #fff;
+}
+
+.new-review-modal-footer {
+  position: sticky;
+  bottom: 0;
+  justify-content: flex-end;
+  border-top: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.new-review-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(2, 6, 23, 0.92);
+}
+
+.new-review-lightbox button {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+}
+
+.new-review-lightbox img {
+  max-width: 96vw;
+  max-height: 100%;
+  object-fit: contain;
 }
 
 @media (max-width: 1180px) {
@@ -5371,15 +6196,15 @@ input[type="checkbox"]:disabled {
   }
 
   .kanban-board {
-    grid-template-columns: repeat(5, 280px);
+    grid-auto-columns: 280px;
   }
 
-  .merch-review-v2-override-panel {
+  .work-board-override-panel {
     grid-template-columns: 1fr 1fr;
     align-items: stretch;
   }
 
-  .merch-review-v2-audit {
+  .work-board-audit {
     grid-column: 1 / -1;
   }
 
@@ -5390,6 +6215,38 @@ input[type="checkbox"]:disabled {
 
   .merch-review-decision-scroll {
     max-height: 360px;
+  }
+}
+
+@media (max-width: 900px) {
+  .work-board-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .new-review-modal {
+    width: 96vw;
+    height: 94vh;
+  }
+
+  .new-review-modal-body {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+
+  .new-review-image-pane {
+    min-height: 58vh;
+  }
+
+  .new-review-decision-pane {
+    overflow: visible;
+  }
+
+  .production-choice-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .new-review-modal-footer {
+    flex-wrap: wrap;
   }
 }
 
@@ -5441,18 +6298,18 @@ input[type="checkbox"]:disabled {
     grid-column: 1 / -1;
   }
 
-  .merch-review-v2-page {
+  .work-board-page {
     min-height: auto;
     overflow: visible;
   }
 
-  .merch-review-v2-toolbar,
-  .merch-review-v2-override-panel {
+  .work-board-toolbar,
+  .work-board-override-panel {
     grid-template-columns: 1fr;
     align-items: stretch;
   }
 
-  .merch-review-v2-toolbar {
+  .work-board-toolbar {
     display: grid;
   }
 
@@ -6630,27 +7487,32 @@ input[type="checkbox"]:disabled {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   max-width: 1040px;
   margin: 0 auto;
 }
 
 .intake-step {
-  padding: 5px 9px;
+  min-height: 32px;
+  padding: 7px 13px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: #fbfcfd;
   color: var(--text-3);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .intake-step.active {
   background: #fff;
   border-color: var(--blue);
   color: var(--blue);
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .intake-step.completed {
@@ -10147,12 +11009,178 @@ select.form-input {
 }
 
 .admin-active-section .users-section,
-.admin-active-section .roles-section {
+.admin-active-section .roles-section,
+.admin-active-section .workflow-admin-section {
   padding: 0;
 }
 
 .admin-active-section .page-stack {
   gap: 12px;
+}
+
+.workflow-admin-section {
+  width: 100%;
+}
+
+.workflow-admin-note {
+  max-width: 760px;
+}
+
+.workflow-admin-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.workflow-template-list,
+.workflow-template-editor {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.workflow-template-list {
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+}
+
+.workflow-template-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.workflow-template-row:hover,
+.workflow-template-row:focus-visible {
+  border-color: var(--border);
+  background: var(--surface-2);
+  outline: none;
+}
+
+.workflow-template-row.is-active {
+  border-color: var(--blue-border);
+  background: var(--blue-bg);
+}
+
+.workflow-template-row strong,
+.workflow-template-row small {
+  display: block;
+}
+
+.workflow-template-row small {
+  margin-top: 3px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.workflow-template-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.workflow-template-editor {
+  padding: 14px;
+  min-width: 0;
+}
+
+.workflow-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.workflow-editor-full {
+  grid-column: 1 / -1;
+}
+
+.work-order-type-editor-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.workflow-admin-inline-note {
+  margin: 2px 0 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--amber-border);
+  border-radius: 8px;
+  background: var(--amber-bg);
+  color: var(--amber-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.workflow-stage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.workflow-stage-header h4 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.workflow-stage-list {
+  display: grid;
+  gap: 8px;
+}
+
+.workflow-stage-row {
+  display: grid;
+  grid-template-columns: 88px minmax(150px, 1.2fr) minmax(130px, 1fr) 80px minmax(100px, 0.8fr) minmax(120px, 0.9fr) auto auto auto minmax(180px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.workflow-stage-row.is-inactive {
+  opacity: 0.68;
+}
+
+.workflow-stage-order-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.workflow-stage-description {
+  resize: vertical;
+}
+
+@media (max-width: 1180px) {
+  .workflow-admin-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-template-list {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .workflow-stage-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workflow-stage-order-actions,
+  .workflow-stage-description {
+    grid-column: 1 / -1;
+  }
 }
 
 .roles-section {

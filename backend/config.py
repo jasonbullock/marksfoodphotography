@@ -54,6 +54,13 @@ class Config:
     ISSUES_TABLE = "Issues"
     HISTORY_TABLE = "History"
     IMPORTS_TABLE = "Imports"
+    WORKSTREAMS_TABLE = "Workstreams"
+    WORK_ORDERS_TABLE = os.getenv(
+        "AIRTABLE_WORK_ORDERS_TABLE",
+        os.getenv("AIRTABLE_WORKSTREAM_ASSIGNMENTS_TABLE", "Work Orders"),
+    )
+    # Deprecated compatibility alias. Use WORK_ORDERS_TABLE in new backend code.
+    WORKSTREAM_ASSIGNMENTS_TABLE = WORK_ORDERS_TABLE
 
     # Field names — Locations
     F_LOCATION_NAME = "Location"
@@ -100,6 +107,17 @@ class Config:
     F_RECEIPT_ENTRY_PHOTO_METADATA = "Photo Metadata"
     F_RECEIPT_ENTRY_ITEM = "Product"
     F_RECEIPT_ENTRY_MERCH_STATUS = "Merch Status"
+    F_RECEIPT_ENTRY_PRODUCTION_TYPE = "Production Type"
+    F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION = "Merchandise Resolution"
+    PRODUCTION_TYPE_OPTIONS = ["eCommerce", "Packaging", "THR3D"]
+    MERCHANDISE_RESOLUTION_OPTIONS = [
+        "Keep at Walnut",
+        "Ship to Kentucky",
+        "Hold",
+        "Replacement Requested",
+        "Return to Client",
+        "Dispose",
+    ]
 
     # Field names — Clients
     F_CLIENT_NAME = "Client"
@@ -131,7 +149,8 @@ class Config:
     F_ITEM_PRODUCT = "Product or File Name"
     F_ITEM_JOB_NUMBER = "Product Job Number"
     F_ITEM_DESCRIPTION = "Description"
-    F_ITEM_OUTPUT = "Output Type"
+    F_ITEM_WORKSTREAM = "Workstream"
+    F_ITEM_OUTPUT = F_ITEM_WORKSTREAM
     F_ITEM_MASTER_VARIANT = "Master or Variant"
     F_ITEM_PICKUP_JOB_NUMBER = "Pickup Job Number"
     F_ITEM_BRAND = "Brand"
@@ -151,6 +170,87 @@ class Config:
     F_ITEM_EXPORTED = "Exported"
     F_ITEM_EXPORTED_ON = "Exported On"
     F_ITEM_EXPORT_ERROR = "Export Error"
+
+    # Field names - Workstreams
+    F_WORKSTREAM_NAME = "Name"
+    F_WORKSTREAM_ACTIVE = "Active"
+    F_WORKSTREAM_DESCRIPTION = "Description"
+    F_WORKSTREAM_WORKFLOW_TEMPLATE = "Workflow Template"
+    F_WORKSTREAM_CONFIGURATION = "Configuration"
+
+    # Table names - Workflow configuration
+    WORKFLOW_TEMPLATES_TABLE = os.getenv("AIRTABLE_WORKFLOW_TEMPLATES_TABLE", "Workflow Templates")
+    WORKFLOW_STAGES_TABLE = os.getenv("AIRTABLE_WORKFLOW_STAGES_TABLE", "Workflow Stages")
+    WORK_ORDER_TYPES_TABLE = os.getenv("AIRTABLE_WORK_ORDER_TYPES_TABLE", "Work Order Types")
+
+    # Field names - Workflow Templates
+    F_WORKFLOW_TEMPLATE_NAME = "Name"
+    F_WORKFLOW_TEMPLATE_DESCRIPTION = "Description"
+    F_WORKFLOW_TEMPLATE_ACTIVE = "Active"
+    F_WORKFLOW_TEMPLATE_DEFAULT = "Default"
+    F_WORKFLOW_TEMPLATE_VERSION = "Version"
+    F_WORKFLOW_TEMPLATE_CREATED_AT = "Created At"
+    F_WORKFLOW_TEMPLATE_UPDATED_AT = "Updated At"
+
+    # Field names - Workflow Stages
+    F_WORKFLOW_STAGE_NAME = "Name"
+    F_WORKFLOW_STAGE_TEMPLATE = "Workflow Template"
+    F_WORKFLOW_STAGE_KEY = "Stage Key"
+    F_WORKFLOW_STAGE_DISPLAY_ORDER = "Display Order"
+    F_WORKFLOW_STAGE_COLOR_TOKEN = "Color Token"
+    F_WORKFLOW_STAGE_TYPE = "Stage Type"
+    F_WORKFLOW_STAGE_IS_COMPLETE = "Is Complete"
+    F_WORKFLOW_STAGE_IS_TERMINAL = "Is Terminal"
+    F_WORKFLOW_STAGE_ACTIVE = "Active"
+    F_WORKFLOW_STAGE_DESCRIPTION = "Description"
+
+    # Field names - Work Order Types
+    F_WORK_ORDER_TYPE_NAME = "Name"
+    F_WORK_ORDER_TYPE_KEY = "Key"
+    F_WORK_ORDER_TYPE_DESCRIPTION = "Description"
+    F_WORK_ORDER_TYPE_WORKFLOW_TEMPLATE = "Workflow Template"
+    F_WORK_ORDER_TYPE_ACTIVE = "Active"
+    F_WORK_ORDER_TYPE_DEFAULT = "Is Default"
+    F_WORK_ORDER_TYPE_SORT_ORDER = "Sort Order"
+    F_WORK_ORDER_TYPE_ICON = "Icon"
+    F_WORK_ORDER_TYPE_COLOR = "Color"
+    F_WORK_ORDER_TYPE_DEFAULT_ASSIGNEE_ROLE = "Default Assignee Role"
+    F_WORK_ORDER_TYPE_ALLOW_MULTIPLE = "Allow Multiple Per Merchandise"
+    F_WORK_ORDER_TYPE_AUTO_CREATE = "Auto Create"
+    F_WORK_ORDER_TYPE_CREATED_AT = "Created At"
+    F_WORK_ORDER_TYPE_UPDATED_AT = "Updated At"
+
+    # Field names - Work Orders
+    F_WORK_ORDER_NAME = "Work Order"
+    F_WORK_ORDER_TYPE = "Work Order Type"
+    F_WORK_ORDER_MERCHANDISE = "Merchandise"
+    F_WORK_ORDER_WORKSTREAM = "Workstream"
+    F_WORK_ORDER_WORKFLOW = "Workflow"
+    F_WORK_ORDER_WORKFLOW_TEMPLATE = "Workflow Template"
+    F_WORK_ORDER_CURRENT_WORKFLOW_STAGE = "Current Workflow Stage"
+    F_WORK_ORDER_CURRENT_STAGE = "Current Stage"
+    F_WORK_ORDER_CURRENT_GATE = F_WORK_ORDER_CURRENT_STAGE
+    F_WORK_ORDER_CURRENT_OWNER = "Current Owner"
+    F_WORK_ORDER_CURRENT_STATUS = "Current Status"
+    F_WORK_ORDER_JOB = "Job"
+    F_WORK_ORDER_READINESS_METADATA = "Readiness Metadata"
+    F_WORK_ORDER_BLOCKING_REQUIREMENTS = "Blocking Requirements"
+    F_WORK_ORDER_CREATED_AT = "Created At"
+    F_WORK_ORDER_COMPLETED_AT = "Completed At"
+
+    # Deprecated compatibility aliases. Use Work Order names in new code.
+    F_WORKSTREAM_ASSIGNMENT_NAME = F_WORK_ORDER_NAME
+    F_WORKSTREAM_ASSIGNMENT_MERCHANDISE = F_WORK_ORDER_MERCHANDISE
+    F_WORKSTREAM_ASSIGNMENT_WORKSTREAM = F_WORK_ORDER_WORKSTREAM
+    F_WORKSTREAM_ASSIGNMENT_WORKFLOW = F_WORK_ORDER_WORKFLOW
+    F_WORKSTREAM_ASSIGNMENT_CURRENT_GATE = F_WORK_ORDER_CURRENT_STAGE
+    F_WORKSTREAM_ASSIGNMENT_CURRENT_OWNER = F_WORK_ORDER_CURRENT_OWNER
+    F_WORKSTREAM_ASSIGNMENT_CURRENT_STATUS = F_WORK_ORDER_CURRENT_STATUS
+    F_WORKSTREAM_ASSIGNMENT_JOB = F_WORK_ORDER_JOB
+    F_WORKSTREAM_ASSIGNMENT_READINESS_METADATA = F_WORK_ORDER_READINESS_METADATA
+    F_WORKSTREAM_ASSIGNMENT_BLOCKING_REQUIREMENTS = F_WORK_ORDER_BLOCKING_REQUIREMENTS
+    F_WORKSTREAM_ASSIGNMENT_CREATED_AT = F_WORK_ORDER_CREATED_AT
+    F_WORKSTREAM_ASSIGNMENT_COMPLETED_AT = F_WORK_ORDER_COMPLETED_AT
 
     # Field names — Issues
     F_ISSUE_NAME = "Issue"

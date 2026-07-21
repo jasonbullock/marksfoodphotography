@@ -2,15 +2,30 @@ import { useState, useEffect, useCallback, useRef, createContext, useContext } f
 import { createPortal } from 'react-dom';
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  ClipboardList,
+  Download as DownloadIcon,
+  Layers,
+  PackageOpen,
+  Tag,
+  Workflow as WorkflowIcon,
+} from 'lucide-react';
 import { api } from './api';
 import { Select as FormSelect } from './design-system.jsx';
 import { DOMAIN_TERMS, getFieldLabel, technicalTableLabel } from './domainVocabulary';
 import { exportTableToXlsx, todayExportFilename } from './tableExport';
 import {
   MERCHANDISE_REVIEW_WORKFLOW,
+  GATE_IDS,
+  WORKSTREAMS,
+  WORKSPACE_SECTIONS,
+  buildWorkOrderCard,
   evaluateMerchandiseReviewAssignment,
   gatesForBoard,
-  validateWorkflowTransition,
+  workstreamFromLegacyValue,
+  workstreamLabel,
+  workflowForClient,
+  workspaceModeForGate,
 } from './workflowEngine';
 import './styles.css';
 
@@ -44,6 +59,12 @@ const Icon = {
       <line x1="3" y1="8" x2="13" y2="8"/>
     </svg>
   ),
+  NavImport: () => <DownloadIcon size={20} strokeWidth={1.5} />,
+  NavReceiving: () => <PackageOpen size={20} strokeWidth={1.5} />,
+  NavMerchandise: () => <ClipboardList size={20} strokeWidth={1.5} />,
+  NavWork: () => <WorkflowIcon size={20} strokeWidth={1.5} />,
+  NavJobs: () => <Layers size={20} strokeWidth={1.5} />,
+  NavProducts: () => <Tag size={20} strokeWidth={1.5} />,
   Upload: () => (
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
       <path d="M8 11V3"/>
@@ -2453,7 +2474,7 @@ function ProductsPage({ navigate, jobId: initJobId, queue: initQueue }) {
     { header: identifierLabel, key: 'identifier' },
     { header: 'Product or File Name', key: 'product' },
     { header: DOMAIN_TERMS.productJobNumber, key: 'itemJobNumber' },
-    { header: 'Output Type', key: 'output' },
+    { header: 'Workstream', key: 'workstream' },
     { header: 'Brand', key: 'brand' },
     { header: 'Job', value: item => jobNames(item) },
     { header: 'Readiness', value: item => item.readiness?.label || item.readiness?.state || '' },
@@ -2507,7 +2528,7 @@ function ProductsPage({ navigate, jobId: initJobId, queue: initQueue }) {
               <th>{identifierLabel}</th>
               <th>Product or File Name</th>
               <th>{DOMAIN_TERMS.productJobNumber}</th>
-              <th>Output Type</th>
+              <th>Workstream</th>
               <th>Brand</th>
               <th>Job</th>
               <th>Readiness</th>
@@ -2531,7 +2552,7 @@ function ProductsPage({ navigate, jobId: initJobId, queue: initQueue }) {
                 </td>
                 <td>{item.product || '—'}</td>
                 <td>{item.itemJobNumber || '—'}</td>
-                <td>{item.output || '—'}</td>
+                <td>{item.workstream || item.output || '—'}</td>
                 <td>{item.brand || '—'}</td>
                 <td>{jobNames(item)}</td>
                 <td><ReadinessBadge readiness={item.readiness} /></td>
@@ -2553,7 +2574,7 @@ function ProductsPage({ navigate, jobId: initJobId, queue: initQueue }) {
             <div className="setting-row"><span className="setting-key">Product or File Name</span><span className="setting-val">{itemDetail.product || 'Missing'}</span></div>
             <div className="setting-row"><span className="setting-key">{DOMAIN_TERMS.productJobNumber}</span><span className="setting-val">{itemDetail.itemJobNumber || '—'}</span></div>
             <div className="setting-row"><span className="setting-key">Description</span><span className="setting-val">{itemDetail.description || '—'}</span></div>
-            <div className="setting-row"><span className="setting-key">Output Type</span><span className="setting-val">{itemDetail.output || '—'}</span></div>
+            <div className="setting-row"><span className="setting-key">Workstream</span><span className="setting-val">{itemDetail.workstream || itemDetail.output || '—'}</span></div>
             <div className="setting-row"><span className="setting-key">Master or Variant</span><span className="setting-val">{itemDetail.masterOrVariant || '—'}</span></div>
             <div className="setting-row"><span className="setting-key">Pickup Job Number</span><span className="setting-val">{itemDetail.pickupJobNumber || '—'}</span></div>
             <div className="setting-row"><span className="setting-key">Merchandise</span><span className="setting-val">{itemDetail.received || itemDetail.receiptIds?.length ? 'Received' : 'Not received'}</span></div>
@@ -2634,9 +2655,9 @@ function AddSkuForm({ jobId, onSaved, onCancel, identifierLabel = 'Identifier' }
             <input value={form.itemJobNumber} onChange={e => set('itemJobNumber', e.target.value)} />
           </div>
           <div className="field">
-            <label>Output Type</label>
+            <label>Workstream</label>
             <select value={form.output} onChange={e => set('output', e.target.value)}>
-              <option value="">Select output...</option>
+              <option value="">Select workstream...</option>
               <option>Photo Only</option>
               <option>Render Only</option>
               <option>Photo + Render</option>
@@ -2918,7 +2939,7 @@ const INTAKE_TARGET_LABELS = {
   'Product/File Name': getFieldLabel('Product/File Name', 'product'),
   Description: getFieldLabel('Description', 'product'),
   'Product Job Number': getFieldLabel('Product Job Number', 'product'),
-  'Output Type': getFieldLabel('Output Type', 'product'),
+  Workstream: getFieldLabel('Workstream', 'product'),
   'Master or Variant': getFieldLabel('Master or Variant', 'product'),
   'Pickup Job Number': getFieldLabel('Pickup Job Number', 'product'),
   Brand: getFieldLabel('Brand', 'product'),
@@ -2935,7 +2956,7 @@ const INTAKE_FALLBACK_TARGET_DESCRIPTIONS = {
   'Product or File Name': 'Product or file name.',
   Description: 'Longer source product description.',
   'Product Job Number': 'Row-level job or project number for the product.',
-  'Output Type': 'Photo Only, Render Only, or Photo + Render.',
+  Workstream: 'Production workstream or legacy Photo/Render routing value.',
   'Master or Variant': 'Whether this product is a master or a variant.',
   'Pickup Job Number': 'Previous production job number for variant pickup work.',
   Brand: 'Product brand.',
@@ -2948,13 +2969,13 @@ const INTAKE_FALLBACK_TARGET_DESCRIPTIONS = {
 
 const INTAKE_REQUIRED_TARGETS = ['Identifier'];
 const KNOWN_INTAKE_MAPPINGS = {
-  kroger: { 'Job #': 'Product Job Number', Description: 'Description', UPC: 'Identifier', Brand: 'Brand', 'Product Received': 'Product Name', 'Output Type': 'Output Type', Notes: 'Notes' },
-  unfi: { 'Project Number': 'Product Job Number', Description: 'Description', UPC: 'Identifier', 'Output Type': 'Output Type', Notes: 'Notes' },
-  smithfield: { 'Job #': 'Product Job Number', 'GAR #': 'Identifier', Brand: 'Brand', 'Product Description': 'Description', Output: 'Output Type', Notes: 'Notes' },
+  kroger: { 'Job #': 'Product Job Number', Description: 'Description', UPC: 'Identifier', Brand: 'Brand', 'Product Received': 'Product Name', 'Output Type': 'Workstream', Notes: 'Notes' },
+  unfi: { 'Project Number': 'Product Job Number', Description: 'Description', UPC: 'Identifier', 'Output Type': 'Workstream', Notes: 'Notes' },
+  smithfield: { 'Job #': 'Product Job Number', 'GAR #': 'Identifier', Brand: 'Brand', 'Product Description': 'Description', Output: 'Workstream', Notes: 'Notes' },
 };
 const INTAKE_TARGET_FIELDS = {
   'Job Name': 'jobName', 'Parent Job Number': 'parentJobNumber', 'Due Date': 'due',
-  'Product Name': 'itemName', Identifier: 'id', 'Product or File Name': 'product', 'Product/File Name': 'product', Description: 'description', 'Product Job Number': 'itemJobNumber', 'Output Type': 'output', 'Master or Variant': 'masterOrVariant', 'Pickup Job Number': 'pickupJobNumber', Brand: 'brand', Notes: 'notes',
+  'Product Name': 'itemName', Identifier: 'id', 'Product or File Name': 'product', 'Product/File Name': 'product', Description: 'description', 'Product Job Number': 'itemJobNumber', Workstream: 'output', 'Output Type': 'output', 'Master or Variant': 'masterOrVariant', 'Pickup Job Number': 'pickupJobNumber', Brand: 'brand', Notes: 'notes',
 };
 const INTAKE_WIZARD_STEPS = [
   { id: 'upload', label: 'Upload' },
@@ -3000,7 +3021,7 @@ function buildInitialColumnMapping(headers, clientName) {
     ['Product or File Name', ['productfilename', 'productname']],
     ['Description', ['description', 'productdescription', 'productreceived', 'itemdescription']],
     ['Product Job Number', ['jobnumber', 'jobid', 'job', 'projectnumber', 'project']],
-    ['Output Type', ['outputtype', 'output']],
+    ['Workstream', ['workstream', 'outputtype', 'output']],
     ['Master or Variant', ['masterorvariant', 'mastervariant', 'varianttype']],
     ['Pickup Job Number', ['pickupjobnumber', 'pickupjob', 'previousjobnumber']],
     ['Brand', ['brand']],
@@ -3192,7 +3213,7 @@ function IntakePage({ navigate }) {
   const normalizedClientRequiredFields = clientRequiredFields.map(field => field === 'ID' ? 'Identifier' : ['Product Name', 'Product/File Name'].includes(field) ? 'Product or File Name' : field);
   const photographyTargets = ['Identifier', ...normalizedClientRequiredFields.filter(field => ['Product or File Name', 'Brand'].includes(field))].filter((target, index, list) => list.indexOf(target) === index);
   const photographyRequiredTargets = new Set(['Identifier', ...normalizedClientRequiredFields]);
-  const itemMappingTargets = ['Product Name', ...photographyTargets, ...(photographyTargets.includes('Brand') ? [] : ['Brand']), 'Product or File Name', 'Description', 'Product Job Number', 'Output Type', 'Master or Variant', 'Pickup Job Number', 'Notes', 'Reference Data']
+  const itemMappingTargets = ['Product Name', ...photographyTargets, ...(photographyTargets.includes('Brand') ? [] : ['Brand']), 'Product or File Name', 'Description', 'Product Job Number', 'Workstream', 'Master or Variant', 'Pickup Job Number', 'Notes', 'Reference Data']
     .filter((target, index, list) => list.indexOf(target) === index);
   const itemMappingTargetSet = new Set(itemMappingTargets);
   const referenceColumns = headers.filter(header => !new Set(Object.values(targetMapping).filter(Boolean)).has(header));
@@ -4402,9 +4423,11 @@ function MerchandiseReviewPage() {
   );
 }
 
-// ── Experimental Merchandise Review V2 ──────────────────────────────────────
-const MERCH_REVIEW_V2_STORAGE_KEY = 'marks:merch-review-v2-board';
-const MERCH_REVIEW_V2_ARTWORK_KEY = 'marks:merch-review-v2-artwork-overrides';
+// ── Experimental Work ──────────────────────────────────────
+const MERCH_REVIEW_V2_STORAGE_KEY = 'marks:work-board-board';
+const MERCH_REVIEW_V2_ARTWORK_KEY = 'marks:work-board-artwork-overrides';
+const MERCH_REVIEW_V2_DECISIONS_KEY = 'marks:work-board-workstream-decisions';
+const MERCH_REVIEW_V2_LEGACY_DECISIONS_KEY = 'marks:work-board-production-decisions';
 
 function loadJsonMap(key) {
   try {
@@ -4419,14 +4442,43 @@ function saveJsonMap(key, value) {
   window.localStorage.setItem(key, JSON.stringify(value));
 }
 
+function normalizeWorkstreamSelection(decision = {}, fallbackWorkstream = '') {
+  const selected = [
+    ...(Array.isArray(decision.workstreamIds) ? decision.workstreamIds : []),
+    ...(Array.isArray(decision.productionPaths) ? decision.productionPaths : []),
+    decision.primaryWorkstream,
+    decision.workstream,
+    fallbackWorkstream,
+  ]
+    .map(value => workstreamFromLegacyValue(value) || value)
+    .filter(Boolean);
+  return selected.filter((value, index, list) => list.indexOf(value) === index);
+}
+
+function intakeRequestedGateForRecord(record) {
+  if (record?.productionType === 'THR3D') return GATE_IDS.sendThr3d;
+  const reviewState = reviewStateFor(record);
+  if (reviewState === 'Waiting for Product Data') return GATE_IDS.waitingInformation;
+  if (reviewState === 'Validated') return GATE_IDS.readyProduction;
+  if (record?.merchStatus === 'Matched') return GATE_IDS.waitingActivation;
+  return '';
+}
+
+function productionTypeWorkstreamLabel(productionType) {
+  const workstreamId = PRODUCTION_TYPE_WORKSTREAM_MAP[productionType];
+  return workstreamId ? workstreamLabel(workstreamId) : '';
+}
+
 function ReadinessIndicators({ items }) {
+  const visibleItems = items.filter(item => item.visible !== false && item.tone !== 'neutral');
   return (
     <div className="readiness-indicators" aria-label="Readiness indicators">
-      {items.map(item => (
+      {visibleItems.map(item => (
         <span
           key={item.key}
           className={`readiness-dot is-${item.tone} ${item.overridden ? 'is-overridden' : ''}`}
-          title={`${item.label}\n${item.detail}`}
+          title={item.tooltip || `${item.label}\n${item.detail}`}
+          tabIndex={0}
           aria-label={`${item.label}: ${item.detail}`}
         />
       ))}
@@ -4434,13 +4486,13 @@ function ReadinessIndicators({ items }) {
   );
 }
 
-function KanbanCard({ item, draggable = true, onDragStart }) {
+function KanbanCard({ item, selected, onSelect }) {
   return (
-    <article
-      className="kanban-card"
-      draggable={draggable}
-      onDragStart={event => onDragStart?.(event, item)}
-      tabIndex={0}
+    <button
+      type="button"
+      className={`kanban-card ${selected ? 'is-selected' : ''}`}
+      onClick={() => onSelect?.(item.id)}
+      aria-label={`Open ${item.title}`}
     >
       <div className="kanban-card-media">
         <RecordThumbnail record={item.record} />
@@ -4449,47 +4501,43 @@ function KanbanCard({ item, draggable = true, onDragStart }) {
       <div className="kanban-card-body">
         <div className="kanban-card-title-row">
           <h3>{item.title}</h3>
-          {item.badge && <span className="kanban-card-badge">{item.badge}</span>}
+          {(item.issueBadge || item.statusBadge) && <span className="kanban-card-badge">{item.issueBadge || item.statusBadge}</span>}
         </div>
         <p>{item.client}</p>
+        {item.workstream && <strong className="kanban-card-workstream">{item.workstream}</strong>}
         <dl>
           <div><dt>Identifier</dt><dd>{item.identifier || '-'}</dd></div>
           <div><dt>Storage</dt><dd>{item.location || '-'}</dd></div>
           <div><dt>Time Here</dt><dd>{item.timeHere || 'Unknown'}</dd></div>
+          {item.quantity ? <div><dt>Qty</dt><dd>{item.quantity}</dd></div> : null}
         </dl>
       </div>
-    </article>
+    </button>
   );
 }
 
-function KanbanColumn({ column, items, active, rejected, onDragOver, onDragLeave, onDrop, onCardDragStart }) {
-  const title = column.displayName || column.title || column.name;
+function KanbanColumn({ column, items, selectedId, onSelect }) {
+  const title = column.label || column.displayName || column.title || column.name;
   return (
-    <section
-      className={`kanban-column ${active ? 'is-drag-target' : ''} ${rejected ? 'is-rejected' : ''}`}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-      aria-label={title}
-    >
+    <section className="kanban-column" aria-label={title}>
       <header className="kanban-column-header">
         <div>
           <h2>{title}</h2>
-          <p>{column.description}</p>
+          <p title={column.description}>{column.description}</p>
         </div>
         <span>{items.length}</span>
       </header>
       <div className="kanban-column-list">
-        {items.length === 0 && <div className="kanban-empty">No merchandise in this column.</div>}
+        {items.length === 0 && <div className="kanban-empty">No merchandise currently meets this gate's rules.</div>}
         {items.map(item => (
-          <KanbanCard item={item} key={item.id} onDragStart={onCardDragStart} />
+          <KanbanCard item={item} key={item.id} selected={selectedId === item.id} onSelect={onSelect} />
         ))}
       </div>
     </section>
   );
 }
 
-function KanbanBoard({ columns, itemsByColumn, dragState, onCardDragStart, onColumnDragOver, onColumnDragLeave, onColumnDrop }) {
+function KanbanBoard({ columns, itemsByColumn, selectedId, onSelect }) {
   return (
     <div className="kanban-board" role="list" aria-label="Workflow board">
       {columns.map(column => (
@@ -4497,14 +4545,979 @@ function KanbanBoard({ columns, itemsByColumn, dragState, onCardDragStart, onCol
           column={column}
           items={itemsByColumn[column.id] || []}
           key={column.id}
-          active={dragState?.columnId === column.id && dragState.allowed}
-          rejected={dragState?.columnId === column.id && dragState.allowed === false}
-          onDragOver={event => onColumnDragOver(event, column.id)}
-          onDragLeave={onColumnDragLeave}
-          onDrop={event => onColumnDrop(event, column.id)}
-          onCardDragStart={onCardDragStart}
+          selectedId={selectedId}
+          onSelect={onSelect}
         />
       ))}
+    </div>
+  );
+}
+
+function workflowSearchHaystack(item) {
+  const record = item.record || {};
+  const product = record.linkedItem || {};
+  return [
+    item.title,
+    item.client,
+    item.identifier,
+    item.location,
+    record.productName,
+    record.skuId,
+    record.brand,
+    record.description,
+    record.notes,
+    record.receipt?.name,
+    product.product,
+    product.name,
+    product.identifier,
+    product.itemJobNumber,
+  ].join(' ').toLowerCase();
+}
+
+function workflowSectionTitle(section) {
+  return {
+    [WORKSPACE_SECTIONS.merchandiseObservations]: 'Merchandise Observations',
+    [WORKSPACE_SECTIONS.photos]: 'Photos',
+    [WORKSPACE_SECTIONS.productIdentification]: 'Product Identification',
+    [WORKSPACE_SECTIONS.productIdentificationSummary]: 'Product Identification',
+    [WORKSPACE_SECTIONS.workstream]: 'Workstream',
+    [WORKSPACE_SECTIONS.missingInformation]: 'Missing Information',
+    [WORKSPACE_SECTIONS.artwork]: 'Artwork',
+    [WORKSPACE_SECTIONS.artworkSummary]: 'Artwork',
+    [WORKSPACE_SECTIONS.activation]: 'Activation',
+    [WORKSPACE_SECTIONS.notes]: 'Notes',
+    [WORKSPACE_SECTIONS.thr3dRouting]: 'THR3D Routing',
+    [WORKSPACE_SECTIONS.shipment]: 'Shipment',
+    [WORKSPACE_SECTIONS.issues]: 'Issues',
+    [WORKSPACE_SECTIONS.history]: 'History',
+    [WORKSPACE_SECTIONS.readinessSummary]: 'Readiness',
+    [WORKSPACE_SECTIONS.merchandiseSummary]: 'Merchandise',
+    [WORKSPACE_SECTIONS.productSummary]: 'Product',
+  }[section] || section;
+}
+
+function WorkflowFact({ label, value }) {
+  return <div><span>{label}</span><strong>{value || '-'}</strong></div>;
+}
+
+function WorkflowWorkspaceSection({ section, item, photos, activePhotoUrl, photoIndex, setPhotoIndex, override }) {
+  const record = item.record || {};
+  const product = record.linkedItem || {};
+  const blockers = item.readiness.filter(requirement => requirement.visible !== false && !requirement.satisfied);
+  return (
+    <section className="workflow-workspace-section">
+      <h3>{workflowSectionTitle(section)}</h3>
+      {section === WORKSPACE_SECTIONS.photos && (
+        <div className="workflow-photo-section">
+          {activePhotoUrl ? <img src={activePhotoUrl} alt="" /> : <div className="workflow-empty-inline">No R2-backed photos available.</div>}
+          {photos.length > 1 && (
+            <div className="workflow-thumbnail-row">
+              {photos.map((photo, index) => {
+                const url = receivingPhotoUrl(photo);
+                return url ? <button type="button" className={photoIndex === index ? 'is-active' : ''} onClick={() => setPhotoIndex(index)} key={`${url}-${index}`}><img src={url} alt="" /></button> : null;
+              })}
+            </div>
+          )}
+        </div>
+      )}
+      {section === WORKSPACE_SECTIONS.merchandiseObservations && (
+        <div className="workflow-fact-grid">
+          <WorkflowFact label={DOMAIN_TERMS.packageName} value={record.productName} />
+          <WorkflowFact label={DOMAIN_TERMS.merchandiseIdentifier} value={record.skuId} />
+          <WorkflowFact label="Quantity" value={record.quantity || 1} />
+          <WorkflowFact label="Condition" value={record.condition} />
+          <WorkflowFact label="Storage" value={item.location} />
+          <WorkflowFact label="Notes" value={record.notes} />
+        </div>
+      )}
+      {section === WORKSPACE_SECTIONS.merchandiseSummary && (
+        <>
+          <div className="workflow-fact-grid">
+            <WorkflowFact label={DOMAIN_TERMS.packageName} value={record.productName} />
+            <WorkflowFact label="Client" value={item.client} />
+            <WorkflowFact label="Current Stage" value={item.workOrder.currentGateName} />
+            <WorkflowFact label="Status" value={record.merchStatus || record.reviewState} />
+            <WorkflowFact label="Time Here" value={item.timeHere} />
+            <WorkflowFact label="Storage" value={item.location} />
+            <WorkflowFact label="Merchandise Resolution" value={record.merchandiseResolution} />
+          </div>
+        </>
+      )}
+      {[WORKSPACE_SECTIONS.productIdentification, WORKSPACE_SECTIONS.productIdentificationSummary, WORKSPACE_SECTIONS.productSummary].includes(section) && (
+        product?.id || record.itemIds?.length ? (
+          <div className="workflow-fact-grid">
+            <WorkflowFact label="Product" value={product.product || product.name} />
+            <WorkflowFact label="Identifier" value={product.identifier || product.productId || product.gtinUpc} />
+            <WorkflowFact label="Brand" value={product.brand} />
+            <WorkflowFact label="Job Number" value={product.itemJobNumber || product.pickupJobNumber} />
+            <WorkflowFact label="Readiness" value={product.readiness?.ready ? 'Ready' : product.readiness?.missing?.join(', ') || 'Pending'} />
+          </div>
+        ) : <div className="workflow-empty-inline">No Product is linked yet. Product information remains a readiness blocker.</div>
+      )}
+      {section === WORKSPACE_SECTIONS.workstream && (
+        <div className="workflow-empty-inline">{item.workstream || product.workstream || product.output || 'Workstream has not been captured in the current data.'}</div>
+      )}
+      {section === WORKSPACE_SECTIONS.missingInformation && (
+        <ul className="workflow-requirement-list">
+          {(blockers.length ? blockers : item.readiness.filter(requirement => requirement.visible !== false)).map(requirement => (
+            <li key={requirement.key}><strong>{requirement.label}</strong><span>{requirement.detail}</span></li>
+          ))}
+        </ul>
+      )}
+      {[WORKSPACE_SECTIONS.artwork, WORKSPACE_SECTIONS.artworkSummary].includes(section) && (
+        <div className="workflow-empty-inline">{item.readiness.find(requirement => requirement.key === 'artwork')?.detail || 'Artwork state is pending.'}{override ? ` Override reason: ${override.reason}` : ''}</div>
+      )}
+      {section === WORKSPACE_SECTIONS.activation && (
+        <div className="workflow-empty-inline">{item.readiness.find(requirement => requirement.key === 'activation-information')?.detail || 'Activation information is pending.'}</div>
+      )}
+      {section === WORKSPACE_SECTIONS.thr3dRouting && (
+        <div className="workflow-empty-inline">This gate marks Merchandise for the THR3D branch. Full THR3D handoff actions are deferred.</div>
+      )}
+      {section === WORKSPACE_SECTIONS.shipment && (
+        <div className="workflow-fact-grid">
+          <WorkflowFact label={DOMAIN_TERMS.shipment} value={record.receipt?.name} />
+          <WorkflowFact label="Received" value={formatInventoryDate(record.dateReceived || record.received)} />
+          <WorkflowFact label="Time Here" value={item.timeHere} />
+        </div>
+      )}
+      {section === WORKSPACE_SECTIONS.issues && (
+        record.blockingIssues?.length ? (
+          <ul className="workflow-requirement-list">
+            {record.blockingIssues.map(issue => <li key={issue.id || issue.description}><strong>{issue.type || 'Issue'}</strong><span>{issue.description || issue.notes || 'Blocking issue'}</span></li>)}
+          </ul>
+        ) : <div className="workflow-empty-inline">No blocking Merchandise issues are attached.</div>
+      )}
+      {section === WORKSPACE_SECTIONS.readinessSummary && (
+        <>
+          <div className="workflow-empty-inline">Readiness checks are not configured yet.</div>
+          <ul className="workflow-requirement-list">
+            {item.readiness.map(requirement => (
+              <li key={requirement.key} className={`is-${requirement.tone}`}>
+                <strong>{requirement.label}</strong>
+                <span>{requirement.visible === false ? 'Not applicable' : requirement.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {section === WORKSPACE_SECTIONS.history && (
+        <div className="workflow-empty-inline">History will appear here when durable workflow events are available.</div>
+      )}
+    </section>
+  );
+}
+
+function readinessToneLabel(requirement = {}) {
+  if (requirement.visible === false) return 'Not applicable';
+  if (requirement.tone === 'green') return 'Green';
+  if (requirement.tone === 'orange') return 'Orange';
+  if (requirement.tone === 'red') return 'Red';
+  return requirement.status || 'Pending';
+}
+
+function readinessMissingFields(requirement = {}) {
+  if (requirement.satisfied || requirement.visible === false) return [];
+  return String(requirement.detail || requirement.label || 'Required information')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean);
+}
+
+function readinessResolution(requirement = {}) {
+  if (requirement.satisfied || requirement.visible === false) return 'No action needed.';
+  if (requirement.key === 'product-information') return 'Link an existing Product or complete the missing Product fields.';
+  if (requirement.key === 'artwork') return 'Confirm artwork availability on the linked Product or client source.';
+  if (requirement.key === 'activation-information') return 'Add the existing activation, campaign, or reporting reference information.';
+  return 'Resolve the missing readiness information.';
+}
+
+function requirementBlockerLabel(requirement = {}) {
+  const missing = readinessMissingFields(requirement);
+  if (missing.length === 1 && missing[0] !== requirement.label) return missing[0];
+  return requirement.label || 'Missing information';
+}
+
+function productInformationFields(product = {}, record = {}) {
+  return {
+    name: product.name || record.productName || '',
+    product: product.product || record.productName || '',
+    productId: product.identifier || product.productId || product.gtinUpc || record.skuId || '',
+    brand: product.brand || record.brand || '',
+    description: product.description || record.description || '',
+    itemJobNumber: product.itemJobNumber || '',
+    pickupJobNumber: product.pickupJobNumber || '',
+  };
+}
+
+function referenceDataValue(product = {}, labels = []) {
+  const source = product.referenceData || {};
+  const lowered = Object.fromEntries(Object.entries(source).map(([key, value]) => [String(key).toLowerCase(), value]));
+  for (const label of labels) {
+    const direct = source[label];
+    if (direct) return direct;
+    const lower = lowered[String(label).toLowerCase()];
+    if (lower) return lower;
+  }
+  return '';
+}
+
+function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveContinue, onRefresh, feedback, photos, photoIndex, setPhotoIndex, nextItem }) {
+  const record = item.record || {};
+  const product = record.linkedItem || {};
+  const activePhotoUrl = receivingPhotoUrl(photos[photoIndex] || photos[0]);
+  const blockers = item.readiness.filter(requirement => requirement.visible !== false && !requirement.satisfied);
+  const [productQuery, setProductQuery] = useState(product.identifier || record.skuId || record.productName || '');
+  const [productMatches, setProductMatches] = useState([]);
+  const [searchingProducts, setSearchingProducts] = useState(false);
+  const [productSaving, setProductSaving] = useState(false);
+  const [localFeedback, setLocalFeedback] = useState('');
+  const [productDraft, setProductDraft] = useState(() => productInformationFields(product, record));
+  const [intakeDraft, setIntakeDraft] = useState(() => ({
+    productionType: record.productionType || '',
+    merchandiseResolution: record.merchandiseResolution || '',
+  }));
+  const [intakeSaving, setIntakeSaving] = useState('');
+
+  useEffect(() => {
+    setProductQuery(product.identifier || record.skuId || record.productName || '');
+    setProductDraft(productInformationFields(product, record));
+    setIntakeDraft({
+      productionType: record.productionType || '',
+      merchandiseResolution: record.merchandiseResolution || '',
+    });
+    setProductMatches([]);
+    setLocalFeedback('');
+  }, [item.id]);
+
+  useEffect(() => {
+    let active = true;
+    const cleaned = productQuery.trim();
+    if (cleaned.length < 3) {
+      setProductMatches([]);
+      return () => { active = false; };
+    }
+    setSearchingProducts(true);
+    api.searchMerchandiseReviewProducts({
+      q: cleaned,
+      clientId: record.clientIds?.[0],
+      includeItemId: record.itemIds?.[0],
+    }).then(data => {
+      if (active) setProductMatches(data.records ?? []);
+    }).catch(error => {
+      if (active) setLocalFeedback(error.message || 'Could not search Products.');
+    }).finally(() => {
+      if (active) setSearchingProducts(false);
+    });
+    return () => { active = false; };
+  }, [productQuery, item.id]);
+
+  async function linkProduct(productId) {
+    setProductSaving(true);
+    setLocalFeedback('');
+    try {
+      await api.matchMerchandiseReviewEntry(item.merchandiseId, productId);
+      await onRefresh?.();
+      setLocalFeedback('Product linked.');
+    } catch (error) {
+      setLocalFeedback(error.message || 'Could not link Product.');
+    } finally {
+      setProductSaving(false);
+    }
+  }
+
+  async function saveProductInformation() {
+    setProductSaving(true);
+    setLocalFeedback('');
+    try {
+      if (product.id) {
+        await api.updateItem(product.id, productDraft);
+        setLocalFeedback('Product information saved.');
+      } else {
+        if (!productDraft.productId) {
+          setLocalFeedback('Cannot create an incomplete Product until an identifier is available.');
+          return;
+        }
+        const created = await api.createItem({
+          ...productDraft,
+          clientId: record.clientIds?.[0],
+          codeType: product.codeType || record.codeType,
+          identifierLabel: product.identifierLabel || 'Identifier',
+        });
+        await api.matchMerchandiseReviewEntry(item.merchandiseId, created.id);
+        setLocalFeedback('Incomplete Product created and linked.');
+      }
+      await onRefresh?.();
+    } catch (error) {
+      setLocalFeedback(error.message || 'Could not save Product information.');
+    } finally {
+      setProductSaving(false);
+    }
+  }
+
+  function updateProductDraft(field, value) {
+    setProductDraft(draft => ({ ...draft, [field]: value }));
+  }
+
+  async function saveIntakeDecision(field, value) {
+    const nextDraft = { ...intakeDraft, [field]: value };
+    if (field === 'productionType' && value === 'THR3D' && !nextDraft.merchandiseResolution) {
+      nextDraft.merchandiseResolution = 'Ship to Kentucky';
+    }
+    setIntakeDraft(nextDraft);
+    setIntakeSaving(field);
+    setLocalFeedback('');
+    try {
+      const payload = field === 'productionType'
+        ? { productionType: value, merchandiseResolution: nextDraft.merchandiseResolution }
+        : { merchandiseResolution: value };
+      const updated = await api.updateMerchandiseIntakeDecisions(item.merchandiseId, payload);
+      setIntakeDraft({
+        productionType: updated.productionType || '',
+        merchandiseResolution: updated.merchandiseResolution || '',
+      });
+      await onRefresh?.();
+      setLocalFeedback('Intake decision saved.');
+    } catch (error) {
+      setLocalFeedback(error.message || 'Could not save Intake decision.');
+    } finally {
+      setIntakeSaving('');
+    }
+  }
+
+  return (
+    <div className="workflow-workspace-backdrop" onClick={onClose} role="presentation">
+      <aside className="workflow-workspace-drawer waiting-info-drawer" role="dialog" aria-modal="true" aria-label="Waiting for Information workspace" onClick={event => event.stopPropagation()}>
+        <header className="workflow-workspace-header">
+          <div>
+            <span>{item.workstream || item.workOrder.workflowName}</span>
+            <h2>{item.title}</h2>
+            <p>{[item.client, item.workOrder.currentGateName].filter(Boolean).join(' • ')}</p>
+          </div>
+          <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close workflow workspace">
+            <Icon.Close />
+          </button>
+        </header>
+
+        <div className="workflow-workspace-summary">
+          <WorkflowFact label="Workstream" value={item.workstream || item.workOrder.workflowName} />
+          <WorkflowFact label="Merchandise" value={record.productName || item.title} />
+          <WorkflowFact label="Client" value={item.client} />
+          <WorkflowFact label="Current Stage" value={item.workOrder.currentGateName} />
+          <WorkflowFact label="Current Readiness" value={blockers.length ? `${blockers.length} blocker${blockers.length === 1 ? '' : 's'}` : 'Ready'} />
+          <WorkflowFact label="Linked Product" value={product.id ? (product.product || product.name || product.identifier) : 'Not linked'} />
+        </div>
+
+        <div className="workflow-workspace-scroll">
+          <section className="workflow-workspace-section waiting-info-missing">
+            <h3>Missing Information</h3>
+            {blockers.length ? (
+              <ul className="workflow-requirement-list">
+                {blockers.map(requirement => (
+                  <li key={requirement.key} className={`is-${requirement.tone}`}>
+                    <strong>{requirementBlockerLabel(requirement)}</strong>
+                    <span>{readinessResolution(requirement)} {requirement.detail ? `Blocking reason: ${requirement.detail}.` : ''}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="workflow-empty-inline">No unresolved requirements. This Work Order can move when the PM confirms the next stage.</div>
+            )}
+          </section>
+
+          <section className="workflow-workspace-section">
+            <h3>Product</h3>
+            <div className="waiting-product-search">
+              <label>
+                Search Product
+                <input value={productQuery} onChange={event => setProductQuery(event.target.value)} placeholder="Search by product, brand, or identifier" />
+              </label>
+              {searchingProducts && <span>Searching...</span>}
+              {productMatches.length > 0 && (
+                <div className="waiting-product-results">
+                  <strong>Link Product</strong>
+                  {productMatches.slice(0, 5).map(match => (
+                    <button type="button" onClick={() => linkProduct(match.id)} disabled={productSaving} key={match.id}>
+                      <strong>{match.product || match.name || 'Unnamed Product'}</strong>
+                      <span>{[match.identifier, match.brand].filter(Boolean).join(' • ') || 'No identifier'}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="waiting-product-fields">
+              <label>Product Name<input value={productDraft.name} onChange={event => updateProductDraft('name', event.target.value)} /></label>
+              <label>Product/File Name<input value={productDraft.product} onChange={event => updateProductDraft('product', event.target.value)} /></label>
+              <label>Identifier<input value={productDraft.productId} onChange={event => updateProductDraft('productId', event.target.value)} /></label>
+              <label>Brand<input value={productDraft.brand} onChange={event => updateProductDraft('brand', event.target.value)} /></label>
+              <label>Description<textarea value={productDraft.description} onChange={event => updateProductDraft('description', event.target.value)} rows={2} /></label>
+              <label>Product Job Number<input value={productDraft.itemJobNumber} onChange={event => updateProductDraft('itemJobNumber', event.target.value)} /></label>
+            </div>
+            <button type="button" className="btn btn-secondary" onClick={saveProductInformation} disabled={productSaving}>
+              {product.id ? 'Save Product Information' : 'Create Incomplete Product'}
+            </button>
+          </section>
+
+          <section className="workflow-workspace-section">
+            <h3>Production</h3>
+            <IntakeDecisionSelect
+              label="Production Type"
+              value={intakeDraft.productionType}
+              placeholder="Select production type"
+              options={INTAKE_PRODUCTION_TYPE_OPTIONS}
+              onChange={value => saveIntakeDecision('productionType', value)}
+              disabled={Boolean(intakeSaving)}
+            />
+            <div className="workflow-fact-grid">
+              <WorkflowFact label="Workstream" value={item.workstream || item.workOrder.workflowName} />
+              <WorkflowFact label="Current Stage" value={item.workOrder.currentGateName} />
+            </div>
+          </section>
+
+          <section className="workflow-workspace-section">
+            <h3>Artwork</h3>
+            <div className="workflow-fact-grid">
+              <WorkflowFact label="Artwork Required?" value={item.readiness.find(requirement => requirement.key === 'artwork')?.visible === false ? 'No' : 'Yes'} />
+              <WorkflowFact label="Artwork Available?" value={product.artworkReceived ? 'Yes' : 'No'} />
+              <WorkflowFact label="Artwork Status" value={item.readiness.find(requirement => requirement.key === 'artwork')?.detail || 'Pending'} />
+            </div>
+          </section>
+
+          <section className="workflow-workspace-section">
+            <h3>Activation</h3>
+            <div className="workflow-fact-grid">
+              <WorkflowFact label="Job" value={product.itemJobNumber || product.pickupJobNumber} />
+              <WorkflowFact label="Activation" value={referenceDataValue(product, ['Activation', 'activation'])} />
+              <WorkflowFact label="Campaign" value={referenceDataValue(product, ['Campaign', 'campaign'])} />
+              <WorkflowFact label="Status" value={item.readiness.find(requirement => requirement.key === 'activation-information')?.detail || 'Pending'} />
+            </div>
+          </section>
+
+          <section className="workflow-workspace-section">
+            <h3>Merchandise</h3>
+            <IntakeDecisionSelect
+              label="Merchandise Resolution"
+              value={intakeDraft.merchandiseResolution}
+              placeholder="Select resolution"
+              options={INTAKE_MERCHANDISE_RESOLUTION_OPTIONS}
+              onChange={value => saveIntakeDecision('merchandiseResolution', value)}
+              disabled={Boolean(intakeSaving)}
+            />
+            <div className="workflow-fact-grid">
+              <WorkflowFact label="Storage" value={item.location} />
+              <WorkflowFact label="Condition" value={record.condition} />
+              <WorkflowFact label="Quantity" value={record.quantity || 1} />
+              <WorkflowFact label="Shipment" value={record.receipt?.name} />
+              <WorkflowFact label="Merchandise Notes" value={record.notes} />
+              <WorkflowFact label="Product Notes" value={product.notes} />
+            </div>
+          </section>
+
+          <section className="workflow-workspace-section">
+            <h3>Readiness</h3>
+            <div className="workflow-empty-inline">Readiness checks are not configured yet.</div>
+            <ul className="workflow-requirement-list waiting-readiness-list">
+              {item.readiness.map(requirement => (
+                <li key={requirement.key} className={`is-${requirement.tone}`}>
+                  <strong>{requirement.label}</strong>
+                  <span>Color: {readinessToneLabel(requirement)}</span>
+                  <span>Reason: {requirement.visible === false ? 'Not applicable' : requirement.detail}</span>
+                  <span>Missing fields: {readinessMissingFields(requirement).join(', ') || 'None'}</span>
+                  <span>Suggested resolution: {readinessResolution(requirement)}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          {activePhotoUrl && (
+            <section className="workflow-workspace-section">
+              <h3>Merchandise Photo</h3>
+              <WorkflowWorkspaceSection section={WORKSPACE_SECTIONS.photos} item={item} photos={photos} activePhotoUrl={activePhotoUrl} photoIndex={photoIndex} setPhotoIndex={setPhotoIndex} />
+            </section>
+          )}
+        </div>
+
+        <footer className="workflow-transition-panel waiting-info-footer">
+          <div>
+              <strong>Valid Next Stage(s)</strong>
+            {(feedback || localFeedback) && <span className={(feedback || localFeedback).startsWith('Cannot') ? 'is-error' : 'is-success'}>{localFeedback || feedback}</span>}
+          </div>
+          <div className="workflow-transition-actions">
+            <button type="button" className="btn btn-secondary" onClick={() => onSave(item)}>Save</button>
+            <button type="button" className="btn btn-primary" onClick={() => onSaveContinue(item)} disabled={!nextItem}>Save & Continue</button>
+            {item.workOrder.validNextGates.map(next => (
+              <button type="button" className="btn btn-ghost" onClick={() => onMove(item, next.gate.id)} key={next.gate.id}>
+                {next.gate.label}
+              </button>
+            ))}
+            {item.workOrder.validNextGates.length === 0 && <span>No valid next gates yet.</span>}
+          </div>
+          {item.workOrder.blockedNextGates.length > 0 && (
+            <details className="workflow-blocked-transitions">
+              <summary>Blocked stages</summary>
+              {item.workOrder.blockedNextGates.map(next => <p key={next.gate.id}>{next.message}</p>)}
+            </details>
+          )}
+        </footer>
+      </aside>
+    </div>
+  );
+}
+
+function WorkflowWorkspaceDrawer({ item, onClose, onMove, onSave, onSaveContinue, onRefresh, feedback, override, photos, photoIndex, setPhotoIndex, nextItem, readonly = false }) {
+  if (!item) return null;
+  if (item.workOrder.currentGate === GATE_IDS.waitingInformation) {
+    return (
+      <WaitingInformationWorkspace
+        item={item}
+        onClose={onClose}
+        onMove={onMove}
+        onSave={onSave}
+        onSaveContinue={onSaveContinue}
+        onRefresh={onRefresh}
+        feedback={feedback}
+        photos={photos}
+        photoIndex={photoIndex}
+        setPhotoIndex={setPhotoIndex}
+        nextItem={nextItem}
+      />
+    );
+  }
+  const gate = item.workOrder.gate;
+  const activePhotoUrl = receivingPhotoUrl(photos[photoIndex] || photos[0]);
+  return (
+    <div className="workflow-workspace-backdrop" onClick={onClose} role="presentation">
+      <aside className="workflow-workspace-drawer" role="dialog" aria-modal="true" aria-label="Merchandise workflow workspace" onClick={event => event.stopPropagation()}>
+        <header className="workflow-workspace-header">
+          <div>
+            <span>{item.workOrder.workflowName}</span>
+            <h2>{item.title}</h2>
+            <p>{item.workOrder.reason}</p>
+          </div>
+          <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close workflow workspace">
+            <Icon.Close />
+          </button>
+        </header>
+
+        <div className="workflow-workspace-summary">
+          <WorkflowFact label="Current Stage" value={item.workOrder.currentGateName} />
+          <WorkflowFact label="Owner" value={item.workOrder.currentOwner} />
+          <WorkflowFact label="Status" value={item.record.merchStatus || item.record.reviewState || 'Received'} />
+          <WorkflowFact label="Client" value={item.client} />
+          <WorkflowFact label="Shipment" value={item.record.receipt?.name} />
+          <WorkflowFact label="Storage" value={item.location} />
+        </div>
+
+        <section className="workflow-gate-purpose">
+          <strong>{gate.label}</strong>
+          <span>{gate.description}</span>
+        </section>
+
+        <div className="workflow-workspace-scroll">
+          {(gate.workspaceSections || []).map(section => (
+            <WorkflowWorkspaceSection
+              section={section}
+              item={item}
+              photos={photos}
+              activePhotoUrl={activePhotoUrl}
+              photoIndex={photoIndex}
+              setPhotoIndex={setPhotoIndex}
+              override={override}
+              key={section}
+            />
+          ))}
+        </div>
+
+        {!readonly && (
+          <footer className="workflow-transition-panel">
+            <div>
+              <strong>Available transitions</strong>
+              {feedback && <span className={feedback.startsWith('Cannot') ? 'is-error' : 'is-success'}>{feedback}</span>}
+            </div>
+            <div className="workflow-transition-actions">
+              {item.workOrder.validNextGates.length === 0 && <span>No valid next gates from the current state.</span>}
+              {item.workOrder.validNextGates.map(next => (
+                <button type="button" className="btn btn-primary" onClick={() => onMove(item, next.gate.id)} key={next.gate.id}>
+                  Move to {next.gate.label}
+                </button>
+              ))}
+            </div>
+            {item.workOrder.blockedNextGates.length > 0 && (
+              <details className="workflow-blocked-transitions">
+                <summary>Blocked gates</summary>
+                {item.workOrder.blockedNextGates.map(next => <p key={next.gate.id}>{next.message}</p>)}
+              </details>
+            )}
+          </footer>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function WorkstreamSelector({ values = [], options = WORKSTREAMS, onChange }) {
+  return (
+    <section className="production-decision-section">
+      <h3>Production</h3>
+      <p>Select one or more Workstreams for this merchandise.</p>
+      <div className="production-choice-grid">
+        {options.map(option => {
+          const optionId = option.id || option.key;
+          const checked = values.includes(optionId);
+          return (
+            <label className={`production-choice ${checked ? 'is-selected' : ''}`} key={optionId}>
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => {
+                  const next = checked ? values.filter(value => value !== optionId) : [...values, optionId];
+                  onChange(next);
+                }}
+              />
+              <span>{option.label}</span>
+            </label>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+const INTAKE_PRODUCTION_TYPE_OPTIONS = ['eCommerce', 'Packaging', 'THR3D'];
+const INTAKE_MERCHANDISE_RESOLUTION_OPTIONS = ['Keep at Walnut', 'Ship to Kentucky', 'Hold', 'Replacement Requested', 'Return to Client', 'Dispose'];
+const PRODUCTION_TYPE_WORKSTREAM_MAP = {
+  eCommerce: 'ecomm-photo',
+  Packaging: 'packaging-photo',
+  THR3D: 'thr3d',
+};
+
+function IntakeDecisionSelect({ label, value, placeholder, options, onChange, disabled = false }) {
+  return (
+    <label className="intake-decision-field">
+      <span>{label}</span>
+      <select value={value || ''} onChange={event => onChange(event.target.value)} disabled={disabled}>
+        <option value="">{placeholder}</option>
+        {options.map(option => <option value={option} key={option}>{option}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function NewReviewProductIdentification({ item, product, onRefresh }) {
+  const record = item.record || {};
+  const [query, setQuery] = useState(product.identifier || record.skuId || record.productName || '');
+  const [matches, setMatches] = useState([]);
+  const [draft, setDraft] = useState(() => productInformationFields(product, record));
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    setQuery(product.identifier || record.skuId || record.productName || '');
+    setDraft(productInformationFields(product, record));
+    setMatches([]);
+    setNotice('');
+  }, [item.id, product.id]);
+
+  useEffect(() => {
+    let active = true;
+    const cleaned = query.trim();
+    if (cleaned.length < 3) {
+      setMatches([]);
+      return () => { active = false; };
+    }
+    setBusy(true);
+    api.searchMerchandiseReviewProducts({
+      q: cleaned,
+      clientId: record.clientIds?.[0],
+      includeItemId: record.itemIds?.[0],
+    }).then(data => {
+      if (active) setMatches(data.records ?? []);
+    }).catch(error => {
+      if (active) setNotice(error.message || 'Could not search Products.');
+    }).finally(() => {
+      if (active) setBusy(false);
+    });
+    return () => { active = false; };
+  }, [query, item.id]);
+
+  function setField(field, value) {
+    setDraft(current => ({ ...current, [field]: value }));
+  }
+
+  async function linkProduct(productId) {
+    setBusy(true);
+    setNotice('');
+    try {
+      await api.matchMerchandiseReviewEntry(item.merchandiseId, productId);
+      await onRefresh?.();
+      setNotice('Product linked.');
+    } catch (error) {
+      setNotice(error.message || 'Could not link Product.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveProduct() {
+    setBusy(true);
+    setNotice('');
+    try {
+      if (product.id) {
+        await api.updateItem(product.id, draft);
+        setNotice('Product information saved.');
+      } else {
+        if (!draft.productId) {
+          setNotice('Add an identifier before creating an incomplete Product.');
+          return;
+        }
+        const created = await api.createItem({
+          ...draft,
+          clientId: record.clientIds?.[0],
+          codeType: product.codeType || record.codeType,
+          identifierLabel: product.identifierLabel || 'Identifier',
+        });
+        await api.matchMerchandiseReviewEntry(item.merchandiseId, created.id);
+        setNotice('Incomplete Product created and linked.');
+      }
+      await onRefresh?.();
+    } catch (error) {
+      setNotice(error.message || 'Could not save Product information.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="production-decision-section new-review-product-id">
+      <h3>Product</h3>
+      <div className="workflow-fact-grid">
+        <WorkflowFact label="Linked Product" value={product.product || product.name || 'Not linked'} />
+        <WorkflowFact label="Identifier" value={product.identifier || product.productId || product.gtinUpc} />
+        <WorkflowFact label="Brand" value={product.brand} />
+        <WorkflowFact label="Description" value={product.description} />
+      </div>
+      <label>
+        Search Product
+        <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by product, brand, or identifier" />
+      </label>
+      {matches.length > 0 && (
+        <div className="waiting-product-results">
+          <strong>Link Product</strong>
+          {matches.slice(0, 4).map(match => (
+            <button type="button" onClick={() => linkProduct(match.id)} disabled={busy} key={match.id}>
+              <strong>{match.product || match.name || 'Unnamed Product'}</strong>
+              <span>{[match.identifier, match.brand].filter(Boolean).join(' • ') || 'No identifier'}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="waiting-product-fields">
+        <label>Product Name<input value={draft.name} onChange={event => setField('name', event.target.value)} /></label>
+        <label>Product/File Name<input value={draft.product} onChange={event => setField('product', event.target.value)} /></label>
+        <label>Identifier<input value={draft.productId} onChange={event => setField('productId', event.target.value)} /></label>
+        <label>Brand<input value={draft.brand} onChange={event => setField('brand', event.target.value)} /></label>
+      </div>
+      <button type="button" className="btn btn-secondary" onClick={saveProduct} disabled={busy}>
+        {product.id ? 'Save Product Information' : 'Create Incomplete Product'}
+      </button>
+      {notice && <span className="new-review-inline-status">{notice}</span>}
+    </section>
+  );
+}
+
+function NewReviewReadinessSummary({ item }) {
+  const requirements = item.readiness.filter(requirement => requirement.visible !== false);
+  return (
+    <section className="production-decision-section">
+      <h3>Readiness</h3>
+      <div className="workflow-empty-inline">Readiness checks are not configured yet.</div>
+      <ReadinessIndicators items={item.readiness} />
+      <ul className="workflow-requirement-list">
+        {requirements.map(requirement => (
+          <li key={requirement.key} className={`is-${requirement.tone}`}>
+            <strong>{requirement.label}</strong>
+            <span>{requirement.visible === false ? 'Not applicable' : requirement.detail}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function NewReviewModal({ item, decision, onDecisionChange, onSave, onSaveContinue, onClose, previousItem, nextItem, onSelectItem, onRefresh, photos, photoIndex, setPhotoIndex }) {
+  const [zoom, setZoom] = useState(1);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [intakeDraft, setIntakeDraft] = useState(() => ({
+    productionType: item.record?.productionType || '',
+    merchandiseResolution: item.record?.merchandiseResolution || '',
+  }));
+  const [intakeSaving, setIntakeSaving] = useState('');
+  const [intakeFeedback, setIntakeFeedback] = useState('');
+  const [noteDraft, setNoteDraft] = useState(decision.notes || '');
+  const product = item.record?.linkedItem || {};
+  const activePhoto = photos[photoIndex] || photos[0];
+  const activePhotoUrl = receivingPhotoUrl(activePhoto);
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      const targetTag = event.target?.tagName?.toLowerCase();
+      if (['input', 'textarea', 'select'].includes(targetTag)) return;
+      if (event.key === 'Escape') {
+        lightboxOpen ? setLightboxOpen(false) : onClose();
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setPhotoIndex(index => Math.max(0, index - 1));
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        setPhotoIndex(index => Math.min(Math.max(photos.length - 1, 0), index + 1));
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxOpen, onClose, photos.length, setPhotoIndex]);
+
+  useEffect(() => {
+    setIntakeDraft({
+      productionType: item.record?.productionType || '',
+      merchandiseResolution: item.record?.merchandiseResolution || '',
+    });
+    setIntakeFeedback('');
+    setNoteDraft(decision.notes || '');
+  }, [item.id]);
+
+  async function saveIntakeDecision(field, value) {
+    const nextDraft = { ...intakeDraft, [field]: value };
+    if (field === 'productionType' && value === 'THR3D' && !nextDraft.merchandiseResolution) {
+      nextDraft.merchandiseResolution = 'Ship to Kentucky';
+    }
+    setIntakeDraft(nextDraft);
+    setIntakeSaving(field);
+    setIntakeFeedback('');
+    try {
+      const payload = field === 'productionType'
+        ? { productionType: value, merchandiseResolution: nextDraft.merchandiseResolution }
+        : { merchandiseResolution: value };
+      const updated = await api.updateMerchandiseIntakeDecisions(item.merchandiseId, payload);
+      setIntakeDraft({
+        productionType: updated.productionType || '',
+        merchandiseResolution: updated.merchandiseResolution || '',
+      });
+      await onRefresh?.();
+      setIntakeFeedback('Intake decision saved.');
+    } catch (error) {
+      setIntakeFeedback(error.message || 'Could not save Intake decision.');
+    } finally {
+      setIntakeSaving('');
+    }
+  }
+
+  return (
+    <div className="new-review-modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="new-review-modal" role="dialog" aria-modal="true" aria-label="New item intake review" onClick={event => event.stopPropagation()}>
+        <header className="new-review-modal-header">
+          <div>
+            <span>{item.client}</span>
+            <h2>{item.title}</h2>
+            <p>Intake · {item.workOrder.currentGateName}</p>
+          </div>
+          <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close intake review">
+            <Icon.Close />
+          </button>
+        </header>
+
+        <div className="new-review-modal-body">
+          <section className="new-review-image-pane" aria-label="Merchandise images">
+            <div className="new-review-image-stage">
+              {activePhotoUrl ? (
+                <button type="button" className="new-review-main-image" onClick={() => setLightboxOpen(true)} style={{ '--review-zoom': zoom }}>
+                  <img src={activePhotoUrl} alt="" />
+                </button>
+              ) : (
+                <div className="workflow-empty-inline">No R2-backed photos available.</div>
+              )}
+            </div>
+            <div className="new-review-image-controls">
+              <button type="button" className="btn" onClick={() => setPhotoIndex(index => Math.max(0, index - 1))} disabled={photoIndex <= 0}>Previous</button>
+              <span>{photos.length ? `${photoIndex + 1} / ${photos.length}` : '0 images'}</span>
+              <button type="button" className="btn" onClick={() => setPhotoIndex(index => Math.min(photos.length - 1, index + 1))} disabled={photoIndex >= photos.length - 1}>Next</button>
+              <button type="button" className="btn" onClick={() => setZoom(value => Math.max(1, Number((value - 0.2).toFixed(1))))}>-</button>
+              <button type="button" className="btn" onClick={() => setZoom(value => Math.min(2.4, Number((value + 0.2).toFixed(1))))}>+</button>
+            </div>
+            {photos.length > 1 && (
+              <div className="new-review-thumbnail-strip">
+                {photos.map((photo, index) => {
+                  const url = receivingPhotoUrl(photo);
+                  return url ? (
+                    <button type="button" className={photoIndex === index ? 'is-active' : ''} onClick={() => setPhotoIndex(index)} key={`${url}-${index}`}>
+                      <img src={url} alt="" />
+                    </button>
+                  ) : null;
+                })}
+              </div>
+            )}
+          </section>
+
+          <aside className="new-review-decision-pane" aria-label="Intake decision">
+            <section className="production-decision-section">
+              <h3>Merchandise</h3>
+              <div className="workflow-fact-grid">
+                <WorkflowFact label={DOMAIN_TERMS.shipment} value={item.record.receipt?.name} />
+                <WorkflowFact label="Client" value={item.client} />
+                <WorkflowFact label="Observed Package Name" value={item.record.productName} />
+                <WorkflowFact label="Observed Identifier" value={item.record.skuId} />
+                <WorkflowFact label="Quantity" value={item.record.quantity || 1} />
+                <WorkflowFact label="Storage" value={item.location} />
+                <WorkflowFact label="Condition" value={item.record.condition} />
+                <WorkflowFact label="Time Here" value={item.timeHere} />
+              </div>
+              <IntakeDecisionSelect
+                label="Merchandise Resolution"
+                value={intakeDraft.merchandiseResolution}
+                placeholder="Select resolution"
+                options={INTAKE_MERCHANDISE_RESOLUTION_OPTIONS}
+                onChange={value => saveIntakeDecision('merchandiseResolution', value)}
+                disabled={Boolean(intakeSaving)}
+              />
+            </section>
+            <NewReviewProductIdentification item={item} product={product} onRefresh={onRefresh} />
+            <section className="production-decision-section">
+              <h3>Production</h3>
+              <IntakeDecisionSelect
+                label="Production Type"
+                value={intakeDraft.productionType}
+                placeholder="Select production type"
+                options={INTAKE_PRODUCTION_TYPE_OPTIONS}
+                onChange={value => saveIntakeDecision('productionType', value)}
+                disabled={Boolean(intakeSaving)}
+              />
+              {intakeFeedback && <span className="new-review-inline-status">{intakeFeedback}</span>}
+            </section>
+            <NewReviewReadinessSummary item={item} />
+            <section className="production-decision-section">
+              <h3>Notes</h3>
+              <textarea
+                value={noteDraft}
+                onChange={event => setNoteDraft(event.target.value)}
+                placeholder="Intake notes"
+              />
+            </section>
+          </aside>
+        </div>
+
+        <footer className="new-review-modal-footer">
+          <button type="button" className="btn" onClick={() => previousItem && onSelectItem(previousItem.id)} disabled={!previousItem}>Previous Merchandise</button>
+          <button type="button" className="btn btn-primary" onClick={() => onSave(item)}>Save</button>
+          <button type="button" className="btn btn-primary" onClick={() => onSaveContinue(item)} disabled={!nextItem}>Save & Continue</button>
+          <button type="button" className="btn" onClick={() => nextItem && onSelectItem(nextItem.id)} disabled={!nextItem}>Next Merchandise</button>
+        </footer>
+      </section>
+      {lightboxOpen && activePhotoUrl && (
+        <div className="new-review-lightbox" role="dialog" aria-modal="true" aria-label="Merchandise image lightbox" onClick={event => { event.stopPropagation(); setLightboxOpen(false); }}>
+          <button type="button" onClick={() => setLightboxOpen(false)}>Close</button>
+          <img src={activePhotoUrl} alt="" />
+        </div>
+      )}
     </div>
   );
 }
@@ -4514,164 +5527,244 @@ function MerchandiseReviewV2Page() {
   const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
   const records = entries.data?.records ?? [];
-  const workflowGates = gatesForBoard(MERCHANDISE_REVIEW_WORKFLOW);
-  const [manualColumns, setManualColumns] = useState(() => loadJsonMap(MERCH_REVIEW_V2_STORAGE_KEY));
-  const [artworkOverrides, setArtworkOverrides] = useState(() => loadJsonMap(MERCH_REVIEW_V2_ARTWORK_KEY));
-  const [draggedId, setDraggedId] = useState('');
-  const [dragState, setDragState] = useState(null);
+  const defaultWorkflow = MERCHANDISE_REVIEW_WORKFLOW;
+  const workflowGates = gatesForBoard(defaultWorkflow);
+  const [artworkOverrides] = useState(() => loadJsonMap(MERCH_REVIEW_V2_ARTWORK_KEY));
+  const [legacyWorkstreamDecisions] = useState(() => ({
+    ...loadJsonMap(MERCH_REVIEW_V2_LEGACY_DECISIONS_KEY),
+    ...loadJsonMap(MERCH_REVIEW_V2_DECISIONS_KEY),
+  }));
   const [feedback, setFeedback] = useState('');
-  const [overrideTarget, setOverrideTarget] = useState(null);
-  const [overrideReason, setOverrideReason] = useState('');
-  const [overrideStatus, setOverrideStatus] = useState('approved');
-  const { auth } = useAuth();
+  const [selectedId, setSelectedId] = useState('');
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const [search, setSearch] = useState('');
+  const [clientFilter, setClientFilter] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
+  const [ageFilter, setAgeFilter] = useState('');
+  const [workstreamFilter, setWorkstreamFilter] = useState('');
 
   const clientMap = Object.fromEntries((clients.data?.records ?? []).map(client => [client.id, client]));
   const locationMap = Object.fromEntries((locations.data?.records ?? []).map(location => [location.id, location]));
+  const selectedWorkstreamIdsByMerchandise = records.reduce((map, record) => {
+    const productionWorkstream = PRODUCTION_TYPE_WORKSTREAM_MAP[record.productionType];
+    map[record.id] = productionWorkstream
+      ? [productionWorkstream]
+      : normalizeWorkstreamSelection(legacyWorkstreamDecisions[record.id] || {}, record.linkedItem?.workstream || record.linkedItem?.output);
+    return map;
+  }, {});
   const boardItems = records.map(record => {
     const override = artworkOverrides[record.id];
-    const assignment = evaluateMerchandiseReviewAssignment(record, {
-      artworkOverride: override,
-      requestedGateId: manualColumns[record.id],
-      reviewState: reviewStateFor(record),
-    });
     const client = clientMap[record.clientIds?.[0]];
     const location = record.locationId ? locationMap[record.locationId] : null;
+    const workflow = workflowForClient(record.clientIds?.[0]);
+    const workOrder = evaluateMerchandiseReviewAssignment(record, {
+      artworkOverride: override,
+      requestedGateId: intakeRequestedGateForRecord(record),
+      reviewState: reviewStateFor(record),
+      client,
+      workflow,
+    });
+    const card = buildWorkOrderCard(record, { assignment: workOrder, client, location });
+    const productionTypeLabel = productionTypeWorkstreamLabel(record.productionType);
     return {
+      ...card,
       id: record.id,
-      record,
-      assignment,
-      readiness: assignment.requirements,
-      columnId: assignment.currentGate,
-      title: record.productName || record.linkedItem?.product || record.linkedItem?.name || 'Unidentified Merchandise',
-      client: client?.name || 'Unknown client',
-      identifier: record.skuId || record.linkedItem?.identifier || record.linkedItem?.productId || '',
-      location: location?.name || '',
-      timeHere: record.timeHere || 'Unknown',
-      badge: reviewStateFor(record) === 'Issue' ? 'Issue' : reviewStateFor(record) === 'Validated' ? 'Validated' : '',
+      merchandiseId: record.id,
+      workstreamId: productionTypeLabel ? PRODUCTION_TYPE_WORKSTREAM_MAP[record.productionType] : card.primaryWorkstream,
+      selectedWorkstreamIds: selectedWorkstreamIdsByMerchandise[record.id],
+      isDraftWorkOrder: false,
+      workstream: productionTypeLabel || selectedWorkstreamIdsByMerchandise[record.id].map(workstreamLabel).filter(Boolean).join(', ') || card.workstream,
     };
   });
+  const clientOptions = [...new Set(records.map(record => record.clientIds?.[0]).filter(Boolean))]
+    .map(id => ({ id, name: clientMap[id]?.name || 'Unknown client' }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const locationOptions = [...new Set(records.map(record => record.locationId).filter(Boolean))]
+    .map(id => ({ id, name: locationMap[id]?.name || 'Unknown location' }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const searchText = search.trim().toLowerCase();
+  const filteredItems = boardItems.filter(item => {
+    const record = item.record || {};
+    return (!searchText || workflowSearchHaystack(item).includes(searchText))
+      && (!clientFilter || record.clientIds?.[0] === clientFilter)
+      && (!locationFilter || record.locationId === locationFilter)
+      && (!ageFilter || record.ageGroup === ageFilter)
+      && (!workstreamFilter || item.workstreamId === workstreamFilter || item.selectedWorkstreamIds?.includes(workstreamFilter) || workstreamFromLegacyValue(record.linkedItem?.workstream || record.linkedItem?.output) === workstreamFilter);
+  });
   const itemsByColumn = workflowGates.reduce((groups, column) => ({ ...groups, [column.id]: [] }), {});
-  boardItems.forEach(item => {
+  filteredItems.forEach(item => {
     itemsByColumn[item.columnId]?.push(item);
   });
+  const selectedItem = boardItems.find(item => item.id === selectedId) || null;
+  const selectedPhotos = recordPhotos(selectedItem?.record);
+  const selectedOverride = selectedItem ? artworkOverrides[selectedItem.merchandiseId] : null;
+  const selectedWorkspaceMode = workspaceModeForGate(selectedItem?.workOrder?.gate);
+  const selectedDecision = selectedItem ? { workstreamIds: selectedWorkstreamIdsByMerchandise[selectedItem.merchandiseId] || [] } : null;
+  const selectedColumnItems = selectedItem ? filteredItems.filter(item => item.columnId === selectedItem.columnId) : [];
+  const selectedIndex = selectedItem ? selectedColumnItems.findIndex(item => item.id === selectedItem.id) : -1;
+  const previousSelectedItem = selectedIndex > 0 ? selectedColumnItems[selectedIndex - 1] : null;
+  const nextSelectedItem = selectedIndex >= 0 && selectedIndex < selectedColumnItems.length - 1 ? selectedColumnItems[selectedIndex + 1] : null;
 
-  function updateManualColumns(next) {
-    setManualColumns(next);
-    saveJsonMap(MERCH_REVIEW_V2_STORAGE_KEY, next);
+  useEffect(() => {
+    setPhotoIndex(0);
+  }, [selectedId]);
+
+  function updateSelectedDecision(nextDecision) {
+    void nextDecision;
   }
 
-  function updateArtworkOverrides(next) {
-    setArtworkOverrides(next);
-    saveJsonMap(MERCH_REVIEW_V2_ARTWORK_KEY, next);
-  }
-
-  function boardItemFor(id) {
-    return boardItems.find(item => item.id === id);
-  }
-
-  function handleCardDragStart(event, item) {
-    setDraggedId(item.id);
-    setFeedback('');
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', item.id);
-  }
-
-  function handleColumnDragOver(event, columnId) {
-    const item = boardItemFor(draggedId || event.dataTransfer.getData('text/plain'));
-    if (!item) return;
-    const validation = validateWorkflowTransition(MERCHANDISE_REVIEW_WORKFLOW, item.assignment, columnId);
-    setDragState({ columnId, allowed: validation.allowed, message: validation.message });
-    event.dataTransfer.dropEffect = validation.allowed ? 'move' : 'none';
-    event.preventDefault();
-  }
-
-  function handleColumnDrop(event, columnId) {
-    event.preventDefault();
-    const id = draggedId || event.dataTransfer.getData('text/plain');
-    const item = boardItemFor(id);
-    setDraggedId('');
-    setDragState(null);
-    if (!item) return;
-    const validation = validateWorkflowTransition(MERCHANDISE_REVIEW_WORKFLOW, item.assignment, columnId);
-    if (!validation.allowed) {
-      setFeedback(validation.message);
-      return;
+  async function moveItemToGate(item, columnId) {
+    try {
+      await api.updateMerchandiseIntakeState(item.merchandiseId, {
+        stage: columnId,
+        blockingRequirements: item.readiness.filter(requirement => requirement.visible !== false && !requirement.satisfied).map(requirement => requirement.label),
+      });
+      await refreshV2WorkflowData();
+      setSelectedId(item.merchandiseId);
+      setFeedback(`Moved ${item.title || 'merchandise'} to ${workflowGates.find(column => column.id === columnId)?.label}.`);
+    } catch (error) {
+      setFeedback(error.message || 'Could not move Merchandise.');
     }
-    updateManualColumns({ ...manualColumns, [id]: columnId });
-    setFeedback(`Moved to ${workflowGates.find(column => column.id === columnId)?.displayName}.`);
   }
 
-  function saveArtworkOverride() {
-    if (!overrideTarget || !overrideReason.trim()) return;
-    updateArtworkOverrides({
-      ...artworkOverrides,
-      [overrideTarget.id]: {
-        status: overrideStatus === 'not-required' ? 'not-required' : 'approved',
-        reason: overrideReason.trim(),
-        user: userDisplayName(auth),
-        timestamp: new Date().toISOString(),
-      },
-    });
-    setFeedback('Artwork override saved.');
-    setOverrideTarget(null);
-    setOverrideReason('');
-    setOverrideStatus('approved');
+  async function saveIntakeItem(item, { keepSelection = true } = {}) {
+    try {
+      await refreshV2WorkflowData();
+      if (keepSelection) {
+        setSelectedId(item.merchandiseId);
+        setWorkspaceOpen(true);
+      }
+      setFeedback('Intake saved. Merchandise refreshed.');
+      return true;
+    } catch (error) {
+      setFeedback(error.message);
+      return false;
+    }
   }
 
-  if (entries.loading) return <div className="empty-state">Loading Merchandise Review V2 board...</div>;
+  async function saveIntakeItemAndContinue(item) {
+    const saved = await saveIntakeItem(item, { keepSelection: false });
+    if (!saved) return;
+    if (nextSelectedItem) {
+      setSelectedId(nextSelectedItem.id);
+      setWorkspaceOpen(true);
+    } else {
+      closeWorkflowWorkspace();
+    }
+  }
+
+  async function refreshV2WorkflowData() {
+    await entries.reload();
+  }
+
+  async function saveIntakeReadiness(item) {
+    const blockers = item.readiness.filter(requirement => requirement.visible !== false && !requirement.satisfied);
+    const readyGate = item.workOrder.validNextGates[0]?.gate?.label;
+    try {
+      await api.updateMerchandiseIntakeState(item.merchandiseId, {
+        stage: item.workOrder.currentGate,
+        blockingRequirements: blockers.map(requirement => requirement.label),
+      });
+      await refreshV2WorkflowData();
+      setFeedback(readyGate ? `Saved. Ready for: ${readyGate}.` : 'Saved. Still waiting for information.');
+      return true;
+    } catch (error) {
+      setFeedback(error.message || 'Could not save this Merchandise.');
+      return false;
+    }
+  }
+
+  async function saveIntakeReadinessAndContinue(item) {
+    const saved = await saveIntakeReadiness(item);
+    if (!saved) return;
+    if (nextSelectedItem) {
+      setSelectedId(nextSelectedItem.id);
+      setWorkspaceOpen(true);
+    } else {
+      closeWorkflowWorkspace();
+    }
+  }
+
+  function openWorkflowWorkspace(id) {
+    setSelectedId(id);
+    setWorkspaceOpen(true);
+    setFeedback('');
+  }
+
+  function closeWorkflowWorkspace() {
+    setWorkspaceOpen(false);
+  }
+
+  if (entries.loading) return <div className="empty-state">Loading Intake board...</div>;
   if (entries.error) return <div className="error-state">{entries.error}</div>;
 
   return (
-    <div className="merch-review-v2-page">
-      <header className="merch-review-v2-toolbar">
+    <div className="work-board-page">
+      <header className="work-board-header">
         <div>
-          <span>Experimental V2</span>
-          <h1>Merchandise Review Board</h1>
+          <h1>Intake</h1>
+          <p>Prepare merchandise for production.</p>
         </div>
-        {feedback && <strong className={feedback.startsWith('Cannot') ? 'is-error' : 'is-success'}>{feedback}</strong>}
       </header>
-      {dragState?.allowed === false && <div className="merch-review-v2-blocker" role="alert">{dragState.message}</div>}
+      <div className="work-board-toolbar">
+        <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search merchandise..." aria-label="Search merchandise" />
+        <select value={clientFilter} onChange={event => setClientFilter(event.target.value)} aria-label="Client">
+          <option value="">All clients</option>
+          {clientOptions.map(client => <option value={client.id} key={client.id}>{client.name}</option>)}
+        </select>
+        <select value={locationFilter} onChange={event => setLocationFilter(event.target.value)} aria-label="Storage Location">
+          <option value="">All locations</option>
+          {locationOptions.map(location => <option value={location.id} key={location.id}>{location.name}</option>)}
+        </select>
+        <select value={ageFilter} onChange={event => setAgeFilter(event.target.value)} aria-label="Age">
+          {MERCHANDISE_REVIEW_AGE_OPTIONS.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}
+        </select>
+        <select value={workstreamFilter} onChange={event => setWorkstreamFilter(event.target.value)} aria-label="Workstream">
+          <option value="">All workstreams</option>
+          {WORKSTREAMS.map(option => <option value={option.id} key={option.id}>{option.label}</option>)}
+        </select>
+        {feedback && <strong className={feedback.startsWith('Cannot') ? 'is-error' : 'is-success'}>{feedback}</strong>}
+      </div>
       <KanbanBoard
         columns={workflowGates}
         itemsByColumn={itemsByColumn}
-        dragState={dragState}
-        onCardDragStart={handleCardDragStart}
-        onColumnDragOver={handleColumnDragOver}
-        onColumnDragLeave={() => setDragState(null)}
-        onColumnDrop={handleColumnDrop}
+        selectedId={selectedId}
+        onSelect={openWorkflowWorkspace}
       />
-      <aside className="merch-review-v2-override-panel" aria-label="Artwork overrides">
-        <header>
-          <span>Artwork Override</span>
-          <strong>PM exception only</strong>
-        </header>
-        <select value={overrideTarget?.id || ''} onChange={event => setOverrideTarget(boardItems.find(item => item.id === event.target.value) || null)} aria-label="Merchandise for artwork override">
-          <option value="">Select merchandise</option>
-          {boardItems.map(item => <option value={item.id} key={item.id}>{item.title}</option>)}
-        </select>
-        <select value={overrideStatus} onChange={event => setOverrideStatus(event.target.value)} aria-label="Artwork override type">
-          <option value="approved">Artwork Approved to Proceed</option>
-          <option value="not-required">Artwork Not Required</option>
-        </select>
-        <textarea value={overrideReason} onChange={event => setOverrideReason(event.target.value)} placeholder="Required override reason" />
-        <button type="button" className="btn btn-primary" onClick={saveArtworkOverride} disabled={!overrideTarget || !overrideReason.trim()}>
-          Save Artwork Override
-        </button>
-        <div className="merch-review-v2-audit">
-          {Object.entries(artworkOverrides).length === 0 ? (
-            <span>No artwork overrides recorded in this experimental workspace.</span>
-          ) : Object.entries(artworkOverrides).map(([id, override]) => {
-            const item = boardItemFor(id);
-            return (
-              <div key={id}>
-                <strong>{item?.title || id}</strong>
-                <span>{override.status === 'not-required' ? 'Artwork Not Required' : 'Artwork Approved'} - {override.user} - {formatInventoryDate(override.timestamp)}</span>
-                <p>{override.reason}</p>
-              </div>
-            );
-          })}
-        </div>
-      </aside>
+      {workspaceOpen && selectedItem && selectedWorkspaceMode === 'modal' ? (
+        <NewReviewModal
+          item={selectedItem}
+          decision={selectedDecision}
+          onDecisionChange={updateSelectedDecision}
+          onSave={saveIntakeItem}
+          onSaveContinue={saveIntakeItemAndContinue}
+          onClose={closeWorkflowWorkspace}
+          previousItem={previousSelectedItem}
+          nextItem={nextSelectedItem}
+          onSelectItem={openWorkflowWorkspace}
+          onRefresh={refreshV2WorkflowData}
+          photos={selectedPhotos}
+          photoIndex={photoIndex}
+          setPhotoIndex={setPhotoIndex}
+        />
+      ) : (
+        <WorkflowWorkspaceDrawer
+          item={workspaceOpen ? selectedItem : null}
+          onClose={closeWorkflowWorkspace}
+          onMove={moveItemToGate}
+          onSave={saveIntakeReadiness}
+          onSaveContinue={saveIntakeReadinessAndContinue}
+          onRefresh={refreshV2WorkflowData}
+          feedback={feedback}
+          override={selectedOverride}
+          photos={selectedPhotos}
+          photoIndex={photoIndex}
+          setPhotoIndex={setPhotoIndex}
+          nextItem={nextSelectedItem}
+          readonly={selectedWorkspaceMode === 'readonly'}
+        />
+      )}
     </div>
   );
 }
@@ -4679,8 +5772,8 @@ function MerchandiseReviewV2Page() {
 // ── Auth ─────────────────────────────────────────────────────────────────────
 const AUTH_STORAGE_KEY = 'marks:auth';
 const ROLE_PERMISSION_STORAGE_KEY = 'marks:role-permissions';
-const ADMINISTRATION_PATH = '/administration';
-const ADMINISTRATION_DEFAULT_PATH = '/administration/users';
+const ADMINISTRATION_PATH = '/admin';
+const ADMINISTRATION_DEFAULT_PATH = '/admin/users';
 const AVATARS = ['🦁','🐯','🦊','🐺','🐻','🐼','🦝','🦉','🦅','🦋','🐙','🦈','🐬','🦒','🦓','🦄','🐉','🌟','🎸','🍕'];
 
 function loadAuth() {
@@ -4693,13 +5786,13 @@ const AuthContext = createContext(null);
 function useAuth() { return useContext(AuthContext); }
 
 const ROLE_NAV = {
-  Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/merchandise/review', '/merchandise-review-v2', '/products', '/jobs'],
-  Producer:     ['/dashboard', '/imports', '/shipments', '/merchandise', '/merchandise/review', '/merchandise-review-v2', '/products', '/jobs'],
+  Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/intake', '/products', '/jobs'],
+  Producer:     ['/dashboard', '/imports', '/shipments', '/merchandise', '/intake', '/products', '/jobs'],
   Merch:        ['/shipments', '/merchandise'],
   'Merch Receiver': ['/shipments', '/merchandise'],
   Receiver:     ['/shipments', '/merchandise'],
-  User:         ['/dashboard', '/shipments', '/merchandise', '/merchandise/review', '/merchandise-review-v2', '/products', '/jobs'],
-  PM:           ['/dashboard', '/merchandise', '/merchandise/review', '/merchandise-review-v2', '/products', '/jobs'],
+  User:         ['/dashboard', '/shipments', '/merchandise', '/intake', '/products', '/jobs'],
+  PM:           ['/dashboard', '/merchandise', '/intake', '/products', '/jobs'],
   Photographer: ['/dashboard', '/production', '/products', '/jobs'],
   Retoucher:    ['/dashboard', '/production', '/products', '/jobs'],
   Viewer:       ['/dashboard', '/merchandise', '/products'],
@@ -4733,10 +5826,11 @@ function normalizeRolePermission(role, config, defaults) {
     ...(config || {}),
     paths: (config?.paths || defaults[role].paths)
       .map(path => path === '/settings' ? ADMINISTRATION_PATH : path)
+      .map(path => path === '/administration' ? ADMINISTRATION_PATH : path)
       .map(path => path === '/verification' ? '/merchandise/review' : path)
+      .map(path => path === '/merchandise-review-v2' || path === '/work' ? '/intake' : path)
       .map(path => path === '/receiving' || path === '/receipts' ? '/shipments' : path)
       .map(path => path === '/items' ? '/products' : path)
-      .map(path => path === ADMINISTRATION_PATH ? '/settings' : path)
       .filter(path => path !== ADMINISTRATION_PATH)
       .filter((path, index, paths) => paths.indexOf(path) === index),
     adminCards: normalizeAdminCards(config?.adminCards || defaults[role].adminCards),
@@ -5171,6 +6265,35 @@ function UserFormModal({ user, clients, onSave, onClose }) {
   );
 }
 
+const WORKFLOW_STAGE_TYPES = ['start', 'active', 'waiting', 'blocked', 'complete', 'cancelled'];
+
+function blankWorkflowTemplate() {
+  return {
+    id: '',
+    name: '',
+    description: '',
+    active: true,
+    default: false,
+    version: 1,
+    stages: [],
+  };
+}
+
+function blankWorkflowStage(order = 10) {
+  return {
+    id: '',
+    name: '',
+    stageKey: '',
+    displayOrder: order,
+    colorToken: '',
+    stageType: 'active',
+    isComplete: false,
+    isTerminal: false,
+    active: true,
+    description: '',
+  };
+}
+
 function UsersSection() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -5440,7 +6563,7 @@ function AdministrationPage() {
             type="button"
             key={card.id}
             className={`admin-section-tab ${activeCard?.id === card.id ? 'is-active' : ''}`}
-            onClick={() => routerNavigate(card.id === 'clients' ? '/clients' : card.id === 'system' ? '/settings' : `${ADMINISTRATION_PATH}/${card.id}`)}
+            onClick={() => routerNavigate(card.id === 'clients' ? '/clients' : `${ADMINISTRATION_PATH}/${card.id}`)}
           >
             <span aria-hidden="true">{card.icon}</span>
             {card.label}
@@ -5458,16 +6581,15 @@ function AdministrationPage() {
 // ── App shell ─────────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Dashboard', icon: <Icon.Dashboard /> },
-  { path: '/imports', label: 'Imports', icon: <Icon.Upload /> },
-  { path: '/shipments', label: 'Receiving', icon: <Icon.Download /> },
-  { path: '/merchandise', label: 'Merchandise', icon: <Icon.SKUs /> },
-  { path: '/merchandise/review', label: 'Merchandise Review', icon: <Icon.Verify /> },
-  { path: '/merchandise-review-v2', label: 'Merchandise Review V2', icon: <Icon.Verify /> },
-  { path: '/products', label: 'Products', icon: <Icon.SKUs /> },
-  { path: '/jobs', label: 'Jobs', icon: <Icon.Jobs /> },
+  { path: '/imports', label: 'Import', icon: <Icon.NavImport /> },
+  { path: '/shipments', label: 'Receiving', icon: <Icon.NavReceiving /> },
+  { path: '/merchandise', label: 'Merchandise', icon: <Icon.NavMerchandise /> },
+  { path: '/intake', label: 'Intake', icon: <Icon.NavWork /> },
+  { path: '/jobs', label: 'Jobs', icon: <Icon.NavJobs /> },
+  { path: '/products', label: 'Products', icon: <Icon.NavProducts /> },
 ];
 
-const ADMIN_NAV_ITEM = { path: '/settings', label: 'Admin', icon: <Icon.Settings /> };
+const ADMIN_NAV_ITEM = { path: ADMINISTRATION_DEFAULT_PATH, label: 'Admin', icon: <Icon.Settings /> };
 
 function routeForPage(page, params = {}) {
   const query = new URLSearchParams();
@@ -5478,7 +6600,7 @@ function routeForPage(page, params = {}) {
   const routes = {
     dashboard: '/dashboard',
     imports: '/imports',
-    intake: '/imports',
+    intake: '/intake',
     'import-history': `/imports/history${suffix}`,
     receiving: '/shipments',
     shipments: '/shipments',
@@ -5487,7 +6609,8 @@ function routeForPage(page, params = {}) {
     merchandise: '/merchandise',
     verification: '/merchandise/review',
     'merchandise-review': '/merchandise/review',
-    'merchandise-review-v2': '/merchandise-review-v2',
+    'merchandise-review-v2': '/intake',
+    work: '/intake',
     planning: '/planning',
     production: '/production',
     items: `/products${suffix}`,
@@ -5496,7 +6619,7 @@ function routeForPage(page, params = {}) {
     jobs: '/jobs',
     'new-job': '/jobs/new',
     clients: '/clients',
-    settings: '/settings',
+    settings: `${ADMINISTRATION_PATH}/system`,
     admin: ADMINISTRATION_DEFAULT_PATH,
     administration: ADMINISTRATION_DEFAULT_PATH,
   };
@@ -5509,8 +6632,8 @@ function pageTitleForPath(pathname) {
   if (pathname.startsWith('/shipments')) return DOMAIN_TERMS.shipments;
   if (pathname.startsWith('/receiving') || pathname.startsWith('/receipts')) return DOMAIN_TERMS.shipments;
   if (pathname.startsWith('/merchandise/review')) return DOMAIN_TERMS.merchandiseReview;
-  if (pathname.startsWith('/merchandise-review-v2')) return 'Merchandise Review V2';
-  if (pathname.startsWith('/merchandise')) return DOMAIN_TERMS.merchandise;
+  if (pathname.startsWith('/intake') || pathname.startsWith('/work') || pathname.startsWith('/merchandise-review-v2')) return 'Intake';
+  if (pathname === '/merchandise') return DOMAIN_TERMS.merchandise;
   if (pathname.startsWith('/verification')) return DOMAIN_TERMS.merchandiseReview;
   if (pathname.startsWith('/planning')) return 'Planning';
   if (pathname.startsWith('/production')) return 'Production';
@@ -5519,6 +6642,7 @@ function pageTitleForPath(pathname) {
   if (pathname === '/jobs/new') return 'New Job';
   if (pathname.startsWith('/jobs')) return 'Jobs';
   if (pathname.startsWith('/clients')) return 'Clients';
+  if (pathname.startsWith('/admin')) return 'Admin';
   if (pathname.startsWith('/administration')) return 'Admin';
   if (pathname.startsWith('/settings')) return 'Admin';
   if (pathname.startsWith('/dashboard')) return 'Dashboard';
@@ -5551,11 +6675,10 @@ function NotFound() {
 
 function isPrimaryNavActive(item, pathname) {
   if (item.path === '/dashboard') return pathname === '/dashboard';
-  if (item.path === '/imports') return pathname.startsWith('/imports') || pathname.startsWith('/intake');
+  if (item.path === '/imports') return pathname.startsWith('/imports');
   if (item.path === '/shipments') return pathname.startsWith('/shipments') || pathname.startsWith('/receiving') || pathname.startsWith('/receipts');
   if (item.path === '/merchandise') return pathname === '/merchandise';
-  if (item.path === '/merchandise/review') return pathname.startsWith('/merchandise/review') || pathname.startsWith('/verification');
-  if (item.path === '/merchandise-review-v2') return pathname.startsWith('/merchandise-review-v2');
+  if (item.path === '/intake') return pathname.startsWith('/intake') || pathname.startsWith('/work') || pathname.startsWith('/merchandise-review-v2');
   return pathname === item.path || pathname.startsWith(`${item.path}/`);
 }
 
@@ -5657,7 +6780,7 @@ function TopNavigation({
         {showAdminShortcut && (
           <NavLink
             to={adminItem.path}
-            className={({ isActive }) => `topbar-admin-link ${isActive || location.pathname.startsWith('/administration') || location.pathname.startsWith('/clients') ? 'active' : ''}`}
+            className={({ isActive }) => `topbar-admin-link ${isActive || location.pathname.startsWith('/admin') || location.pathname.startsWith('/administration') || location.pathname.startsWith('/clients') ? 'active' : ''}`}
           >
             {adminItem.icon}
             <span>{adminItem.label}</span>
@@ -5683,7 +6806,7 @@ function TopNavigation({
           <div className="topbar-user-popover" role="menu">
             <button type="button" role="menuitem" onClick={onOpenProfile}>Profile</button>
             {showAdminShortcut && (
-              <NavLink to="/settings" role="menuitem" onClick={() => setProfileMenuOpen(false)}>
+              <NavLink to={ADMINISTRATION_DEFAULT_PATH} role="menuitem" onClick={() => setProfileMenuOpen(false)}>
                 Admin
               </NavLink>
             )}
@@ -5706,7 +6829,7 @@ function TopNavigation({
             {showAdmin && (
               <NavLink
                 to={adminItem.path}
-                className={({ isActive }) => `topbar-admin-link ${isActive || location.pathname.startsWith('/administration') || location.pathname.startsWith('/clients') ? 'active' : ''}`}
+                className={({ isActive }) => `topbar-admin-link ${isActive || location.pathname.startsWith('/admin') || location.pathname.startsWith('/administration') || location.pathname.startsWith('/clients') ? 'active' : ''}`}
                 onClick={() => setMobileOpen(false)}
               >
                 {adminItem.icon}
@@ -5785,7 +6908,9 @@ function AppLayout() {
             <Route path="/verification" element={<Navigate to="/merchandise/review" replace />} />
             <Route path="/merchandise" element={<MerchandiseInventoryPage navigate={navigate} />} />
             <Route path="/merchandise/review" element={<MerchandiseReviewPage />} />
-            <Route path="/merchandise-review-v2" element={<MerchandiseReviewV2Page />} />
+            <Route path="/intake" element={<MerchandiseReviewV2Page />} />
+            <Route path="/work" element={<Navigate to="/intake" replace />} />
+            <Route path="/merchandise-review-v2" element={<Navigate to="/intake" replace />} />
             <Route path="/planning" element={<PlanningPage />} />
             <Route path="/production" element={<ProductionPage />} />
             <Route path="/products" element={<RouteProductsPage navigate={navigate} />} />
@@ -5793,10 +6918,11 @@ function AppLayout() {
             <Route path="/jobs" element={<JobsPage navigate={navigate} />} />
             <Route path="/jobs/new" element={<NewJobPage navigate={navigate} />} />
             <Route path="/clients" element={<AdministrationPage />} />
-            <Route path="/settings" element={<AdministrationPage />} />
+            <Route path="/settings" element={<Navigate to={`${ADMINISTRATION_PATH}/system`} replace />} />
+            <Route path="/admin" element={<Navigate to={ADMINISTRATION_DEFAULT_PATH} replace />} />
+            <Route path="/admin/:section" element={<AdministrationPage />} />
             <Route path="/administration" element={<Navigate to={ADMINISTRATION_DEFAULT_PATH} replace />} />
             <Route path="/administration/:section" element={<AdministrationPage />} />
-            <Route path="/intake" element={<Navigate to="/imports" replace />} />
             <Route path="/intake/import-history" element={<Navigate to="/imports/history" replace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

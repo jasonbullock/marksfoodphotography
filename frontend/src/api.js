@@ -43,7 +43,8 @@ const F = {
   SKU_PRODUCT: 'Product or File Name',
   SKU_ITEM_JOB_NUMBER: 'Product Job Number',
   SKU_DESCRIPTION: 'Description',
-  SKU_OUTPUT: 'Output Type',
+  SKU_WORKSTREAM: 'Workstream',
+  SKU_OUTPUT: 'Workstream',
   SKU_MASTER_VARIANT: 'Master or Variant',
   SKU_PICKUP_JOB_NUMBER: 'Pickup Job Number',
   SKU_BRAND: 'Brand',
@@ -314,6 +315,7 @@ api.receivingPhotoStorageStatus = async () => backend('GET', '/receiving/photo-s
 api.listMerchandise = async () => backend('GET', '/merchandise');
 api.listVerificationEntries = async () => backend('GET', '/verification/entries');
 api.listMerchandiseReviewEntries = async () => backend('GET', '/merchandise/review');
+api.listWorkstreams = async () => backend('GET', '/workstreams');
 api.searchVerificationItems = async ({ q, clientId, includeItemId } = {}) => {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
@@ -333,6 +335,8 @@ api.validateVerificationEntry = async (entryId, status) => backend('POST', `/ver
 api.matchMerchandiseReviewEntry = async (entryId, productId) => backend('POST', `/merchandise/review/${entryId}/match`, { itemId: productId });
 api.validateMerchandiseReviewEntry = async (entryId, status) => backend('POST', `/merchandise/review/${entryId}/validate`, { status });
 api.removeMerchandiseReviewMatch = async (entryId) => backend('POST', `/merchandise/review/${entryId}/remove-match`);
+api.updateMerchandiseIntakeDecisions = async (entryId, payload = {}) => backend('PATCH', `/merchandise/${entryId}/intake-decisions`, payload);
+api.updateMerchandiseIntakeState = async (entryId, payload = {}) => backend('PATCH', `/merchandise/${entryId}/intake-state`, payload);
 api.markMerchandiseWaitingForProductData = async (entryId, payload = {}) => backend('POST', `/merchandise/review/${entryId}/waiting-product-data`, payload);
 api.createMerchandiseReviewIssue = async (entryId, payload = {}) => backend('POST', `/merchandise/review/${entryId}/issue`, payload);
 api.listLocations = async () => backend('GET', '/locations');

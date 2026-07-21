@@ -2,9 +2,30 @@
 
 ## Current Focus
 
-Aligning the application with the updated Marks Photo product vision: an operational readiness system centered on Merchandise.
+Aligning the application with the updated Marks Photo product vision: an Operations Readiness Platform centered on Merchandise.
 
-Marks Photo should not become a project management system, PIM, or system of record. It should answer what Walnut needs to do with Merchandise right now.
+Marks Photo should transform incoming merchandise into production-ready work. It should remove uncertainty before production begins and should not become a workflow engine, project management tool, Creative Force replacement, or PhotoTrack replacement.
+
+## Foundational Architecture Documents
+
+The current foundational architecture documents are:
+
+- `docs/PRODUCT_VISION.md`
+- `docs/WORKSPACES.md`
+- `docs/DOMAIN_MODEL.md`
+- `docs/DESIGN_PRINCIPLES.md`
+
+These documents define the long-term operating model:
+
+- Workspace means business question.
+- Views are different ways to visualize the same merchandise.
+- Merchandise is the center of the operational model.
+- Readiness matters more than workflow mechanics.
+- Inventory is a warehouse perspective.
+- Intake is a decision perspective.
+- Production is an execution perspective.
+- There should be one Release to Production concept.
+- Configuration should exist only when multiple clients genuinely require different behavior.
 
 ## Confirmed Decisions
 
@@ -25,6 +46,7 @@ Marks Photo should not become a project management system, PIM, or system of rec
 - Products, Shipments, and Merchandise are the canonical physical Airtable table names.
 - Legacy Items, Receipts, and Receipt Entries language may remain only in compatibility code, historical notes, or rollback documentation.
 - Cloudflare R2 is the only supported image storage layer; Airtable stores image references and metadata only.
+- Merchandise is one physical object. Intake is currently Merchandise-driven; Work Orders and workflow configuration tables are legacy compatibility data, not active PM workflow requirements.
 
 ## Current Questions
 
@@ -38,7 +60,263 @@ Marks Photo should not become a project management system, PIM, or system of rec
 
 ## Next Step
 
-The live Airtable schema now uses canonical Products, Shipments, and Merchandise table names, and image storage has been migrated to R2-only references. The likely next product step is to continue Merchandise Review V2 experimentation without changing Merchandise Review V1 or the read-only Merchandise inventory workspace.
+The Intake workspace is now driven by Merchandise state, Product data, Production Type, and Merchandise Resolution. The likely next product step is to define real Production Readiness requirements and the single Release to Production handoff without reintroducing workflow-engine configuration or Work Order creation as a PM prerequisite.
+
+## 2026-07-20 Intake Workflow Simplification
+
+Intake no longer depends on Work Orders, Work Order Types, Workflow Templates, or Workflow Stages for normal user-facing behavior.
+
+What is now true:
+- Intake board cards are derived from Merchandise records returned by `GET /api/merchandise/review`.
+- The canonical active Intake state is Merchandise-owned:
+  - `Merch Status` remains the primary status field, using existing values `Received`, `Matched`, `Validated`, and `Issue`.
+  - `Notes` with `[Waiting for Product Data]` remains the existing marker for the Waiting for Information queue.
+  - `Production Type = THR3D` drives the Send to THR3D queue.
+  - `Production Type` and `Merchandise Resolution` remain the persisted Intake decision fields.
+- `PATCH /api/merchandise/<entry_id>/intake-state` and `/api/merchandise/review/<entry_id>/intake-state` update active Intake state from Merchandise fields.
+- New Intake actions do not create Work Orders.
+- Intake no longer calls frontend Work Order APIs such as `listWorkOrders`, `saveMerchandiseReviewWorkOrders`, or `updateWorkOrder`.
+- Admin no longer exposes Workflow Templates or Work Order Types.
+- Frontend Workflow Template and Work Order Type API methods and Admin form components were removed from the active client.
+- Existing backend Work Order, Workflow Template, Workflow Stage, Work Order Type, and Workstream services/routes remain for historical compatibility.
+- The live Airtable schema still contains `Work Orders`, `Workflow Templates`, `Workflow Stages`, `Work Order Types`, and `Workstreams`; no destructive table or field cleanup was run.
+
+What did not change:
+- Merchandise Review V1 did not change.
+- Merchandise inventory did not change.
+- Receiving did not change.
+- Product linking, Product editing, Production Type, Merchandise Resolution, board columns, filters, selected-card behavior, detail surfaces, and sticky actions remain in place.
+- Readiness rules and Release to Production were not implemented.
+
+Migration artifact:
+- `docs/migrations/2026-07-20-workflow-simplification.md`
+
+Validation:
+- Read-only Airtable metadata verification confirmed the Merchandise state fields and preserved legacy workflow tables.
+- `backend/.venv/bin/python -m py_compile backend/routes.py`
+- `backend/.venv/bin/python -m unittest tests.test_intake_decisions`
+- `backend/.venv/bin/python -m unittest tests.test_frontend_routing`
+- `backend/.venv/bin/python -m unittest tests.test_intake_decisions tests.test_merchandise_review tests.test_frontend_routing tests.test_job_item_schema tests.test_workflow_templates tests.test_work_order_types`
+- `backend/.venv/bin/python -m unittest discover -s tests`
+- `npm run build` in `frontend/`
+- `git diff --check`
+- Local route smoke returned HTTP 200 for `/intake`, `/admin`, `/clients`, and `/merchandise` on the running Vite server at port 5175.
+
+Unresolved risks:
+- Backend compatibility APIs for Work Orders, Workflow Templates, Workflow Stages, Work Order Types, and Workstreams still exist intentionally. A later cleanup pass must verify historical data and external callers before removing them.
+- `workflowEngine.js` still contains compatibility naming such as Work Orders and Workstreams because the active board uses its static gate/card/readiness helpers. A later naming cleanup can simplify those internals after readiness is defined.
+- Production Readiness and Release to Production remain unimplemented.
+
+## 2026-07-20 Intake Production Type And Merchandise Resolution
+
+Intake now has its first real persisted decision capability.
+
+What is now true:
+- `Production Type` is a single-select field on Merchandise.
+- Allowed Production Type values are `eCommerce`, `Packaging`, and `THR3D`.
+- `Merchandise Resolution` is a single-select field on Merchandise.
+- Allowed Merchandise Resolution values are `Keep at Walnut`, `Ship to Kentucky`, `Hold`, `Replacement Requested`, `Return to Client`, and `Dispose`.
+- Live Airtable field IDs are `fldSwUluDDqwe6MVs` for `Production Type` and `fldbZ64EUZdWZS5nW` for `Merchandise Resolution`.
+- `backend/ensure_intake_decision_fields.py` is idempotent. The first live run created both fields; the second live run reused both and created nothing.
+- Merchandise API serialization includes `production_type`, `productionType`, `merchandise_resolution`, and `merchandiseResolution`.
+- `PATCH /api/merchandise/<entry_id>/intake-decisions` and `PATCH /api/merchandise/review/<entry_id>/intake-decisions` save Intake decisions with server-side validation.
+- Empty values remain allowed.
+- Unknown values are rejected.
+- Setting Production Type to `THR3D` defaults Merchandise Resolution to `Ship to Kentucky` only when the current resolution is blank.
+- Existing resolutions are not overwritten, and changing away from THR3D does not erase the resolution.
+- Intake UI decision surfaces now show editable `Production Type` and `Merchandise Resolution` selects.
+- The New Items modal no longer creates Work Orders; Production Type remains a Merchandise-level Intake decision.
+
+What did not change:
+- No new configuration tables were created.
+- Workflow Templates, Workflow Stages, Work Order Types, Work Orders, and Workstreams were not removed or expanded.
+- Backend Work Order API routes did not change.
+- Readiness rules, Release to Production, replacement records/chains, client-specific options, workflow transitions, workflow actions, scheduling, resources, and Production workspace behavior were not implemented.
+- `Replacement Requested` is only a Merchandise Resolution value in this phase.
+
+Migration artifact:
+- `docs/migrations/2026-07-20-intake-production-type-resolution.md`
+
+Validation:
+- `backend/.venv/bin/python backend/ensure_intake_decision_fields.py` created both fields on first run.
+- `backend/.venv/bin/python backend/ensure_intake_decision_fields.py` reused both fields and created nothing on second run.
+- Live schema read-back confirmed both fields and exact allowed options.
+- `backend/.venv/bin/python -m unittest tests.test_intake_decisions tests.test_merchandise_review tests.test_frontend_routing tests.test_workflow_templates tests.test_work_order_types tests.test_job_item_schema`
+- `backend/.venv/bin/python -m unittest discover -s tests`
+- `npm run build` in `frontend/`
+- `git diff --check`
+
+## 2026-07-20 Intake Workspace Alignment
+
+The former user-facing Work workspace is now framed as Intake, matching the Operations Readiness Platform model.
+
+What is now true:
+- Primary navigation is Dashboard, Import, Receiving, Merchandise, Intake, Jobs, and Products.
+- `/intake` is the canonical frontend route for the PM readiness workspace.
+- `/work` redirects to `/intake` for compatibility.
+- `/merchandise-review-v2` redirects to `/intake` for compatibility.
+- `/merchandise/review` remains routable for the V1 Merchandise Review workflow and is not the Intake workspace.
+- Merchandise at `/merchandise` remains the read-only physical inventory browser.
+- This alignment phase originally reused the existing Merchandise Review V2 board implementation, Work Order APIs, workflow stages, filters, drag/drop behavior, and save behavior. The later Intake Workflow Simplification phase supersedes that active Work Order dependency.
+- Work Orders, Workflow Templates, Workflow Stages, and Work Order Types remain backend/Airtable compatibility infrastructure and were not renamed or removed.
+- The Intake detail surfaces now group existing information around Product, Production, Merchandise, and Readiness.
+- Production Type and Merchandise Resolution were placeholder areas during this alignment pass, then became real persisted Merchandise fields in the Intake decision phase documented above. Production Readiness remains a restrained placeholder.
+
+What did not change:
+- No backend routes changed.
+- No Airtable schema changed.
+- No Work Order API contract changed during this alignment phase.
+- No workflow transition logic changed.
+- No Production workspace behavior was added.
+
+Validation:
+- `backend/.venv/bin/python -m unittest tests.test_frontend_routing`
+- `backend/.venv/bin/python -m unittest discover -s tests`
+- `npm run build` in `frontend/`
+- `git diff --check`
+
+## 2026-07-20 Primary Navigation Label Polish
+
+The primary navigation now uses the singular label `Import` for the existing `/imports` workspace.
+
+What changed:
+- The primary navigation order from this polish pass was Dashboard, Import, Receiving, Merchandise, Work, Jobs, and Products. The later Intake alignment supersedes the Work label and route ownership.
+- Admin remains separated as the right-side utility navigation item beside the logged-in user.
+- Primary navigation icon mapping is Dashboard unchanged, Import uses Lucide `Download`, Receiving uses Lucide `PackageOpen`, Merchandise uses Lucide `ClipboardList`, Work uses Lucide `Workflow`, Jobs uses Lucide `Layers`, Products uses Lucide `Tag`, and Admin unchanged.
+
+What did not change:
+- Routes did not change.
+- Backend behavior did not change.
+- Workflow logic did not change.
+- Import page headings and route titles were not renamed in this polish pass.
+
+Validation:
+- `python3 -m unittest tests/test_frontend_routing.py` passed.
+- `npm run build` passed in `frontend/`.
+
+## 2026-07-20 Import Step Badge Polish
+
+The Import page wizard step badges are visually larger and more prominent.
+
+What changed:
+- Import wizard status badges now have larger text, taller pill height, wider horizontal padding, and a stronger active border.
+
+What did not change:
+- Import routes did not change.
+- Backend behavior did not change.
+- Import workflow logic did not change.
+
+## 2026-07-20 Work Workspace And Work Orders
+
+This section records the earlier Work naming phase. The later Intake alignment supersedes Work as the user-facing workspace name and `/work` as the canonical frontend route. Work Orders remain the internal/backend work item.
+
+What is now true:
+- Primary navigation during this phase was Dashboard, Import, Receiving, Merchandise, Work, Jobs, and Products.
+- Admin remains a utility navigation item on the right side of the top navigation.
+- Merchandise at `/merchandise` remains the read-only physical inventory browser.
+- Work at `/work` was the experimental PM workflow board during this phase.
+- `/merchandise-review-v2` redirected to `/work` for compatibility during this phase.
+- `/merchandise/review` remains routable for the V1 Merchandise Review workflow but is hidden from primary navigation.
+- Primary navigation active-state matching was intentionally scoped so only one primary tab could be active at a time. `/merchandise/review` did not activate Merchandise, and `/work` or `/merchandise-review-v2` activated only Work during this phase.
+- The first visible Work board stage was `Review`. The stable internal stage ID remains `new-review` for compatibility.
+- Work cards represent Work Orders and display linked Merchandise information plus the Workstream prominently.
+
+Live Airtable schema:
+- `Work Orders` table: `tbl9EkXDtQSc8CEyL`, renamed in place from `Workstream Assignments`.
+- Primary field `Work Order`: `fldAiYGCELRCY3bYh`, renamed in place from `Assignment`.
+- `Current Stage`: `flddqh4KN4j6FflKW`, renamed in place from `Current Gate`.
+- Merchandise reciprocal linked field `Work Orders`: `fldkhfsFwylhVxLOc`.
+- Workstreams reciprocal linked field `Work Orders`: `fldELg7iuoGAiCIe9`.
+- Jobs reciprocal linked field `Work Orders`: `fldBhvmbf2p3sW4Wk`.
+
+Backend/API:
+- Canonical table constant is `WORK_ORDERS_TABLE`, defaulting to `Work Orders`.
+- `WORKSTREAM_ASSIGNMENTS_TABLE` remains a deprecated one-cycle alias.
+- Canonical endpoints are `GET /work-orders`, `POST /merchandise/review/<entry_id>/work-orders`, and `PATCH /work-orders/<work_order_id>`.
+- Deprecated endpoints for `workstream-assignments` remain as compatibility aliases for one cycle.
+- The backend accepts `currentStage` and the deprecated `currentGate` payload key, then writes Airtable `Current Stage`.
+
+Current caveats:
+- Some internal Workflow Engine compatibility names still use `gate`/`currentGate` to avoid changing every existing transition helper at once. User-facing Work language uses Stage.
+- Deprecated Airtable photo attachment fields still physically exist but remain empty/protected under the R2-only migration. They were not deleted in this navigation/domain rename.
+
+Validation:
+- `backend/.venv/bin/python -m unittest discover -s tests` passed.
+- `python3 -m unittest tests/test_frontend_routing.py` passed.
+- `backend/.venv/bin/python -m unittest tests/test_job_item_schema.py` passed.
+- `npm run build` passed in `frontend/`.
+- `git diff --check` passed.
+- Local route smoke checks returned HTTP 200 for `/merchandise`, `/work`, `/merchandise-review-v2`, `/merchandise/review`, and `/admin` on the running Vite server at port 5175.
+- Raw unauthenticated API smoke for `/api/work-orders` returned HTTP 401, as expected without the browser session cookie.
+- Read-only Airtable metadata verification confirmed `Work Orders` table/field IDs and reciprocal links.
+- Read-only Airtable record verification confirmed the `Work Orders` table is readable; it currently contains 0 returned records.
+
+## 2026-07-20 Merchandise Review V2 New Items for Review Workspace
+
+The experimental Merchandise Review V2 `New Items for Review` gate now has a more operational image-first modal for the first PM workflow decision.
+
+What is now true:
+- The large modal remains the workspace for `New Items for Review`; this gate was not moved to a drawer.
+- The left side stays image-first with the R2-backed main image, thumbnail strip, previous/next image navigation, zoom controls, image counter, and lightbox.
+- The right side now follows the intended decision order: Merchandise Summary, Product Identification, Workstreams, Assignment Preview, Readiness Summary, Notes.
+- Merchandise Summary is read-only and shows Shipment, Client, Observed Package Name, Observed Identifier, Quantity, Storage, Condition, and Time Here.
+- Product Identification shows the linked Product, product summary fields, Product search, Product linking, and the ability to create and link an incomplete Product when an identifier is available.
+- Product Identification uses existing Product and Merchandise Review linking endpoints. It does not duplicate Product data onto Merchandise.
+- Workstreams remain multi-select and are limited to the active V2 Workstreams loaded from the backend, with the code registry as fallback.
+- Assignment Preview is generated from the Workflow Engine and shows the selected Workstream, Workflow, Initial Stage, and an `Already Assigned` indicator for existing active Workstream Assignments.
+- Readiness Summary is shown independently for each selected Workstream Assignment being created or reused. Each selected Workstream displays the Product Information, Artwork, and Activation readiness requirements.
+- Saving persists Workstream Assignments, reuses existing Merchandise + Workstream assignments, avoids duplicate assignment creation, refreshes Merchandise Review V2 data, refreshes readiness/transition recommendations, and remains on the current Merchandise by selecting the saved assignment.
+- Save & Continue saves, then opens the next Merchandise in the same current queue while preserving the board filters and position.
+- Existing active Workstream Assignments are preserved during save even if they were already present before this modal opened.
+
+What did not change:
+- Merchandise Review V1 did not change.
+- Merchandise Inventory did not change.
+- Receiving did not change.
+- Products page behavior did not change.
+- Existing backend schema did not change.
+- Packaging, THR3D downstream workflows, production synchronization, and assignment audit logging remain future work.
+
+Validation:
+- `npm run build` passed in `frontend/`.
+- `python3 -m unittest tests/test_frontend_routing.py` passed.
+- `git diff --check` passed.
+
+## 2026-07-20 Merchandise Review V2 Waiting for Information Workspace
+
+The experimental Merchandise Review V2 `Waiting for Information` gate now has a focused assignment workspace in the existing right-side drawer.
+
+What is now true:
+- The `Waiting for Information` drawer operates on the selected Workstream Assignment, not on Merchandise as the workflow object.
+- The drawer header and summary show Workstream, Merchandise, Client, Current Gate, Current Readiness, and linked Product state.
+- The drawer contains focused sections for Missing Information, Product Information, Artwork, Activation, Notes, and Readiness Summary.
+- Missing Information lists only unresolved readiness requirements and explains why each requirement blocks progression.
+- Product Information can search existing Products, link a Product through the existing Merchandise Review match endpoint, update existing Product fields, and create/link an incomplete Product only when an identifier is available.
+- Product edits use existing Product fields and endpoints. Product data is not duplicated onto Merchandise.
+- Artwork shows whether artwork is required, whether it is available, and the current artwork status. Artwork override remains intentionally unimplemented in this drawer pass.
+- Activation shows existing Job, Activation, Campaign, and activation readiness information from supported Product/reference data fields.
+- Notes shows existing Merchandise Notes and Product Notes. No new assignment-notes schema was introduced.
+- Readiness Summary preserves the Product Information, Artwork, and Activation indicators and displays current color, reason, missing fields, and suggested resolution.
+- The sticky footer supports Save, Save & Continue, and Workflow Engine-provided valid next gates.
+- Save updates the existing Workstream Assignment current status, readiness metadata, and blocking requirements, then reloads V2 data. If another gate is valid, the drawer reports `Ready for: <Next Gate>` but does not automatically move the assignment.
+- Save & Continue saves the current assignment and opens the next Workstream Assignment in the same current gate queue.
+- The Workflow Engine configuration for `Waiting for Information` now declares Notes instead of Issues as the drawer section for this gate.
+
+What did not change:
+- Merchandise Review V1 did not change.
+- Merchandise Inventory did not change.
+- Receiving did not change.
+- Backend routes, Airtable schema, Workflow Engine infrastructure, Packaging workflow, THR3D downstream workflow, and Creative Force integration did not change.
+
+Current caveats:
+- Assignment audit logging is still future work.
+- Assignment-specific editable notes are not available because no such Airtable field exists yet.
+- Product creation still follows the existing Product API validation rules, so an identifier is required before creating an incomplete Product.
+
+Validation:
+- `npm run build` passed in `frontend/`.
+- `python3 -m unittest tests/test_frontend_routing.py` passed.
+- `git diff --check` passed.
 
 ## 2026-07-20 R2-Only Image Storage Migration
 
@@ -76,6 +354,76 @@ Verification:
 
 Current caveats:
 - The deprecated Airtable attachment fields still physically exist because destructive field deletion is not reliable through the Airtable API in this environment. They are empty, renamed, documented as deprecated, and protected by backend write guards.
+
+## 2026-07-20 Workstream Assignment Foundation
+
+The V2 workflow model now separates the physical Merchandise record from operational Workstream Assignments.
+
+What is now true:
+- Workstream is a configured kind of production work.
+- Workstream Assignment is the operational work item connecting one Merchandise record to one Workstream.
+- One Merchandise record may have multiple Workstream Assignments.
+- Merchandise is not duplicated when it needs Ecomm Photo and Packaging Photo work.
+- The initial active Workstreams are exactly Ecomm Photo, Packaging Photo, and THR3D.
+- Merchandise Review V2 reads Workstream definitions from the backend and falls back to the code registry only if the table is unavailable.
+- The New Items for Review modal uses a multi-select Workstreams control.
+- The assignment preview is generated from Workflow Engine configuration and shows Workstream label, workflow name, and initial gate.
+- Saving from the V2 modal creates or updates durable Workstream Assignment records.
+- Deselected persisted assignments are cancelled rather than silently deleted.
+- V2 board cards can represent Workstream Assignments and display both linked Merchandise information and the Workstream label.
+- Assignment movement updates the Workstream Assignment current gate/status/owner/readiness/blocker metadata.
+- Browser-local V2 Workstream decisions are legacy fallback hints only and are replaced by durable assignments on save.
+- The Product `Workstream` single-select field remains a compatibility bridge for imported Product routing values, not the final V2 workflow state.
+
+Live Airtable schema added:
+- `Workstreams` table: `tblnLXigd19VBMFcz`
+- `Workstream Assignments` table: `tbl9EkXDtQSc8CEyL`
+
+Seeded Workstream records:
+- Ecomm Photo: `receJrKONodoL97kh`
+- Packaging Photo: `reck5ZjD9Flay990T`
+- THR3D: `rec8ChTv3qARXrJus`
+
+What did not change:
+- Merchandise Review V1 did not change.
+- Merchandise Inventory did not change.
+- Receiving behavior did not change.
+- Creative Force integration did not change.
+- R2-only image storage did not change.
+- Full downstream Ecomm, Packaging, and THR3D production workflows were not built.
+
+Current caveats:
+- Admin configuration for client-specific Workstream availability is not built yet.
+- Audit logging for Workstream Assignment changes is not built yet.
+- Readiness is assignment-aware in the V2 architecture, but the first implementation still reuses the existing Merchandise/Product readiness evaluators where applicable.
+- Creative Force synchronization and Job creation remain future work.
+
+Migration artifact:
+- `docs/migrations/2026-07-20-workstream-assignments.md`
+
+## 2026-07-20 Workstream Domain Rename
+
+The foundational domain-language refactor from Output/Production Path to Workstream has been applied.
+
+What is now true:
+- Workstream is the first-class Workflow Engine concept for production routing decisions.
+- The live Airtable Products field `Output Type` was renamed in place to `Workstream`.
+- The Airtable field ID was preserved: `fldSl0Ctmp7dWtJUO` on Products table `tblC9Tu69BEOIy6Q4`.
+- Existing single-select choices and existing record values were preserved.
+- Backend configuration now maps `F_ITEM_WORKSTREAM` to `Workstream`; `F_ITEM_OUTPUT` remains a compatibility alias to the same field.
+- Product API payloads expose `workstream` while preserving the legacy `output` alias for compatibility.
+- Merchandise Review V2 no longer uses a single-select Primary Workstream decision as durable workflow state.
+- The V2 Workstream registry was superseded by exactly Ecomm Photo, Packaging Photo, and THR3D in the Workstream Assignment foundation.
+- Required Outputs and Production Path are no longer modeled in the V2 review UI or Workflow Engine.
+- Deliverables remain downstream production concepts and are intentionally not modeled in this iteration.
+
+Current caveats:
+- The Product `Workstream` single-select field preserves legacy imported Product values as compatibility data.
+- Durable V2 workflow state now lives in Workstream Assignment records.
+- Airtable rejected a Metadata API attempt to extend the single-select choices with the new Workstream choices. The in-place field rename succeeded and existing values remain intact.
+
+Migration artifact:
+- `docs/migrations/2026-07-20-output-to-workstream.md`
 
 ## 2026-07-20 Live Airtable Domain Rename
 
@@ -530,9 +878,13 @@ What is now true:
 - Merchandise Review V2 uses the same backend endpoints, filters, state management, actions, and behavior as the current Merchandise Review page.
 - The primary navigation is limited to daily operational workspaces: Dashboard, Imports, Receiving, Merchandise, Merchandise Review, Merchandise Review V2, Products, and Jobs.
 - Clients and Settings were removed from primary navigation.
-- Settings is now labeled Admin in the top navigation utility area.
+- The former Settings workspace is now the Admin workspace.
+- `/admin` is the canonical Admin route.
+- The Admin utility navigation points to `/admin/users`.
+- `/admin/:section` renders Admin sections such as Users, Roles, System, Clients, and Developer Tools.
 - Admin appears on the far right side of the top navigation, immediately before the logged-in user/profile control.
-- `/settings`, `/administration`, `/administration/:section`, and compatibility `/clients` still route into the Admin workspace.
+- `/settings` redirects to `/admin/system`.
+- `/administration`, `/administration/:section`, and compatibility `/clients` still route or redirect into the Admin workspace.
 - Clients remains available inside Admin as an administrative section.
 
 What did not change:
@@ -545,6 +897,8 @@ What did not change:
 Validation:
 - `npm run build` passed in `frontend/`.
 - `python3 -m unittest tests/test_frontend_routing.py` passed.
+- `git diff --check` passed.
+- Local route smoke returned HTTP 200 for `/admin`, `/admin/users`, and `/settings`.
 
 ## 2026-07-20 Shared Page Sub-Navigation
 
@@ -571,47 +925,76 @@ Validation:
 - Local route smoke checks returned HTTP 200 for `/merchandise`, `/merchandise/review`, `/merchandise-review-v2`, and `/shipments` on the running Vite server.
 - A follow-up regression test now checks that primary navigation uses `Link`, explicit `aria-current`, and the route-ownership matcher rather than `NavLink` default active behavior.
 
-## 2026-07-20 Merchandise Review V2 Experimental Kanban Board
+## 2026-07-20 Merchandise Review V2 Workflow Kanban Board
 
 Merchandise Review V2 is no longer a visual duplicate of Merchandise Review V1.
 
 What is now true:
 - `/merchandise/review` continues to render the existing Merchandise Review V1 visual review station.
-- `/merchandise-review-v2` now renders an isolated experimental Kanban-style workflow board.
+- `/merchandise-review-v2` now renders the first working isolated Kanban-style workflow board.
 - V2 still reads Merchandise Review records from the existing `api.listMerchandiseReviewEntries()` endpoint.
 - V2 does not add backend endpoints, Airtable tables, Airtable fields, or schema-backed workflow status.
-- The experimental board has five workflow columns:
+- The board renders visible columns from `MERCHANDISE_REVIEW_WORKFLOW` configuration, ordered by each gate's configured `order`.
+- The default configured workflow has five visible gates:
   - New Items for Review
   - Waiting for Information
   - Send to THR3D
   - Waiting for Activation
   - Ready for Production
-- Cards are assigned to columns with frontend workflow rules derived from existing review state, linked Product readiness, Merchandise identity, artwork state, activation/reference data, and local experimental overrides.
+- The gate model supports id, label, description, order, board visibility, owner role, entry criteria, exit criteria, allowed next gates, transition mode, card field configuration, and workspace section configuration.
+- Gate configuration now also owns `workspaceMode`.
+- Workspace modes currently supported by the Workflow Engine are `modal`, `drawer`, and `readonly`.
+- The default workspace modes are:
+  - New Items for Review: modal
+  - Waiting for Information: drawer
+  - Send to THR3D: drawer
+  - Waiting for Activation: drawer
+  - Ready for Production: readonly drawer
+- A frontend workflow registry exposes a default workflow and a client workflow assignment seam. No client-specific UI exists yet.
+- Cards are assigned to columns through centralized Workflow Engine selectors derived from existing review state, linked Product readiness, Merchandise identity, artwork state, activation/reference data, durable Workstream Assignment state, and compatibility local gate selections for draft cards.
 - Cards show a large thumbnail, Package/Product Name, Client, observed identifier, Storage Location, Time Here, optional status badge, and three readiness indicators.
-- Readiness indicators represent Product Information, Artwork, and Activation Information.
-- Drag and drop is implemented with reusable Kanban components and validation helpers.
-- Invalid moves are blocked and explained in the board UI rather than silently failing.
-- Artwork is the only readiness gate with a PM override. Overrides require a reason and record user, date/time, reason, and override type in browser-local experimental state.
+- Readiness indicators represent Product Information, Artwork, and Activation Information and are generated by centralized Workflow Engine evaluators.
+- Non-applicable readiness can be returned as neutral/hidden instead of pretending the requirement is complete.
+- Clicking a card opens the workspace mode configured for that gate.
+- New Items for Review opens a large image-first modal at roughly full-workspace scale while the board is dimmed behind it.
+- Later gates continue to use the right slide-over drawer.
+- The workspace shell shows Merchandise identity, R2-backed photo preview, thumbnail navigation, current gate, owner, status, readiness summary, shipment/product summaries, gate purpose, configured workspace sections, and a close control.
+- The New Items modal is designed for the first PM decision: which Workstreams should be assigned to this Merchandise.
+- Workstreams are modeled as a multi-select decision today.
+- Initial Workstream options are exactly Ecomm Photo, Packaging Photo, and THR3D.
+- Workstream selections are saved as durable Workstream Assignment records.
+- The Workflow Engine exposes assignment previews so V2 can create Ecomm Photo, Packaging Photo, or THR3D assignments without page-local branching rules.
+- Deliverables are intentionally not modeled in this V2 iteration. GS1 bundles, hero images, packaging images, marketing assets, and similar deliverables remain downstream production concepts.
+- The New Items modal includes large R2-backed image review, thumbnail navigation, image counter, zoom controls, keyboard image navigation, and a lightbox.
+- The New Items modal footer remains visible and exposes Previous Merchandise, Save, Save & Continue, and Next Merchandise.
+- Save & Continue saves durable Workstream Assignments and opens the next Merchandise item in the same filtered workflow gate.
+- Gate workspace sections render from gate configuration. The initial section types include Merchandise Observations, Photos, Product Identification, Workstream, Missing Information, Artwork, Activation, THR3D Routing, Shipment, Issues, History, Readiness Summary, Merchandise Summary, and Product Summary.
+- Transition validation is centralized in the Workflow Engine. The workspace shows valid next gates as buttons and blocked gates with reasons.
+- Drag and drop is deferred in this first working implementation so transition buttons and explanations share one reliable path.
+- Artwork remains the only readiness gate architected for a future PM override. The visible override workflow is deferred.
+- Existing R2-backed images display through `recordPhotos` and generated API URLs. Deprecated Airtable attachment fields are not used.
 - Overridden artwork is visually distinct from automatically satisfied artwork with a marked readiness dot.
+- Board-level filters apply across all columns for search, client, storage location, age, and Workstream. Column counts reflect filtered records.
 
 What did not change:
 - Merchandise Review V1 behavior, layout, actions, filters, matching, validation, image viewer, and right-side decision panel did not change.
 - Merchandise Inventory did not change.
-- Receiving, Dashboard, Products, Jobs, Admin, backend endpoints, and Airtable schema did not change.
+- Receiving, Dashboard, Products, Jobs, Admin, R2 image behavior, and Creative Force integration did not change.
 
 Current V2 caveat:
-- V2 workflow moves and artwork override audit entries are stored in browser-local experimental state only. They are not durable across browsers and are not backend-audited until a future schema/API decision is made.
+- V2 Workstream Assignment changes are durable, but audit logging and full downstream production workflows are not implemented yet.
 
 Validation:
 - `python3 -m unittest tests/test_frontend_routing.py` passed.
 - `npm run build` passed in `frontend/`.
+- Local route smoke checks returned HTTP 200 for `/merchandise/review` and `/merchandise-review-v2` on the running Vite server.
 
 ## 2026-07-20 Workflow Engine Foundation
 
 Marks Photo now has the first frontend Workflow Engine foundation.
 
 What is now true:
-- `frontend/src/workflowEngine.js` defines reusable workflow concepts for Workflow, Gate, Requirement, Action, Workflow Assignment, Current Gate, Current Owner, Current Status, Output Type, and transition validation.
+- `frontend/src/workflowEngine.js` defines reusable workflow concepts for Workflow, Gate, Requirement, Workflow Assignment, Current Gate, Current Owner, Current Status, Workstream, card field configuration, workspace section configuration, workflow registry, client workflow assignment, and transition validation.
 - The initial workflow template is `MERCHANDISE_REVIEW_WORKFLOW`.
 - The workflow foundation models the major ownership boundaries:
   - Receiving records physical observations.
@@ -620,23 +1003,25 @@ What is now true:
   - Delivery owns ready-to-deliver, delivered, billing, and reporting follow-through.
 - Workflow Gates are treated as ownership changes or business decisions, not low-level system events.
 - Production remains a single Marks Photo workflow gate concept. Creative Force states such as queued, assigned, retouch, QC, export, and upload are production metadata, not Marks Photo gates.
-- The engine exposes gates, allowed next gates, required data, available actions, requirement evaluation, workflow assignments, and transition validation.
-- Merchandise Review V2 now consumes the Workflow Engine for gate placement, readiness requirements, and drag/drop transition validation.
+- The engine exposes gates, allowed next gates, entry criteria, exit criteria, requirement evaluation, workflow assignments, valid next gates, blocked next gates, and transition validation.
+- Merchandise Review V2 now consumes the Workflow Engine for gate placement, readiness requirements, board card construction, workspace section rendering, and transition validation.
 - V2 no longer owns the Merchandise Review business placement rules directly in the page component.
 - The first engine-backed requirements are Product Information, Artwork, and Activation Information.
-- Output Type is modeled as a workflow concept with initial values for Photography, Scan, THR3D, Video, and Other.
+- Workstream is modeled as a first-class workflow concept with initial active values for Ecomm Photo, Packaging Photo, and THR3D.
+- Workstream Assignment is the V2 decision model for the first review gate. Multiple Workstream Assignments can branch from one Merchandise record.
+- The Workflow Engine exposes workspace modes and Workstream Assignment previews. Durable branching is implemented for V2 assignments; full downstream workflow execution remains future work.
 
 What did not change:
-- No backend endpoints changed.
-- No Airtable schema changed.
+- Backend Workstream and Workstream Assignment endpoints were added for Merchandise Review V2.
+- Airtable Workstreams and Workstream Assignments tables were added.
 - Receiving behavior did not change.
 - Merchandise Review V1 did not change.
 - Merchandise Inventory did not change.
 - Production behavior did not change.
-- V2 browser-local experimental workflow moves and artwork overrides remain local-only until a future schema/API decision.
+- V2 browser-local Workstream decisions remain only as compatibility fallback hints for old experimental state.
 
 Current architecture caveat:
-- The Workflow Engine foundation is frontend-only. Durable Workflow Assignments, audit logs, client-configurable workflow templates, permissions, and backend rule evaluation still require future schema/API work.
+- Audit logs, client-configurable workflow templates, backend rule evaluation, the Admin workflow editor, and Creative Force production synchronization still require future work.
 
 Validation:
 - `python3 -m unittest tests/test_frontend_routing.py` passed.
@@ -668,4 +1053,119 @@ Current architecture caveat:
 
 Validation:
 - `python3 -m unittest tests/test_domain_table_mapping.py tests/test_receiving.py tests/test_merchandise_review.py tests/test_merchandise_inventory.py tests/test_frontend_routing.py` passed.
+- `npm run build` passed in `frontend/`.
+
+## 2026-07-20 Workflow Templates Phase 1
+
+Superseded for active Intake by the 2026-07-20 Intake Workflow Simplification. Workflow Templates remain only as legacy compatibility infrastructure unless a future decision reintroduces configuration.
+
+Marks Photo now has Phase 1 of the configurable workflow engine.
+
+What is now true:
+- Airtable has a `Workflow Templates` table (`tbl9NkpL12DOFbQmV`) and a `Workflow Stages` table (`tbldIcybQWtIi4Te2`).
+- `Work Orders` (`tbl9EkXDtQSc8CEyL`) now has two additive linked-record fields:
+  - `Workflow Template`
+  - `Current Workflow Stage`
+- The legacy `Current Stage` string field remains in place and is still written for compatibility.
+- The default active Workflow Template is `Merchandise Review` (`recEnCm1E05vQYPN5`).
+- The seeded default stages exactly match the existing Work workflow keys and order:
+  - `new-review` / Review / order 10 / type `start`
+  - `waiting-information` / Waiting for Information / order 20 / type `waiting`
+  - `send-thr3d` / Send to THR3D / order 30 / type `active`
+  - `waiting-activation` / Waiting for Activation / order 40 / type `waiting`
+  - `ready-production` / Ready for Production / order 50 / type `complete`
+- Backend Work Order shaping now prefers linked `Current Workflow Stage` when present and falls back to legacy `Current Stage`.
+- Work Order creation and stage updates continue writing `Current Stage` and also write `Workflow Template` / `Current Workflow Stage` when the default template can be resolved.
+- New compatibility APIs exist:
+  - `GET /workflow-templates`
+  - `POST /workflow-templates`
+  - `GET /workflow-templates/<template_id>`
+  - `PATCH /workflow-templates/<template_id>`
+  - `POST /workflow-templates/<template_id>/duplicate`
+  - `POST /workflow-templates/<template_id>/stages`
+  - `PATCH /workflow-stages/<stage_id>`
+  - `POST /workflow-stages/<stage_id>/deactivate`
+- Workflow template mutations are Admin-only. Reads require the normal authenticated app session.
+- Admin now includes a `Workflow Templates` utility section for listing, creating, editing, duplicating, activating, defaulting, ordering, and deactivating template stages.
+- `backend/ensure_workflow_schema.py` is the idempotent Airtable schema/seed utility for this phase.
+
+What did not change:
+- Merchandise Review V1 did not change.
+- Merchandise Inventory did not change.
+- The Work board layout, labels, filters, transitions, and workflow behavior did not change.
+- Work Order routes and Workstream Assignment compatibility aliases remain.
+- No Work Order Types, Client Defaults, stage requirements, workflow actions, automation rules, or downstream production execution behavior were added.
+
+Current architecture caveat:
+- Workflow configuration is currently operating through the existing compatibility mapping. Advanced actions, requirements, and automation rules will be configured in later phases.
+
+Validation:
+- `backend/.venv/bin/python backend/ensure_workflow_schema.py` created/verified the live workflow schema and seeded the default template.
+- Live Airtable metadata was verified after the migration.
+- `backend/.venv/bin/python -m unittest tests.test_workflow_templates tests.test_job_item_schema tests.test_frontend_routing` passed.
+- `npm run build` passed in `frontend/`.
+
+## 2026-07-20 Work Order Types Phase 2
+
+Superseded for active Intake by the 2026-07-20 Intake Workflow Simplification. Work Order Types remain only as legacy compatibility infrastructure unless a future decision reintroduces configuration.
+
+Marks Photo now has Phase 2 of configurable workflow setup: Work Order Types.
+
+What is now true:
+- Airtable has a `Work Order Types` table (`tblteTlJWpGv21bg9`).
+- `Work Orders` (`tbl9EkXDtQSc8CEyL`) now has an additive linked-record field:
+  - `Work Order Type` (`fldLSsIzX2a1lWood`)
+- The seeded active default Work Order Type is:
+  - Name: `Merchandise Review`
+  - Key: `merchandise-review`
+  - Record ID: `recZMtKK3Pw1kOAXC`
+  - Workflow Template: `recEnCm1E05vQYPN5`
+  - Active: true
+  - Is Default: true
+  - Sort Order: 10
+  - Icon: `clipboard-check`
+  - Auto Create: true
+  - Allow Multiple Per Merchandise: false
+- Workflow Template still owns stage structure.
+- Work Order Type owns the business purpose and configuration for Work Orders.
+- Work Order remains the individual operational work instance connected to Merchandise.
+- Backend Work Order shaping now includes optional Work Order Type and effective Workflow Template metadata while preserving existing response fields.
+- Effective workflow resolution order is:
+  1. Work Order's linked Work Order Type
+  2. Work Order's directly linked Workflow Template
+  3. Active default Work Order Type and its Workflow Template
+  4. Phase 1 default Workflow Template fallback
+  5. Legacy `Current Stage` compatibility behavior
+- New Merchandise Review Work Orders receive the active default Work Order Type, its linked Workflow Template, the starting Workflow Stage, and legacy `Current Stage`.
+- Legacy Work Orders without `Work Order Type` remain compatible and do not require a bulk migration.
+- New Work Order Type API routes exist:
+  - `GET /work-order-types`
+  - `GET /work-order-types/<record_id>`
+  - `POST /work-order-types`
+  - `PATCH /work-order-types/<record_id>`
+  - `POST /work-order-types/<record_id>/duplicate`
+  - `POST /work-order-types/<record_id>/set-default`
+  - `POST /work-order-types/<record_id>/activate`
+  - `POST /work-order-types/<record_id>/deactivate`
+- Work Order Type mutations are Admin-only. Reads require the normal authenticated app session.
+- Admin now includes `Work Order Types` adjacent to `Workflow Templates`.
+- `backend/ensure_work_order_types_schema.py` is the idempotent Airtable schema/seed utility for this phase.
+
+What did not change:
+- Work board columns, routing, filters, card layout, stage ordering, and transitions did not change.
+- Merchandise Review V1 did not change.
+- Merchandise Inventory did not change.
+- Existing Work Order and Workstream Assignment compatibility aliases remain.
+- No speculative Work Order Types were seeded.
+- No Work Order Types are exposed as Work board controls yet.
+- No workflow automation, stage actions, client defaults, or transition configuration was added.
+
+Current architecture caveat:
+- Work Order Types are available as configuration and compatibility metadata. The Work board does not yet expose type selection or multiple workflow experiences.
+
+Validation:
+- `backend/.venv/bin/python backend/ensure_work_order_types_schema.py` passed.
+- The same schema utility was run a second time and created no duplicate table, field, or seeded record.
+- Live Airtable metadata was verified after the migration.
+- `backend/.venv/bin/python -m unittest tests.test_work_order_types tests.test_workflow_templates tests.test_job_item_schema tests.test_frontend_routing tests.test_merchandise_review` passed.
 - `npm run build` passed in `frontend/`.

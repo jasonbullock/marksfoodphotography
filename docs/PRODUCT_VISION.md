@@ -1,320 +1,120 @@
-# Marks Photo Product Vision
+# Product Vision
 
-Marks Photo is not a project management system.
+Marks Photo is an Operations Readiness Platform.
 
-Marks Photo is not a PIM.
+Its mission is to transform incoming merchandise into production-ready work.
 
-Marks Photo is not a system of record.
+Marks Photo exists to remove uncertainty before production begins. It helps Walnut Studio understand what arrived, what is physically present, what must be decided, and what is ready to release into production.
 
-Marks Photo is the operational readiness system for Walnut Studio.
+## What Marks Photo Is Not
 
-Its purpose is to consolidate everything Walnut needs to receive, understand, prepare, photograph, route, and dispose of merchandise in one place.
+Marks Photo is not:
 
-The application should answer one question:
+- a workflow engine
+- a project management tool
+- a replacement for Creative Force
+- a replacement for PhotoTrack
 
-> What do we need to do with this merchandise right now?
+Workflow, planning, production systems, and reporting systems may connect to Marks Photo, but they do not define it. Marks Photo's job is readiness: turning real merchandise and incomplete information into clear production intent.
 
-## Core Object
+## Operating Principle
 
-The application revolves around Merchandise.
+The core operating question is:
 
-Not Jobs.
+> What must be true before this merchandise can enter production?
 
-Not Products.
+Marks Photo should make the answer visible, actionable, and reliable.
 
-Not Receipts.
+It should not ask users to maintain records for their own sake. It should not ask project managers to create administrative containers before work can begin. It should not duplicate the systems that already run production or report final output.
 
-Merchandise is the operational object moving through the studio.
+## Operational Lifecycle
 
-Products are supporting information.
+Marks Photo sits in the operational handoff between merchandise arrival and production execution.
 
-Jobs are supporting information.
+```text
+Shipment
+↓
+Receiving
+↓
+Inventory
+↓
+Intake
+↓
+Release to Production
+↓
+Production
+↓
+Creative Force
+↓
+PhotoTrack
+```
 
-Everything exists to move merchandise toward production.
+## Phase Ownership
 
-## Product Information
+### Shipment
 
-Product Information has three responsibilities:
+Ownership: logistics and receiving context.
 
-1. Operational Readiness
-2. Production Execution
-3. Production Reporting
-
-Marks Photo does not attempt to manage the upstream project lifecycle.
-
-However, it does own the operational information Walnut Studio requires to execute work and report on completed production.
-
-Product Information may come from any source.
-
-Marks Photo does not care where it originated.
-
-Product information may already exist.
-
-If it exists, reuse it.
-
-If it does not exist, allow users to enter only the minimum information required to make merchandise operationally ready.
-
-That information may include reporting references such as:
-
-- Job Number
-- Client Project Number
-- External Reference
-- Service Type
-- Activation
-- Deliverable Type
-
-These are not project-management fields. They are operational references used for production execution and reporting.
-
-Users should never have to think about:
-
-- matching
-- linking
-- imports
-- source systems
-
-Those are implementation details.
-
-The software may automatically reuse existing information when available. Otherwise users simply continue entering information.
-
-There should never be separate "Match Product" versus "Create Product" workflows. It is one continuous experience.
-
-## Production Reporting
-
-Marks Photo is expected to become the operational reporting source for Walnut Studio.
-
-Production reports may include:
-
-- Client
-- Job Number
-- Product
-- Service Type
-- Production Dates
-- Photographer
-- Production Status
-- Deliverables
-- Time
-- Disposition
-
-This reporting requirement does not expand Marks Photo into a project-management application.
-
-Instead, Product Information contains the references necessary to associate production activity with the correct reporting identifiers.
-
-## Client Requirements
-
-The Clients table defines operational readiness.
-
-Each client specifies the minimum required information Walnut needs before photography can begin.
-
-Examples:
-
-- Product Name
-- Identifier
-- Brand
-- Size
-- Artwork Required
-- Activation Email Required
-- Photography Required versus THR3D
-
-Marks Photo evaluates readiness against client requirements.
-
-It does not care where the information originated.
-
-## Operational Readiness
-
-The heart of Marks Photo is Operational Readiness.
-
-The application should always answer:
-
-> Can Walnut photograph this merchandise?
-
-If not:
-
-> What is missing?
-
-Typical readiness checks include:
-
-- Merchandise Received
-- Product Information Available
-- Client Required Fields Complete
-- Merchandise Verified
-- Artwork Available, if required
-- Photography Required, otherwise THR3D
-- Activation Email Received
-
-Status should always communicate blockers rather than workflow jargon.
-
-## Scope
-
-Marks Photo begins when merchandise exists.
-
-The operational middle is:
-
-1. Merchandise
-2. Receiving
-3. Merchandise Workspace
-4. Planning
-5. Production
-6. Photography / THR3D
-7. Disposition
-
-Everything before merchandise exists belongs in another system.
-
-Everything after production completion belongs in another system.
-
-Marks Photo owns the operational middle.
-
-Marks Photo owns operational information required to execute production and report production.
-
-Marks Photo does not own:
-
-- project planning
-- client communication
-- budgeting
-- approvals
-- project task management
-
-Those systems may provide information. Marks Photo consumes operational references from them.
-
-## System Architecture
-
-Marks Photo is an orchestration platform.
-
-It does not replace Creative Force. It orchestrates the movement of merchandise from physical receipt through production and delivery.
-
-The system is organized into four major areas:
-
-1. Receiving
-2. Workflow Engine
-3. Production Engine
-4. Delivery
+A Shipment represents the inbound package, delivery, or transfer that brings merchandise into the studio. It answers where the physical goods came from, when they arrived, and what receiving context belongs to them.
 
 ### Receiving
 
-Receiving is physical intake.
+Ownership: Receiving.
 
-Receiving creates the digital representation of physical merchandise and records observed facts:
+Receiving captures reality. It records what physically arrived, including observed identifiers, quantity, condition, storage location, photos, and notes. Receiving does not decide production intent. It creates trustworthy operational evidence.
 
-- shipment
-- merchandise
-- observed identifier
-- quantity
-- storage
-- condition
-- photos
-- notes
+### Inventory
 
-Receiving does not make workflow decisions. Completing Receiving creates Merchandise and transfers ownership into the Workflow Engine.
+Ownership: operations and warehouse visibility.
 
-### Workflow Engine
+Inventory answers what the studio physically has. It is a shelf and storage perspective over merchandise, not a decision workflow. Inventory helps people locate, age, inspect, purge, or answer client inventory questions about physical samples.
 
-The Workflow Engine is the business decision engine.
+### Intake
 
-Project Management owns this engine.
+Ownership: Project Management and operations readiness.
 
-The Workflow Engine determines:
+Intake is where uncertainty is resolved before production. It identifies the product, evaluates client requirements, determines production type, decides merchandise resolution, requests replacement when needed, and establishes whether the work is ready to release.
 
-- workflow
-- current gate
-- required information
-- artwork requirements
-- activation requirements
-- output type
-- THR3D routing
-- production release
+Intake is the decision perspective. It is not a generic workflow board. It is the operating room for readiness.
 
-The Workflow Engine powers Merchandise Review and future readiness workspaces.
+### Release to Production
 
-### Production Engine
+Ownership: Project Management.
 
-Creative Force owns production execution.
+Release to Production is the single readiness handoff. It means the required merchandise facts, product facts, client requirements, production type, and production instructions are complete enough for production planning and execution.
 
-Marks Photo does not manage production tasks. Marks Photo synchronizes and displays production metadata such as:
+There should be one Release to Production concept. Readiness paths may differ by client or production type, but the handoff should remain clear.
 
-- Production
-- Current Creative Force status
-- Last sync
-- Assigned photographer
+### Production
 
-Production remains a single workflow gate in Marks Photo. Creative Force statuses are metadata, not Marks Photo workflow gates.
+Ownership: Production coordination.
 
-### Delivery
+Production determines how the work will be executed: schedule, resources, studio, pre-production, planning, and integration with Creative Force. Marks Photo may prepare and display production intent, but it should not become the system that manages every production task.
 
-Delivery covers the downstream work after production:
+### Creative Force
 
-- Ready to Deliver
-- Delivered
-- Billing
-- Reporting
+Ownership: Creative Force and production execution teams.
 
-Delivery is part of the orchestration picture, but it should remain separate from receiving and review decisions.
+Creative Force owns detailed production execution. Marks Photo may send production-ready work to Creative Force and receive production status metadata, but it does not replace Creative Force.
 
-## Workflow Philosophy
+### PhotoTrack
 
-Workflow gates represent ownership changes or business decisions.
+Ownership: production success, asset status, and downstream reporting context.
 
-Workflow gates do not represent every system event.
+PhotoTrack answers whether production succeeded and where produced assets stand after execution. Marks Photo should hand off clean production-ready work and consume only the information needed to understand completion, exceptions, or reporting readiness.
 
-The intended workflow remains intentionally small:
+## Long-Term Direction
 
-1. Receive
-2. Review
-3. Release to Production
-4. Production
-5. Ready to Deliver
-6. Delivered
+Marks Photo should be organized around merchandise readiness, not around database tables or workflow mechanics.
 
-Detailed production stages such as queued, assigned, retouch, QC, export, and upload belong to Creative Force production metadata. They should not become Marks Photo workflow gates.
+The application presents different perspectives of the same merchandise:
 
-Workflow and status are different concepts:
+- Receiving perspective: what arrived?
+- Inventory perspective: what do we physically have?
+- Intake perspective: what must be decided?
+- Production perspective: how will we execute?
+- PhotoTrack perspective: was production successful?
 
-- Workflow answers who owns the next decision and what gate Merchandise is in.
-- Status describes current data or synchronized external state.
+New workspaces should be rare. New views inside existing workspaces should be common.
 
-Future pages should render workflow from reusable Workflow Engine definitions rather than hardcoding workflow-specific page logic.
-
-## Design Principles
-
-1. Simplicity wins.
-2. Never ask users to perform database work.
-3. Remove production blockers.
-4. Reuse existing information whenever possible.
-5. Enter only missing information.
-6. Client rules determine readiness.
-7. Every screen answers one operational question.
-8. Capture only the operational information Walnut Studio needs to determine readiness, execute production, and report completed work. Nothing more. Nothing less.
-
-Screen questions:
-
-- Dashboard: What needs attention?
-- Receiving: What arrived?
-- Merchandise: What information is missing?
-- Planning: What are we photographing?
-- Production: Where is the work now?
-
-## Application Shell
-
-The application shell should reinforce the operational model.
-
-Primary navigation should lead with operational workspaces:
-
-- Dashboard
-- Receiving
-- Merchandise
-- Planning
-- Production
-
-Database-oriented or supporting surfaces such as Products, Jobs, Imports, Issues, Clients, and Airtable diagnostics should not be the normal primary navigation model. They may exist as supporting, administrative, reporting, or compatibility surfaces.
-
-Workspace pages should favor a contextual Queue, main Workspace canvas, and contextual Inspector pattern where it helps answer the screen's operational question.
-
-## Vision
-
-Marks Photo is the operational command center for Walnut Studio.
-
-It centralizes merchandise information.
-
-It determines operational readiness.
-
-It tells Walnut exactly what to do next.
-
-It intentionally does not attempt to become a complete project management platform.
+The product should grow by adding better perspectives, clearer readiness signals, and better handoffs, not by multiplying duplicate records or administrative workflows.

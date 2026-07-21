@@ -23,6 +23,8 @@ from receiving_photo_storage import (
     ReceivingPhotoValidationError,
     sanitize_path_segment,
 )
+from workflow_templates import WorkflowTemplateService, WorkflowValidationError
+from work_order_types import WorkOrderTypeService, WorkOrderTypeValidationError
 
 api = Blueprint("api", __name__)
 
@@ -58,6 +60,22 @@ def airtable_err(error):
     except ValueError:
         pass
     return err(message, status)
+
+
+def workflow_service():
+    return WorkflowTemplateService(airtable, C)
+
+
+def workflow_err(error):
+    return err(str(error), 400)
+
+
+def work_order_type_service():
+    return WorkOrderTypeService(airtable, C, workflow_service())
+
+
+def work_order_type_err(error):
+    return err(str(error), 400)
 
 
 @api.before_request
@@ -553,15 +571,15 @@ XLSX_RELS_NS = {
     "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
     "office": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
 }
-DEFAULT_IMPORT_OUTPUT = "Photo + Render"
-IMPORT_OUTPUTS = {"Photo Only", "Render Only", "Photo + Render"}
+DEFAULT_IMPORT_WORKSTREAM = "Photo + Render"
+IMPORT_WORKSTREAMS = {"Photo Only", "Render Only", "Photo + Render", "GS1 Ecomm", "Packaging Photography", "THR3D", "Video", "Other"}
 INTAKE_FALLBACK_DESCRIPTIONS = {
     "Product Name": "Optional product display name in the app.",
     "Identifier": "Client product identifier.",
     "Product or File Name": "Product or file name.",
     "Description": "Longer source product description.",
     "Product Job Number": "Row-level job or project number for the product.",
-    "Output Type": "Photo Only, Render Only, or Photo + Render.",
+    "Workstream": "Production workstream or legacy Photo/Render routing value.",
     "Master or Variant": "Whether this product is a master or a variant.",
     "Pickup Job Number": "Previous production job number for variant pickup work.",
     "Brand": "Product brand.",
@@ -578,7 +596,7 @@ INTAKE_MAPPINGS = {
         "description": "Description",
         "id": "UPC",
         "brand": "Brand",
-        "output": "Output Type",
+        "output": "Workstream",
         "notes": ["Notes"],
     },
     "unfi": {
@@ -586,7 +604,7 @@ INTAKE_MAPPINGS = {
         "item_name": "Description",
         "description": "Description",
         "id": "UPC",
-        "output": "Output Type",
+        "output": "Workstream",
         "notes": ["Notes"],
     },
     "smithfield": {
@@ -1158,7 +1176,7 @@ def _intake_destination_field_map():
         "Product or File Name": (C.PRODUCTS_TABLE, C.F_ITEM_PRODUCT),
         "Description": (C.PRODUCTS_TABLE, C.F_ITEM_DESCRIPTION),
         "Product Job Number": (C.PRODUCTS_TABLE, C.F_ITEM_JOB_NUMBER),
-        "Output Type": (C.PRODUCTS_TABLE, C.F_ITEM_OUTPUT),
+        "Workstream": (C.PRODUCTS_TABLE, C.F_ITEM_WORKSTREAM),
         "Master or Variant": (C.PRODUCTS_TABLE, C.F_ITEM_MASTER_VARIANT),
         "Pickup Job Number": (C.PRODUCTS_TABLE, C.F_ITEM_PICKUP_JOB_NUMBER),
         "Brand": (C.PRODUCTS_TABLE, C.F_ITEM_BRAND),
@@ -1314,6 +1332,7 @@ def _mapping_from_ui_mapping(ui_mapping):
         "Brand": "brand",
         "Job Number": "item_job_number",
         "Parent Job Number": "parent_job_number",
+        "Workstream": "output",
         "Output Type": "output",
         "Master or Variant": "master_or_variant",
         "Pickup Job Number": "pickup_job_number",
@@ -1333,6 +1352,7 @@ def _mapping_from_ui_mapping(ui_mapping):
         "Items.Item Job Number": "item_job_number",
         "Products.Product Job Number": "item_job_number",
         "Items.Job Number": "item_job_number",
+        "Products.Workstream": "output",
         "Items.Output Type": "output",
         "Items.Master or Variant": "master_or_variant",
         "Items.Pickup Job Number": "pickup_job_number",
@@ -1348,6 +1368,7 @@ def _mapping_from_ui_mapping(ui_mapping):
         "Item Job Number": "item_job_number",
         "Product Job Number": "item_job_number",
         "Job Number": "item_job_number",
+        "Workstream": "output",
         "Output Type": "output",
         "Master or Variant": "master_or_variant",
         "Pickup Job Number": "pickup_job_number",
@@ -1395,10 +1416,10 @@ def _mapping_from_ui_mapping(ui_mapping):
     return mapping
 
 
-def _normalize_output(value):
+def _normalize_workstream(value):
     cleaned = (value or "").strip()
     if not cleaned:
-        return DEFAULT_IMPORT_OUTPUT
+        return DEFAULT_IMPORT_WORKSTREAM
     aliases = {
         "photo": "Photo Only",
         "photo only": "Photo Only",
@@ -1408,8 +1429,17 @@ def _normalize_output(value):
         "photo and render": "Photo + Render",
         "photo/render": "Photo + Render",
         "both": "Photo + Render",
+        "gs1": "GS1 Ecomm",
+        "gs1 ecomm": "GS1 Ecomm",
+        "ecomm": "GS1 Ecomm",
+        "packaging": "Packaging Photography",
+        "packaging photography": "Packaging Photography",
+        "thr3d": "THR3D",
+        "thread": "THR3D",
+        "video": "Video",
+        "other": "Other",
     }
-    return aliases.get(cleaned.lower(), cleaned if cleaned in IMPORT_OUTPUTS else DEFAULT_IMPORT_OUTPUT)
+    return aliases.get(cleaned.lower(), cleaned if cleaned in IMPORT_WORKSTREAMS else DEFAULT_IMPORT_WORKSTREAM)
 
 
 def _normalize_master_or_variant(value):
@@ -1548,7 +1578,7 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
         parent_job_number = _normalize_item_job_number(_mapped_value(row, mapping, "parent_job_number"))
         brand = _mapped_value(row, mapping, "brand")
         category = _mapped_value(row, mapping, "category")
-        output = _normalize_output(_mapped_value(row, mapping, "output"))
+        output = _normalize_workstream(_mapped_value(row, mapping, "output"))
         master_or_variant = _normalize_master_or_variant(_mapped_value(row, mapping, "master_or_variant"))
         pickup_job_number = _normalize_item_job_number(_mapped_value(row, mapping, "pickup_job_number"))
         job_name_text = existing_job_name or single_job_name or _mapped_value(row, mapping, "job_name")
@@ -1691,7 +1721,7 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
         parent_job_number = _normalize_item_job_number(source.get("parentJobNumber"))
         brand = str(source.get("brand", "") or "").strip()
         category = str(source.get("category", "") or "").strip()
-        output = _normalize_output(str(source.get("output", "") or ""))
+        output = _normalize_workstream(str(source.get("workstream", "") or source.get("output", "") or ""))
         master_or_variant = _normalize_master_or_variant(source.get("masterOrVariant"))
         pickup_job_number = _normalize_item_job_number(source.get("pickupJobNumber"))
         notes = str(source.get("notes", "") or "").strip()
@@ -1816,7 +1846,7 @@ def _item_fields_from_row(client_id, job_id, row):
         C.F_ITEM_JOB: [job_id],
         C.F_ITEM_IDENTIFIER: row["id"],
         C.F_ITEM_PRODUCT: row["product"],
-        C.F_ITEM_OUTPUT: row.get("output") or DEFAULT_IMPORT_OUTPUT,
+        C.F_ITEM_WORKSTREAM: row.get("output") or DEFAULT_IMPORT_WORKSTREAM,
         C.F_ITEM_STATUS: row["status"],
     }
     if row.get("brand"):
@@ -2497,6 +2527,7 @@ def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, readiness_full
         "product": f.get(C.F_ITEM_PRODUCT, ""),
         "itemJobNumber": f.get(C.F_ITEM_JOB_NUMBER, ""),
         "description": f.get(C.F_ITEM_DESCRIPTION, ""),
+        "workstream": f.get(C.F_ITEM_WORKSTREAM, ""),
         "output": f.get(C.F_ITEM_OUTPUT, ""),
         "masterOrVariant": f.get(C.F_ITEM_MASTER_VARIANT, ""),
         "pickupJobNumber": f.get(C.F_ITEM_PICKUP_JOB_NUMBER, ""),
@@ -2549,8 +2580,10 @@ def _apply_item_fields(fields, body):
         fields[C.F_ITEM_JOB_NUMBER] = _normalize_item_job_number(body.get("itemJobNumber"))
     if "description" in body and body["description"] not in (None, ""):
         fields[C.F_ITEM_DESCRIPTION] = _normalize_description(body.get("description"))
-    if "output" in body and body["output"] not in (None, ""):
-        fields[C.F_ITEM_OUTPUT] = _normalize_output(str(body.get("output") or ""))
+    if "workstream" in body and body["workstream"] not in (None, ""):
+        fields[C.F_ITEM_WORKSTREAM] = _normalize_workstream(str(body.get("workstream") or ""))
+    elif "output" in body and body["output"] not in (None, ""):
+        fields[C.F_ITEM_WORKSTREAM] = _normalize_workstream(str(body.get("output") or ""))
     if "masterOrVariant" in body and body["masterOrVariant"] not in (None, ""):
         normalized = _normalize_master_or_variant(body.get("masterOrVariant"))
         if normalized:
@@ -3012,6 +3045,320 @@ NON_INVENTORY_PRODUCT_STATUSES = {"cancelled"}
 WAITING_FOR_PRODUCT_DATA_MARKER = "[Waiting for Product Data]"
 
 
+def _notes_without_waiting_marker(notes):
+    lines = str(notes or "").splitlines()
+    return "\n".join(
+        line for line in lines
+        if WAITING_FOR_PRODUCT_DATA_MARKER not in line
+    ).strip()
+
+
+def _intake_decision_value(body, *keys):
+    for key in keys:
+        if key in body:
+            return (body.get(key) or "").strip()
+    return None
+
+
+def _validate_intake_choice(value, allowed, label):
+    if value is None:
+        return None
+    if value == "":
+        return ""
+    if value not in allowed:
+        return err(f"{label} must be one of: {', '.join(allowed)}.")
+    return value
+
+
+def _intake_decision_fields_from_body(body, existing_fields=None):
+    existing_fields = existing_fields or {}
+    production_type = _intake_decision_value(body, "production_type", "productionType")
+    merchandise_resolution = _intake_decision_value(body, "merchandise_resolution", "merchandiseResolution")
+    fields = {}
+
+    production_type = _validate_intake_choice(production_type, C.PRODUCTION_TYPE_OPTIONS, "Production Type")
+    if isinstance(production_type, tuple):
+        return production_type
+    merchandise_resolution = _validate_intake_choice(
+        merchandise_resolution,
+        C.MERCHANDISE_RESOLUTION_OPTIONS,
+        "Merchandise Resolution",
+    )
+    if isinstance(merchandise_resolution, tuple):
+        return merchandise_resolution
+
+    if production_type is not None:
+        fields[C.F_RECEIPT_ENTRY_PRODUCTION_TYPE] = production_type
+    if merchandise_resolution is not None:
+        fields[C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION] = merchandise_resolution
+
+    existing_resolution = existing_fields.get(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, "")
+    resolution_is_blank = not str(existing_resolution or "").strip()
+    resolution_supplied_blank = merchandise_resolution == ""
+    resolution_not_supplied = merchandise_resolution is None
+    if production_type == "THR3D" and resolution_is_blank and (resolution_not_supplied or resolution_supplied_blank):
+        fields[C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION] = "Ship to Kentucky"
+
+    return fields
+
+WORKSTREAM_DEFINITIONS = [
+    {
+        "id": "ecomm-photo",
+        "label": "Ecomm Photo",
+        "description": "Ecommerce photography workstream.",
+        "workflowTemplate": "ecomm-review",
+        "requiredReviewData": ["product-information", "artwork", "activation-information"],
+        "active": True,
+        "jobRequired": False,
+        "producerRequired": False,
+        "schedulingRequired": False,
+        "externalDestination": "Creative Force",
+    },
+    {
+        "id": "packaging-photo",
+        "label": "Packaging Photo",
+        "description": "Packaging photography workstream.",
+        "workflowTemplate": "packaging-review",
+        "requiredReviewData": ["product-information", "producer-preproduction"],
+        "active": True,
+        "jobRequired": False,
+        "producerRequired": True,
+        "schedulingRequired": True,
+        "externalDestination": "Creative Force",
+    },
+    {
+        "id": "thr3d",
+        "label": "THR3D",
+        "description": "THR3D routing workstream.",
+        "workflowTemplate": "thr3d-review",
+        "requiredReviewData": ["product-information", "thr3d-routing"],
+        "active": True,
+        "jobRequired": False,
+        "producerRequired": False,
+        "schedulingRequired": False,
+        "externalDestination": "THR3D",
+    },
+]
+
+
+def _parse_json_object(value):
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _parse_json_list(value):
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError):
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _workstream_definition_by_id(workstream_id):
+    return next((item for item in WORKSTREAM_DEFINITIONS if item["id"] == workstream_id), None)
+
+
+def _workstream_id_from_label(label):
+    text = str(label or "").strip().lower()
+    aliases = {
+        "ecomm photo": "ecomm-photo",
+        "ecommerce photo": "ecomm-photo",
+        "gs1 ecomm": "ecomm-photo",
+        "photo only": "ecomm-photo",
+        "photo + render": "ecomm-photo",
+        "packaging photo": "packaging-photo",
+        "packaging photography": "packaging-photo",
+        "thr3d": "thr3d",
+        "thread": "thr3d",
+        "render only": "thr3d",
+    }
+    return aliases.get(text, "")
+
+
+def _shape_workstream(record):
+    fields = record.get("fields", {})
+    config = _parse_json_object(fields.get(C.F_WORKSTREAM_CONFIGURATION, ""))
+    label = fields.get(C.F_WORKSTREAM_NAME, "")
+    return {
+        "id": record["id"],
+        "key": config.get("id") or _workstream_id_from_label(label) or record["id"],
+        "label": label,
+        "name": label,
+        "active": fields.get(C.F_WORKSTREAM_ACTIVE, True),
+        "description": fields.get(C.F_WORKSTREAM_DESCRIPTION, "") or config.get("description", ""),
+        "workflowTemplate": fields.get(C.F_WORKSTREAM_WORKFLOW_TEMPLATE, "") or config.get("workflowTemplate", ""),
+        "requiredReviewData": config.get("requiredReviewData", []),
+        "jobRequired": bool(config.get("jobRequired", False)),
+        "producerRequired": bool(config.get("producerRequired", False)),
+        "schedulingRequired": bool(config.get("schedulingRequired", False)),
+        "externalDestination": config.get("externalDestination", ""),
+        "configuration": config,
+    }
+
+
+def _workstream_fields_from_definition(definition):
+    return {
+        C.F_WORKSTREAM_NAME: definition["label"],
+        C.F_WORKSTREAM_ACTIVE: bool(definition.get("active", True)),
+        C.F_WORKSTREAM_DESCRIPTION: definition.get("description", ""),
+        C.F_WORKSTREAM_WORKFLOW_TEMPLATE: definition.get("workflowTemplate", ""),
+        C.F_WORKSTREAM_CONFIGURATION: json.dumps(definition, sort_keys=True),
+    }
+
+
+def _list_workstream_records(seed=False):
+    records = _list_all_records(C.WORKSTREAMS_TABLE)
+    by_key = {_shape_workstream(record)["key"]: record for record in records}
+    if seed:
+        changed = False
+        for definition in WORKSTREAM_DEFINITIONS:
+            existing = by_key.get(definition["id"])
+            fields = _workstream_fields_from_definition(definition)
+            if existing:
+                airtable.update_record(C.WORKSTREAMS_TABLE, existing["id"], fields, by_field_id=False)
+            else:
+                created = airtable.create_record(C.WORKSTREAMS_TABLE, fields, by_field_id=False)
+                by_key[definition["id"]] = created
+                changed = True
+        if changed:
+            records = _list_all_records(C.WORKSTREAMS_TABLE)
+    return records
+
+
+def _workstreams_by_key(seed=False):
+    shaped = [_shape_workstream(record) for record in _list_workstream_records(seed=seed)]
+    return {item["key"]: item for item in shaped}
+
+
+def _workstreams_by_record_id(seed=False):
+    shaped = [_shape_workstream(record) for record in _list_workstream_records(seed=seed)]
+    return {item["id"]: item for item in shaped}
+
+
+def _shape_work_order(record, *, workstreams_by_id=None, workflow_stages_by_id=None, workflow_templates_by_id=None, work_order_types_by_id=None):
+    fields = record.get("fields", {})
+    workstream_ids = _as_list(fields.get(C.F_WORK_ORDER_WORKSTREAM, []))
+    workstream = next(
+        ((workstreams_by_id or {}).get(record_id) for record_id in workstream_ids if (workstreams_by_id or {}).get(record_id)),
+        None,
+    )
+    linked_type_ids = _as_list(fields.get(C.F_WORK_ORDER_TYPE, []))
+    linked_type = next(
+        ((work_order_types_by_id or {}).get(record_id) for record_id in linked_type_ids if (work_order_types_by_id or {}).get(record_id)),
+        None,
+    )
+    linked_stage_ids = _as_list(fields.get(C.F_WORK_ORDER_CURRENT_WORKFLOW_STAGE, []))
+    linked_stage = next(
+        ((workflow_stages_by_id or {}).get(record_id) for record_id in linked_stage_ids if (workflow_stages_by_id or {}).get(record_id)),
+        None,
+    )
+    linked_template_ids = _as_list(fields.get(C.F_WORK_ORDER_WORKFLOW_TEMPLATE, []))
+    linked_template = next(
+        ((workflow_templates_by_id or {}).get(record_id) for record_id in linked_template_ids if (workflow_templates_by_id or {}).get(record_id)),
+        None,
+    )
+    type_template = (linked_type or {}).get("workflowTemplate")
+    effective_template = type_template or linked_template
+    legacy_stage = fields.get(C.F_WORK_ORDER_CURRENT_STAGE, "")
+    resolved_stage = (linked_stage or {}).get("stageKey") or legacy_stage
+    resolved_stage_name = (linked_stage or {}).get("name") or resolved_stage
+    workflow_id = (effective_template or {}).get("id") or fields.get(C.F_WORK_ORDER_WORKFLOW, "")
+    workflow_name = (effective_template or {}).get("name") or fields.get(C.F_WORK_ORDER_WORKFLOW, "")
+    readiness = _parse_json_list(fields.get(C.F_WORK_ORDER_READINESS_METADATA, ""))
+    blockers = _parse_json_list(fields.get(C.F_WORK_ORDER_BLOCKING_REQUIREMENTS, ""))
+    return {
+        "id": record["id"],
+        "name": fields.get(C.F_WORK_ORDER_NAME, ""),
+        "merchandiseIds": _as_list(fields.get(C.F_WORK_ORDER_MERCHANDISE, [])),
+        "workstreamIds": workstream_ids,
+        "workstream": workstream,
+        "workstreamKey": (workstream or {}).get("key", ""),
+        "workstreamLabel": (workstream or {}).get("label", ""),
+        "workflowId": workflow_id,
+        "workflowName": workflow_name,
+        "workflow_template": effective_template,
+        "workflow_template_id": workflow_id,
+        "workflowTemplateIds": linked_template_ids,
+        "workOrderTypeIds": linked_type_ids,
+        "workOrderType": linked_type,
+        "work_order_type": linked_type,
+        "work_order_type_id": (linked_type or {}).get("id") or (linked_type_ids[0] if linked_type_ids else ""),
+        "work_order_type_key": (linked_type or {}).get("key", ""),
+        "currentWorkflowStageIds": linked_stage_ids,
+        "currentWorkflowStage": linked_stage,
+        "currentStage": resolved_stage,
+        "currentStageName": resolved_stage_name,
+        "currentGate": resolved_stage,
+        "currentGateName": resolved_stage_name,
+        "currentOwner": fields.get(C.F_WORK_ORDER_CURRENT_OWNER, ""),
+        "currentStatus": fields.get(C.F_WORK_ORDER_CURRENT_STATUS, ""),
+        "jobIds": _as_list(fields.get(C.F_WORK_ORDER_JOB, [])),
+        "readiness": readiness,
+        "blockingRequirements": blockers,
+        "createdAt": fields.get(C.F_WORK_ORDER_CREATED_AT, ""),
+        "completedAt": fields.get(C.F_WORK_ORDER_COMPLETED_AT, ""),
+    }
+
+
+def _list_work_order_records():
+    return _list_all_records(C.WORK_ORDERS_TABLE)
+
+
+def _work_order_name(entry, workstream):
+    fields = entry.get("fields", {})
+    package_name = fields.get(C.F_RECEIPT_ENTRY_NAME, "") or "Merchandise"
+    return f"{package_name} - {workstream.get('label') or workstream.get('name')}"
+
+
+def _work_order_fields(entry, workstream, existing=None, include_workflow_links=False):
+    now = _now_iso()
+    workflow = workstream.get("workflowTemplate") or "merchandise-review"
+    requirements = workstream.get("requiredReviewData") or []
+    fields = {
+        C.F_WORK_ORDER_NAME: _work_order_name(entry, workstream),
+        C.F_WORK_ORDER_MERCHANDISE: [entry["id"]],
+        C.F_WORK_ORDER_WORKSTREAM: [workstream["id"]],
+        C.F_WORK_ORDER_WORKFLOW: workflow,
+        C.F_WORK_ORDER_CURRENT_GATE: "new-review",
+        C.F_WORK_ORDER_CURRENT_OWNER: "Project Management",
+        C.F_WORK_ORDER_CURRENT_STATUS: "not_started",
+        C.F_WORK_ORDER_READINESS_METADATA: json.dumps([], sort_keys=True),
+        C.F_WORK_ORDER_BLOCKING_REQUIREMENTS: json.dumps(requirements, sort_keys=True),
+    }
+    if include_workflow_links:
+        fields.update(_work_order_configuration_fields_for_stage("new-review"))
+    if not existing:
+        fields[C.F_WORK_ORDER_CREATED_AT] = now
+    if existing and existing.get("fields", {}).get(C.F_WORK_ORDER_CURRENT_STATUS) == "cancelled":
+        fields[C.F_WORK_ORDER_COMPLETED_AT] = ""
+    return fields
+
+
+def _workflow_link_fields_for_stage(stage_key):
+    try:
+        return workflow_service().fields_for_work_order_stage(stage_key)
+    except requests.HTTPError:
+        return {}
+
+
+def _work_order_configuration_fields_for_stage(stage_key):
+    try:
+        return work_order_type_service().fields_for_new_work_order(stage_key)
+    except requests.HTTPError:
+        return _workflow_link_fields_for_stage(stage_key)
+
+
 def _parse_airtable_datetime(value):
     if not value:
         return None
@@ -3215,6 +3562,407 @@ def list_verification_entries():
     return jsonify({"records": records})
 
 
+@api.get("/workstreams")
+def list_workstreams():
+    try:
+        records = [_shape_workstream(record) for record in _list_workstream_records(seed=True)]
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    records.sort(key=lambda item: next((index for index, definition in enumerate(WORKSTREAM_DEFINITIONS) if definition["id"] == item["key"]), 999))
+    return jsonify({"records": records})
+
+
+@api.get("/workflow-templates")
+def list_workflow_templates():
+    try:
+        templates = workflow_service().list_templates(seed=True)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"records": templates})
+
+
+@api.post("/workflow-templates")
+def create_workflow_template():
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    try:
+        template = workflow_service().create_template(request.get_json(silent=True) or {})
+    except WorkflowValidationError as error:
+        return workflow_err(error)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": template}), 201
+
+
+@api.get("/workflow-templates/<template_id>")
+def get_workflow_template(template_id):
+    try:
+        template = workflow_service().get_template(template_id)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": template})
+
+
+@api.patch("/workflow-templates/<template_id>")
+def update_workflow_template(template_id):
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    try:
+        template = workflow_service().update_template(template_id, request.get_json(silent=True) or {})
+    except WorkflowValidationError as error:
+        return workflow_err(error)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": template})
+
+
+@api.post("/workflow-templates/<template_id>/duplicate")
+def duplicate_workflow_template(template_id):
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    try:
+        template = workflow_service().duplicate_template(template_id)
+    except WorkflowValidationError as error:
+        return workflow_err(error)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": template}), 201
+
+
+@api.post("/workflow-templates/<template_id>/stages")
+def create_workflow_stage(template_id):
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    try:
+        stage = workflow_service().create_stage(template_id, request.get_json(silent=True) or {})
+    except WorkflowValidationError as error:
+        return workflow_err(error)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": stage}), 201
+
+
+@api.patch("/workflow-stages/<stage_id>")
+def update_workflow_stage(stage_id):
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    try:
+        stage = workflow_service().update_stage(stage_id, request.get_json(silent=True) or {})
+    except WorkflowValidationError as error:
+        return workflow_err(error)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": stage})
+
+
+@api.post("/workflow-stages/<stage_id>/deactivate")
+def deactivate_workflow_stage(stage_id):
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    try:
+        stage = workflow_service().deactivate_stage(stage_id)
+    except WorkflowValidationError as error:
+        return workflow_err(error)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": stage})
+
+
+@api.get("/work-order-types")
+def list_work_order_types():
+    try:
+        records = work_order_type_service().list_types(seed=True)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"records": records})
+
+
+@api.get("/work-order-types/<record_id>")
+def get_work_order_type(record_id):
+    try:
+        record = work_order_type_service().get_type(record_id)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": record})
+
+
+@api.post("/work-order-types")
+def create_work_order_type():
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    try:
+        record = work_order_type_service().create_type(request.get_json(silent=True) or {})
+    except WorkOrderTypeValidationError as error:
+        return work_order_type_err(error)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": record}), 201
+
+
+@api.patch("/work-order-types/<record_id>")
+def update_work_order_type(record_id):
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    try:
+        record = work_order_type_service().update_type(record_id, request.get_json(silent=True) or {})
+    except WorkOrderTypeValidationError as error:
+        return work_order_type_err(error)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": record})
+
+
+@api.post("/work-order-types/<record_id>/duplicate")
+def duplicate_work_order_type(record_id):
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    try:
+        record = work_order_type_service().duplicate_type(record_id)
+    except WorkOrderTypeValidationError as error:
+        return work_order_type_err(error)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": record}), 201
+
+
+@api.post("/work-order-types/<record_id>/set-default")
+def set_default_work_order_type(record_id):
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    try:
+        record = work_order_type_service().set_default(record_id)
+    except WorkOrderTypeValidationError as error:
+        return work_order_type_err(error)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": record})
+
+
+@api.post("/work-order-types/<record_id>/activate")
+def activate_work_order_type(record_id):
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    try:
+        record = work_order_type_service().activate(record_id)
+    except WorkOrderTypeValidationError as error:
+        return work_order_type_err(error)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": record})
+
+
+@api.post("/work-order-types/<record_id>/deactivate")
+def deactivate_work_order_type(record_id):
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    try:
+        record = work_order_type_service().deactivate(record_id)
+    except WorkOrderTypeValidationError as error:
+        return work_order_type_err(error)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": record})
+
+
+@api.get("/work-orders")
+@api.get("/merchandise/review/work-orders")
+@api.get("/merchandise/review/workstream-assignments")
+def list_merchandise_review_work_orders():
+    try:
+        review_records = _list_merchandise_review_records()
+        permitted_merchandise_ids = {record["id"] for record in review_records}
+        workstreams_by_id = _workstreams_by_record_id(seed=True)
+        try:
+            templates = workflow_service().list_templates(seed=True)
+            workflow_templates_by_id = {template["id"]: template for template in templates}
+            workflow_stages_by_id = {
+                stage["id"]: stage
+                for template in templates
+                for stage in template.get("stages", [])
+            }
+            work_order_types_by_id = {item["id"]: item for item in work_order_type_service().list_types(seed=True)}
+        except requests.HTTPError:
+            workflow_templates_by_id = {}
+            workflow_stages_by_id = {}
+            work_order_types_by_id = {}
+        work_orders = []
+        for record in _list_work_order_records():
+            shaped = _shape_work_order(
+                record,
+                workstreams_by_id=workstreams_by_id,
+                workflow_stages_by_id=workflow_stages_by_id,
+                workflow_templates_by_id=workflow_templates_by_id,
+                work_order_types_by_id=work_order_types_by_id,
+            )
+            if not (set(shaped.get("merchandiseIds", [])) & permitted_merchandise_ids):
+                continue
+            if str(shaped.get("currentStatus") or "").lower() == "cancelled":
+                continue
+            work_orders.append(shaped)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    work_orders.sort(key=lambda item: (item.get("createdAt") or "", item.get("name") or ""), reverse=True)
+    return jsonify({
+        "records": work_orders,
+        "workstreams": list(workstreams_by_id.values()),
+    })
+
+
+@api.post("/merchandise/review/<entry_id>/work-orders")
+@api.post("/merchandise/review/<entry_id>/workstream-assignments")
+def save_merchandise_review_work_orders(entry_id):
+    body = request.get_json(silent=True) or {}
+    requested_keys = []
+    for value in body.get("workstreamIds") or body.get("workstreamKeys") or []:
+        key = str(value or "").strip()
+        if key and key not in requested_keys:
+            requested_keys.append(key)
+
+    try:
+        entry = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    linked_receipts = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+    receipt = _first_permitted_receipt(linked_receipts)
+    if linked_receipts and receipt is None:
+        return _forbidden()
+
+    try:
+        workstreams_by_key = _workstreams_by_key(seed=True)
+        workstreams_by_id = _workstreams_by_record_id(seed=True)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    invalid = [key for key in requested_keys if key not in workstreams_by_key or not workstreams_by_key[key].get("active", True)]
+    if invalid:
+        return err(f"Unknown or inactive Workstream: {', '.join(invalid)}.")
+
+    try:
+        existing_records = [
+            record
+            for record in _list_work_order_records()
+            if entry_id in _as_list(record.get("fields", {}).get(C.F_WORK_ORDER_MERCHANDISE, []))
+        ]
+        existing_by_key = {}
+        for record in existing_records:
+            shaped = _shape_work_order(record, workstreams_by_id=workstreams_by_id)
+            if shaped.get("workstreamKey"):
+                existing_by_key[shaped["workstreamKey"]] = record
+
+        saved = []
+        for key in requested_keys:
+            workstream = workstreams_by_key[key]
+            existing = existing_by_key.get(key)
+            fields = _work_order_fields(entry, workstream, existing=existing, include_workflow_links=True)
+            if existing:
+                saved.append(airtable.update_record(C.WORK_ORDERS_TABLE, existing["id"], fields, by_field_id=False))
+            else:
+                saved.append(airtable.create_record(C.WORK_ORDERS_TABLE, fields, by_field_id=False))
+
+        now = _now_iso()
+        for key, record in existing_by_key.items():
+            if key in requested_keys:
+                continue
+            airtable.update_record(C.WORK_ORDERS_TABLE, record["id"], {
+                C.F_WORK_ORDER_CURRENT_STATUS: "cancelled",
+                C.F_WORK_ORDER_COMPLETED_AT: now,
+            }, by_field_id=False)
+
+        try:
+            templates = workflow_service().list_templates(seed=True)
+            workflow_templates_by_id = {template["id"]: template for template in templates}
+            workflow_stages_by_id = {
+                stage["id"]: stage
+                for template in templates
+                for stage in template.get("stages", [])
+            }
+            work_order_types_by_id = {item["id"]: item for item in work_order_type_service().list_types(seed=True)}
+        except requests.HTTPError:
+            workflow_templates_by_id = {}
+            workflow_stages_by_id = {}
+            work_order_types_by_id = {}
+        shaped_saved = [
+            _shape_work_order(
+                record,
+                workstreams_by_id=workstreams_by_id,
+                workflow_stages_by_id=workflow_stages_by_id,
+                workflow_templates_by_id=workflow_templates_by_id,
+                work_order_types_by_id=work_order_types_by_id,
+            )
+            for record in saved
+        ]
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    return jsonify({
+        "records": shaped_saved,
+        "merchandise": _shape_verification_entry(entry, receipt),
+    })
+
+
+@api.patch("/work-orders/<work_order_id>")
+@api.patch("/workstream-assignments/<work_order_id>")
+def update_work_order(work_order_id):
+    body = request.get_json(silent=True) or {}
+    try:
+        work_order = airtable.get_record(C.WORK_ORDERS_TABLE, work_order_id, by_field_id=False)
+        merchandise_ids = _as_list(work_order.get("fields", {}).get(C.F_WORK_ORDER_MERCHANDISE, []))
+        if merchandise_ids:
+            merchandise = airtable.get_record(C.MERCHANDISE_TABLE, merchandise_ids[0], by_field_id=False)
+            linked_receipts = _as_list(merchandise.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+            receipt = _first_permitted_receipt(linked_receipts)
+            if linked_receipts and receipt is None:
+                return _forbidden()
+
+        fields = {}
+        if "currentStage" in body or "currentGate" in body:
+            stage_key = str(body.get("currentStage") or body.get("currentGate") or "").strip()
+            fields[C.F_WORK_ORDER_CURRENT_STAGE] = stage_key
+            fields.update(_work_order_configuration_fields_for_stage(stage_key))
+        if "currentStatus" in body:
+            fields[C.F_WORK_ORDER_CURRENT_STATUS] = str(body.get("currentStatus") or "").strip()
+        if "currentOwner" in body:
+            fields[C.F_WORK_ORDER_CURRENT_OWNER] = str(body.get("currentOwner") or "").strip()
+        if "readiness" in body:
+            fields[C.F_WORK_ORDER_READINESS_METADATA] = json.dumps(body.get("readiness") or [], sort_keys=True)
+        if "blockingRequirements" in body:
+            fields[C.F_WORK_ORDER_BLOCKING_REQUIREMENTS] = json.dumps(body.get("blockingRequirements") or [], sort_keys=True)
+        if not fields:
+            return err("No Work Order fields supplied.")
+        updated = airtable.update_record(C.WORK_ORDERS_TABLE, work_order_id, fields, by_field_id=False)
+        workstreams_by_id = _workstreams_by_record_id(seed=True)
+        try:
+            workflow_stages_by_id, _stage_by_key = workflow_service().stage_maps()
+            workflow_templates_by_id = {template["id"]: template for template in workflow_service().list_templates(seed=True)}
+            work_order_types_by_id = {item["id"]: item for item in work_order_type_service().list_types(seed=True)}
+        except requests.HTTPError:
+            workflow_stages_by_id = {}
+            workflow_templates_by_id = {}
+            work_order_types_by_id = {}
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify(_shape_work_order(
+        updated,
+        workstreams_by_id=workstreams_by_id,
+        workflow_stages_by_id=workflow_stages_by_id,
+        workflow_templates_by_id=workflow_templates_by_id,
+        work_order_types_by_id=work_order_types_by_id,
+    ))
+
+
 @api.get("/verification/items")
 @api.get("/merchandise/products")
 def verification_items():
@@ -3228,6 +3976,92 @@ def verification_items():
     except requests.HTTPError as error:
         return airtable_err(error)
     return jsonify({"records": matches})
+
+
+@api.patch("/merchandise/<entry_id>/intake-decisions")
+@api.patch("/merchandise/review/<entry_id>/intake-decisions")
+def update_merchandise_intake_decisions(entry_id):
+    body = request.get_json(silent=True) or {}
+    try:
+        entry = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    linked_receipts = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+    receipt = _first_permitted_receipt(linked_receipts)
+    if linked_receipts and receipt is None:
+        return _forbidden()
+
+    fields_or_error = _intake_decision_fields_from_body(body, entry.get("fields", {}))
+    if isinstance(fields_or_error, tuple):
+        return fields_or_error
+    if not fields_or_error:
+        return jsonify(_shape_verification_entry(entry, receipt))
+
+    try:
+        updated = _update_receipt_entry_record(entry_id, fields_or_error)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify(_shape_verification_entry(updated, receipt))
+
+
+@api.patch("/merchandise/<entry_id>/intake-state")
+@api.patch("/merchandise/review/<entry_id>/intake-state")
+def update_merchandise_intake_state(entry_id):
+    body = request.get_json(silent=True) or {}
+    stage = (body.get("stage") or body.get("currentStage") or body.get("currentGate") or "").strip()
+    allowed_stages = {"new-review", "waiting-info", "send-thr3d", "waiting-activation", "ready-production"}
+    if stage not in allowed_stages:
+        return err("stage must be one of: new-review, waiting-info, send-thr3d, waiting-activation, ready-production.")
+
+    try:
+        entry = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    fields = entry.get("fields", {})
+    linked_receipts = _as_list(fields.get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+    receipt = _first_permitted_receipt(linked_receipts)
+    if linked_receipts and receipt is None:
+        return _forbidden()
+
+    notes = fields.get(C.F_RECEIPT_ENTRY_NOTES, "") or ""
+    update_fields = {}
+    if stage == "new-review":
+        update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Received"
+        cleaned_notes = _notes_without_waiting_marker(notes)
+        if cleaned_notes != notes:
+            update_fields[C.F_RECEIPT_ENTRY_NOTES] = cleaned_notes
+    elif stage == "waiting-info":
+        marker_line = WAITING_FOR_PRODUCT_DATA_MARKER
+        if WAITING_FOR_PRODUCT_DATA_MARKER not in notes:
+            update_fields[C.F_RECEIPT_ENTRY_NOTES] = f"{notes}\n{marker_line}".strip()
+        update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Received"
+    elif stage == "send-thr3d":
+        update_fields.update(_intake_decision_fields_from_body({"productionType": "THR3D"}, fields))
+        update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS) or "Received"
+    elif stage == "waiting-activation":
+        update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Matched"
+        cleaned_notes = _notes_without_waiting_marker(notes)
+        if cleaned_notes != notes:
+            update_fields[C.F_RECEIPT_ENTRY_NOTES] = cleaned_notes
+    elif stage == "ready-production":
+        item_ids = _as_list(fields.get(C.F_RECEIPT_ENTRY_ITEM, []))
+        if not item_ids:
+            return err("Cannot move to Ready for Production.\nMissing: Product Information", 400)
+        issues = _issues_by_item_id().get(item_ids[0], [])
+        if _blocking_merchandise_issues(issues):
+            return err("Cannot move to Ready for Production.\nMissing: Resolved Merchandise Issues", 400)
+        update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Validated"
+        cleaned_notes = _notes_without_waiting_marker(notes)
+        if cleaned_notes != notes:
+            update_fields[C.F_RECEIPT_ENTRY_NOTES] = cleaned_notes
+
+    try:
+        updated = _update_receipt_entry_record(entry_id, update_fields)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify(_shape_verification_entry(updated, receipt))
 
 
 @api.post("/verification/entries/<entry_id>/match")
@@ -3804,6 +4638,10 @@ def update_receiving_entry(record_id, entry_id):
     fields_or_error = _receipt_entry_update_fields_from_body(body)
     if isinstance(fields_or_error, tuple):
         return fields_or_error
+    intake_fields = _intake_decision_fields_from_body(body, entry_record.get("fields", {}))
+    if isinstance(intake_fields, tuple):
+        return intake_fields
+    fields_or_error.update(intake_fields)
     item_ids_for_match = _as_list(body.get("itemIds") or body.get("itemId"))
     should_update_match = bool(item_ids_for_match) or "matchStatus" in body or body.get("noClearMatch")
     if should_update_match:
@@ -4248,6 +5086,10 @@ def _shape_receipt_entry(r):
         "photoMetadata": photo_metadata,
         "itemIds": item_ids,
         "merchStatus": merch_status,
+        "production_type": f.get(C.F_RECEIPT_ENTRY_PRODUCTION_TYPE, ""),
+        "productionType": f.get(C.F_RECEIPT_ENTRY_PRODUCTION_TYPE, ""),
+        "merchandise_resolution": f.get(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, ""),
+        "merchandiseResolution": f.get(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, ""),
     }
 
 
@@ -4673,6 +5515,9 @@ def settings():
                 "issues": C.ISSUES_TABLE,
                 "history": C.HISTORY_TABLE,
                 "imports": C.IMPORTS_TABLE,
+                "workflowTemplates": C.WORKFLOW_TEMPLATES_TABLE,
+                "workflowStages": C.WORKFLOW_STAGES_TABLE,
+                "workOrderTypes": C.WORK_ORDER_TYPES_TABLE,
             },
         }
     })
