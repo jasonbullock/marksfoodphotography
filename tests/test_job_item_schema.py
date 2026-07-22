@@ -8,9 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 import config as C  # noqa: E402
 from routes import (  # noqa: E402
-    WORKSTREAM_DEFINITIONS,
     _apply_item_fields,
-    _work_order_fields,
     _build_intake_plan_from_source_rows,
     _item_fields_from_row,
     _item_match_score,
@@ -19,81 +17,24 @@ from routes import (  # noqa: E402
     _normalize_description,
     _normalize_item_job_number,
     _normalize_master_or_variant,
-    _shape_workstream,
-    _shape_work_order,
     _shape_item,
     _shape_job,
 )
 
 
 class JobItemSchemaTests(unittest.TestCase):
-    def test_workstream_registry_contains_only_initial_work_order_workstreams(self):
-        self.assertEqual(
-            [definition["label"] for definition in WORKSTREAM_DEFINITIONS],
-            ["Ecomm Photo", "Packaging Photo", "Thr3d"],
-        )
-        self.assertEqual(
-            [definition["id"] for definition in WORKSTREAM_DEFINITIONS],
-            ["ecomm-photo", "packaging-photo", "thr3d"],
-        )
-
-    def test_work_order_config_uses_canonical_table_and_field_names(self):
-        self.assertEqual(C.Config.WORK_ORDERS_TABLE, "Work Orders")
-        self.assertEqual(C.Config.WORKSTREAM_ASSIGNMENTS_TABLE, C.Config.WORK_ORDERS_TABLE)
-        self.assertEqual(C.Config.F_WORK_ORDER_NAME, "Work Order")
-        self.assertEqual(C.Config.F_WORK_ORDER_TYPE, "Work Order Type")
-        self.assertEqual(C.Config.F_WORK_ORDER_WORKFLOW_TEMPLATE, "Workflow Template")
-        self.assertEqual(C.Config.F_WORK_ORDER_CURRENT_WORKFLOW_STAGE, "Current Workflow Stage")
-        self.assertEqual(C.Config.F_WORK_ORDER_CURRENT_STAGE, "Current Stage")
-        self.assertEqual(C.Config.F_WORK_ORDER_CURRENT_GATE, C.Config.F_WORK_ORDER_CURRENT_STAGE)
-
-    def test_work_order_fields_attach_work_not_duplicate_merchandise(self):
-        entry = {
-            "id": "recMerch",
-            "fields": {C.Config.F_RECEIPT_ENTRY_NAME: "Apple Fritter Donut Bites"},
-        }
-        fields = _work_order_fields(entry, {"id": "recWorkstream", "label": "Packaging Photo", "workflowTemplate": "packaging-review"})
-
-        self.assertEqual(fields[C.Config.F_WORK_ORDER_MERCHANDISE], ["recMerch"])
-        self.assertEqual(fields[C.Config.F_WORK_ORDER_WORKSTREAM], ["recWorkstream"])
-        self.assertEqual(fields[C.Config.F_WORK_ORDER_WORKFLOW], "packaging-review")
-        self.assertEqual(fields[C.Config.F_WORK_ORDER_CURRENT_GATE], "new-review")
-        self.assertEqual(fields[C.Config.F_WORK_ORDER_CURRENT_OWNER], "Project Management")
-        self.assertIn("Packaging Photo", fields[C.Config.F_WORK_ORDER_NAME])
-        self.assertNotIn(C.Config.F_RECEIPT_ENTRY_NAME, fields)
-
-    def test_work_order_shape_keeps_work_state_independent(self):
-        workstream = _shape_workstream({
-            "id": "recWorkstream",
-            "fields": {
-                C.Config.F_WORKSTREAM_NAME: "Ecomm Photo",
-                C.Config.F_WORKSTREAM_WORKFLOW_TEMPLATE: "ecomm-review",
-                C.Config.F_WORKSTREAM_CONFIGURATION: '{"id": "ecomm-photo", "requiredReviewData": ["product-information"]}',
-            },
-        })
-        shaped = _shape_work_order({
-            "id": "recWorkOrder",
-            "fields": {
-                C.Config.F_WORK_ORDER_NAME: "Donut Bites - Ecomm Photo",
-                C.Config.F_WORK_ORDER_MERCHANDISE: ["recMerch"],
-                C.Config.F_WORK_ORDER_WORKSTREAM: ["recWorkstream"],
-                C.Config.F_WORK_ORDER_WORKFLOW: "ecomm-review",
-                C.Config.F_WORK_ORDER_CURRENT_GATE: "ready-production",
-                C.Config.F_WORK_ORDER_CURRENT_OWNER: "Project Management",
-                C.Config.F_WORK_ORDER_CURRENT_STATUS: "ready",
-                C.Config.F_WORK_ORDER_READINESS_METADATA: '[{"key": "product-information", "satisfied": true}]',
-                C.Config.F_WORK_ORDER_BLOCKING_REQUIREMENTS: "[]",
-            },
-        }, workstreams_by_id={"recWorkstream": workstream})
-
-        self.assertEqual(shaped["merchandiseIds"], ["recMerch"])
-        self.assertEqual(shaped["workstreamKey"], "ecomm-photo")
-        self.assertEqual(shaped["workstreamLabel"], "Ecomm Photo")
-        self.assertEqual(shaped["workflowId"], "ecomm-review")
-        self.assertEqual(shaped["currentStage"], "ready-production")
-        self.assertEqual(shaped["currentGate"], "ready-production")
-        self.assertEqual(shaped["currentStatus"], "ready")
-        self.assertEqual(shaped["readiness"][0]["key"], "product-information")
+    def test_legacy_work_order_config_is_not_exposed(self):
+        legacy_attrs = [
+            "WORK_ORDERS_TABLE",
+            "WORKSTREAM_ASSIGNMENTS_TABLE",
+            "WORKFLOW_TEMPLATES_TABLE",
+            "WORKFLOW_STAGES_TABLE",
+            "WORK_ORDER_TYPES_TABLE",
+            "F_ITEM_WORKSTREAM",
+            "F_ITEM_OUTPUT",
+        ]
+        for attr in legacy_attrs:
+            self.assertFalse(hasattr(C.Config, attr), attr)
 
     def test_job_shape_returns_parent_job_number(self):
         shaped = _shape_job({
@@ -133,7 +74,6 @@ class JobItemSchemaTests(unittest.TestCase):
                 C.Config.F_ITEM_NAME: "Milk",
                 C.Config.F_ITEM_JOB_NUMBER: "00-ABC-123",
                 C.Config.F_ITEM_DESCRIPTION: "Whole milk gallon",
-                C.Config.F_ITEM_OUTPUT: "Photo Only",
                 C.Config.F_ITEM_MASTER_VARIANT: "Variant",
                 C.Config.F_ITEM_PICKUP_JOB_NUMBER: "OLD-001",
             },
@@ -141,8 +81,8 @@ class JobItemSchemaTests(unittest.TestCase):
 
         self.assertEqual(shaped["itemJobNumber"], "00-ABC-123")
         self.assertEqual(shaped["description"], "Whole milk gallon")
-        self.assertEqual(shaped["workstream"], "Photo Only")
-        self.assertEqual(shaped["output"], "Photo Only")
+        self.assertNotIn("workstream", shaped)
+        self.assertNotIn("output", shaped)
         self.assertEqual(shaped["masterOrVariant"], "Variant")
         self.assertEqual(shaped["pickupJobNumber"], "OLD-001")
 
@@ -151,14 +91,12 @@ class JobItemSchemaTests(unittest.TestCase):
         _apply_item_fields(fields, {
             "itemJobNumber": "  00-ABC-123  ",
             "description": "  Line one\r\nLine two  ",
-            "output": "photo",
             "masterOrVariant": "v",
             "pickupJobNumber": "  OLD-001  ",
         })
 
         self.assertEqual(fields[C.Config.F_ITEM_JOB_NUMBER], "00-ABC-123")
         self.assertEqual(fields[C.Config.F_ITEM_DESCRIPTION], "Line one\nLine two")
-        self.assertEqual(fields[C.Config.F_ITEM_OUTPUT], "Photo Only")
         self.assertEqual(fields[C.Config.F_ITEM_MASTER_VARIANT], "Variant")
         self.assertEqual(fields[C.Config.F_ITEM_PICKUP_JOB_NUMBER], "OLD-001")
 
@@ -170,14 +108,12 @@ class JobItemSchemaTests(unittest.TestCase):
             "status": "New",
             "itemJobNumber": "000-ABC",
             "description": "Organic whole milk",
-            "output": "Render Only",
             "masterOrVariant": "Master",
             "pickupJobNumber": "PICK-123",
         })
 
         self.assertEqual(fields[C.Config.F_ITEM_JOB_NUMBER], "000-ABC")
         self.assertEqual(fields[C.Config.F_ITEM_DESCRIPTION], "Organic whole milk")
-        self.assertEqual(fields[C.Config.F_ITEM_OUTPUT], "Render Only")
         self.assertEqual(fields[C.Config.F_ITEM_MASTER_VARIANT], "Master")
         self.assertEqual(fields[C.Config.F_ITEM_PICKUP_JOB_NUMBER], "PICK-123")
 

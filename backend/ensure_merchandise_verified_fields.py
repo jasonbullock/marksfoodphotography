@@ -3,10 +3,7 @@ import argparse
 import json
 
 from config import Config
-from ensure_workflow_schema import create_field, field_by_name, get_tables, load_env, table_by_name
-
-
-CHECKBOX_OPTIONS = {"icon": "check", "color": "greenBright"}
+from airtable_schema import CHECKBOX_OPTIONS, create_field, field_by_name, get_tables, load_env, table_by_name
 
 
 def verified_fields(users_table):

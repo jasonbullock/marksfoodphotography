@@ -13,7 +13,7 @@ from config import Config as C
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "docs" / "migrations" / "2026-07-21-airtable-schema-cleanup-audit.json"
+OUTPUT = ROOT / "docs" / "migrations" / "2026-07-22-minimal-operating-model-airtable-audit.json"
 TEXT_EXTENSIONS = {".py", ".js", ".jsx", ".md", ".json", ".csv", ".txt", ".env", ".example"}
 
 CANONICAL_TABLES = {
@@ -29,12 +29,11 @@ CANONICAL_TABLES = {
 }
 
 LEGACY_TABLES = {
-    C.HISTORY_TABLE,
-    C.WORKSTREAMS_TABLE,
-    C.WORK_ORDERS_TABLE,
-    C.WORKFLOW_TEMPLATES_TABLE,
-    C.WORKFLOW_STAGES_TABLE,
-    C.WORK_ORDER_TYPES_TABLE,
+    "Workstreams",
+    "Work Orders",
+    "Workflow Templates",
+    "Workflow Stages",
+    "Work Order Types",
 }
 
 CORE_PRODUCT_FIELDS = {
@@ -54,13 +53,25 @@ REPORTING_PRODUCT_FIELDS = {
     C.F_ITEM_JOB,
     C.F_ITEM_JOB_NUMBER,
     C.F_ITEM_PICKUP_JOB_NUMBER,
-    C.F_ITEM_WORKSTREAM,
     C.F_ITEM_MASTER_VARIANT,
     C.F_ITEM_CATEGORY,
+}
+
+OBSOLETE_PRODUCT_FIELDS = {
+    C.F_ITEM_RECEIVED,
+    C.F_ITEM_REC_DATE,
+    C.F_ITEM_LOCATION,
+    C.F_ITEM_CONDITION,
     C.F_ITEM_STATUS,
+    C.F_ITEM_PHOTOS,
+    C.F_ITEM_PHOTO_METADATA,
+    C.F_ITEM_RECEIPTS,
+    C.F_ITEM_ISSUES,
     C.F_ITEM_EXPORTED,
     C.F_ITEM_EXPORTED_ON,
     C.F_ITEM_EXPORT_ERROR,
+    "Workstream",
+    "Output Type",
 }
 
 
@@ -128,6 +139,8 @@ def recommendation_for_field(table_name, field, hits):
             return "Keep"
         if name in REPORTING_PRODUCT_FIELDS:
             return "Keep for reporting/integration review"
+        if name in OBSOLETE_PRODUCT_FIELDS:
+            return "Manual delete after backup"
     if name.lower() in {"notes", "pm notes", "receiver notes", "shipment notes", "review notes", "resolution notes"}:
         return "Consolidate into Conversation review"
     if hits.get(name) or hits.get(field["id"]):

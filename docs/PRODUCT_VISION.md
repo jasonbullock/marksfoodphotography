@@ -34,7 +34,7 @@ Marks Photo sits in the operational handoff between merchandise arrival and prod
 ```text
 Shipment
 ↓
-Receiving
+Shipments
 ↓
 Inventory
 ↓
@@ -53,15 +53,19 @@ PhotoTrack
 
 ### Shipment
 
-Ownership: logistics and receiving context.
+Ownership: logistics and shipment context.
 
-A Shipment represents the inbound package, delivery, or transfer that brings merchandise into the studio. It answers where the physical goods came from, when they arrived, and what receiving context belongs to them.
+A Shipment represents the inbound package, delivery, or transfer that brings merchandise into the studio. It answers where the physical goods came from, when they arrived, and what shipment context belongs to them.
 
-### Receiving
+### Shipments
 
-Ownership: Receiving.
+Ownership: merchandise team.
 
-Receiving captures reality. It records what physically arrived, including observed identifiers, quantity, condition, storage location, photos, and notes. Receiving does not decide production intent. It creates trustworthy operational evidence.
+Shipments captures physical movement. It records what physically arrived, including observed identifiers, quantity, condition, storage location, photos, and notes, and it will also support outbound movement such as THR3D shipments. Shipments does not decide production intent and is not a workflow engine. It creates trustworthy operational evidence for merchandise entering and leaving the studio.
+
+Shipment photos are shipment-owned evidence for boxes, labels, delivery context, and damage. Originals belong in R2 with metadata on the Shipment, and downstream workspaces should display them through the Shipment relationship rather than copying them onto Merchandise.
+
+Shipments may contain lightweight internal views such as `Incoming` and `Outgoing`. `Outgoing` initially means THR3D shipments: merchandise that Planning marked for THR3D, finished as `Ready to Release`, and the merchandise team needs to box and ship.
 
 ### Inventory
 
@@ -73,15 +77,17 @@ Inventory answers what the studio physically has. It is a shelf and storage pers
 
 Ownership: Project Management and operations readiness.
 
-Planning is where uncertainty is resolved before production. It identifies the product, evaluates client requirements, determines deliverables, decides merchandise resolution, requests replacement when needed, and establishes whether the work is ready for photo production.
+Planning is where uncertainty is resolved before production. It identifies the product, evaluates client requirements, determines deliverables, records blockers or exceptions, and establishes whether the work is ready for photo production.
 
-Planning is the PM preparation perspective. Its board is a freeform PM workspace organized by Queue, not an automatic workflow engine.
+Planning is the PM preparation perspective. Its board is a freeform PM workspace organized by Queue, not an automatic workflow engine. The implementation should preserve that language internally: Planning cards, queues, deliverables, and Required to Shoot blockers, not Work Orders, workflow assignments, Workstreams, or hidden gates.
 
 The PM-facing Planning experience should guide Merchandise Verification step by step. The interface should show `Required to Shoot` and the next business outcome rather than asking PMs to manage a generic readiness gate.
 
 Planning should feel like polished operations software: fast to scan, calm to use, and clear about age, comments, deliverables, and what is still required to shoot.
 
 Queue is separate from Merchandise Status. Queue organizes PM work; Merchandise Status describes the physical or operational state of the sample.
+
+Intake Status is intentionally small: `Needs Review`, `Waiting on Information`, `Ready to Release`, and `Complete`. Planning Queue is PM organization, not a second persisted workflow state.
 
 ### Ready for Photo
 
@@ -115,9 +121,13 @@ PhotoTrack answers whether production succeeded and where produced assets stand 
 
 Marks Photo should be organized around merchandise readiness, not around database tables or workflow mechanics.
 
+The prior workflow-table experiment is not part of the product direction. Workstreams, Work Orders, Workstream Assignments, Workflow Templates, Workflow Stages, Work Order Types, Product-level Workstream routing, Product-level production/storage state, and Merchandise Resolution should not be required to receive, plan, release, or ship merchandise.
+
+Products are not an operations workspace. They carry durable reference and reporting facts only; operational facts belong to Merchandise, Shipments, Issues, History, Creative Force, PhotoTrack, or reporting integrations.
+
 The application presents different perspectives of the same merchandise:
 
-- Receiving perspective: what arrived?
+- Shipments perspective: what is entering or leaving the studio?
 - Inventory perspective: what do we physically have?
 - Planning perspective: what must be decided before production can accept the work?
 - Production perspective: how will we execute?

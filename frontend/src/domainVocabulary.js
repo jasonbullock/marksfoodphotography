@@ -32,8 +32,6 @@ const PRODUCT_FIELD_LABELS = {
   Description: 'Description',
   'Item Job Number': DOMAIN_TERMS.productJobNumber,
   'Product Job Number': DOMAIN_TERMS.productJobNumber,
-  Workstream: 'Workstream',
-  'Output Type': 'Workstream',
   'Master or Variant': 'Master or Variant',
   'Pickup Job Number': 'Pickup Job Number',
   Brand: 'Brand',

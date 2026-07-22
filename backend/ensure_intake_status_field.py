@@ -4,7 +4,7 @@ import json
 
 from airtable import airtable
 from config import Config
-from ensure_workflow_schema import create_field, field_by_name, get_tables, load_env, meta_request, table_by_name
+from airtable_schema import create_field, field_by_name, get_tables, load_env, meta_request, table_by_name
 
 
 LEGACY_WAITING_FOR_PRODUCT_DATA_MARKER = "[Waiting for Product Data]"
@@ -18,8 +18,6 @@ HISTORICAL_MERCH_STATUSES = {
     "sent to thr3d",
     "sent to thread",
 }
-HISTORICAL_RESOLUTIONS = {"Return to Client", "Dispose"}
-
 
 def single_select_field(name, options):
     return {
@@ -112,12 +110,9 @@ def valid_intake_status(value):
 def historical_or_closed(fields):
     intake_status = str(fields.get(Config.F_RECEIPT_ENTRY_INTAKE_STATUS, "") or "").strip()
     merch_status = str(fields.get(Config.F_RECEIPT_ENTRY_MERCH_STATUS, "") or "").strip()
-    resolution = str(fields.get(Config.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, "") or "").strip()
     if intake_status == "Closed":
         return True
     if merch_status.lower() in HISTORICAL_MERCH_STATUSES:
-        return True
-    if resolution in HISTORICAL_RESOLUTIONS:
         return True
     return False
 

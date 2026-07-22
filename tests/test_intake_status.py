@@ -106,12 +106,11 @@ class IntakeStatusUtilityTests(unittest.TestCase):
         self.assertEqual(reason, "defaulted_ready")
         self.assertEqual(update[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Ready to Release")
 
-    def test_historical_records_are_not_reopened(self):
+    def test_closed_records_are_not_reopened(self):
         update, reason = self.utility.planned_record_update({
             "id": "rec1",
             "fields": {
-                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-                C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Dispose",
+                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Removed",
             },
         })
 

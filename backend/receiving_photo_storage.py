@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -149,6 +150,13 @@ class ReceivingPhotoStorage:
         stored_filename = f"{folder}-{number}.{ext}"
         return f"receiving/{folder}/{stored_filename}", stored_filename
 
+    def shipment_object_key(self, shipment_id, photo_id, extension):
+        shipment_segment = sanitize_path_segment(shipment_id, "shipment")
+        photo_segment = sanitize_path_segment(photo_id, "photo")
+        ext = re.sub(r"[^A-Za-z0-9]+", "", str(extension or "jpg")).lower() or "jpg"
+        stored_filename = f"original.{ext}"
+        return f"shipments/{shipment_segment}/photos/{photo_segment}/{stored_filename}", stored_filename
+
     def upload_photo(self, file_storage, receipt_id, receipt_entry_id, *, delivery_folder="Unknown", sequence_number=1, existing_keys=None):
         self.validate_configuration()
         original_filename = file_storage.filename or "receiving-photo"
@@ -201,6 +209,61 @@ class ReceivingPhotoStorage:
                 "uploaded_at": uploaded_at,
             }
         raise ReceivingPhotoStorageError("Photo could not be uploaded without overwriting an existing object.")
+
+    def upload_shipment_photo(self, file_storage, shipment_id, *, photo_id=None, sort_order=1, uploaded_by=""):
+        self.validate_configuration()
+        original_filename = file_storage.filename or "shipment-photo"
+        data = file_storage.read()
+        if not data:
+            raise ReceivingPhotoValidationError("Photo file is empty.")
+        if len(data) > self.max_bytes:
+            raise ReceivingPhotoValidationError("Photo file is too large.")
+        mime_type = _detect_mime(data)
+        if mime_type not in ACCEPTED_IMAGE_MIME_TYPES:
+            raise ReceivingPhotoValidationError("Unsupported photo type.")
+        if mime_type in {"image/heic", "image/heif"}:
+            data = _convert_heic_to_jpeg(data)
+            mime_type = "image/jpeg"
+            extension = "jpg"
+        else:
+            _assert_image_decodable(data, mime_type)
+            extension = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[mime_type]
+        photo_id = sanitize_path_segment(photo_id or f"pho_{uuid.uuid4().hex}", "photo")
+        object_key, stored_filename = self.shipment_object_key(shipment_id, photo_id, extension)
+        if self.object_exists(object_key):
+            raise ReceivingPhotoCollisionError("Photo object already exists.")
+        uploaded_at = self.now_func().isoformat(timespec="seconds").replace("+00:00", "Z")
+        metadata = {
+            "original-filename": _safe_metadata_value(original_filename),
+            "shipment-id": _safe_metadata_value(shipment_id),
+            "photo-id": _safe_metadata_value(photo_id),
+            "uploaded-at": uploaded_at,
+            "uploaded-by": _safe_metadata_value(uploaded_by),
+        }
+        try:
+            self._put_object(object_key, data, mime_type, metadata)
+        except ReceivingPhotoCollisionError:
+            raise
+        except Exception as exc:
+            raise ReceivingPhotoStorageError("Photo could not be uploaded.") from exc
+        return {
+            "photo_id": photo_id,
+            "shipment_id": shipment_id,
+            "object_key": object_key,
+            "public_url": self.public_url(object_key),
+            "url": self.public_url(object_key),
+            "original_filename": original_filename,
+            "filename": original_filename,
+            "stored_filename": stored_filename,
+            "mime_type": mime_type,
+            "size_bytes": len(data),
+            "uploaded_at": uploaded_at,
+            "uploaded_by": uploaded_by,
+            "sort_order": int(sort_order or 1),
+            "active": True,
+            "source": "shipment",
+            "label": "Shipment Photo",
+        }
 
     def delete_photo(self, object_key):
         self.validate_configuration()

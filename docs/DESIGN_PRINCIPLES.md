@@ -8,7 +8,7 @@ A workspace exists to answer a business question.
 
 Examples:
 
-- Receiving: What arrived?
+- Shipments: What physical merchandise is entering or leaving the studio?
 - Inventory: What do we physically have?
 - Planning: What must be decided before Production can accept the work?
 - Production: How will we execute accepted work?
@@ -28,7 +28,9 @@ New views should be common. New workspaces should be rare.
 
 Marks Photo should present different perspectives of the same merchandise.
 
-Receiving, Inventory, Planning, Production, and PhotoTrack may all show the same merchandise through different lenses. They should not create duplicate merchandise or duplicate product facts to make the UI convenient.
+Shipments, Inventory, Planning, Production, and PhotoTrack may all show the same merchandise through different lenses. They should not create duplicate merchandise or duplicate product facts to make the UI convenient.
+
+The same rule applies to media. Item photos belong to Merchandise. Shipment-level photos belong to Shipments. Planning and Production may display Shipment Photos through the linked Shipment, but they should not duplicate that metadata onto each item.
 
 ## 4. Readiness Over Workflow
 
@@ -50,6 +52,8 @@ Merchandise is the operational center of Marks Photo.
 
 Products, Jobs, Clients, Shipments, deliverabless, and reporting references support the merchandise lifecycle. They should not displace merchandise as the thing the application is helping Walnut move toward production.
 
+Products are reference records. Do not put physical movement, storage, condition, photos, issue state, export state, production state, or Planning routing on Products to make a view easier to build.
+
 ## 6. One Shared Ready For Photo Handoff
 
 There should be one clear Ready for Photo handoff queue.
@@ -70,7 +74,17 @@ Configuration should exist only when multiple clients genuinely require differen
 
 Do not add configuration because future variation is imaginable. Add configuration when repeated real variation is present and a hardcoded rule would create maintenance risk or client-specific forks.
 
-## 9. Inventory Is A Warehouse Perspective
+## 9. Shipments Is A Physical Movement Perspective
+
+Shipments answers what physical merchandise is entering or leaving the studio.
+
+It owns incoming delivery capture, merchandise photos, storage assignment, inventory intake, outbound THR3D shipments, and future physical outbound movement. It should not become a planning or production workflow.
+
+Shipment-level photos should feel like quick operational evidence capture. Keep capture controls simple, support camera and library input, show compact thumbnails, and make larger review available without turning Shipments into an image-management workspace.
+
+THR3D should be handled as an outbound shipment queue inside Shipments, not as a standalone workspace or a multi-state workflow. The queue should read from canonical Merchandise readiness fields instead of introducing a parallel THR3D status.
+
+## 10. Inventory Is A Warehouse Perspective
 
 Inventory answers what the studio physically has.
 
@@ -78,11 +92,11 @@ It should emphasize physical presence, storage location, age, condition, identif
 
 Inventory should not become the PM decision workflow.
 
-## 10. Planning Is A PM Preparation Perspective
+## 11. Planning Is A PM Preparation Perspective
 
 Planning answers what must be decided before Production can accept the work.
 
-It owns product identification, client requirements, deliverables, merchandise resolution, replacement requests, Required to Shoot, and movement into the shared Ready for Photo queue.
+It owns product identification, client requirements, deliverables, blockers or exceptions, Required to Shoot, and movement into the shared Ready for Photo queue.
 
 Planning should make uncertainty actionable.
 
@@ -90,7 +104,7 @@ The primary PM Planning experience should guide verification rather than expose 
 
 Planning should feel polished through density, responsiveness, hierarchy, and clarity rather than through new architecture. Refine cards, drag feedback, empty columns, comments, Activity, aging badges, and focus states before adding new workflow concepts.
 
-## 11. Production Is An Execution Perspective
+## 12. Production Is An Execution Perspective
 
 Production answers how the studio will execute accepted work.
 
@@ -100,19 +114,21 @@ Production should not absorb Planning decisions, and it should not replace Creat
 
 Production should begin by accepting shared `Ready for Photo` work. The future move from `Ready for Photo` to `Scheduled` should transfer ownership from PM to Production without creating duplicate Merchandise.
 
-## 12. The Interface Should Remove Uncertainty
+Production state should come from Creative Force or a deliberately scoped production sync, not from Product `Status` or hidden Planning gates.
+
+## 13. The Interface Should Remove Uncertainty
 
 Every meaningful interaction should reduce uncertainty:
 
 - identify the merchandise
 - explain what is missing
 - clarify the required deliverables
-- resolve the physical merchandise path
+- identify any physical handling blockers
 - release work cleanly to production
 
 Avoid interactions that merely maintain administrative records.
 
-## 13. Operational Language Beats System Language
+## 14. Operational Language Beats System Language
 
 Use language that reflects the user's business question.
 
@@ -128,6 +144,8 @@ Prefer:
 
 Avoid exposing implementation language such as readiness, engine, transition, assignment, schema, or table unless the user is in an administrative or developer context.
 
+Do not expose or rebuild legacy workflow architecture language such as Workstreams, Work Orders, Workstream Assignments, Workflow Templates, Workflow Stages, Work Order Types, or Merchandise Resolution in normal product UI.
+
 For the Planning board, prefer:
 
 - Queue
@@ -136,13 +154,13 @@ For the Planning board, prefer:
 - Activity
 - Ready for Photo
 
-Avoid public board labels such as Board Status, Readiness, workflow gate, transition, and assignment.
+Avoid public board labels such as Board Status, Readiness, workflow gate, transition, and assignment. Active Planning implementation naming should follow the same direction: `planningCard`, `currentQueue`, `queues`, `deliverableRoute`, and `requiredToShoot` are acceptable; `workOrder`, `currentGate`, Product `workstream`, workflow assignment, and public Readiness naming are not.
 
 The PM board should feel like a workspace. Cards should not disappear or change queues merely because a PM completed a field.
 
 Premium Planning polish means the board is easy to scan and act on: compact cards, obvious Required to Shoot status, clear aging and comment signals, readable Conversation, and system Activity that stays separate from human discussion.
 
-## 14. Existing Systems Keep Their Jobs
+## 15. Existing Systems Keep Their Jobs
 
 Marks Photo does not replace Creative Force or PhotoTrack.
 

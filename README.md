@@ -103,7 +103,7 @@ receiving/Smithfield-2026-07-12-16-11/Smithfield-2026-07-12-16-11-1.jpg
 
 Cloudflare R2 is the only supported image storage mode. Local receiving-photo storage and Airtable attachment storage are not supported.
 
-Airtable stores image references only. The `Merchandise` and `Products` tables use a compact long-text field named `Photo Metadata` containing a JSON manifest with durable R2 `object_key` values, optional `thumbnail_key` values, ordering, and file metadata. Do not store public URLs, base64 image data, duplicate files, or Airtable attachment arrays in Airtable. The API resolves display URLs from R2 object keys when records are loaded.
+Airtable stores image references only. Merchandise-owned photos use Merchandise `Photo Metadata`; shipment-level photos use Shipment metadata managed by the backend. Products are reference records and should not store operational photos or Product `Photo Metadata`. Do not store public URLs, base64 image data, duplicate files, or Airtable attachment arrays in Airtable. The API resolves display URLs from R2 object keys when records are loaded.
 
 ## Airtable Table Mapping
 
@@ -115,14 +115,12 @@ The live Airtable schema now uses the canonical physical table names:
 AIRTABLE_PRODUCTS_TABLE=Products
 AIRTABLE_SHIPMENTS_TABLE=Shipments
 AIRTABLE_MERCHANDISE_TABLE=Merchandise
-AIRTABLE_WORK_ORDERS_TABLE=Work Orders
 ```
 
 The backend reads Airtable through canonical table constants. Deprecated legacy environment aliases such as `AIRTABLE_ITEMS_TABLE`, `AIRTABLE_RECEIPTS_TABLE`, and `AIRTABLE_RECEIPT_ENTRIES_TABLE` may remain for one rollback cycle, but new configuration should use the canonical variable names above.
-`AIRTABLE_WORKSTREAM_ASSIGNMENTS_TABLE` remains a one-cycle compatibility alias for `AIRTABLE_WORK_ORDERS_TABLE`.
 
 ## Current Scope
 
-Marks Photo currently includes a top-navigation operational shell, dashboard, imports, receiving/shipments, physical Merchandise Inventory, the experimental Work board, supporting Product and Job views, Admin with Clients and system utilities, and Airtable connection status.
+Marks Photo currently includes a top-navigation operational shell, dashboard, imports, Shipments, physical Merchandise Inventory, Planning, supporting Product and Job views, Admin with Clients and system utilities, and Airtable connection status.
 
 Airtable table and field IDs are currently configured for the Marks Photo base. The physical Airtable schema now uses the Merchandise-centered language through the canonical table mapping layer.

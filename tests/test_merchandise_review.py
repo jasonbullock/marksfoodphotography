@@ -1,5 +1,6 @@
 import sys
 import unittest
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -79,6 +80,108 @@ class MerchandiseReviewTests(unittest.TestCase):
         base.update(fields or {})
         return {"id": issue_id, "fields": base}
 
+    @staticmethod
+    def user(user_id="recTestUser", fields=None):
+        base = {
+            C.F_USER_NAME: "Jason Bullock",
+            C.F_USER_FIRST_NAME: "Jason",
+            C.F_USER_LAST_NAME: "Bullock",
+            C.F_USER_DISPLAY_NAME: "Jason Bullock",
+            C.F_USER_ROLE: "PM",
+            C.F_USER_ACTIVE: True,
+            C.F_USER_AVATAR: "JB",
+        }
+        base.update(fields or {})
+        return {"id": user_id, "fields": base}
+
+    @staticmethod
+    def comment(comment_id="recComment", fields=None):
+        base = {
+            C.F_COMMENT_BODY: "Need artwork before release.",
+            C.F_COMMENT_MERCHANDISE: ["recMerch"],
+            C.F_COMMENT_USER: ["recTestUser"],
+            C.F_COMMENT_CREATED_AT: "2026-07-22T12:30:00.000Z",
+        }
+        base.update(fields or {})
+        return {"id": comment_id, "createdTime": "2026-07-22T12:30:00.000Z", "fields": base}
+
+    @patch("routes.airtable.create_record")
+    @patch("routes.airtable.get_record")
+    def test_authenticated_comment_creation_links_current_user(self, get_record, create_record):
+        def get_side_effect(table, record_id, by_field_id=False):
+            if table == C.MERCHANDISE_TABLE:
+                return self.entry(record_id)
+            if table == C.SHIPMENTS_TABLE:
+                return self.receipt()
+            if table == C.USERS_TABLE:
+                return self.user(record_id)
+            raise AssertionError(f"Unexpected table {table}")
+
+        get_record.side_effect = get_side_effect
+        create_record.return_value = self.comment()
+
+        response = self.app.post("/api/merchandise/recMerch/comments", json={"comment": "  Need artwork before release.  "})
+
+        self.assertEqual(response.status_code, 201)
+        create_record.assert_called_once()
+        table, fields = create_record.call_args.args[:2]
+        self.assertEqual(table, C.COMMENTS_TABLE)
+        self.assertEqual(fields[C.F_COMMENT_BODY], "Need artwork before release.")
+        self.assertEqual(fields[C.F_COMMENT_MERCHANDISE], ["recMerch"])
+        self.assertEqual(fields[C.F_COMMENT_USER], ["recTestUser"])
+        payload = response.get_json()["comment"]
+        self.assertEqual(payload["author"]["displayName"], "Jason Bullock")
+        self.assertEqual(payload["author"]["role"], "PM")
+        self.assertEqual(payload["author"]["initials"], "JB")
+        self.assertEqual(payload["createdAt"], "2026-07-22T12:30:00.000Z")
+
+    def test_anonymous_comment_creation_is_rejected(self):
+        unauthenticated = create_app().test_client()
+
+        response = unauthenticated.post("/api/merchandise/recMerch/comments", json={"comment": "Hello"})
+
+        self.assertEqual(response.status_code, 401)
+
+    @patch("routes.airtable.create_record")
+    @patch("routes.airtable.get_record")
+    def test_empty_comment_creation_is_rejected(self, get_record, create_record):
+        response = self.app.post("/api/merchandise/recMerch/comments", json={"comment": "   "})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Comment is required", response.get_json()["error"])
+        get_record.assert_not_called()
+        create_record.assert_not_called()
+
+    @patch("routes.airtable.get_record")
+    @patch("routes.airtable.list_records")
+    def test_comments_return_author_name_role_and_timestamp(self, list_records, get_record):
+        comments = [
+            self.comment("recNewer", {C.F_COMMENT_BODY: "Second", C.F_COMMENT_CREATED_AT: "2026-07-22T12:35:00.000Z"}),
+            self.comment("recOlder", {C.F_COMMENT_BODY: "First", C.F_COMMENT_CREATED_AT: "2026-07-22T12:30:00.000Z"}),
+            self.comment("recOther", {C.F_COMMENT_BODY: "Other", C.F_COMMENT_MERCHANDISE: ["recOther"]}),
+        ]
+
+        def get_side_effect(table, record_id, by_field_id=False):
+            if table == C.MERCHANDISE_TABLE:
+                return self.entry(record_id)
+            if table == C.SHIPMENTS_TABLE:
+                return self.receipt()
+            if table == C.USERS_TABLE:
+                return self.user(record_id)
+            raise AssertionError(f"Unexpected table {table}")
+
+        get_record.side_effect = get_side_effect
+        list_records.return_value = {"records": comments}
+
+        response = self.app.get("/api/merchandise/recMerch/comments")
+
+        self.assertEqual(response.status_code, 200)
+        records = response.get_json()["records"]
+        self.assertEqual([record["body"] for record in records], ["First", "Second"])
+        self.assertEqual(records[0]["author"]["displayName"], "Jason Bullock")
+        self.assertEqual(records[0]["author"]["role"], "PM")
+        self.assertEqual(records[0]["createdAt"], "2026-07-22T12:30:00.000Z")
+
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.get_record")
     @patch("routes.airtable.list_records")
@@ -133,6 +236,66 @@ class MerchandiseReviewTests(unittest.TestCase):
         self.assertTrue(records["recNeedsReview"]["photos"][0]["url"].endswith("/merchandise/recNeedsReview/image-1.jpg"))
         self.assertEqual(records["recNeedsReview"]["linkedItem"]["identifier"], "000123")
         self.assertIn("Damaged package", [issue["name"] for issue in records["recIssueState"]["blockingIssues"]])
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.get_record")
+    @patch("routes.airtable.list_records")
+    def test_review_api_appends_shipment_photos_after_item_photos_without_duplication(self, list_records, get_record, _clients):
+        entries = [
+            self.entry("recItemOne", {
+                C.F_RECEIPT_ENTRY_ITEM: ["recProductOne"],
+                C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps([
+                    {"object_key": "receiving/shipment/item-one.jpg", "sort_order": 1}
+                ]),
+            }),
+            self.entry("recItemTwo", {
+                C.F_RECEIPT_ENTRY_ITEM: ["recProductTwo"],
+            }),
+        ]
+        shipment_photos = [
+            {
+                "photo_id": "pho_box_1",
+                "shipment_id": "recShipment",
+                "object_key": "shipments/recShipment/photos/pho_box_1/original.jpg",
+                "sort_order": 1,
+                "source": "shipment",
+            },
+            {
+                "photo_id": "pho_box_2",
+                "shipment_id": "recShipment",
+                "object_key": "shipments/recShipment/photos/pho_box_2/original.jpg",
+                "sort_order": 2,
+                "source": "shipment",
+            },
+        ]
+        receipt = self.receipt()
+        receipt["fields"][C.F_RECEIPT_PHOTO_METADATA] = json.dumps(shipment_photos)
+
+        def list_side_effect(table, params=None, by_field_id=False):
+            if table == C.RECEIPT_ENTRIES_TABLE:
+                return {"records": entries}
+            if table == C.RECEIPTS_TABLE:
+                return {"records": [receipt]}
+            if table == C.ISSUES_TABLE:
+                return {"records": []}
+            return {"records": []}
+
+        list_records.side_effect = list_side_effect
+        get_record.side_effect = lambda table, record_id, by_field_id=False: self.product(record_id)
+
+        response = self.app.get("/api/merchandise/review")
+
+        self.assertEqual(response.status_code, 200)
+        records = {record["id"]: record for record in response.get_json()["records"]}
+        one = records["recItemOne"]
+        two = records["recItemTwo"]
+        self.assertEqual([photo["source"] for photo in one["photos"]], ["item", "shipment", "shipment"])
+        self.assertEqual(one["photos"][0]["object_key"], "receiving/shipment/item-one.jpg")
+        self.assertEqual(one["shipmentPhotos"][0]["photo_id"], "pho_box_1")
+        self.assertEqual(two["photos"][0]["source"], "shipment")
+        self.assertEqual([photo["photo_id"] for photo in two["shipmentPhotos"]], ["pho_box_1", "pho_box_2"])
+        self.assertEqual([photo.get("source") for photo in one["photoMetadata"]], ["item"])
+        self.assertEqual(one["itemPhotos"], one["photoMetadata"])
 
     @patch("routes.airtable.get_record")
     def test_validate_requires_linked_product(self, get_record):

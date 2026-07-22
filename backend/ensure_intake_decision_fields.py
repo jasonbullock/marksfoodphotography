@@ -4,7 +4,7 @@ import json
 import requests
 
 from config import Config
-from ensure_workflow_schema import create_field, field_by_name, get_tables, load_env, meta_request, table_by_name
+from airtable_schema import create_field, field_by_name, get_tables, load_env, meta_request, table_by_name
 
 
 def single_select_field(name, options):
@@ -105,14 +105,6 @@ def main():
     results = [
         ensure_deliverables_field(merchandise, Config.F_RECEIPT_ENTRY_DELIVERABLES, Config.DELIVERABLE_OPTIONS),
     ]
-    merchandise = table_by_name(get_tables(), Config.MERCHANDISE_TABLE)
-    results.append(
-        ensure_intake_field(
-            merchandise,
-            Config.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION,
-            Config.MERCHANDISE_RESOLUTION_OPTIONS,
-        )
-    )
     print(json.dumps({
         "table": Config.MERCHANDISE_TABLE,
         "fields": results,

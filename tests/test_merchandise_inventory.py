@@ -250,7 +250,7 @@ class MerchandiseInventoryTests(unittest.TestCase):
         self.assertEqual(fresh["storageLocation"], "Shelf A")
         self.assertEqual(fresh["timeHere"], "Today")
         self.assertEqual(fresh["ageGroup"], "0-7")
-        self.assertEqual(fresh["status"], "Ready for Photo")
+        self.assertEqual(fresh["status"], "Matched")
 
     @patch("routes._now_utc", return_value=datetime(2026, 7, 16, 12, 0, tzinfo=timezone.utc))
     @patch("routes.airtable.list_records")
@@ -263,7 +263,7 @@ class MerchandiseInventoryTests(unittest.TestCase):
         records = response.get_json()["records"]
         ids = {record["id"] for record in records}
         self.assertNotIn("recDisposedMerch", ids)
-        self.assertNotIn("recCancelledProductMerch", ids)
+        self.assertIn("recCancelledProductMerch", ids)
         old = next(record for record in records if record["id"] == "recOldMerch")
         self.assertEqual(old["daysHere"], 45)
         self.assertEqual(old["timeHere"], "45 days")
@@ -303,7 +303,7 @@ class MerchandiseInventoryTests(unittest.TestCase):
         records = response.get_json()["records"]
         by_id = {record["id"]: record for record in records}
         self.assertIn("recCompletedMerch", by_id)
-        self.assertEqual(by_id["recCompletedMerch"]["status"], "Complete")
+        self.assertEqual(by_id["recCompletedMerch"]["status"], "Validated")
         self.assertTrue(by_id["recCompletedMerch"]["released"])
         self.assertIn("recOldCompleteMerch", by_id)
         self.assertEqual(by_id["recOldCompleteMerch"]["status"], "Disposition Due")
