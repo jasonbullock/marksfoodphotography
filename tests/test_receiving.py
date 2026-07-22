@@ -20,6 +20,16 @@ from routes import AUTH_SESSION_KEY  # noqa: E402
 from receiving_photo_storage import ReceivingPhotoStorage, ReceivingPhotoConfigError, ReceivingPhotoValidationError  # noqa: E402
 
 
+SHIPMENT_PHOTO_METADATA_START = "[[MARKS_PHOTO_SHIPMENT_PHOTO_METADATA]]"
+SHIPMENT_PHOTO_METADATA_END = "[[/MARKS_PHOTO_SHIPMENT_PHOTO_METADATA]]"
+
+
+def shipment_photo_manifest_from_notes(notes):
+    start = notes.index(SHIPMENT_PHOTO_METADATA_START) + len(SHIPMENT_PHOTO_METADATA_START)
+    end = notes.index(SHIPMENT_PHOTO_METADATA_END)
+    return json.loads(notes[start:end].strip())
+
+
 def image_bytes(format_name):
     from PIL import Image
 
@@ -515,6 +525,75 @@ class ReceivingTests(unittest.TestCase):
         self.assertIn(C.RECEIPT_ENTRIES_TABLE, called_tables)
         self.assertIn(C.ITEMS_TABLE, called_tables)
 
+    @patch("routes.airtable.list_records")
+    def test_thr3d_outgoing_queue_filters_ready_unreleased_merchandise(self, list_records):
+        def merchandise_record(record_id, fields):
+            base = {
+                C.F_RECEIPT_ENTRY_NAME: f"Merch {record_id}",
+                C.F_RECEIPT_ENTRY_RECEIPT: ["recShipment"],
+                C.F_RECEIPT_ENTRY_QUANTITY: 1,
+                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
+                C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d"],
+                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready to Release",
+            }
+            base.update(fields)
+            return {"id": record_id, "fields": base}
+
+        def list_side_effect(table, params=None, by_field_id=False):
+            if table == C.RECEIPT_ENTRIES_TABLE:
+                return {"records": [
+                    merchandise_record("recReady", {
+                        C.F_RECEIPT_ENTRY_NAME: "Frozen Pizza Box",
+                        C.F_RECEIPT_ENTRY_DELIVERABLES: ["thr3d"],
+                        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "ready to release",
+                        C.F_RECEIPT_ENTRY_SKU_ID: "UPC-123",
+                        C.F_RECEIPT_ENTRY_LOCATION: ["recLocation"],
+                    }),
+                    merchandise_record("recMixedPhotoThr3d", {
+                        C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo", "Thr3d"],
+                    }),
+                    merchandise_record("recNeedsReview", {
+                        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review",
+                    }),
+                    merchandise_record("recReleased", {
+                        C.F_RECEIPT_ENTRY_RELEASED: True,
+                    }),
+                    merchandise_record("recShipped", {
+                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Shipped to Thr3d",
+                    }),
+                    merchandise_record("recPhoto", {
+                        C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm Photo"],
+                    }),
+                ]}
+            if table == C.RECEIPTS_TABLE:
+                return {"records": [{
+                    "id": "recShipment",
+                    "fields": {
+                        C.F_RECEIPT_NAME: "Shipment 1",
+                        C.F_RECEIPT_CLIENT: ["recClient"],
+                        C.F_RECEIPT_CARRIER: "UPS",
+                        C.F_RECEIPT_TRACKING: "1Z999",
+                        C.F_RECEIPT_RECEIVED: "2026-07-12T12:00:00Z",
+                    },
+                }]}
+            return {"records": []}
+
+        list_records.side_effect = list_side_effect
+
+        response = self.app.get("/api/shipments/thr3d-outgoing")
+
+        self.assertEqual(response.status_code, 200)
+        records = response.get_json()["records"]
+        self.assertEqual([record["id"] for record in records], ["recReady"])
+        ready = records[0]
+        self.assertEqual(ready["productName"], "Frozen Pizza Box")
+        self.assertEqual(ready["clientIds"], ["recClient"])
+        self.assertEqual(ready["quantity"], 1)
+        self.assertEqual(ready["skuId"], "UPC-123")
+        self.assertEqual(ready["currentLocationId"], "recLocation")
+        self.assertEqual(ready["shipmentLinkage"]["name"], "Shipment 1")
+        self.assertEqual(ready["shipmentLinkage"]["tracking"], "1Z999")
+
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
@@ -975,6 +1054,219 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertIn("Photo Metadata", response.get_json()["error"])
         update_record.assert_called_once()
+
+    @patch("routes._photo_storage")
+    @patch("routes.airtable.get_record")
+    def test_shipment_photo_upload_requires_client_access(self, get_record, photo_storage):
+        with self.app.session_transaction() as session:
+            session[AUTH_SESSION_KEY] = {
+                **session[AUTH_SESSION_KEY],
+                "allClients": False,
+                "clientIds": ["recOtherClient"],
+            }
+        get_record.return_value = {
+            "id": "recShipment",
+            "fields": {C.F_RECEIPT_CLIENT: ["recClient"]},
+        }
+
+        response = self.app.post(
+            "/api/shipments/recShipment/photos",
+            data={"photos": upload_file(JPEG_BYTES, "box.jpg")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        photo_storage.assert_not_called()
+
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.list_records")
+    @patch("routes.airtable.get_record")
+    def test_shipment_photo_upload_validates_mime_type(self, get_record, list_records, update_record):
+        storage = ReceivingPhotoStorage(r2_config(), s3_client=mock_s3_client())
+        get_record.return_value = {"id": "recShipment", "fields": {C.F_RECEIPT_CLIENT: ["recClient"]}}
+        list_records.return_value = {"records": []}
+
+        with patch("routes._photo_storage", return_value=storage):
+            response = self.app.post(
+                "/api/shipments/recShipment/photos",
+                data={"photos": upload_file(b"GIF89a", "box.gif")},
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Unsupported photo type", response.get_json()["error"])
+        update_record.assert_not_called()
+
+    @patch("routes._photo_storage")
+    @patch("routes.airtable.get_record")
+    def test_shipment_photo_list_returns_display_order(self, get_record, photo_storage):
+        storage = ReceivingPhotoStorage(r2_config(), s3_client=mock_s3_client())
+        photo_storage.return_value = storage
+        get_record.return_value = {
+            "id": "recShipment",
+            "fields": {
+                C.F_RECEIPT_CLIENT: ["recClient"],
+                C.F_RECEIPT_PHOTO_METADATA: json.dumps([
+                    {
+                        "photo_id": "pho_second",
+                        "shipment_id": "recShipment",
+                        "object_key": "shipments/recShipment/photos/pho_second/original.jpg",
+                        "sort_order": 2,
+                    },
+                    {
+                        "photo_id": "pho_first",
+                        "shipment_id": "recShipment",
+                        "object_key": "shipments/recShipment/photos/pho_first/original.jpg",
+                        "sort_order": 1,
+                    },
+                ]),
+            },
+        }
+
+        response = self.app.get("/api/shipments/recShipment/photos")
+
+        self.assertEqual(response.status_code, 200)
+        photos = response.get_json()["photos"]
+        self.assertEqual([photo["photo_id"] for photo in photos], ["pho_first", "pho_second"])
+        self.assertEqual([photo["source"] for photo in photos], ["shipment", "shipment"])
+        self.assertTrue(photos[0]["url"].endswith("/shipments/recShipment/photos/pho_first/original.jpg"))
+
+    @patch("routes.airtable.get_record")
+    def test_shipment_photo_list_handles_legacy_shipments_without_photos(self, get_record):
+        get_record.return_value = {
+            "id": "recShipment",
+            "fields": {C.F_RECEIPT_CLIENT: ["recClient"]},
+        }
+
+        response = self.app.get("/api/shipments/recShipment/photos")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["photos"], [])
+
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.list_records")
+    @patch("routes.airtable.get_record")
+    def test_shipment_photo_upload_uses_shipment_id_key_and_stable_order(self, get_record, list_records, update_record):
+        s3 = mock_s3_client()
+        storage = ReceivingPhotoStorage(r2_config(), s3_client=s3)
+        receipt_record = {
+            "id": "recShipment",
+            "fields": {
+                C.F_RECEIPT_CLIENT: ["recClient"],
+                C.F_RECEIPT_NOTES: (
+                    "Box label was torn.\n\n"
+                    f"{SHIPMENT_PHOTO_METADATA_START}\n"
+                    '[{"photo_id":"pho_existing","shipment_id":"recShipment","object_key":"shipments/recShipment/photos/pho_existing/original.jpg","sort_order":1,"source":"shipment"}]\n'
+                    f"{SHIPMENT_PHOTO_METADATA_END}"
+                ),
+            },
+        }
+        get_record.return_value = receipt_record
+        list_records.return_value = {"records": []}
+
+        def update_side_effect(table, record_id, fields, by_field_id=False):
+            return {"id": record_id, "fields": {**receipt_record["fields"], **fields}}
+
+        update_record.side_effect = update_side_effect
+        with patch("routes._photo_storage", return_value=storage):
+            response = self.app.post(
+                "/api/shipments/recShipment/photos",
+                data={
+                    "photos": [
+                        upload_file(JPEG_BYTES, "../../box-label.jpg"),
+                        upload_file(PNG_BYTES, "damage.png"),
+                    ],
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        update_fields = update_record.call_args.args[2]
+        self.assertNotIn(C.F_RECEIPT_PHOTO_METADATA, update_fields)
+        self.assertIn(C.F_RECEIPT_NOTES, update_fields)
+        self.assertTrue(update_fields[C.F_RECEIPT_NOTES].startswith("Box label was torn."))
+        metadata_items = shipment_photo_manifest_from_notes(update_fields[C.F_RECEIPT_NOTES])
+        self.assertEqual([item["sort_order"] for item in metadata_items], [1, 2, 3])
+        uploaded_items = metadata_items[1:]
+        self.assertTrue(all(item["object_key"].startswith("shipments/recShipment/photos/pho_") for item in uploaded_items))
+        self.assertTrue(all(item["object_key"].endswith(("/original.jpg", "/original.png")) for item in uploaded_items))
+        self.assertTrue(all("../../" not in item["object_key"] for item in uploaded_items))
+        self.assertEqual(uploaded_items[0]["source"], "shipment")
+        self.assertEqual(uploaded_items[0]["shipment_id"], "recShipment")
+        self.assertEqual(uploaded_items[0]["uploaded_by"], "recTestUser")
+        payload = response.get_json()
+        self.assertEqual(len(payload["photos"]), 2)
+        self.assertEqual(payload["shipment"]["shipmentPhotos"][0]["photo_id"], "pho_existing")
+        self.assertEqual(len(payload["shipment"]["shipmentPhotos"]), 3)
+        self.assertEqual(payload["shipment"]["notes"], "Box label was torn.")
+        self.assertEqual(payload["shipment"]["entries"], [])
+
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.list_records")
+    @patch("routes.airtable.get_record")
+    def test_shipment_photo_upload_uses_current_shipments_schema_without_photo_metadata_field(self, get_record, list_records, update_record):
+        s3 = mock_s3_client()
+        storage = ReceivingPhotoStorage(r2_config(), s3_client=s3)
+        receipt_record = {"id": "recShipment", "fields": {C.F_RECEIPT_CLIENT: ["recClient"], C.F_RECEIPT_NOTES: "Receiving dock"}}
+        get_record.return_value = receipt_record
+        list_records.return_value = {"records": []}
+
+        def update_side_effect(table, record_id, fields, by_field_id=False):
+            if C.F_RECEIPT_PHOTO_METADATA in fields:
+                raise AssertionError("Shipment photo upload must not write Photo Metadata.")
+            return {"id": record_id, "fields": {**receipt_record["fields"], **fields}}
+
+        update_record.side_effect = update_side_effect
+        with patch("routes._photo_storage", return_value=storage):
+            response = self.app.post(
+                "/api/shipments/recShipment/photos",
+                data={"photos": upload_file(JPEG_BYTES, "box.jpg")},
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        update_fields = update_record.call_args.args[2]
+        self.assertEqual(set(update_fields.keys()), {C.F_RECEIPT_NOTES})
+        self.assertEqual(response.get_json()["shipment"]["notes"], "Receiving dock")
+        self.assertEqual(response.get_json()["shipment"]["entries"], [])
+        self.assertFalse(s3.delete_object.called)
+
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.list_records")
+    @patch("routes.airtable.get_record")
+    def test_shipment_photo_delete_removes_metadata_and_r2_object(self, get_record, list_records, update_record):
+        s3 = mock_s3_client()
+        storage = ReceivingPhotoStorage(r2_config(), s3_client=s3)
+        receipt_record = {
+            "id": "recShipment",
+            "fields": {
+                C.F_RECEIPT_CLIENT: ["recClient"],
+                C.F_RECEIPT_NOTES: (
+                    "Keep the pallet wrap.\n\n"
+                    f"{SHIPMENT_PHOTO_METADATA_START}\n"
+                    '[{"photo_id":"pho_keep","shipment_id":"recShipment","object_key":"shipments/recShipment/photos/pho_keep/original.jpg","sort_order":1},{"photo_id":"pho_delete","shipment_id":"recShipment","object_key":"shipments/recShipment/photos/pho_delete/original.jpg","sort_order":2}]\n'
+                    f"{SHIPMENT_PHOTO_METADATA_END}"
+                ),
+            },
+        }
+        get_record.return_value = receipt_record
+        list_records.return_value = {"records": []}
+
+        def update_side_effect(table, record_id, fields, by_field_id=False):
+            return {"id": record_id, "fields": {**receipt_record["fields"], **fields}}
+
+        update_record.side_effect = update_side_effect
+        with patch("routes._photo_storage", return_value=storage):
+            response = self.app.delete("/api/shipments/recShipment/photos/pho_delete")
+
+        self.assertEqual(response.status_code, 200)
+        update_fields = update_record.call_args.args[2]
+        self.assertNotIn(C.F_RECEIPT_PHOTO_METADATA, update_fields)
+        metadata_items = shipment_photo_manifest_from_notes(update_fields[C.F_RECEIPT_NOTES])
+        self.assertEqual([item["photo_id"] for item in metadata_items], ["pho_keep"])
+        self.assertEqual(response.get_json()["shipment"]["notes"], "Keep the pallet wrap.")
+        s3.delete_object.assert_called_once()
+        self.assertEqual(s3.delete_object.call_args.kwargs["Key"], "shipments/recShipment/photos/pho_delete/original.jpg")
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.list_records")

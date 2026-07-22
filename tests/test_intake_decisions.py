@@ -55,22 +55,17 @@ class IntakeDecisionTests(unittest.TestCase):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
             C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo", "Ecomm Photo"],
-            C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Keep at Walnut",
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
             "deliverables": ["Packaging Photo", "Ecomm Photo"],
-            "merchandiseResolution": "Keep at Walnut",
         })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging Photo", "Ecomm Photo"])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION], "Keep at Walnut")
         payload = response.get_json()
         self.assertEqual(payload["deliverables"], ["Packaging Photo", "Ecomm Photo"])
-        self.assertEqual(payload["merchandise_resolution"], "Keep at Walnut")
-        self.assertEqual(payload["merchandiseResolution"], "Keep at Walnut")
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
@@ -163,17 +158,6 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Deliverables must be one or more of", response.get_json()["error"])
 
-    @patch("routes.airtable.get_record")
-    def test_invalid_merchandise_resolution_rejected(self, get_record):
-        get_record.side_effect = [self.entry(), self.receipt()]
-
-        response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
-            "merchandiseResolution": "Archive",
-        })
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Merchandise Resolution must be one of", response.get_json()["error"])
-
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
@@ -181,27 +165,23 @@ class IntakeDecisionTests(unittest.TestCase):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
             C.F_RECEIPT_ENTRY_DELIVERABLES: [],
-            C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "",
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
             "deliverables": [],
-            "merchandiseResolution": "",
         })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], [])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION], "")
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
-    def test_thr3d_defaults_resolution_when_blank(self, get_record, update_record, _clients):
+    def test_thr3d_deliverable_does_not_write_resolution(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
             C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d", "Ecomm Photo"],
-            C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Ship to Kentucky",
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
@@ -211,54 +191,7 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Thr3d", "Ecomm Photo"])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION], "Ship to Kentucky")
-
-    @patch("routes._clients_by_id", return_value={})
-    @patch("routes.airtable.update_record")
-    @patch("routes.airtable.get_record")
-    def test_thr3d_does_not_overwrite_existing_resolution(self, get_record, update_record, _clients):
-        get_record.side_effect = [
-            self.entry({C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Hold"}),
-            self.receipt(),
-        ]
-        update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d"],
-            C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Hold",
-        })
-
-        response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
-            "deliverables": ["Thr3d"],
-        })
-
-        self.assertEqual(response.status_code, 200)
-        fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Thr3d"])
-        self.assertNotIn(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, fields)
-
-    @patch("routes._clients_by_id", return_value={})
-    @patch("routes.airtable.update_record")
-    @patch("routes.airtable.get_record")
-    def test_changing_away_from_thr3d_does_not_clear_resolution(self, get_record, update_record, _clients):
-        get_record.side_effect = [
-            self.entry({
-                C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d"],
-                C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Ship to Kentucky",
-            }),
-            self.receipt(),
-        ]
-        update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm Photo"],
-            C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Ship to Kentucky",
-        })
-
-        response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
-            "deliverables": ["Ecomm Photo"],
-        })
-
-        self.assertEqual(response.status_code, 200)
-        fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Ecomm Photo"])
-        self.assertNotIn(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, fields)
+        self.assertTrue(all("Resolution" not in key for key in fields))
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
@@ -290,10 +223,12 @@ class IntakeDecisionTests(unittest.TestCase):
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
     def test_intake_state_send_thr3d_updates_merchandise_decision_fields(self, get_record, update_record, _clients):
-        get_record.side_effect = [self.entry(), self.receipt()]
+        get_record.side_effect = [self.entry({
+            C.F_RECEIPT_ENTRY_PHOTO_METADATA: [{"object_key": "receiving/recShipment/recMerch-1.jpg"}],
+        }), self.receipt()]
         update_record.return_value = self.entry({
             C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d"],
-            C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Ship to Kentucky",
+            C.F_RECEIPT_ENTRY_PHOTO_METADATA: [{"object_key": "receiving/recShipment/recMerch-1.jpg"}],
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
@@ -304,9 +239,41 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Thr3d"])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION], "Ship to Kentucky")
+        self.assertTrue(all("Resolution" not in key for key in fields))
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Ready to Release")
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_intake_state_send_thr3d_requires_merchandise_photo(self, get_record, update_record, _clients):
+        get_record.side_effect = [self.entry(), self.receipt()]
+
+        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
+            "stage": "send-thr3d",
+            "deliverables": ["Thr3d"],
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Merchandise Photo", response.get_json()["error"])
+        update_record.assert_not_called()
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_intake_state_send_thr3d_rejects_mixed_photo_deliverables(self, get_record, update_record, _clients):
+        get_record.side_effect = [self.entry({
+            C.F_RECEIPT_ENTRY_PHOTO_METADATA: [{"object_key": "receiving/recShipment/recMerch-1.jpg"}],
+        }), self.receipt()]
+
+        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
+            "stage": "send-thr3d",
+            "deliverables": ["Packaging Photo", "Thr3d"],
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("complete the photo path", response.get_json()["error"])
+        update_record.assert_not_called()
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes._issues_by_item_id", return_value={})
@@ -384,24 +351,15 @@ class IntakeDecisionSchemaUtilityTests(unittest.TestCase):
     @patch("ensure_intake_decision_fields.get_tables")
     @patch("ensure_intake_decision_fields.load_env")
     def test_schema_utility_creates_missing_fields(self, _load_env, get_tables, create_field):
-        get_tables.side_effect = [
-            [self.table()],
-            [self.table([self.field(C.F_RECEIPT_ENTRY_DELIVERABLES, C.DELIVERABLE_OPTIONS)])],
-        ]
-        create_field.side_effect = [
-            {"id": "fldDeliverables"},
-            {"id": "fldMerchandiseResolution"},
-        ]
+        get_tables.return_value = [self.table()]
+        create_field.return_value = {"id": "fldDeliverables"}
 
         with patch.object(C, "airtable_ready", return_value=True):
             self.utility.main()
 
-        self.assertEqual(create_field.call_count, 2)
+        create_field.assert_called_once()
         created_names = [call.args[1]["name"] for call in create_field.call_args_list]
-        self.assertEqual(created_names, [
-            C.F_RECEIPT_ENTRY_DELIVERABLES,
-            C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION,
-        ])
+        self.assertEqual(created_names, [C.F_RECEIPT_ENTRY_DELIVERABLES])
         self.assertEqual(
             [choice["name"] for choice in create_field.call_args_list[0].args[1]["options"]["choices"]],
             C.DELIVERABLE_OPTIONS,
@@ -414,9 +372,8 @@ class IntakeDecisionSchemaUtilityTests(unittest.TestCase):
     def test_schema_utility_reuses_existing_equivalent_fields(self, _load_env, get_tables, create_field):
         existing = self.table([
             self.field(C.F_RECEIPT_ENTRY_DELIVERABLES, C.DELIVERABLE_OPTIONS, "multipleSelects"),
-            self.field(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, C.MERCHANDISE_RESOLUTION_OPTIONS),
         ])
-        get_tables.side_effect = [[existing], [existing]]
+        get_tables.return_value = [existing]
 
         with patch.object(C, "airtable_ready", return_value=True):
             self.utility.main()
@@ -430,11 +387,9 @@ class IntakeDecisionSchemaUtilityTests(unittest.TestCase):
     def test_schema_utility_converts_existing_single_select(self, _load_env, get_tables, create_field, update_field):
         existing_single = self.table([
             self.field(C.F_RECEIPT_ENTRY_DELIVERABLES, C.DELIVERABLE_OPTIONS),
-            self.field(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, C.MERCHANDISE_RESOLUTION_OPTIONS),
         ])
         converted = self.table([
             self.field(C.F_RECEIPT_ENTRY_DELIVERABLES, C.DELIVERABLE_OPTIONS, "multipleSelects"),
-            self.field(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, C.MERCHANDISE_RESOLUTION_OPTIONS),
         ])
         get_tables.side_effect = [[existing_single], [converted]]
         update_field.return_value = {"id": "fldDeliverables"}

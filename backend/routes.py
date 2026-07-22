@@ -18,14 +18,12 @@ from airtable import airtable
 from config import Config
 from receiving_photo_storage import (
     ReceivingPhotoConfigError,
+    ReceivingPhotoCollisionError,
     ReceivingPhotoStorage,
     ReceivingPhotoStorageError,
     ReceivingPhotoValidationError,
     sanitize_path_segment,
 )
-from workflow_templates import WorkflowTemplateService, WorkflowValidationError
-from work_order_types import WorkOrderTypeService, WorkOrderTypeValidationError
-
 api = Blueprint("api", __name__)
 
 C = Config  # shorthand
@@ -60,22 +58,6 @@ def airtable_err(error):
     except ValueError:
         pass
     return err(message, status)
-
-
-def workflow_service():
-    return WorkflowTemplateService(airtable, C)
-
-
-def workflow_err(error):
-    return err(str(error), 400)
-
-
-def work_order_type_service():
-    return WorkOrderTypeService(airtable, C, workflow_service())
-
-
-def work_order_type_err(error):
-    return err(str(error), 400)
 
 
 @api.before_request
@@ -433,7 +415,7 @@ def _shape_client(r):
     }
 
 
-READINESS_LABELS = {
+REQUIRED_TO_SHOOT_LABELS = {
     "merchandise_issue": "Merchandise Issue",
     "waiting_for_merchandise": "Waiting for Merchandise",
     "missing_data": "Missing Data",
@@ -488,7 +470,7 @@ def _blocking_merchandise_issues(issues):
     return blockers
 
 
-def evaluate_photo_readiness(item, client=None, issues=None, full=False):
+def evaluate_required_to_shoot(item, client=None, issues=None, full=False):
     client = client or {}
     label = _identifier_label(client)
     required_fields = _required_photo_fields(client)
@@ -500,7 +482,7 @@ def evaluate_photo_readiness(item, client=None, issues=None, full=False):
     details = {
         "ready": False,
         "state": "missing_data",
-        "label": READINESS_LABELS["missing_data"],
+        "label": REQUIRED_TO_SHOOT_LABELS["missing_data"],
         "missing": [],
         "warnings": [],
     }
@@ -514,20 +496,20 @@ def evaluate_photo_readiness(item, client=None, issues=None, full=False):
         }
 
     if item.get("status") in PRODUCTION_LOCK_STATUSES:
-        details.update({"ready": True, "state": "ready_for_photo", "label": READINESS_LABELS["ready_for_photo"]})
-        details["warnings"].append("Product is already in production or complete; readiness will not move it backward.")
+        details.update({"ready": True, "state": "ready_for_photo", "label": REQUIRED_TO_SHOOT_LABELS["ready_for_photo"]})
+        details["warnings"].append("Product is already in production or complete; Required to Shoot will not move it backward.")
         return details
 
     blockers = _blocking_merchandise_issues(issues)
     if blockers:
-        details.update({"state": "merchandise_issue", "label": READINESS_LABELS["merchandise_issue"]})
+        details.update({"state": "merchandise_issue", "label": REQUIRED_TO_SHOOT_LABELS["merchandise_issue"]})
         details["missing"].append("Resolve merchandise issue.")
         if full:
             details["issues"] = blockers
         return details
 
     if merchandise_required and not _item_has_merchandise(item):
-        details.update({"state": "waiting_for_merchandise", "label": READINESS_LABELS["waiting_for_merchandise"]})
+        details.update({"state": "waiting_for_merchandise", "label": REQUIRED_TO_SHOOT_LABELS["waiting_for_merchandise"]})
         details["missing"].append("Merchandise must be received and matched to this Product.")
         return details
 
@@ -549,17 +531,17 @@ def evaluate_photo_readiness(item, client=None, issues=None, full=False):
             missing_data.append("Artwork is required.")
 
     if missing_data:
-        details.update({"state": "missing_data", "label": READINESS_LABELS["missing_data"], "missing": missing_data})
+        details.update({"state": "missing_data", "label": REQUIRED_TO_SHOOT_LABELS["missing_data"], "missing": missing_data})
         return details
 
     if artwork_requirement == "Required" and not item.get("artworkReceived"):
-        details.update({"state": "missing_artwork", "label": READINESS_LABELS["missing_artwork"]})
+        details.update({"state": "missing_artwork", "label": REQUIRED_TO_SHOOT_LABELS["missing_artwork"]})
         details["missing"].append("Artwork is required.")
         return details
     if artwork_requirement == "Optional" and not item.get("artworkReceived"):
         details["warnings"].append("Artwork has not been received.")
 
-    details.update({"ready": True, "state": "ready_for_photo", "label": READINESS_LABELS["ready_for_photo"]})
+    details.update({"ready": True, "state": "ready_for_photo", "label": REQUIRED_TO_SHOOT_LABELS["ready_for_photo"]})
     return details
 
 
@@ -571,15 +553,12 @@ XLSX_RELS_NS = {
     "rel": "http://schemas.openxmlformats.org/package/2006/relationships",
     "office": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
 }
-DEFAULT_IMPORT_WORKSTREAM = "Photo + Render"
-IMPORT_WORKSTREAMS = {"Photo Only", "Render Only", "Photo + Render", "GS1 Ecomm", "Packaging Photography", "THR3D", "Video", "Other"}
 INTAKE_FALLBACK_DESCRIPTIONS = {
     "Product Name": "Optional product display name in the app.",
     "Identifier": "Client product identifier.",
     "Product or File Name": "Product or file name.",
     "Description": "Longer source product description.",
     "Product Job Number": "Row-level job or project number for the product.",
-    "Workstream": "Production workstream or legacy Photo/Render routing value.",
     "Master or Variant": "Whether this product is a master or a variant.",
     "Pickup Job Number": "Previous production job number for variant pickup work.",
     "Brand": "Product brand.",
@@ -596,7 +575,6 @@ INTAKE_MAPPINGS = {
         "description": "Description",
         "id": "UPC",
         "brand": "Brand",
-        "output": "Workstream",
         "notes": ["Notes"],
     },
     "unfi": {
@@ -604,7 +582,6 @@ INTAKE_MAPPINGS = {
         "item_name": "Description",
         "description": "Description",
         "id": "UPC",
-        "output": "Workstream",
         "notes": ["Notes"],
     },
     "smithfield": {
@@ -613,7 +590,6 @@ INTAKE_MAPPINGS = {
         "description": "Product Description",
         "id": "GAR #",
         "brand": "Brand",
-        "output": "Output",
         "notes": ["Notes"],
     },
 }
@@ -1176,7 +1152,6 @@ def _intake_destination_field_map():
         "Product or File Name": (C.PRODUCTS_TABLE, C.F_ITEM_PRODUCT),
         "Description": (C.PRODUCTS_TABLE, C.F_ITEM_DESCRIPTION),
         "Product Job Number": (C.PRODUCTS_TABLE, C.F_ITEM_JOB_NUMBER),
-        "Workstream": (C.PRODUCTS_TABLE, C.F_ITEM_WORKSTREAM),
         "Master or Variant": (C.PRODUCTS_TABLE, C.F_ITEM_MASTER_VARIANT),
         "Pickup Job Number": (C.PRODUCTS_TABLE, C.F_ITEM_PICKUP_JOB_NUMBER),
         "Brand": (C.PRODUCTS_TABLE, C.F_ITEM_BRAND),
@@ -1332,8 +1307,6 @@ def _mapping_from_ui_mapping(ui_mapping):
         "Brand": "brand",
         "Job Number": "item_job_number",
         "Parent Job Number": "parent_job_number",
-        "Workstream": "output",
-        "Output Type": "output",
         "Master or Variant": "master_or_variant",
         "Pickup Job Number": "pickup_job_number",
         "Due Date": "due",
@@ -1352,8 +1325,6 @@ def _mapping_from_ui_mapping(ui_mapping):
         "Items.Item Job Number": "item_job_number",
         "Products.Product Job Number": "item_job_number",
         "Items.Job Number": "item_job_number",
-        "Products.Workstream": "output",
-        "Items.Output Type": "output",
         "Items.Master or Variant": "master_or_variant",
         "Items.Pickup Job Number": "pickup_job_number",
         "Items.Brand": "brand",
@@ -1368,8 +1339,6 @@ def _mapping_from_ui_mapping(ui_mapping):
         "Item Job Number": "item_job_number",
         "Product Job Number": "item_job_number",
         "Job Number": "item_job_number",
-        "Workstream": "output",
-        "Output Type": "output",
         "Master or Variant": "master_or_variant",
         "Pickup Job Number": "pickup_job_number",
         "Brand": "brand",
@@ -1414,32 +1383,6 @@ def _mapping_from_ui_mapping(ui_mapping):
     if missing:
         raise ValueError(f"Missing required column mapping: {', '.join(missing)}.")
     return mapping
-
-
-def _normalize_workstream(value):
-    cleaned = (value or "").strip()
-    if not cleaned:
-        return DEFAULT_IMPORT_WORKSTREAM
-    aliases = {
-        "photo": "Photo Only",
-        "photo only": "Photo Only",
-        "render": "Render Only",
-        "render only": "Render Only",
-        "photo + render": "Photo + Render",
-        "photo and render": "Photo + Render",
-        "photo/render": "Photo + Render",
-        "both": "Photo + Render",
-        "gs1": "GS1 Ecomm",
-        "gs1 ecomm": "GS1 Ecomm",
-        "ecomm": "GS1 Ecomm",
-        "packaging": "Packaging Photography",
-        "packaging photography": "Packaging Photography",
-        "thr3d": "THR3D",
-        "thread": "THR3D",
-        "video": "Video",
-        "other": "Other",
-    }
-    return aliases.get(cleaned.lower(), cleaned if cleaned in IMPORT_WORKSTREAMS else DEFAULT_IMPORT_WORKSTREAM)
 
 
 def _normalize_master_or_variant(value):
@@ -1578,7 +1521,6 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
         parent_job_number = _normalize_item_job_number(_mapped_value(row, mapping, "parent_job_number"))
         brand = _mapped_value(row, mapping, "brand")
         category = _mapped_value(row, mapping, "category")
-        output = _normalize_workstream(_mapped_value(row, mapping, "output"))
         master_or_variant = _normalize_master_or_variant(_mapped_value(row, mapping, "master_or_variant"))
         pickup_job_number = _normalize_item_job_number(_mapped_value(row, mapping, "pickup_job_number"))
         job_name_text = existing_job_name or single_job_name or _mapped_value(row, mapping, "job_name")
@@ -1641,7 +1583,6 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
             "brand": brand,
             "category": category,
             "due": job_due,
-            "output": output,
             "masterOrVariant": master_or_variant,
             "pickupJobNumber": pickup_job_number,
             "notes": notes,
@@ -1721,7 +1662,6 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
         parent_job_number = _normalize_item_job_number(source.get("parentJobNumber"))
         brand = str(source.get("brand", "") or "").strip()
         category = str(source.get("category", "") or "").strip()
-        output = _normalize_workstream(str(source.get("workstream", "") or source.get("output", "") or ""))
         master_or_variant = _normalize_master_or_variant(source.get("masterOrVariant"))
         pickup_job_number = _normalize_item_job_number(source.get("pickupJobNumber"))
         notes = str(source.get("notes", "") or "").strip()
@@ -1784,12 +1724,10 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
             "brand": brand,
             "category": category,
             "due": job_due,
-            "output": output,
             "masterOrVariant": master_or_variant,
             "pickupJobNumber": pickup_job_number,
             "notes": notes,
             "referenceData": reference_data,
-            "status": status,
             "existingItemId": existing_item.get("id") if existing_item else None,
             "errors": problems,
             "warnings": warnings,
@@ -1846,8 +1784,6 @@ def _item_fields_from_row(client_id, job_id, row):
         C.F_ITEM_JOB: [job_id],
         C.F_ITEM_IDENTIFIER: row["id"],
         C.F_ITEM_PRODUCT: row["product"],
-        C.F_ITEM_WORKSTREAM: row.get("output") or DEFAULT_IMPORT_WORKSTREAM,
-        C.F_ITEM_STATUS: row["status"],
     }
     if row.get("brand"):
         fields[C.F_ITEM_BRAND] = row["brand"]
@@ -2021,6 +1957,29 @@ def _shape_login_user(r):
         "avatar": user["avatar"],
         "active": user["active"],
     }
+
+
+def _user_display_name(user):
+    if not user:
+        return ""
+    fields = user.get("fields", {}) if "fields" in user else {}
+    shaped = user if "fields" not in user else _shape_user(user)
+    return (
+        shaped.get("displayName")
+        or shaped.get("name")
+        or " ".join(filter(None, [shaped.get("firstName"), shaped.get("lastName")]))
+        or fields.get(C.F_USER_DISPLAY_NAME)
+        or fields.get(C.F_USER_NAME)
+        or ""
+    )
+
+
+def _user_initials(user):
+    name = _user_display_name(user)
+    parts = [part for part in re.split(r"\s+", name.strip()) if part]
+    if not parts:
+        return ""
+    return (parts[0][0] + (parts[-1][0] if len(parts) > 1 else "")).upper()
 
 
 def _record_from_shaped_user(user):
@@ -2414,7 +2373,7 @@ def get_item(record_id):
         return _forbidden()
     clients_by_id = _clients_by_id()
     issues_by_item_id = _issues_by_item_id()
-    return jsonify({"record": _shape_item(record, clients_by_id=clients_by_id, issues_by_item_id=issues_by_item_id, readiness_full=True)})
+    return jsonify({"record": _shape_item(record, clients_by_id=clients_by_id, issues_by_item_id=issues_by_item_id, required_to_shoot_full=True)})
 
 
 @api.post("/items")
@@ -2504,9 +2463,8 @@ def _issues_by_item_id():
     return issues
 
 
-def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, readiness_full=False):
+def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, required_to_shoot_full=False):
     f = r.get("fields", {})
-    photo_metadata = _photo_metadata_from_fields(f, C.F_ITEM_PHOTO_METADATA)
     code_type = f.get(C.F_ITEM_IDENTIFIER_TYPE, "")
     if isinstance(code_type, list):
         code_type = code_type[0] if code_type else ""
@@ -2527,34 +2485,15 @@ def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, readiness_full
         "product": f.get(C.F_ITEM_PRODUCT, ""),
         "itemJobNumber": f.get(C.F_ITEM_JOB_NUMBER, ""),
         "description": f.get(C.F_ITEM_DESCRIPTION, ""),
-        "workstream": f.get(C.F_ITEM_WORKSTREAM, ""),
-        "output": f.get(C.F_ITEM_OUTPUT, ""),
         "masterOrVariant": f.get(C.F_ITEM_MASTER_VARIANT, ""),
         "pickupJobNumber": f.get(C.F_ITEM_PICKUP_JOB_NUMBER, ""),
         "brand": f.get(C.F_ITEM_BRAND, ""),
         "category": f.get(C.F_ITEM_CATEGORY, ""),
-        "received": f.get(C.F_ITEM_RECEIVED, False),
-        "merchVerified": f.get(C.F_ITEM_RECEIVED, False),
-        "receiptIds": f.get(C.F_ITEM_RECEIPTS, []) if isinstance(f.get(C.F_ITEM_RECEIPTS), list) else [],
-        "issueIds": f.get(C.F_ITEM_ISSUES, []) if isinstance(f.get(C.F_ITEM_ISSUES), list) else [],
         "artworkReceived": f.get(C.F_ITEM_ARTWORK_RECEIVED, False),
-        "recDate": f.get(C.F_ITEM_REC_DATE, ""),
-        "location": "",
-        "locationIds": f.get(C.F_ITEM_LOCATION, []) if isinstance(f.get(C.F_ITEM_LOCATION), list) else [],
-        "condition": f.get(C.F_ITEM_CONDITION, ""),
-        "status": f.get(C.F_ITEM_STATUS, ""),
         "notes": f.get(C.F_ITEM_NOTES, ""),
-        "photos": photo_metadata,
-        "photoMetadata": photo_metadata,
         "referenceDataRaw": f.get(C.F_ITEM_REFERENCE_DATA, ""),
         "referenceData": _parse_reference_data(f.get(C.F_ITEM_REFERENCE_DATA, "")),
     }
-    item["readiness"] = evaluate_photo_readiness(
-        item,
-        client=client,
-        issues=(issues_by_item_id or {}).get(r["id"], []),
-        full=readiness_full,
-    )
     return item
 
 
@@ -2564,12 +2503,6 @@ def _apply_item_fields(fields, body):
         "product": C.F_ITEM_PRODUCT,
         "brand": C.F_ITEM_BRAND,
         "category": C.F_ITEM_CATEGORY,
-        "received": C.F_ITEM_RECEIVED,
-        "merchVerified": C.F_ITEM_RECEIVED,
-        "recDate": C.F_ITEM_REC_DATE,
-        "locationIds": C.F_ITEM_LOCATION,
-        "condition": C.F_ITEM_CONDITION,
-        "status": C.F_ITEM_STATUS,
         "notes": C.F_ITEM_NOTES,
         "artworkReceived": C.F_ITEM_ARTWORK_RECEIVED,
     }
@@ -2580,10 +2513,6 @@ def _apply_item_fields(fields, body):
         fields[C.F_ITEM_JOB_NUMBER] = _normalize_item_job_number(body.get("itemJobNumber"))
     if "description" in body and body["description"] not in (None, ""):
         fields[C.F_ITEM_DESCRIPTION] = _normalize_description(body.get("description"))
-    if "workstream" in body and body["workstream"] not in (None, ""):
-        fields[C.F_ITEM_WORKSTREAM] = _normalize_workstream(str(body.get("workstream") or ""))
-    elif "output" in body and body["output"] not in (None, ""):
-        fields[C.F_ITEM_WORKSTREAM] = _normalize_workstream(str(body.get("output") or ""))
     if "masterOrVariant" in body and body["masterOrVariant"] not in (None, ""):
         normalized = _normalize_master_or_variant(body.get("masterOrVariant"))
         if normalized:
@@ -2597,54 +2526,7 @@ def _apply_item_fields(fields, body):
 
 
 def _log_item_changes(record_id, previous, current, changed_fields):
-    job_id = _first_link(current, C.F_ITEM_JOB) or _first_link(previous, C.F_ITEM_JOB)
-
-    if C.F_ITEM_STATUS in changed_fields:
-        old = _field_value(previous, C.F_ITEM_STATUS)
-        new = _field_value(current, C.F_ITEM_STATUS)
-        if old != new:
-            _create_history_event(
-                "Status Changed",
-                "Status Changed",
-                item_ids=[record_id],
-                job_ids=[job_id] if job_id else None,
-                field="Status",
-                from_value=old,
-                to_value=new,
-                details=f"Item status changed from {old or 'blank'} to {new or 'blank'}.",
-            )
-
-    if C.F_ITEM_LOCATION in changed_fields:
-        old_ids = _field_value(previous, C.F_ITEM_LOCATION) or []
-        new_ids = _field_value(current, C.F_ITEM_LOCATION) or []
-        if old_ids != new_ids:
-            old = _linked_location_names(old_ids)
-            new = _linked_location_names(new_ids)
-            _create_history_event(
-                "Status Changed",
-                "Status Changed",
-                item_ids=[record_id],
-                job_ids=[job_id] if job_id else None,
-                field="Location",
-                from_value=old,
-                to_value=new,
-                details=f"Item location changed from {old or 'blank'} to {new or 'blank'}.",
-            )
-
-    if C.F_ITEM_CONDITION in changed_fields:
-        old = _field_value(previous, C.F_ITEM_CONDITION)
-        new = _field_value(current, C.F_ITEM_CONDITION)
-        if old != new:
-            _create_history_event(
-                "Status Changed",
-                "Status Changed",
-                item_ids=[record_id],
-                job_ids=[job_id] if job_id else None,
-                field="Condition",
-                from_value=old,
-                to_value=new,
-                details=f"Item condition changed from {old or 'blank'} to {new or 'blank'}.",
-            )
+    pass
 
 
 def _client_code_type(client_id):
@@ -2738,10 +2620,6 @@ def _find_matching_skus(query, *, client_id="", include_item_id=""):
         if client_id and client_id not in _as_list(record.get("fields", {}).get(C.F_ITEM_CLIENT, [])):
             continue
         sku = _shape_item(record)
-        # Skip items already linked to a receipt (already claimed), unless the
-        # caller explicitly wants to include a specific item (re-match case).
-        if sku.get("receiptIds") and sku["id"] != include_item_id:
-            continue
         score = _item_match_score(sku, cleaned)
         if score:
             job_ids = sku.get("jobIds") or []
@@ -2751,13 +2629,11 @@ def _find_matching_skus(query, *, client_id="", include_item_id=""):
                 "score": score,
                 "jobNumber": sku.get("itemJobNumber") or (jobs[0].get("job") if jobs else ""),
                 "parentJobNumber": jobs[0].get("parentJobNumber") if jobs else "",
-                "hasValidatedMerchandise": bool(sku.get("merchVerified") or sku.get("received")),
             })
     return sorted(
         matches,
         key=lambda sku: (
             -sku["score"],
-            sku.get("hasValidatedMerchandise", False),
             sku.get("gtinUpc") or sku.get("name") or "",
         ),
     )[:8]
@@ -3004,6 +2880,27 @@ def list_receipts():
     return jsonify({"records": records})
 
 
+@api.get("/shipments/thr3d-outgoing")
+def list_thr3d_outgoing():
+    try:
+        entries = _list_all_records(C.MERCHANDISE_TABLE)
+        receipts = _list_all_records(C.SHIPMENTS_TABLE)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    receipts_by_id = {record["id"]: record for record in _filter_receipts_by_access(receipts)}
+    records = []
+    for entry in entries:
+        linked_receipts = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+        receipt = next((receipts_by_id.get(receipt_id) for receipt_id in linked_receipts if receipt_id in receipts_by_id), None)
+        if linked_receipts and receipt is None:
+            continue
+        if _is_thr3d_outgoing_candidate(entry):
+            records.append(_shape_thr3d_outgoing_entry(entry, receipt))
+    records.sort(key=lambda record: (record.get("received") or "", record.get("name") or ""))
+    return jsonify({"records": records})
+
+
 # ── Verification ──────────────────────────────────────────────────────────────
 
 def _list_merchandise_review_records():
@@ -3044,6 +2941,21 @@ NON_INVENTORY_MERCH_STATUSES = {
     "sent to thread",
 }
 NON_INVENTORY_PRODUCT_STATUSES = {"cancelled"}
+
+
+def _is_thr3d_outgoing_candidate(entry):
+    fields = entry.get("fields", {})
+    deliverables = _deliverable_values(fields.get(C.F_RECEIPT_ENTRY_DELIVERABLES, ""))
+    if "Thr3d" not in deliverables:
+        return False
+    if any(value in {"Packaging Photo", "Ecomm Photo"} for value in deliverables):
+        return False
+    if fields.get(C.F_RECEIPT_ENTRY_RELEASED):
+        return False
+    intake_status = str(fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) or "").strip().lower()
+    if intake_status != "ready to release":
+        return False
+    return _is_merchandise_physically_present(fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS, ""))
 
 
 def _intake_decision_value(body, *keys):
@@ -3158,7 +3070,7 @@ def _validate_intake_status(value):
     return value
 
 
-def _readiness_requirement(key, label, ready, missing):
+def _required_to_shoot_requirement(key, label, ready, missing):
     return {
         "key": key,
         "label": label,
@@ -3180,7 +3092,7 @@ def _reference_data_value(product_fields, terms):
     return next((str(value or "").strip() for value in candidates if str(value or "").strip()), "")
 
 
-def _evaluate_production_readiness_from_fields(entry_fields, product_fields=None):
+def _evaluate_required_to_shoot_from_fields(entry_fields, product_fields=None):
     product_fields = product_fields or {}
     item_ids = _as_list(entry_fields.get(C.F_RECEIPT_ENTRY_ITEM, []))
     merchandise_verified = bool(entry_fields.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED, False))
@@ -3190,20 +3102,38 @@ def _evaluate_production_readiness_from_fields(entry_fields, product_fields=None
     activation_reference = _reference_data_value(product_fields, ["activation", "campaign"])
     deliverables = _deliverable_values(entry_fields.get(C.F_RECEIPT_ENTRY_DELIVERABLES, ""))
     requirements = [
-        _readiness_requirement("merchandise-verified", "Merchandise Verified", merchandise_verified, "Verify the physical merchandise."),
-        _readiness_requirement("deliverables", "Deliverables", bool(deliverables), "Select at least one Deliverable."),
+        _required_to_shoot_requirement("merchandise-verified", "Merchandise Verified", merchandise_verified, "Verify the physical merchandise."),
+        _required_to_shoot_requirement("deliverables", "Deliverables", bool(deliverables), "Select at least one Deliverable."),
     ]
     photo_deliverables = [value for value in deliverables if value in {"Packaging Photo", "Ecomm Photo"}]
+    if deliverables == ["Thr3d"]:
+        requirements = [
+            _required_to_shoot_requirement("client", "Client", bool(_as_list(entry_fields.get(C.F_RECEIPT_CLIENT, []))), "Select a Client."),
+            _required_to_shoot_requirement("merchandise-photo", "Merchandise Photo", _has_merchandise_photo(entry_fields), "Add at least one merchandise photo."),
+            _required_to_shoot_requirement("quantity", "Quantity", _quantity_is_present(entry_fields.get(C.F_RECEIPT_ENTRY_QUANTITY)), "Add Quantity."),
+            _required_to_shoot_requirement("deliverables", "Deliverables", True, "Select Thr3d."),
+        ]
+        complete_count = len([item for item in requirements if item["ready"]])
+        missing = [item["label"] for item in requirements if not item["ready"]]
+        return {
+            "ready": complete_count == len(requirements),
+            "complete": complete_count == len(requirements),
+            "completeCount": complete_count,
+            "totalCount": len(requirements),
+            "summary": f"{complete_count} of {len(requirements)} Complete",
+            "missing": missing,
+            "requirements": requirements,
+        }
     if photo_deliverables:
         requirements.extend([
-            _readiness_requirement("product-linked", "Product Linked", bool(item_ids and product_fields), "Link a Product."),
-            _readiness_requirement("product-name", "Product Name", bool(product_name), "Add Product Name."),
-            _readiness_requirement("identifier", "Identifier", bool(identifier), "Add the Product Identifier."),
+            _required_to_shoot_requirement("product-linked", "Product Linked", bool(item_ids and product_fields), "Link a Product."),
+            _required_to_shoot_requirement("product-name", "Product Name", bool(product_name), "Add Product Name."),
+            _required_to_shoot_requirement("identifier", "Identifier", bool(identifier), "Add the Product Identifier."),
         ])
     if "Packaging Photo" in photo_deliverables or "Ecomm Photo" in photo_deliverables:
-        requirements.append(_readiness_requirement("artwork", "Artwork", artwork_received, "Confirm Artwork has been received."))
+        requirements.append(_required_to_shoot_requirement("artwork", "Artwork", artwork_received, "Confirm Artwork has been received."))
     if "Ecomm Photo" in photo_deliverables:
-        requirements.append(_readiness_requirement("activation-information", "Activation Information", bool(activation_reference), "Add activation or campaign information."))
+        requirements.append(_required_to_shoot_requirement("activation-information", "Activation Information", bool(activation_reference), "Add activation or campaign information."))
     complete_count = len([item for item in requirements if item["ready"]])
     missing = [item["label"] for item in requirements if not item["ready"]]
     return {
@@ -3217,13 +3147,17 @@ def _evaluate_production_readiness_from_fields(entry_fields, product_fields=None
     }
 
 
-def _evaluate_production_readiness(shaped, linked_item=None):
+def _evaluate_required_to_shoot(shaped, linked_item=None):
     entry_fields = {
         C.F_RECEIPT_ENTRY_ITEM: shaped.get("itemIds", []),
         C.F_RECEIPT_ENTRY_NAME: shaped.get("productName", ""),
         C.F_RECEIPT_ENTRY_SKU_ID: shaped.get("skuId", ""),
         C.F_RECEIPT_ENTRY_DELIVERABLES: shaped.get("deliverables", []),
         C.F_RECEIPT_ENTRY_MERCH_VERIFIED: shaped.get("merchandiseVerified", False),
+        C.F_RECEIPT_ENTRY_QUANTITY: shaped.get("quantity", 0),
+        C.F_RECEIPT_CLIENT: shaped.get("clientIds", []),
+        C.F_RECEIPT_ENTRY_PHOTO_METADATA: shaped.get("photoMetadata", []),
+        C.F_RECEIPT_ENTRY_PHOTOS: shaped.get("itemPhotos", []) or shaped.get("photos", []),
     }
     product_fields = {}
     if linked_item:
@@ -3233,300 +3167,34 @@ def _evaluate_production_readiness(shaped, linked_item=None):
             C.F_ITEM_ARTWORK_RECEIVED: linked_item.get("artworkReceived", False),
             C.F_ITEM_REFERENCE_DATA: json.dumps(linked_item.get("referenceData") or {}, sort_keys=True),
         }
-    return _evaluate_production_readiness_from_fields(entry_fields, product_fields)
+    return _evaluate_required_to_shoot_from_fields(entry_fields, product_fields)
+
+
+def _quantity_is_present(value):
+    try:
+        return float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _has_merchandise_photo(fields):
+    if _photo_metadata_from_entry(fields, include_urls=False):
+        return True
+    return bool(_as_list(fields.get(C.F_RECEIPT_ENTRY_PHOTOS, [])))
 
 
 def _intake_decision_fields_from_body(body, existing_fields=None):
-    existing_fields = existing_fields or {}
     deliverables_supplied = "deliverables" in body
     deliverables_raw = body.get("deliverables")
-    merchandise_resolution = _intake_decision_value(body, "merchandise_resolution", "merchandiseResolution")
     fields = {}
 
-    deliverables = None
     if deliverables_supplied:
         deliverables = _validate_deliverables(deliverables_raw)
         if isinstance(deliverables, tuple):
             return deliverables
-    merchandise_resolution = _validate_intake_choice(
-        merchandise_resolution,
-        C.MERCHANDISE_RESOLUTION_OPTIONS,
-        "Merchandise Resolution",
-    )
-    if isinstance(merchandise_resolution, tuple):
-        return merchandise_resolution
-
-    if deliverables is not None:
         fields[C.F_RECEIPT_ENTRY_DELIVERABLES] = deliverables
-    if merchandise_resolution is not None:
-        fields[C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION] = merchandise_resolution
-
-    existing_resolution = existing_fields.get(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, "")
-    resolution_is_blank = not str(existing_resolution or "").strip()
-    resolution_supplied_blank = merchandise_resolution == ""
-    resolution_not_supplied = merchandise_resolution is None
-    if deliverables is not None and "Thr3d" in deliverables and resolution_is_blank and (resolution_not_supplied or resolution_supplied_blank):
-        fields[C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION] = "Ship to Kentucky"
 
     return fields
-
-WORKSTREAM_DEFINITIONS = [
-    {
-        "id": "ecomm-photo",
-        "label": "Ecomm Photo",
-        "description": "Ecommerce photography workstream.",
-        "workflowTemplate": "ecomm-review",
-        "requiredReviewData": ["product-information", "artwork", "activation-information"],
-        "active": True,
-        "jobRequired": False,
-        "producerRequired": False,
-        "schedulingRequired": False,
-        "externalDestination": "Creative Force",
-    },
-    {
-        "id": "packaging-photo",
-        "label": "Packaging Photo",
-        "description": "Packaging photography workstream.",
-        "workflowTemplate": "packaging-review",
-        "requiredReviewData": ["product-information", "producer-preproduction"],
-        "active": True,
-        "jobRequired": False,
-        "producerRequired": True,
-        "schedulingRequired": True,
-        "externalDestination": "Creative Force",
-    },
-    {
-        "id": "thr3d",
-        "label": "Thr3d",
-        "description": "Thr3d routing workstream.",
-        "workflowTemplate": "thr3d-review",
-        "requiredReviewData": ["product-information", "thr3d-routing"],
-        "active": True,
-        "jobRequired": False,
-        "producerRequired": False,
-        "schedulingRequired": False,
-        "externalDestination": "Thr3d",
-    },
-]
-
-
-def _parse_json_object(value):
-    if not value:
-        return {}
-    if isinstance(value, dict):
-        return value
-    try:
-        parsed = json.loads(str(value))
-    except (TypeError, ValueError):
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _parse_json_list(value):
-    if not value:
-        return []
-    if isinstance(value, list):
-        return value
-    try:
-        parsed = json.loads(str(value))
-    except (TypeError, ValueError):
-        return []
-    return parsed if isinstance(parsed, list) else []
-
-
-def _workstream_definition_by_id(workstream_id):
-    return next((item for item in WORKSTREAM_DEFINITIONS if item["id"] == workstream_id), None)
-
-
-def _workstream_id_from_label(label):
-    text = str(label or "").strip().lower()
-    aliases = {
-        "ecomm photo": "ecomm-photo",
-        "ecommerce photo": "ecomm-photo",
-        "gs1 ecomm": "ecomm-photo",
-        "photo only": "ecomm-photo",
-        "photo + render": "ecomm-photo",
-        "packaging photo": "packaging-photo",
-        "packaging photography": "packaging-photo",
-        "thr3d": "thr3d",
-        "thread": "thr3d",
-        "render only": "thr3d",
-    }
-    return aliases.get(text, "")
-
-
-def _shape_workstream(record):
-    fields = record.get("fields", {})
-    config = _parse_json_object(fields.get(C.F_WORKSTREAM_CONFIGURATION, ""))
-    label = fields.get(C.F_WORKSTREAM_NAME, "")
-    return {
-        "id": record["id"],
-        "key": config.get("id") or _workstream_id_from_label(label) or record["id"],
-        "label": label,
-        "name": label,
-        "active": fields.get(C.F_WORKSTREAM_ACTIVE, True),
-        "description": fields.get(C.F_WORKSTREAM_DESCRIPTION, "") or config.get("description", ""),
-        "workflowTemplate": fields.get(C.F_WORKSTREAM_WORKFLOW_TEMPLATE, "") or config.get("workflowTemplate", ""),
-        "requiredReviewData": config.get("requiredReviewData", []),
-        "jobRequired": bool(config.get("jobRequired", False)),
-        "producerRequired": bool(config.get("producerRequired", False)),
-        "schedulingRequired": bool(config.get("schedulingRequired", False)),
-        "externalDestination": config.get("externalDestination", ""),
-        "configuration": config,
-    }
-
-
-def _workstream_fields_from_definition(definition):
-    return {
-        C.F_WORKSTREAM_NAME: definition["label"],
-        C.F_WORKSTREAM_ACTIVE: bool(definition.get("active", True)),
-        C.F_WORKSTREAM_DESCRIPTION: definition.get("description", ""),
-        C.F_WORKSTREAM_WORKFLOW_TEMPLATE: definition.get("workflowTemplate", ""),
-        C.F_WORKSTREAM_CONFIGURATION: json.dumps(definition, sort_keys=True),
-    }
-
-
-def _list_workstream_records(seed=False):
-    records = _list_all_records(C.WORKSTREAMS_TABLE)
-    by_key = {_shape_workstream(record)["key"]: record for record in records}
-    if seed:
-        changed = False
-        for definition in WORKSTREAM_DEFINITIONS:
-            existing = by_key.get(definition["id"])
-            fields = _workstream_fields_from_definition(definition)
-            if existing:
-                airtable.update_record(C.WORKSTREAMS_TABLE, existing["id"], fields, by_field_id=False)
-            else:
-                created = airtable.create_record(C.WORKSTREAMS_TABLE, fields, by_field_id=False)
-                by_key[definition["id"]] = created
-                changed = True
-        if changed:
-            records = _list_all_records(C.WORKSTREAMS_TABLE)
-    return records
-
-
-def _workstreams_by_key(seed=False):
-    shaped = [_shape_workstream(record) for record in _list_workstream_records(seed=seed)]
-    return {item["key"]: item for item in shaped}
-
-
-def _workstreams_by_record_id(seed=False):
-    shaped = [_shape_workstream(record) for record in _list_workstream_records(seed=seed)]
-    return {item["id"]: item for item in shaped}
-
-
-def _shape_work_order(record, *, workstreams_by_id=None, workflow_stages_by_id=None, workflow_templates_by_id=None, work_order_types_by_id=None):
-    fields = record.get("fields", {})
-    workstream_ids = _as_list(fields.get(C.F_WORK_ORDER_WORKSTREAM, []))
-    workstream = next(
-        ((workstreams_by_id or {}).get(record_id) for record_id in workstream_ids if (workstreams_by_id or {}).get(record_id)),
-        None,
-    )
-    linked_type_ids = _as_list(fields.get(C.F_WORK_ORDER_TYPE, []))
-    linked_type = next(
-        ((work_order_types_by_id or {}).get(record_id) for record_id in linked_type_ids if (work_order_types_by_id or {}).get(record_id)),
-        None,
-    )
-    linked_stage_ids = _as_list(fields.get(C.F_WORK_ORDER_CURRENT_WORKFLOW_STAGE, []))
-    linked_stage = next(
-        ((workflow_stages_by_id or {}).get(record_id) for record_id in linked_stage_ids if (workflow_stages_by_id or {}).get(record_id)),
-        None,
-    )
-    linked_template_ids = _as_list(fields.get(C.F_WORK_ORDER_WORKFLOW_TEMPLATE, []))
-    linked_template = next(
-        ((workflow_templates_by_id or {}).get(record_id) for record_id in linked_template_ids if (workflow_templates_by_id or {}).get(record_id)),
-        None,
-    )
-    type_template = (linked_type or {}).get("workflowTemplate")
-    effective_template = type_template or linked_template
-    legacy_stage = fields.get(C.F_WORK_ORDER_CURRENT_STAGE, "")
-    resolved_stage = (linked_stage or {}).get("stageKey") or legacy_stage
-    resolved_stage_name = (linked_stage or {}).get("name") or resolved_stage
-    workflow_id = (effective_template or {}).get("id") or fields.get(C.F_WORK_ORDER_WORKFLOW, "")
-    workflow_name = (effective_template or {}).get("name") or fields.get(C.F_WORK_ORDER_WORKFLOW, "")
-    readiness = _parse_json_list(fields.get(C.F_WORK_ORDER_READINESS_METADATA, ""))
-    blockers = _parse_json_list(fields.get(C.F_WORK_ORDER_BLOCKING_REQUIREMENTS, ""))
-    return {
-        "id": record["id"],
-        "name": fields.get(C.F_WORK_ORDER_NAME, ""),
-        "merchandiseIds": _as_list(fields.get(C.F_WORK_ORDER_MERCHANDISE, [])),
-        "workstreamIds": workstream_ids,
-        "workstream": workstream,
-        "workstreamKey": (workstream or {}).get("key", ""),
-        "workstreamLabel": (workstream or {}).get("label", ""),
-        "workflowId": workflow_id,
-        "workflowName": workflow_name,
-        "workflow_template": effective_template,
-        "workflow_template_id": workflow_id,
-        "workflowTemplateIds": linked_template_ids,
-        "workOrderTypeIds": linked_type_ids,
-        "workOrderType": linked_type,
-        "work_order_type": linked_type,
-        "work_order_type_id": (linked_type or {}).get("id") or (linked_type_ids[0] if linked_type_ids else ""),
-        "work_order_type_key": (linked_type or {}).get("key", ""),
-        "currentWorkflowStageIds": linked_stage_ids,
-        "currentWorkflowStage": linked_stage,
-        "currentStage": resolved_stage,
-        "currentStageName": resolved_stage_name,
-        "currentGate": resolved_stage,
-        "currentGateName": resolved_stage_name,
-        "currentOwner": fields.get(C.F_WORK_ORDER_CURRENT_OWNER, ""),
-        "currentStatus": fields.get(C.F_WORK_ORDER_CURRENT_STATUS, ""),
-        "jobIds": _as_list(fields.get(C.F_WORK_ORDER_JOB, [])),
-        "readiness": readiness,
-        "blockingRequirements": blockers,
-        "createdAt": fields.get(C.F_WORK_ORDER_CREATED_AT, ""),
-        "completedAt": fields.get(C.F_WORK_ORDER_COMPLETED_AT, ""),
-    }
-
-
-def _list_work_order_records():
-    return _list_all_records(C.WORK_ORDERS_TABLE)
-
-
-def _work_order_name(entry, workstream):
-    fields = entry.get("fields", {})
-    package_name = fields.get(C.F_RECEIPT_ENTRY_NAME, "") or "Merchandise"
-    return f"{package_name} - {workstream.get('label') or workstream.get('name')}"
-
-
-def _work_order_fields(entry, workstream, existing=None, include_workflow_links=False):
-    now = _now_iso()
-    workflow = workstream.get("workflowTemplate") or "merchandise-review"
-    requirements = workstream.get("requiredReviewData") or []
-    fields = {
-        C.F_WORK_ORDER_NAME: _work_order_name(entry, workstream),
-        C.F_WORK_ORDER_MERCHANDISE: [entry["id"]],
-        C.F_WORK_ORDER_WORKSTREAM: [workstream["id"]],
-        C.F_WORK_ORDER_WORKFLOW: workflow,
-        C.F_WORK_ORDER_CURRENT_GATE: "new-review",
-        C.F_WORK_ORDER_CURRENT_OWNER: "Project Management",
-        C.F_WORK_ORDER_CURRENT_STATUS: "not_started",
-        C.F_WORK_ORDER_READINESS_METADATA: json.dumps([], sort_keys=True),
-        C.F_WORK_ORDER_BLOCKING_REQUIREMENTS: json.dumps(requirements, sort_keys=True),
-    }
-    if include_workflow_links:
-        fields.update(_work_order_configuration_fields_for_stage("new-review"))
-    if not existing:
-        fields[C.F_WORK_ORDER_CREATED_AT] = now
-    if existing and existing.get("fields", {}).get(C.F_WORK_ORDER_CURRENT_STATUS) == "cancelled":
-        fields[C.F_WORK_ORDER_COMPLETED_AT] = ""
-    return fields
-
-
-def _workflow_link_fields_for_stage(stage_key):
-    try:
-        return workflow_service().fields_for_work_order_stage(stage_key)
-    except requests.HTTPError:
-        return {}
-
-
-def _work_order_configuration_fields_for_stage(stage_key):
-    try:
-        return work_order_type_service().fields_for_new_work_order(stage_key)
-    except requests.HTTPError:
-        return _workflow_link_fields_for_stage(stage_key)
-
 
 def _parse_airtable_datetime(value):
     if not value:
@@ -3578,21 +3246,13 @@ def _age_group_for_days(days_here):
     return "30-plus"
 
 
-def _is_merchandise_physically_present(merch_status, product_status=""):
+def _is_merchandise_physically_present(merch_status):
     merch = str(merch_status or "").strip().lower()
-    product = str(product_status or "").strip().lower()
-    if merch in NON_INVENTORY_MERCH_STATUSES:
-        return False
-    if product in NON_INVENTORY_PRODUCT_STATUSES:
-        return False
-    return True
+    return merch not in NON_INVENTORY_MERCH_STATUSES
 
 
 def _derive_merchandise_inventory_status(entry, linked_product=None, client=None, days_here=None):
     merch_status = str(entry.get("merchStatus") or "").strip()
-    product_status = str((linked_product or {}).get("status") or "").strip()
-    product_status_key = product_status.lower()
-
     if merch_status == "Issue":
         return "Issue"
 
@@ -3606,14 +3266,6 @@ def _derive_merchandise_inventory_status(entry, linked_product=None, client=None
 
     if merch_status == "Received":
         return "Needs Review"
-    if product_status_key in {"production", "in production"}:
-        return "In Production"
-    if product_status_key == "complete":
-        return "Complete"
-
-    readiness = (linked_product or {}).get("readiness") or {}
-    if readiness.get("state") == "ready_for_photo":
-        return "Ready for Photo"
     if merch_status == "Validated":
         return "Validated"
     if merch_status == "Matched" or entry.get("itemIds"):
@@ -3627,6 +3279,7 @@ def _shape_merchandise_inventory_entry(entry, *, receipts_by_id, products_by_id,
         (receipts_by_id.get(receipt_id) for receipt_id in _as_list(shaped.get("receiptIds")) if receipts_by_id.get(receipt_id)),
         None,
     )
+    shaped = _with_shipment_photos(shaped, receipt)
     receipt_fields = receipt.get("fields", {}) if receipt else {}
     product_record = next(
         (products_by_id.get(product_id) for product_id in _as_list(shaped.get("itemIds")) if products_by_id.get(product_id)),
@@ -3650,8 +3303,6 @@ def _shape_merchandise_inventory_entry(entry, *, receipts_by_id, products_by_id,
             "id": linked_product.get("id"),
             "name": linked_product.get("name") or linked_product.get("product") or "",
             "identifier": linked_product.get("identifier", ""),
-            "status": linked_product.get("status", ""),
-            "readiness": linked_product.get("readiness"),
         } if linked_product else None,
         "shipment": {
             "id": receipt.get("id") if receipt else "",
@@ -3693,8 +3344,7 @@ def _list_merchandise_inventory_records():
         linked_product = products_by_id.get((_as_list(shaped.get("itemIds")) or [""])[0])
         if shaped.get("itemIds") and not linked_product:
             continue
-        product_status = (linked_product or {}).get("fields", {}).get(C.F_ITEM_STATUS, "")
-        if not _is_merchandise_physically_present(shaped.get("merchStatus"), product_status):
+        if not _is_merchandise_physically_present(shaped.get("merchStatus")):
             continue
         records.append(_shape_merchandise_inventory_entry(
             entry,
@@ -3731,405 +3381,124 @@ def list_verification_entries():
     return jsonify({"records": records})
 
 
-@api.get("/workstreams")
-def list_workstreams():
-    try:
-        records = [_shape_workstream(record) for record in _list_workstream_records(seed=True)]
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    records.sort(key=lambda item: next((index for index, definition in enumerate(WORKSTREAM_DEFINITIONS) if definition["id"] == item["key"]), 999))
-    return jsonify({"records": records})
-
-
-@api.get("/workflow-templates")
-def list_workflow_templates():
-    try:
-        templates = workflow_service().list_templates(seed=True)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"records": templates})
-
-
-@api.post("/workflow-templates")
-def create_workflow_template():
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
-    try:
-        template = workflow_service().create_template(request.get_json(silent=True) or {})
-    except WorkflowValidationError as error:
-        return workflow_err(error)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": template}), 201
-
-
-@api.get("/workflow-templates/<template_id>")
-def get_workflow_template(template_id):
-    try:
-        template = workflow_service().get_template(template_id)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": template})
-
-
-@api.patch("/workflow-templates/<template_id>")
-def update_workflow_template(template_id):
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
-    try:
-        template = workflow_service().update_template(template_id, request.get_json(silent=True) or {})
-    except WorkflowValidationError as error:
-        return workflow_err(error)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": template})
-
-
-@api.post("/workflow-templates/<template_id>/duplicate")
-def duplicate_workflow_template(template_id):
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
-    try:
-        template = workflow_service().duplicate_template(template_id)
-    except WorkflowValidationError as error:
-        return workflow_err(error)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": template}), 201
-
-
-@api.post("/workflow-templates/<template_id>/stages")
-def create_workflow_stage(template_id):
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
-    try:
-        stage = workflow_service().create_stage(template_id, request.get_json(silent=True) or {})
-    except WorkflowValidationError as error:
-        return workflow_err(error)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": stage}), 201
-
-
-@api.patch("/workflow-stages/<stage_id>")
-def update_workflow_stage(stage_id):
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
-    try:
-        stage = workflow_service().update_stage(stage_id, request.get_json(silent=True) or {})
-    except WorkflowValidationError as error:
-        return workflow_err(error)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": stage})
-
-
-@api.post("/workflow-stages/<stage_id>/deactivate")
-def deactivate_workflow_stage(stage_id):
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
-    try:
-        stage = workflow_service().deactivate_stage(stage_id)
-    except WorkflowValidationError as error:
-        return workflow_err(error)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": stage})
-
-
-@api.get("/work-order-types")
-def list_work_order_types():
-    try:
-        records = work_order_type_service().list_types(seed=True)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"records": records})
-
-
-@api.get("/work-order-types/<record_id>")
-def get_work_order_type(record_id):
-    try:
-        record = work_order_type_service().get_type(record_id)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": record})
-
-
-@api.post("/work-order-types")
-def create_work_order_type():
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
-    try:
-        record = work_order_type_service().create_type(request.get_json(silent=True) or {})
-    except WorkOrderTypeValidationError as error:
-        return work_order_type_err(error)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": record}), 201
-
-
-@api.patch("/work-order-types/<record_id>")
-def update_work_order_type(record_id):
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
-    try:
-        record = work_order_type_service().update_type(record_id, request.get_json(silent=True) or {})
-    except WorkOrderTypeValidationError as error:
-        return work_order_type_err(error)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": record})
-
-
-@api.post("/work-order-types/<record_id>/duplicate")
-def duplicate_work_order_type(record_id):
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
-    try:
-        record = work_order_type_service().duplicate_type(record_id)
-    except WorkOrderTypeValidationError as error:
-        return work_order_type_err(error)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": record}), 201
-
-
-@api.post("/work-order-types/<record_id>/set-default")
-def set_default_work_order_type(record_id):
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
-    try:
-        record = work_order_type_service().set_default(record_id)
-    except WorkOrderTypeValidationError as error:
-        return work_order_type_err(error)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": record})
-
-
-@api.post("/work-order-types/<record_id>/activate")
-def activate_work_order_type(record_id):
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
-    try:
-        record = work_order_type_service().activate(record_id)
-    except WorkOrderTypeValidationError as error:
-        return work_order_type_err(error)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": record})
-
-
-@api.post("/work-order-types/<record_id>/deactivate")
-def deactivate_work_order_type(record_id):
-    admin_error = _require_admin()
-    if admin_error:
-        return admin_error
-    try:
-        record = work_order_type_service().deactivate(record_id)
-    except WorkOrderTypeValidationError as error:
-        return work_order_type_err(error)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    return jsonify({"record": record})
-
-
-@api.get("/work-orders")
-@api.get("/merchandise/review/work-orders")
-@api.get("/merchandise/review/workstream-assignments")
-def list_merchandise_review_work_orders():
-    try:
-        review_records = _list_merchandise_review_records()
-        permitted_merchandise_ids = {record["id"] for record in review_records}
-        workstreams_by_id = _workstreams_by_record_id(seed=True)
-        try:
-            templates = workflow_service().list_templates(seed=True)
-            workflow_templates_by_id = {template["id"]: template for template in templates}
-            workflow_stages_by_id = {
-                stage["id"]: stage
-                for template in templates
-                for stage in template.get("stages", [])
-            }
-            work_order_types_by_id = {item["id"]: item for item in work_order_type_service().list_types(seed=True)}
-        except requests.HTTPError:
-            workflow_templates_by_id = {}
-            workflow_stages_by_id = {}
-            work_order_types_by_id = {}
-        work_orders = []
-        for record in _list_work_order_records():
-            shaped = _shape_work_order(
-                record,
-                workstreams_by_id=workstreams_by_id,
-                workflow_stages_by_id=workflow_stages_by_id,
-                workflow_templates_by_id=workflow_templates_by_id,
-                work_order_types_by_id=work_order_types_by_id,
-            )
-            if not (set(shaped.get("merchandiseIds", [])) & permitted_merchandise_ids):
-                continue
-            if str(shaped.get("currentStatus") or "").lower() == "cancelled":
-                continue
-            work_orders.append(shaped)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-    work_orders.sort(key=lambda item: (item.get("createdAt") or "", item.get("name") or ""), reverse=True)
-    return jsonify({
-        "records": work_orders,
-        "workstreams": list(workstreams_by_id.values()),
-    })
-
-
-@api.post("/merchandise/review/<entry_id>/work-orders")
-@api.post("/merchandise/review/<entry_id>/workstream-assignments")
-def save_merchandise_review_work_orders(entry_id):
-    body = request.get_json(silent=True) or {}
-    requested_keys = []
-    for value in body.get("workstreamIds") or body.get("workstreamKeys") or []:
-        key = str(value or "").strip()
-        if key and key not in requested_keys:
-            requested_keys.append(key)
-
+def _permitted_merchandise_or_error(entry_id):
     try:
         entry = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
     except requests.HTTPError as error:
-        return airtable_err(error)
-
+        return None, None, airtable_err(error)
     linked_receipts = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
     receipt = _first_permitted_receipt(linked_receipts)
     if linked_receipts and receipt is None:
-        return _forbidden()
+        return None, None, _forbidden()
+    return entry, receipt, None
 
-    try:
-        workstreams_by_key = _workstreams_by_key(seed=True)
-        workstreams_by_id = _workstreams_by_record_id(seed=True)
-    except requests.HTTPError as error:
-        return airtable_err(error)
 
-    invalid = [key for key in requested_keys if key not in workstreams_by_key or not workstreams_by_key[key].get("active", True)]
-    if invalid:
-        return err(f"Unknown or inactive Workstream: {', '.join(invalid)}.")
+def _comment_user_ids(records):
+    user_ids = set()
+    for record in records:
+        for user_id in _as_list(record.get("fields", {}).get(C.F_COMMENT_USER, [])):
+            if user_id:
+                user_ids.add(user_id)
+    return user_ids
 
-    try:
-        existing_records = [
-            record
-            for record in _list_work_order_records()
-            if entry_id in _as_list(record.get("fields", {}).get(C.F_WORK_ORDER_MERCHANDISE, []))
-        ]
-        existing_by_key = {}
-        for record in existing_records:
-            shaped = _shape_work_order(record, workstreams_by_id=workstreams_by_id)
-            if shaped.get("workstreamKey"):
-                existing_by_key[shaped["workstreamKey"]] = record
 
-        saved = []
-        for key in requested_keys:
-            workstream = workstreams_by_key[key]
-            existing = existing_by_key.get(key)
-            fields = _work_order_fields(entry, workstream, existing=existing, include_workflow_links=True)
-            if existing:
-                saved.append(airtable.update_record(C.WORK_ORDERS_TABLE, existing["id"], fields, by_field_id=False))
-            else:
-                saved.append(airtable.create_record(C.WORK_ORDERS_TABLE, fields, by_field_id=False))
-
-        now = _now_iso()
-        for key, record in existing_by_key.items():
-            if key in requested_keys:
-                continue
-            airtable.update_record(C.WORK_ORDERS_TABLE, record["id"], {
-                C.F_WORK_ORDER_CURRENT_STATUS: "cancelled",
-                C.F_WORK_ORDER_COMPLETED_AT: now,
-            }, by_field_id=False)
-
+def _users_by_id(user_ids):
+    users = {}
+    for user_id in user_ids:
         try:
-            templates = workflow_service().list_templates(seed=True)
-            workflow_templates_by_id = {template["id"]: template for template in templates}
-            workflow_stages_by_id = {
-                stage["id"]: stage
-                for template in templates
-                for stage in template.get("stages", [])
-            }
-            work_order_types_by_id = {item["id"]: item for item in work_order_type_service().list_types(seed=True)}
+            users[user_id] = airtable.get_record(C.USERS_TABLE, user_id, by_field_id=False)
         except requests.HTTPError:
-            workflow_templates_by_id = {}
-            workflow_stages_by_id = {}
-            work_order_types_by_id = {}
-        shaped_saved = [
-            _shape_work_order(
-                record,
-                workstreams_by_id=workstreams_by_id,
-                workflow_stages_by_id=workflow_stages_by_id,
-                workflow_templates_by_id=workflow_templates_by_id,
-                work_order_types_by_id=work_order_types_by_id,
-            )
-            for record in saved
-        ]
+            continue
+    return users
+
+
+def _shape_comment(record, users_by_id=None):
+    fields = record.get("fields", {})
+    user_id = (_as_list(fields.get(C.F_COMMENT_USER, [])) or [""])[0]
+    user_record = (users_by_id or {}).get(user_id)
+    author = _shape_user(user_record) if user_record else {
+        "id": user_id,
+        "name": "",
+        "displayName": "",
+        "role": "",
+        "avatar": "",
+    }
+    display_name = _user_display_name(author)
+    created_at = fields.get(C.F_COMMENT_CREATED_AT) or record.get("createdTime") or ""
+    return {
+        "id": record.get("id", ""),
+        "body": fields.get(C.F_COMMENT_BODY, ""),
+        "merchandiseId": (_as_list(fields.get(C.F_COMMENT_MERCHANDISE, [])) or [""])[0],
+        "createdAt": created_at,
+        "author": {
+            "id": user_id,
+            "name": display_name,
+            "displayName": display_name,
+            "role": author.get("role", ""),
+            "avatar": author.get("avatar", ""),
+            "initials": author.get("avatar") or _user_initials(author),
+        },
+    }
+
+
+def _comment_sort_key(record):
+    fields = record.get("fields", {})
+    return fields.get(C.F_COMMENT_CREATED_AT) or record.get("createdTime") or ""
+
+
+def _list_comments_for_merchandise(entry_id):
+    records = _list_all_records(C.COMMENTS_TABLE)
+    return [
+        record for record in sorted(records, key=_comment_sort_key)
+        if entry_id in _as_list(record.get("fields", {}).get(C.F_COMMENT_MERCHANDISE, []))
+    ]
+
+
+@api.get("/merchandise/<entry_id>/comments")
+def list_merchandise_comments(entry_id):
+    _, _, access_error = _permitted_merchandise_or_error(entry_id)
+    if access_error:
+        return access_error
+    try:
+        records = _list_comments_for_merchandise(entry_id)
+        users = _users_by_id(_comment_user_ids(records))
     except requests.HTTPError as error:
         return airtable_err(error)
-
-    return jsonify({
-        "records": shaped_saved,
-        "merchandise": _shape_verification_entry(entry, receipt),
-    })
+    return jsonify({"records": [_shape_comment(record, users) for record in records]})
 
 
-@api.patch("/work-orders/<work_order_id>")
-@api.patch("/workstream-assignments/<work_order_id>")
-def update_work_order(work_order_id):
+@api.post("/merchandise/<entry_id>/comments")
+def create_merchandise_comment(entry_id):
     body = request.get_json(silent=True) or {}
+    comment = (body.get("comment") or body.get("body") or "").strip()
+    if not comment:
+        return err("Comment is required.")
+    user_id = _current_user_id()
+    if not user_id:
+        return err("Authenticated user is required to comment.", 401)
+    _, _, access_error = _permitted_merchandise_or_error(entry_id)
+    if access_error:
+        return access_error
     try:
-        work_order = airtable.get_record(C.WORK_ORDERS_TABLE, work_order_id, by_field_id=False)
-        merchandise_ids = _as_list(work_order.get("fields", {}).get(C.F_WORK_ORDER_MERCHANDISE, []))
-        if merchandise_ids:
-            merchandise = airtable.get_record(C.MERCHANDISE_TABLE, merchandise_ids[0], by_field_id=False)
-            linked_receipts = _as_list(merchandise.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
-            receipt = _first_permitted_receipt(linked_receipts)
-            if linked_receipts and receipt is None:
-                return _forbidden()
-
-        fields = {}
-        if "currentStage" in body or "currentGate" in body:
-            stage_key = str(body.get("currentStage") or body.get("currentGate") or "").strip()
-            fields[C.F_WORK_ORDER_CURRENT_STAGE] = stage_key
-            fields.update(_work_order_configuration_fields_for_stage(stage_key))
-        if "currentStatus" in body:
-            fields[C.F_WORK_ORDER_CURRENT_STATUS] = str(body.get("currentStatus") or "").strip()
-        if "currentOwner" in body:
-            fields[C.F_WORK_ORDER_CURRENT_OWNER] = str(body.get("currentOwner") or "").strip()
-        if "readiness" in body:
-            fields[C.F_WORK_ORDER_READINESS_METADATA] = json.dumps(body.get("readiness") or [], sort_keys=True)
-        if "blockingRequirements" in body:
-            fields[C.F_WORK_ORDER_BLOCKING_REQUIREMENTS] = json.dumps(body.get("blockingRequirements") or [], sort_keys=True)
-        if not fields:
-            return err("No Work Order fields supplied.")
-        updated = airtable.update_record(C.WORK_ORDERS_TABLE, work_order_id, fields, by_field_id=False)
-        workstreams_by_id = _workstreams_by_record_id(seed=True)
-        try:
-            workflow_stages_by_id, _stage_by_key = workflow_service().stage_maps()
-            workflow_templates_by_id = {template["id"]: template for template in workflow_service().list_templates(seed=True)}
-            work_order_types_by_id = {item["id"]: item for item in work_order_type_service().list_types(seed=True)}
-        except requests.HTTPError:
-            workflow_stages_by_id = {}
-            workflow_templates_by_id = {}
-            work_order_types_by_id = {}
+        user_record = airtable.get_record(C.USERS_TABLE, user_id, by_field_id=False)
     except requests.HTTPError as error:
         return airtable_err(error)
-    return jsonify(_shape_work_order(
-        updated,
-        workstreams_by_id=workstreams_by_id,
-        workflow_stages_by_id=workflow_stages_by_id,
-        workflow_templates_by_id=workflow_templates_by_id,
-        work_order_types_by_id=work_order_types_by_id,
-    ))
+    if not _user_display_name(user_record):
+        return err("Authenticated user must have a name before commenting.", 400)
+    try:
+        record = airtable.create_record(
+            C.COMMENTS_TABLE,
+            {
+                C.F_COMMENT_BODY: comment,
+                C.F_COMMENT_MERCHANDISE: [entry_id],
+                C.F_COMMENT_USER: [user_id],
+            },
+            by_field_id=False,
+            typecast=True,
+        )
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"comment": _shape_comment(record, {user_id: user_record})}), 201
 
 
 @api.get("/verification/items")
@@ -4243,7 +3612,7 @@ def update_merchandise_intake_state(entry_id):
         return _forbidden()
 
     update_fields = {}
-    if "deliverables" in body or "merchandiseResolution" in body or "merchandise_resolution" in body:
+    if "deliverables" in body:
         decision_fields = _intake_decision_fields_from_body(body, fields)
         if isinstance(decision_fields, tuple):
             return decision_fields
@@ -4265,6 +3634,16 @@ def update_merchandise_intake_state(entry_id):
         deliverables = _deliverable_values(effective_fields.get(C.F_RECEIPT_ENTRY_DELIVERABLES, []))
         if "Thr3d" not in deliverables:
             deliverables.append("Thr3d")
+        if any(value in {"Packaging Photo", "Ecomm Photo"} for value in deliverables):
+            return err("Mixed photo + Thr3d Merchandise must complete the photo path before Thr3d shipping.", 400)
+        effective_fields_with_receipt = {
+            **effective_fields,
+            C.F_RECEIPT_ENTRY_DELIVERABLES: deliverables,
+            C.F_RECEIPT_CLIENT: receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, []) if receipt else [],
+        }
+        requiredToShoot = _evaluate_required_to_shoot_from_fields(effective_fields_with_receipt, {})
+        if not requiredToShoot["ready"]:
+            return err(f"Cannot move to Thr3d Shipment.\nMissing: {', '.join(requiredToShoot['missing'])}", 400)
         update_fields.update(_intake_decision_fields_from_body({"deliverables": deliverables}, effective_fields))
         update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Ready to Release"
         update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS) or "Received"
@@ -4279,9 +3658,9 @@ def update_merchandise_intake_state(entry_id):
                 item_record = airtable.get_record(C.PRODUCTS_TABLE, item_ids[0], by_field_id=False)
             except requests.HTTPError as error:
                 return airtable_err(error)
-        readiness = _evaluate_production_readiness_from_fields(effective_fields, item_record.get("fields", {}) if item_record else {})
-        if not readiness["ready"]:
-            return err(f"Cannot move to Ready for Photo.\nMissing: {', '.join(readiness['missing'])}", 400)
+        requiredToShoot = _evaluate_required_to_shoot_from_fields(effective_fields, item_record.get("fields", {}) if item_record else {})
+        if not requiredToShoot["ready"]:
+            return err(f"Cannot move to Ready for Photo.\nMissing: {', '.join(requiredToShoot['missing'])}", 400)
         issues = _issues_by_item_id().get(item_ids[0], [])
         if _blocking_merchandise_issues(issues):
             return err("Cannot move to Ready for Photo.\nMissing: Resolved Merchandise Issues", 400)
@@ -4321,19 +3700,19 @@ def release_merchandise_to_production(entry_id):
         return jsonify(_shape_verification_entry(entry, receipt, item_record=item_record))
 
     product_fields = item_record.get("fields", {}) if item_record else {}
-    readiness = _evaluate_production_readiness_from_fields(fields, product_fields)
-    if not readiness["ready"]:
-        missing_text = ", ".join(readiness["missing"])
+    requiredToShoot = _evaluate_required_to_shoot_from_fields(fields, product_fields)
+    if not requiredToShoot["ready"]:
+        missing_text = ", ".join(requiredToShoot["missing"])
         return jsonify({
             "error": f"Cannot release to production. Missing: {missing_text}",
-            "missing": readiness["missing"],
-            "readiness": readiness,
+            "missing": requiredToShoot["missing"],
+            "requiredToShoot": requiredToShoot,
         }), 400
 
     update_fields = {
         C.F_RECEIPT_ENTRY_RELEASED: True,
         C.F_RECEIPT_ENTRY_RELEASED_AT: _now_iso(),
-        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Closed",
+        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Complete",
     }
     user_id = _current_user_id()
     if user_id:
@@ -4455,7 +3834,6 @@ def match_verification_entry(entry_id):
     entry_fields = entry.get("fields", {})
 
     try:
-        updated_item = _merge_receipt_entry_photos_into_item(entry, item)
         updated = _update_receipt_entry_record(entry_id, {
             C.F_RECEIPT_ENTRY_ITEM: [item_id],
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Matched",
@@ -4463,7 +3841,7 @@ def match_verification_entry(entry_id):
         })
     except requests.HTTPError as error:
         return airtable_err(error)
-    return jsonify(_shape_verification_entry(updated, receipt, item_record=updated_item or item))
+    return jsonify(_shape_verification_entry(updated, receipt, item_record=item))
 
 
 @api.post("/verification/entries/<entry_id>/validate")
@@ -4611,43 +3989,6 @@ def create_merchandise_review_issue(entry_id):
     }), 201
 
 
-def _merge_receipt_entry_photos_into_item(entry_record, item_record):
-    entry_fields = entry_record.get("fields", {})
-    item_fields = item_record.get("fields", {})
-    entry_metadata = _photo_metadata_from_entry(entry_fields, include_urls=False)
-    if not entry_metadata:
-        return item_record
-
-    existing_item_metadata = _photo_metadata_from_fields(item_fields, C.F_ITEM_PHOTO_METADATA, include_urls=False)
-    existing_keys = {
-        item.get("object_key")
-        for item in existing_item_metadata
-        if isinstance(item, dict)
-    }
-    merged_metadata = list(existing_item_metadata)
-    for item in entry_metadata:
-        if not isinstance(item, dict):
-            continue
-        key = item.get("object_key")
-        if key and key in existing_keys:
-            continue
-        merged_metadata.append(item)
-        if key:
-            existing_keys.add(key)
-
-    update_fields = {}
-    if len(merged_metadata) != len(existing_item_metadata):
-        update_fields[C.F_ITEM_PHOTO_METADATA] = json.dumps(_canonical_photo_manifest(merged_metadata))
-    if not update_fields:
-        return item_record
-    try:
-        return airtable.update_record(C.PRODUCTS_TABLE, item_record["id"], update_fields, by_field_id=False)
-    except requests.HTTPError as error:
-        if _is_unknown_field_error(error, C.F_ITEM_PHOTO_METADATA):
-            return item_record
-        raise
-
-
 @api.post("/receiving/photos")
 def upload_receiving_photos():
     receipt_id = (request.form.get("receiptId") or "").strip()
@@ -4674,6 +4015,113 @@ def receiving_photo_storage_status():
         "publicBaseUrlConfigured": bool(C.R2_PUBLIC_BASE_URL),
         "requiredVariables": required,
         "ready": storage.mode == "r2" and all(required.values()),
+    })
+
+
+@api.get("/shipments/<shipment_id>/photos")
+def list_shipment_photos(shipment_id):
+    try:
+        receipt = airtable.get_record(C.SHIPMENTS_TABLE, shipment_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    if not _receipt_client_permitted(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
+        return _forbidden()
+    return jsonify({"photos": _shipment_photo_metadata_from_fields(receipt.get("fields", {}))})
+
+
+@api.post("/shipments/<shipment_id>/photos")
+def upload_shipment_photos(shipment_id):
+    files = request.files.getlist("photos")
+    if not files:
+        return err("Add at least one photo.")
+    try:
+        receipt = airtable.get_record(C.SHIPMENTS_TABLE, shipment_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    if not _receipt_client_permitted(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
+        return _forbidden()
+
+    storage = _photo_storage()
+    current_metadata = _shipment_photo_metadata_from_fields(receipt.get("fields", {}))
+    existing_count = len([photo for photo in current_metadata if photo.get("active", True)])
+    uploaded_photos = []
+    user_id = _current_user_id()
+    for uploaded in files:
+        if not uploaded or not uploaded.filename:
+            continue
+        try:
+            photo = storage.upload_shipment_photo(
+                uploaded,
+                shipment_id,
+                sort_order=existing_count + len(uploaded_photos) + 1,
+                uploaded_by=user_id,
+            )
+            uploaded_photos.append(photo)
+        except ReceivingPhotoValidationError as error:
+            return err(str(error))
+        except ReceivingPhotoConfigError as error:
+            return err(str(error), 500)
+        except ReceivingPhotoCollisionError:
+            return err("Photo could not be uploaded without overwriting an existing object.", 409)
+        except ReceivingPhotoStorageError:
+            return err("Photo could not be uploaded.", 502)
+    if not uploaded_photos:
+        return err("Add at least one photo.")
+
+    metadata_payload = current_metadata + uploaded_photos
+    try:
+        current_notes = receipt.get("fields", {}).get(C.F_RECEIPT_NOTES, "")
+        updated = airtable.update_record(
+            C.SHIPMENTS_TABLE,
+            shipment_id,
+            {C.F_RECEIPT_NOTES: _shipment_notes_with_photo_metadata(current_notes, metadata_payload)},
+            by_field_id=False,
+        )
+    except requests.HTTPError as error:
+        for photo in uploaded_photos:
+            try:
+                storage.delete_photo(photo.get("object_key"))
+            except ReceivingPhotoStorageError:
+                pass
+        return airtable_err(error)
+    return jsonify({
+        "photos": uploaded_photos,
+        "shipment": _shape_receipt(updated, entries_by_receipt=_receipt_entries_by_receipt_id([shipment_id])),
+    })
+
+
+@api.delete("/shipments/<shipment_id>/photos/<photo_id>")
+def delete_shipment_photo(shipment_id, photo_id):
+    try:
+        receipt = airtable.get_record(C.SHIPMENTS_TABLE, shipment_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    if not _receipt_client_permitted(receipt.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
+        return _forbidden()
+    current_metadata = _shipment_photo_metadata_from_fields(receipt.get("fields", {}))
+    target = next((photo for photo in current_metadata if photo.get("photo_id") == photo_id), None)
+    if not target:
+        return err("Shipment photo not found.", 404)
+    updated_metadata = [photo for photo in current_metadata if photo.get("photo_id") != photo_id]
+    try:
+        current_notes = receipt.get("fields", {}).get(C.F_RECEIPT_NOTES, "")
+        updated = airtable.update_record(
+            C.SHIPMENTS_TABLE,
+            shipment_id,
+            {C.F_RECEIPT_NOTES: _shipment_notes_with_photo_metadata(current_notes, updated_metadata)},
+            by_field_id=False,
+        )
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    try:
+        _photo_storage().delete_photo(target.get("object_key"))
+    except (ReceivingPhotoValidationError, ReceivingPhotoConfigError, ReceivingPhotoStorageError):
+        pass
+    return jsonify({
+        "deleted": True,
+        "photoId": photo_id,
+        "objectKey": target.get("object_key", ""),
+        "shipment": _shape_receipt(updated, entries_by_receipt=_receipt_entries_by_receipt_id([shipment_id])),
     })
 
 
@@ -4938,6 +4386,11 @@ def update_receiving_session(record_id):
     if not fields_or_error:
         entries_by_receipt = _receipt_entries_by_receipt_id([record_id])
         return jsonify(_shape_receipt(current, entries_by_receipt=entries_by_receipt))
+    if C.F_RECEIPT_NOTES in fields_or_error:
+        fields_or_error[C.F_RECEIPT_NOTES] = _shipment_notes_with_photo_metadata(
+            fields_or_error[C.F_RECEIPT_NOTES],
+            _shipment_photo_metadata_from_fields(current.get("fields", {}), include_urls=False),
+        )
     try:
         updated = airtable.update_record(C.SHIPMENTS_TABLE, record_id, fields_or_error, by_field_id=False)
     except requests.HTTPError as error:
@@ -5185,6 +4638,32 @@ def _receipt_update_fields_from_body(body):
     return fields
 
 
+SHIPMENT_PHOTO_METADATA_START = "[[MARKS_PHOTO_SHIPMENT_PHOTO_METADATA]]"
+SHIPMENT_PHOTO_METADATA_END = "[[/MARKS_PHOTO_SHIPMENT_PHOTO_METADATA]]"
+
+
+def _split_shipment_notes_metadata(notes):
+    raw = str(notes or "")
+    start = raw.find(SHIPMENT_PHOTO_METADATA_START)
+    end = raw.find(SHIPMENT_PHOTO_METADATA_END, start + len(SHIPMENT_PHOTO_METADATA_START)) if start >= 0 else -1
+    if start < 0 or end < 0:
+        return raw.strip(), []
+    metadata_text = raw[start + len(SHIPMENT_PHOTO_METADATA_START):end].strip()
+    visible = (raw[:start] + raw[end + len(SHIPMENT_PHOTO_METADATA_END):]).strip()
+    try:
+        parsed = json.loads(metadata_text) if metadata_text else []
+    except (TypeError, ValueError):
+        parsed = []
+    return visible, parsed if isinstance(parsed, list) else []
+
+
+def _shipment_notes_with_photo_metadata(notes, metadata):
+    visible, _existing = _split_shipment_notes_metadata(notes)
+    manifest = json.dumps(_canonical_photo_manifest(metadata), separators=(",", ":"))
+    block = f"{SHIPMENT_PHOTO_METADATA_START}\n{manifest}\n{SHIPMENT_PHOTO_METADATA_END}"
+    return f"{visible}\n\n{block}".strip() if visible else block
+
+
 def _receipt_name_for_create(client_id, received):
     client_name = "Unknown"
     if client_id:
@@ -5401,6 +4880,45 @@ def _receipt_entries_by_receipt_id(receipt_ids):
     return grouped
 
 
+def _photo_with_source(photo, source):
+    next_photo = dict(photo or {})
+    next_photo["source"] = source
+    next_photo["photoType"] = source
+    next_photo.setdefault("label", "Shipment Photo" if source == "shipment" else "Item Photo")
+    return next_photo
+
+
+def _item_photo_metadata_from_entry(fields, include_urls=True):
+    return [_photo_with_source(photo, "item") for photo in _photo_metadata_from_entry(fields, include_urls=include_urls)]
+
+
+def _shipment_photo_metadata_from_fields(fields, include_urls=True):
+    _visible_notes, notes_metadata = _split_shipment_notes_metadata(fields.get(C.F_RECEIPT_NOTES, ""))
+    if notes_metadata:
+        metadata = _photo_metadata_from_manifest(notes_metadata, include_urls=include_urls)
+    elif fields.get(C.F_RECEIPT_PHOTO_METADATA):
+        metadata = _photo_metadata_from_fields(fields, C.F_RECEIPT_PHOTO_METADATA, include_urls=include_urls)
+    else:
+        metadata = []
+    return [_photo_with_source(photo, "shipment") for photo in metadata]
+
+
+def _combine_item_and_shipment_photos(item_photos=None, shipment_photos=None):
+    return list(item_photos or []) + list(shipment_photos or [])
+
+
+def _with_shipment_photos(shaped_entry, receipt):
+    receipt_fields = receipt.get("fields", {}) if receipt else {}
+    item_photos = shaped_entry.get("itemPhotos") or shaped_entry.get("photos") or []
+    shipment_photos = _shipment_photo_metadata_from_fields(receipt_fields)
+    return {
+        **shaped_entry,
+        "itemPhotos": item_photos,
+        "shipmentPhotos": shipment_photos,
+        "photos": _combine_item_and_shipment_photos(item_photos, shipment_photos),
+    }
+
+
 def _job_ids_for_items(item_ids):
     job_ids = []
     for item_id in _as_list(item_ids):
@@ -5417,6 +4935,9 @@ def _job_ids_for_items(item_ids):
 def _shape_receipt(r, *, entries_by_receipt=None):
     f = r.get("fields", {})
     entries_by_receipt = entries_by_receipt or {}
+    shipment_photos = _shipment_photo_metadata_from_fields(f)
+    entries = [_with_shipment_photos(entry, r) for entry in entries_by_receipt.get(r["id"], [])]
+    visible_notes, _photo_manifest = _split_shipment_notes_metadata(f.get(C.F_RECEIPT_NOTES, ""))
     return {
         "id": r["id"],
         "name": f.get(C.F_RECEIPT_NAME, ""),
@@ -5433,9 +4954,11 @@ def _shape_receipt(r, *, entries_by_receipt=None):
         "receiverIds": f.get(C.F_RECEIPT_RECEIVER, []) if isinstance(f.get(C.F_RECEIPT_RECEIVER), list) else [],
         "location": "",
         "locationIds": f.get(C.F_RECEIPT_LOCATION, []) if isinstance(f.get(C.F_RECEIPT_LOCATION), list) else [],
-        "photos": [],
-        "notes": f.get(C.F_RECEIPT_NOTES, ""),
-        "entries": entries_by_receipt.get(r["id"], []),
+        "photos": shipment_photos,
+        "photoMetadata": shipment_photos,
+        "shipmentPhotos": shipment_photos,
+        "notes": visible_notes,
+        "entries": entries,
     }
 
 
@@ -5446,7 +4969,7 @@ def _shape_receipt_entry(r):
     item_ids = f.get(C.F_RECEIPT_ENTRY_ITEM, []) if isinstance(f.get(C.F_RECEIPT_ENTRY_ITEM), list) else []
     merch_status = f.get(C.F_RECEIPT_ENTRY_MERCH_STATUS) or ("Matched" if item_ids else "Received")
     deliverables = _deliverable_values(f.get(C.F_RECEIPT_ENTRY_DELIVERABLES, ""))
-    photo_metadata = _photo_metadata_from_entry(f)
+    photo_metadata = _item_photo_metadata_from_entry(f)
     return {
         "id": r["id"],
         "name": product_name,
@@ -5460,6 +4983,8 @@ def _shape_receipt_entry(r):
         "description": f.get(C.F_RECEIPT_ENTRY_DESCRIPTION, ""),
         "notes": f.get(C.F_RECEIPT_ENTRY_NOTES, ""),
         "photos": photo_metadata,
+        "itemPhotos": photo_metadata,
+        "shipmentPhotos": [],
         "photoMetadata": photo_metadata,
         "itemIds": item_ids,
         "merchStatus": merch_status,
@@ -5473,8 +4998,34 @@ def _shape_receipt_entry(r):
         "merchandiseVerifiedAt": f.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED_AT, ""),
         "merchandiseVerifiedByIds": f.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY, []) if isinstance(f.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY), list) else [],
         "deliverables": deliverables,
-        "merchandise_resolution": f.get(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, ""),
-        "merchandiseResolution": f.get(C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION, ""),
+    }
+
+
+def _shape_thr3d_outgoing_entry(entry, receipt=None):
+    shaped = _shape_receipt_entry(entry)
+    receipt_fields = receipt.get("fields", {}) if receipt else {}
+    received = receipt_fields.get(C.F_RECEIPT_RECEIVED, "") if receipt else ""
+    days_here = _days_here_from_received(received)
+    client_ids = receipt_fields.get(C.F_RECEIPT_CLIENT, []) if isinstance(receipt_fields.get(C.F_RECEIPT_CLIENT, []), list) else []
+    shipment = {
+        "id": receipt.get("id") if receipt else "",
+        "name": receipt_fields.get(C.F_RECEIPT_NAME, "") if receipt else "",
+        "carrier": receipt_fields.get(C.F_RECEIPT_CARRIER, "") if receipt else "",
+        "tracking": receipt_fields.get(C.F_RECEIPT_TRACKING, "") if receipt else "",
+        "received": received,
+    }
+    return {
+        **shaped,
+        "clientIds": client_ids,
+        "locationId": shaped.get("locationIds", [None])[0] if shaped.get("locationIds") else "",
+        "currentLocationId": shaped.get("locationIds", [None])[0] if shaped.get("locationIds") else "",
+        "received": received,
+        "dateReceived": received,
+        "daysHere": days_here,
+        "timeHere": _time_here_label(days_here),
+        "ageGroup": _age_group_for_days(days_here),
+        "shipment": shipment,
+        "shipmentLinkage": shipment,
     }
 
 
@@ -5531,7 +5082,8 @@ def _shape_verification_entry(entry, receipt=None, *, item_record=None, issues_b
     received = receipt_fields.get(C.F_RECEIPT_RECEIVED, "") if receipt else ""
     days_here = _days_here_from_received(received)
     review_state = _review_state_for_entry(shaped, linked_item, blocking_issues)
-    production_readiness = _evaluate_production_readiness(shaped, linked_item)
+    required_to_shoot = _evaluate_required_to_shoot({**shaped, "clientIds": client_ids}, linked_item)
+    shaped = _with_shipment_photos(shaped, receipt)
     return {
         **shaped,
         "receipt": {
@@ -5552,8 +5104,8 @@ def _shape_verification_entry(entry, receipt=None, *, item_record=None, issues_b
         "linkedItem": linked_item,
         "blockingIssues": blocking_issues,
         "reviewState": review_state,
-        "productionReadiness": production_readiness,
-        "releaseReady": production_readiness.get("ready", False),
+        "requiredToShoot": required_to_shoot,
+        "releaseReady": required_to_shoot.get("ready", False),
         "isUnidentified": not any([shaped.get("productName"), shaped.get("skuId"), shaped.get("description")]),
         "received": received,
         "dateReceived": received,
@@ -5585,6 +5137,10 @@ def _photo_metadata_from_fields(fields, field_name, include_urls=True):
     return _canonical_photo_manifest(raw_items, include_urls=include_urls)
 
 
+def _photo_metadata_from_manifest(items, include_urls=True):
+    return _canonical_photo_manifest(items if isinstance(items, list) else [], include_urls=include_urls)
+
+
 def _canonical_photo_manifest(items, include_urls=False):
     manifest = []
     if not isinstance(items, list):
@@ -5603,6 +5159,24 @@ def _canonical_photo_manifest(items, include_urls=False):
             "object_key": object_key,
             "sort_order": sort_order,
         }
+        photo_id = item.get("photo_id") or item.get("photoId")
+        if photo_id:
+            entry["photo_id"] = str(photo_id)
+        shipment_id = item.get("shipment_id") or item.get("shipmentId")
+        if shipment_id:
+            entry["shipment_id"] = str(shipment_id)
+        source = item.get("source") or item.get("photoType")
+        if source:
+            entry["source"] = str(source)
+            entry["photoType"] = str(source)
+        label = item.get("label")
+        if label:
+            entry["label"] = str(label)
+        uploaded_by = item.get("uploaded_by") or item.get("uploadedBy")
+        if uploaded_by:
+            entry["uploaded_by"] = str(uploaded_by)
+        if "active" in item:
+            entry["active"] = bool(item.get("active"))
         thumbnail_key = (item.get("thumbnail_key") or item.get("thumbnailKey") or "").strip()
         if thumbnail_key:
             entry["thumbnail_key"] = thumbnail_key
@@ -5688,49 +5262,35 @@ def _demo_item_payload(record, client, queue_id, index):
         C.F_ITEM_IDENTIFIER: valid_identifier,
         C.F_ITEM_PRODUCT: record.get("fields", {}).get(C.F_ITEM_PRODUCT) or f"Demo Product {index}",
         C.F_ITEM_BRAND: record.get("fields", {}).get(C.F_ITEM_BRAND) or "Demo Brand",
-        C.F_ITEM_CONDITION: "Good",
-        C.F_ITEM_STATUS: "Pending",
-        C.F_ITEM_RECEIVED: True,
-        C.F_ITEM_REC_DATE: _demo_date(21 - (index % 14)),
         C.F_ITEM_ARTWORK_RECEIVED: True,
     }
     if queue_id == "waiting_merchandise":
         base.update({
-            C.F_ITEM_RECEIVED: False,
-            C.F_ITEM_REC_DATE: None,
             C.F_ITEM_ARTWORK_RECEIVED: True,
         })
     elif queue_id == "merchandise_issues":
         base.update({
-            C.F_ITEM_RECEIVED: True,
             C.F_ITEM_ARTWORK_RECEIVED: True,
         })
     elif queue_id == "missing_data":
         base.update({
             C.F_ITEM_PRODUCT: "",
-            C.F_ITEM_RECEIVED: True,
             C.F_ITEM_ARTWORK_RECEIVED: True,
         })
     elif queue_id == "missing_artwork":
         base.update({
-            C.F_ITEM_RECEIVED: True,
             C.F_ITEM_ARTWORK_RECEIVED: False,
         })
     elif queue_id == "ready_for_photo":
         base.update({
-            C.F_ITEM_RECEIVED: True,
             C.F_ITEM_ARTWORK_RECEIVED: True,
         })
     elif queue_id == "in_creative_force":
         base.update({
-            C.F_ITEM_STATUS: "Production",
-            C.F_ITEM_RECEIVED: True,
             C.F_ITEM_ARTWORK_RECEIVED: True,
         })
     elif queue_id == "completed":
         base.update({
-            C.F_ITEM_STATUS: "Complete",
-            C.F_ITEM_RECEIVED: True,
             C.F_ITEM_ARTWORK_RECEIVED: True,
         })
     return base
@@ -5903,9 +5463,6 @@ def settings():
                 "issues": C.ISSUES_TABLE,
                 "history": C.HISTORY_TABLE,
                 "imports": C.IMPORTS_TABLE,
-                "workflowTemplates": C.WORKFLOW_TEMPLATES_TABLE,
-                "workflowStages": C.WORKFLOW_STAGES_TABLE,
-                "workOrderTypes": C.WORK_ORDER_TYPES_TABLE,
             },
         }
     })

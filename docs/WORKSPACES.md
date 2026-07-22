@@ -6,28 +6,58 @@ A workspace exists when the business needs a distinct operational perspective. V
 
 Marks Photo should not create a new workspace for every table, status, workflow state, or implementation idea. It should create workspaces only when the user is asking a meaningfully different question.
 
-## Receiving
+## Information Architecture
+
+Primary navigation should conceptually represent departments and major operational surfaces rather than workflows:
+
+- Dashboard
+- Import
+- Shipments
+- Planning
+- Production
+- Inventory
+- Jobs
+- Clients
+- Settings
+
+The implemented navigation may expose only active workspaces for the current phase. Do not add placeholder navigation entries solely because a future workspace has been architected.
+
+## Shipments
 
 Business Question:
 
-> What arrived?
+> What physical merchandise is entering or leaving the studio?
 
 Purpose:
 
-Capture reality.
+Manage physical merchandise movement.
 
-Receiving records the physical truth of inbound merchandise. It captures shipments, merchandise observations, quantity, condition, storage, photos, notes, and observed identifiers.
+Shipments records the physical truth of merchandise entering and leaving the studio. It captures shipments, merchandise observations, quantity, condition, storage, photos, notes, and observed identifiers.
 
-Receiving should not decide the full production path. Its job is to make the physical arrival trustworthy and visible.
+Shipments should not decide the full production path. Its job is to make physical movement trustworthy and visible.
 
-Typical Receiving work:
+Shipment-level photos are physical evidence owned by the Shipment. Use them for box labels, delivery context, damage, carton or pallet context, and other images that apply to the shipment as a whole. Store originals in R2 and keep only metadata on the Shipment; do not duplicate shipment photo metadata onto individual Merchandise records.
+
+Typical Shipments work:
 
 - create or update a Shipment
 - record merchandise in the shipment
-- photograph received goods
+- photograph incoming merchandise
+- capture shipment-level photos such as boxes, labels, and damage
 - capture observed package information
 - note damage, quantity, storage, or uncertainty
 - create enough evidence for later readiness decisions
+- prepare outbound THR3D shipments
+- support future physical outbound movements
+
+Shipments may support lightweight internal views:
+
+- `Incoming`: receive deliveries, photograph merchandise, assign storage, and complete inventory intake.
+- `Outgoing`: box and ship merchandise that needs to leave the studio. The first intended Outgoing use is THR3D shipments.
+
+THR3D is not its own workspace and not its own workflow. It is an outbound shipment queue inside Shipments. Planning determines whether THR3D is required and finishes the Merchandise as ready to release; Shipments handles the physical boxing and shipping.
+
+THR3D-only Merchandise uses a minimal path: Client, at least one merchandise photo, Quantity, and `Deliverables = Thr3d`. Mixed photo + Thr3d Merchandise stays on the full photo path and does not appear in Shipments `THR3D / Outgoing` until a reliable production-complete signal exists.
 
 ## Inventory
 
@@ -75,6 +105,8 @@ Queue is separate from Merchandise Status. Queue does not describe whether the p
 
 The only system-owned Queue is `New`. The only gated Queue is `Ready for Photo`. Middle queues `Planning` and `Waiting` are PM-controlled.
 
+Merchandise `Intake Status` is the persisted intake state. Its active values are `Needs Review`, `Waiting on Information`, `Ready to Release`, and `Complete`. Planning Queue is local PM organization and should not be treated as a separate Airtable workflow status.
+
 The public checklist language is `Required to Shoot`, not `Readiness`.
 
 Planning is the PM preparation perspective. It is where Project Management determines what a piece of merchandise is, what the client requires, what kind of production is needed, and whether anything blocks Production from accepting the work.
@@ -83,7 +115,11 @@ The Planning board should feel like high-quality operations software: dense, res
 
 Active Planning state should be derived from Merchandise and supporting Product data. Planning should not require PMs to create Work Orders, choose Workflow Templates, maintain Workflow Stages, or manage Work Order Types before merchandise can move toward readiness.
 
-The canonical Intake state field is Merchandise `Intake Status`. Supporting Merchandise fields such as `deliverables`, `Merchandise Resolution`, and existing matched/validated compatibility status may create specialized views, but they should not multiply workflow-specific status values.
+Legacy workflow tables and records are not part of the active Planning workspace. Product-level Workstream routing is obsolete; production intent belongs on Merchandise `Deliverables`.
+
+Product-level operational fields are also obsolete. Planning must not read or write Product `Received`, `Rec Date`, `Location`, `Condition`, `Status`, Product photos, shipment links, issue links, export flags, or Product photo metadata as workflow facts.
+
+The canonical Intake state field is Merchandise `Intake Status`. Supporting Merchandise fields such as `Deliverables` and existing matched/validated compatibility status may create specialized views, but they should not multiply workflow-specific status values.
 
 Planning includes:
 
@@ -96,6 +132,8 @@ Planning includes:
 - release to production
 
 Planning should collapse "match product", "create product", and "enter missing information" into one continuous verification experience. Users should not experience database maintenance as the work.
+
+Planning image review should show item photos first and dynamically inherited Shipment photos last. Shipment-level photos should be labeled `Shipment Photo` so PMs understand that the photo is shared shipment context rather than item-specific evidence.
 
 The primary PM experience is the Merchandise Verification wizard:
 
@@ -161,7 +199,7 @@ Marks Photo should not replace PhotoTrack. It should create clean upstream hando
 
 The same merchandise can appear in multiple workspaces because each workspace is a different perspective:
 
-- Receiving sees merchandise as newly arrived physical reality.
+- Shipments sees merchandise as physical movement into or out of the studio.
 - Inventory sees merchandise as something physically held.
 - Planning sees merchandise as decisions, blockers, and Required to Shoot.
 - Production sees merchandise as production intent and execution planning.

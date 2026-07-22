@@ -8,7 +8,7 @@ APP = ROOT / "frontend" / "src" / "App.jsx"
 STYLES = ROOT / "frontend" / "src" / "styles.css"
 VOCABULARY = ROOT / "frontend" / "src" / "domainVocabulary.js"
 TABLE_EXPORT = ROOT / "frontend" / "src" / "tableExport.js"
-WORKFLOW_ENGINE = ROOT / "frontend" / "src" / "workflowEngine.js"
+MERCHANDISE_ROUTING = ROOT / "frontend" / "src" / "merchandiseRouting.js"
 PACKAGE = ROOT / "frontend" / "package.json"
 REDIRECTS = ROOT / "frontend" / "public" / "_redirects"
 
@@ -20,7 +20,7 @@ class FrontendRoutingTests(unittest.TestCase):
         cls.styles = STYLES.read_text()
         cls.vocabulary = VOCABULARY.read_text()
         cls.table_export = TABLE_EXPORT.read_text()
-        cls.workflow_engine = WORKFLOW_ENGINE.read_text()
+        cls.merchandise_routing = MERCHANDISE_ROUTING.read_text()
 
     def test_router_library_is_used(self):
         package = json.loads(PACKAGE.read_text())
@@ -72,7 +72,7 @@ class FrontendRoutingTests(unittest.TestCase):
         for label in [
             "label: 'Dashboard'",
             "label: 'Import'",
-            "label: 'Receiving'",
+            "label: 'Shipments'",
             "label: 'Merchandise'",
             "label: 'Planning'",
             "label: 'Products'",
@@ -109,24 +109,26 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("Download as DownloadIcon", self.source)
         for text in [
             "ClipboardList",
+            "Kanban",
             "Layers",
             "PackageOpen",
+            "SquareKanban",
             "Tag",
-            "Workflow as WorkflowIcon",
         ]:
             self.assertIn(text, self.source)
         for text in [
             "NavImport: () => <DownloadIcon size={20} strokeWidth={1.5} />",
-            "NavReceiving: () => <PackageOpen size={20} strokeWidth={1.5} />",
+            "NavShipments: () => <PackageOpen size={20} strokeWidth={1.5} />",
             "NavMerchandise: () => <ClipboardList size={20} strokeWidth={1.5} />",
-            "NavWork: () => <WorkflowIcon size={20} strokeWidth={1.5} />",
+            "NavWork: () => <Kanban size={20} strokeWidth={1.5} />",
+            "NavProduction: () => <SquareKanban size={20} strokeWidth={1.5} />",
             "NavJobs: () => <Layers size={20} strokeWidth={1.5} />",
             "NavProducts: () => <Tag size={20} strokeWidth={1.5} />",
         ]:
             self.assertIn(text, self.source)
         for text in [
             "{ path: '/imports', label: 'Import', icon: <Icon.NavImport /> }",
-            "{ path: '/shipments', label: 'Receiving', icon: <Icon.NavReceiving /> }",
+            "{ path: '/shipments', label: 'Shipments', icon: <Icon.NavShipments /> }",
             "{ path: '/merchandise', label: 'Merchandise', icon: <Icon.NavMerchandise /> }",
             "{ path: '/planning', label: 'Planning', icon: <Icon.NavWork /> }",
             "{ path: '/jobs', label: 'Jobs', icon: <Icon.NavJobs /> }",
@@ -136,7 +138,7 @@ class FrontendRoutingTests(unittest.TestCase):
         expected_order = [
             "label: 'Dashboard'",
             "label: 'Import'",
-            "label: 'Receiving'",
+            "label: 'Shipments'",
             "label: 'Merchandise'",
             "label: 'Planning'",
             "label: 'Jobs'",
@@ -192,19 +194,19 @@ class FrontendRoutingTests(unittest.TestCase):
     def test_merchandise_review_v2_has_experimental_kanban_board(self):
         for text in [
             "function MerchandiseReviewV2Page",
-            "ReadinessIndicators",
+            "RequiredToShootIndicators",
             "requiredToShootSummary",
             "KanbanBoard",
             "KanbanColumn",
             "KanbanCard",
-            "MERCHANDISE_REVIEW_WORKFLOW",
+            "MERCHANDISE_PLANNING_BOARD",
             "evaluateMerchandiseReviewAssignment",
-            "WorkflowWorkspaceDrawer",
-            "WorkflowWorkspaceSection",
+            "PlanningWorkspaceDrawer",
+            "PlanningWorkspaceSection",
             "WaitingInformationWorkspace",
             "NewReviewModal",
-            "workflowForClient",
-            "buildWorkOrderCard",
+            "planningBoardForClient",
+            "buildPlanningCard",
             "MERCH_REVIEW_V2_DECISIONS_KEY",
             "PM_QUEUE_COLUMNS",
             "ConversationPanel",
@@ -213,6 +215,9 @@ class FrontendRoutingTests(unittest.TestCase):
             '<Route path="/planning" element={<MerchandiseReviewV2Page />} />',
         ]:
             self.assertIn(text, self.source)
+        api_source = (ROOT / "frontend" / "src" / "api.js").read_text()
+        self.assertIn("api.listMerchandiseComments", api_source)
+        self.assertIn("api.createMerchandiseComment", api_source)
         self.assertIn(".work-board-page", self.styles)
         self.assertIn(".kanban-board", self.styles)
         self.assertIn(".kanban-column", self.styles)
@@ -222,16 +227,18 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn(".kanban-comment-signal", self.styles)
         self.assertIn(".conversation-avatar", self.styles)
         self.assertIn(".conversation-count", self.styles)
+        self.assertIn(".conversation-author-line", self.styles)
+        self.assertIn(".conversation-error", self.styles)
         self.assertIn(".activity-event time", self.styles)
-        self.assertIn(".workflow-workspace-drawer", self.styles)
+        self.assertIn(".planning-workspace-drawer", self.styles)
         self.assertIn(".waiting-info-drawer", self.styles)
-        self.assertIn(".workflow-transition-panel", self.styles)
+        self.assertIn(".planning-transition-panel", self.styles)
         self.assertIn(".new-review-modal", self.styles)
         self.assertIn(".new-review-image-pane", self.styles)
         self.assertIn(".new-review-image-layout", self.styles)
         self.assertIn(".verification-wizard-progress", self.styles)
         self.assertIn(".new-review-modal-footer", self.styles)
-        self.assertIn(".readiness-dot.is-overridden::after", self.styles)
+        self.assertIn(".required-to-shoot-dot.is-overridden::after", self.styles)
         self.assertIn("recordPhotos(selectedItem?.record)", self.source)
         self.assertIn("setSelectedId", self.source)
         self.assertIn("workspaceOpen", self.source)
@@ -243,55 +250,132 @@ class FrontendRoutingTests(unittest.TestCase):
         for text in [
             "New",
             "Waiting",
-            "Ready for Thr3d Shipping",
+            "Thr3d Shipment",
             "Planning",
             "Ready for Photo",
         ]:
-            self.assertIn(text, self.workflow_engine)
+            self.assertIn(text, self.merchandise_routing)
+
+    def test_planning_comments_use_backend_authors_and_card_counts(self):
+        for text in [
+            "api.listMerchandiseComments(record.id)",
+            "api.createMerchandiseComment(merchandiseId, body)",
+            "comment.author?.displayName",
+            "comment.author?.role",
+            "item.commentCount || 0",
+            "item.unreadComments > 0",
+            "marks:planning-board-comment-reads",
+        ]:
+            self.assertIn(text, self.source)
+        self.assertNotIn("PM_CONVERSATION_STORAGE_KEY", self.source)
+        self.assertNotIn("authorName: pmCommentUserDisplayName", self.source)
+        self.assertNotIn("'Team'", self.source)
+
+    def test_required_to_shoot_modal_rows_are_not_concatenated_or_raw_bullets(self):
+        self.assertIn('className="new-review-required-to-shoot"', self.source)
+        self.assertIn('className="new-review-required-to-shoot-strip"', self.source)
+        self.assertIn("Complete required information", self.source)
+        self.assertIn("`${remaining} still needed`", self.source)
+        self.assertIn('<span className="required-to-shoot-mark" aria-hidden="true" />', self.source)
+        self.assertIn('<span className="req-mark" aria-hidden="true" />', self.source)
+        self.assertNotIn("requiredToShoot-text", self.source)
+        self.assertNotIn("new-review-requiredToShoot", self.source)
+        self.assertNotIn("<small>{chip.hint}</small>", self.source)
+
+    def test_shipments_supports_shipment_level_photo_capture(self):
+        for text in [
+            "api.uploadShipmentPhotos",
+            "api.deleteShipmentPhoto",
+            "shipmentCameraInputRef",
+            "shipmentLibraryInputRef",
+            "shipmentPhotoPreviews",
+            "const activeReceipt = await ensureDeliveryReceipt();",
+            "<label>Shipment Photos</label>",
+            'type="file" accept="image/*" capture="environment" multiple hidden',
+            'type="file" accept="image/*" multiple hidden',
+            'className="recv-photo-btns shipment-photo-actions"',
+            'className="recv-camera-btn"',
+            'className="recv-library-btn"',
+            "<Camera size={17}",
+            "<Images size={17}",
+            "recordPhotos(receipt)",
+            "shipment-photo-field",
+            "shipment-photo-thumb",
+        ]:
+            self.assertIn(text, self.source)
+        self.assertNotIn("📷 Take Photo", self.source)
+        self.assertNotIn("🖼 Library", self.source)
+        self.assertIn("api.listShipmentPhotos", (ROOT / "frontend" / "src" / "api.js").read_text())
+        self.assertIn("api.uploadShipmentPhotos", (ROOT / "frontend" / "src" / "api.js").read_text())
+        self.assertIn("api.deleteShipmentPhoto", (ROOT / "frontend" / "src" / "api.js").read_text())
+
+    def test_shipments_exposes_incoming_and_thr3d_outgoing_views(self):
+        for text in [
+            "useState('incoming')",
+            "api.listThr3dOutgoing()",
+            "{ id: 'incoming', label: 'Incoming'",
+            "{ id: 'outgoing', label: 'THR3D / Outgoing'",
+            "THR3D Queue",
+            "Ready THR3D merchandise from Planning appears here",
+            "Finished Planning records with Deliverables including Thr3d",
+            "recv-outgoing-row",
+            "recv-outgoing-view",
+        ]:
+            self.assertIn(text, self.source)
+
+    def test_planning_carousel_distinguishes_shipment_photos(self):
+        for text in [
+            "record?.itemPhotos",
+            "record?.shipmentPhotos",
+            "photoSourceLabel",
+            "Shipment Photo",
+            "sourceLabel",
+        ]:
+            self.assertIn(text, self.source)
 
     def test_workflow_engine_foundation_exists(self):
-        self.assertTrue(WORKFLOW_ENGINE.exists())
+        self.assertTrue(MERCHANDISE_ROUTING.exists())
         for text in [
-            "WORKFLOW_OWNERS",
-            "WORKFLOW_STATUS",
-            "WORKSTREAM_IDS",
-            "WORKSTREAMS",
+            "PLANNING_OWNERS",
+            "REQUIREMENT_STATUS",
+            "DELIVERABLE_ROUTE_IDS",
+            "DELIVERABLE_ROUTES",
             "WORKSPACE_MODES",
             "REQUIREMENT_KEYS",
-            "GATE_IDS",
+            "QUEUE_IDS",
             "WORKSPACE_SECTIONS",
             "CARD_FIELDS",
-            "WORKFLOW_BOARD_IDS",
-            "WORKFLOW_BOARD_STATE_MODEL",
-            "WORKFLOW_REGISTRY",
-            "MERCHANDISE_REVIEW_WORKFLOW",
+            "BOARD_IDS",
+            "BOARD_STATE_MODEL",
+            "PLANNING_BOARD_REGISTRY",
+            "MERCHANDISE_PLANNING_BOARD",
             "evaluateMerchandiseReviewRequirements",
             "evaluateMerchandiseReviewAssignment",
-            "createWorkflowAssignment",
-            "enrichWorkflowAssignment",
-            "enrichWorkOrder",
-            "evaluateWorkOrder",
-            "workflowForClient",
-            "buildWorkOrderCard",
-            "workspaceModeForGate",
-            "routingPreviewForWorkstream",
-            "workstreamFromLegacyValue",
-            "workstreamDefinition",
-            "activeWorkstreamsForClient",
-            "workOrderPreview",
-            "workstreamLabel",
-            "validateWorkflowTransition",
-            "gatesForBoard",
-            "ownerRole = WORKFLOW_OWNERS.projectManagement",
-            "workstream: WORKSTREAM_IDS.thr3d",
-            "allowedNextGates",
+            "createPlanningCard",
+            "enrichPlanningCard",
+            "enrichPlanningCardAlias",
+            "evaluateDeliverablePlanningCard",
+            "planningBoardForClient",
+            "buildPlanningCard",
+            "workspaceModeForQueue",
+            "routingPreviewForDeliverableRoute",
+            "deliverableRouteFromLegacyValue",
+            "deliverableRouteDefinition",
+            "activeDeliverableRoutesForClient",
+            "planningRoutePreview",
+            "deliverableRouteLabel",
+            "validatePlanningMove",
+            "queuesForBoard",
+            "ownerRole = PLANNING_OWNERS.projectManagement",
+            "deliverableRoute: DELIVERABLE_ROUTE_IDS.thr3d",
+            "allowedNextQueues",
             "entryCriteria",
             "exitCriteria",
             "transitionMode",
             "workspaceMode",
             "cardFields",
             "workspaceSections",
-            "currentGate",
+            "currentQueue",
             "currentOwner",
             "currentStatus",
             "productionScheduled: 'production-scheduled'",
@@ -300,47 +384,47 @@ class FrontendRoutingTests(unittest.TestCase):
             "productionComplete: 'production-complete'",
             "label: 'Planning Board'",
             "label: 'Production Board'",
-            "shared: [GATE_IDS.readyProduction]",
+            "shared: [QUEUE_IDS.readyProduction]",
         ]:
-            self.assertIn(text, self.workflow_engine)
-        self.assertIn("from './workflowEngine'", self.source)
+            self.assertIn(text, self.merchandise_routing)
+        self.assertIn("from './merchandiseRouting'", self.source)
         self.assertNotIn("function validateReviewV2Move", self.source)
         self.assertNotIn("Save Artwork Override", self.source)
 
     def test_workflow_engine_supports_configured_board_and_transitions(self):
         for text in [
             "boardVisible",
-            ".filter(gateConfig => gateConfig.boardVisible !== false",
+            ".filter(queueConfig => queueConfig.boardVisible !== false",
             ".sort((a, b) => a.order - b.order)",
-            "clientWorkflowAssignments",
-            "registry.clientWorkflowAssignments?.[clientId]",
-            "validNextGates",
-            "blockedNextGates",
+            "clientBoardAssignments",
+            "registry.clientBoardAssignments?.[clientId]",
+            "validNextQueues",
+            "blockedNextQueues",
             "Cannot move to",
             "Missing:",
-            "WORKFLOW_STATUS.notApplicable",
+            "REQUIREMENT_STATUS.notApplicable",
             "tone: 'neutral'",
             "visible: applicable",
             "workspaceMode: WORKSPACE_MODES.modal",
             "workspaceMode: WORKSPACE_MODES.readonly",
         ]:
-            self.assertIn(text, self.workflow_engine)
-        self.assertIn("gate.workspaceSections", self.source)
-        self.assertIn("item.workOrder.validNextGates.map", self.source)
-        self.assertIn("item.workOrder.blockedNextGates.map", self.source)
-        self.assertNotIn("validateWorkflowTransition(defaultWorkflow, item.workOrder, columnId)", self.source)
+            self.assertIn(text, self.merchandise_routing)
+        self.assertIn("queue.workspaceSections", self.source)
+        self.assertIn("item.planningCard.validNextQueues.map", self.source)
+        self.assertIn("item.planningCard.blockedNextQueues.map", self.source)
+        self.assertNotIn("validatePlanningMove(defaultWorkflow, item.planningCard, columnId)", self.source)
         self.assertNotIn("Deprecated Airtable Photos - Do Not Use", self.source)
 
     def test_new_review_gate_uses_modal_and_workstream_decisions(self):
         for text in [
             "workspaceOpen && selectedItem",
-            "workspaceModeForGate(selectedItem?.workOrder?.gate)",
+            "workspaceModeForQueue(selectedItem?.planningCard?.queue)",
             "NewReviewProductIdentification",
             "NewReviewRequiredInformation",
-            "ReadinessStrip",
+            "RequiredToShootStrip",
             "DeliverablesSelector",
             "INTAKE_DELIVERABLE_OPTIONS",
-            "DELIVERABLE_WORKSTREAM_MAP",
+            "DELIVERABLE_ROUTE_MAP",
             "Verify Merchandise",
             "Identify Product",
             "Linked Product",
@@ -390,14 +474,14 @@ class FrontendRoutingTests(unittest.TestCase):
             self.assertIn(text, deliverables_selector)
         self.assertNotIn("aria-pressed", deliverables_selector)
         modal_section = self.source.split("function NewReviewModal", 1)[1].split("function MerchandiseReviewV2Page", 1)[0]
-        finish_handler = self.source.split("async function finishVerification", 1)[1].split("async function closeWorkflowWorkspace", 1)[0]
+        finish_handler = self.source.split("async function finishVerification", 1)[1].split("async function closePlanningWorkspace", 1)[0]
         self.assertNotIn("Save Deliverables", modal_section)
-        self.assertNotIn("Merchandise Resolution", modal_section)
+        self.assertNotIn("Resolution", modal_section)
         self.assertNotIn("Observed Package Name", modal_section)
         self.assertNotIn("Observed Identifier", modal_section)
         self.assertNotIn("ReleaseToProductionAction", modal_section)
         self.assertIn("Retry", self.source)
-        self.assertNotIn("<WorkstreamSelector", modal_section)
+        self.assertNotIn("<DeliverableSelector", modal_section)
         self.assertNotIn("Select production type", modal_section)
         self.assertNotIn("productionTypes", modal_section)
         self.assertNotIn("productionType", modal_section)
@@ -413,8 +497,17 @@ class FrontendRoutingTests(unittest.TestCase):
             "is-${finishState.status}",
         ]:
             self.assertIn(text, modal_section)
+        required_info_section = self.source.split("function NewReviewRequiredInformation", 1)[1].split("function ImageLightbox", 1)[0]
+        self.assertIn("if (state.thr3dOnly)", required_info_section)
+        self.assertIn("(item.requiredToShoot || state.blockers || []).filter", required_info_section)
+        self.assertLess(
+            required_info_section.index("if (state.thr3dOnly)"),
+            required_info_section.index("(item.requiredToShoot || state.blockers || []).filter"),
+        )
+        self.assertIn("? 'Thr3d Shipment'", modal_section)
+        self.assertNotIn("'Ready for Thr3d'", modal_section)
         for text in [
-            "const blockers = state.blockers || visibleRequirementBlockers(item.readiness || [])",
+            "const blockers = state.blockers || visibleRequirementBlockers(item.requiredToShoot || [])",
             "stage,",
             "deliverables,",
             "setSelectedId('')",
@@ -427,13 +520,13 @@ class FrontendRoutingTests(unittest.TestCase):
             "Ecomm Photo",
             "Packaging Photo",
             "Thr3d",
-            "workflowTemplate",
-            "initialGate",
-            "subjectType: workstream ? 'work-order' : 'merchandise'",
-            "evaluateWorkOrder",
+            "planningTemplate",
+            "initialQueue",
+            "subjectType: deliverableRoute ? 'deliverable-route' : 'merchandise'",
+            "evaluateDeliverablePlanningCard",
         ]:
-            self.assertIn(text, self.workflow_engine)
-        registry_section = self.workflow_engine.split("export const WORKSTREAMS = [", 1)[1].split("];", 1)[0]
+            self.assertIn(text, self.merchandise_routing)
+        registry_section = self.merchandise_routing.split("export const DELIVERABLE_ROUTES = [", 1)[1].split("];", 1)[0]
         for text in ["GS1 Ecomm", "Packaging Photography", "Video", "Other", "Styled Photo"]:
             self.assertNotIn(text, registry_section)
         for text in [
@@ -444,24 +537,25 @@ class FrontendRoutingTests(unittest.TestCase):
             "routingPreviewForProductionPaths",
             "saveJsonMap(MERCH_REVIEW_V2_DECISIONS_KEY",
         ]:
-            self.assertNotIn(text, self.source + self.workflow_engine)
+            self.assertNotIn(text, self.source + self.merchandise_routing)
 
     def test_merchandise_review_v2_is_merchandise_driven_without_active_work_orders(self):
         for text in [
             "api.listMerchandiseReviewEntries()",
             "api.updateMerchandiseIntakeDecisions",
             "api.updateMerchandiseIntakeState",
-            "intakeRequestedGateForRecord(record)",
+            "intakeRequestedQueueForRecord(record)",
             "record?.intakeStatus === 'Waiting on Information'",
             "record?.intakeStatus === 'Ready to Release'",
             "record?.intakeStatus === 'Needs Review'",
-            "return GATE_IDS.newReview;",
+            "return QUEUE_IDS.newReview;",
             "merchandiseId",
-            "isDraftWorkOrder",
-            "kanban-card-workstream",
+            "isDraftPlanningCard",
+            "kanban-card-deliverables",
             "PM_QUEUE_STORAGE_KEY",
             "onDrop={event =>",
             "Cannot move to Ready for Photo. Missing:",
+            "[QUEUE_IDS.newReview, QUEUE_IDS.waitingInformation, QUEUE_IDS.sendThr3d, QUEUE_IDS.readyProduction]",
         ]:
             self.assertIn(text, self.source)
         for text in [
@@ -471,12 +565,12 @@ class FrontendRoutingTests(unittest.TestCase):
             "workOrdersByMerchandise",
             "groupWorkOrdersByMerchandise(workOrders)",
             "workOrderRecordId",
-            "activeWorkstreamsForClient(selectedItem.record.clientIds?.[0], workstreamOptions)",
-            "(!product.satisfied || artwork.status === WORKFLOW_STATUS.blocked)",
-            "!activation.satisfied && visibleGateIds.has(GATE_IDS.waitingActivation)",
+            "activeDeliverableRoutesForClient(selectedItem.record.clientIds?.[0], deliverableRouteOptions)",
+            "(!product.satisfied || artwork.status === REQUIREMENT_STATUS.blocked)",
+            "!activation.satisfied && visibleGateIds.has(QUEUE_IDS.waitingActivation)",
         ]:
             self.assertNotIn(text, self.source)
-            self.assertNotIn(text, self.workflow_engine)
+            self.assertNotIn(text, self.merchandise_routing)
         for text in [
             "updateMerchandiseIntakeDecisions",
             "/intake-decisions",
@@ -495,7 +589,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "listWorkOrderTypes",
         ]:
             self.assertNotIn(text, (ROOT / "frontend" / "src" / "api.js").read_text())
-        self.assertIn(".kanban-card-workstream", self.styles)
+        self.assertIn(".kanban-card-deliverables", self.styles)
 
     def test_unified_modal_replaces_waiting_information_controls_in_active_intake(self):
         for text in [
@@ -510,22 +604,22 @@ class FrontendRoutingTests(unittest.TestCase):
             "Required to Shoot",
         ]:
             self.assertIn(text, self.source)
-        waiting_gate = self.workflow_engine.split("id: GATE_IDS.waitingInformation", 1)[1].split("gate({", 1)[0]
+        waiting_gate = self.merchandise_routing.split("id: QUEUE_IDS.waitingInformation", 1)[1].split("queueColumn({", 1)[0]
         self.assertIn("WORKSPACE_SECTIONS.notes", waiting_gate)
         self.assertNotIn("WORKSPACE_SECTIONS.issues", waiting_gate)
         for text in [
             "notes: 'notes'",
             "entryCriteria",
             "exitCriteria",
-            "validNextGates",
-            "blockedNextGates",
+            "validNextQueues",
+            "blockedNextQueues",
         ]:
-            self.assertIn(text, self.workflow_engine)
+            self.assertIn(text, self.merchandise_routing)
         for text in [
             ".waiting-info-missing",
             ".waiting-product-search",
             ".waiting-product-fields",
-            ".waiting-readiness-list",
+            ".waiting-required-to-shoot-list",
             ".waiting-info-footer",
         ]:
             self.assertIn(text, self.styles)
@@ -545,7 +639,7 @@ class FrontendRoutingTests(unittest.TestCase):
 
     def test_admin_does_not_expose_workflow_templates_configuration(self):
         for text in [
-            "Workflow Templates",
+            "Planning Templates",
             "function WorkflowTemplatesSection",
             "api.listWorkflowTemplates()",
             "api.createWorkflowTemplate",
@@ -554,9 +648,9 @@ class FrontendRoutingTests(unittest.TestCase):
             "api.createWorkflowStage",
             "api.updateWorkflowStage",
             "api.deactivateWorkflowStage",
-            "Workflow configuration is currently operating through the existing compatibility mapping",
+            "Planning configuration is currently operating through the existing compatibility mapping",
             "Stage keys must be unique within a template.",
-            "if (activeCard.id === 'workflow-templates') return <WorkflowTemplatesSection />;",
+            "if (activeCard.id === 'planning-templates') return <WorkflowTemplatesSection />;",
         ]:
             self.assertNotIn(text, self.source)
 
@@ -887,6 +981,23 @@ class FrontendRoutingTests(unittest.TestCase):
         redirects = REDIRECTS.read_text().splitlines()
         self.assertIn("/api/* /api/:splat 200", redirects)
         self.assertIn("/* /index.html 200", redirects)
+
+    def test_dev_thr3d_regression_route_renders_planning_card_modal_and_outgoing(self):
+        harness_section = self.source.split("function PlanningThr3dRegressionPage", 1)[1].split("// ── Auth", 1)[0]
+        for text in [
+            'data-testid="planning-thr3d-regression"',
+            "<KanbanBoard",
+            "<NewReviewModal",
+            "requiredToShoot: undefined",
+            "finishRegressionVerification",
+            "intakeStatus: 'Ready to Release'",
+            "stage: QUEUE_IDS.sendThr3d",
+            'data-testid="thr3d-outgoing-regression"',
+            "THR3D / Outgoing",
+        ]:
+            self.assertIn(text, harness_section)
+        self.assertIn("window.location.pathname === '/__test/planning-thr3d'", self.source)
+        self.assertIn("data-testid={`deliverable-${DELIVERABLE_ROUTE_MAP[option] || option.toLowerCase().replaceAll(' ', '-')}`}", self.source)
 
 
 if __name__ == "__main__":

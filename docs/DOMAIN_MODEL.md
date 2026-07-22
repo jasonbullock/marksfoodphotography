@@ -10,7 +10,7 @@ Merchandise is the center of the operational model.
 
 Marks Photo exists because physical merchandise arrives, creates uncertainty, and must be transformed into production-ready work.
 
-The application presents different perspectives of the same merchandise. Receiving, Inventory, Planning, Production, and PhotoTrack should not duplicate merchandise. They should reveal different operational truths about it.
+The application presents different perspectives of the same merchandise. Shipments, Inventory, Planning, Production, and PhotoTrack should not duplicate merchandise. They should reveal different operational truths about it.
 
 ## Merchandise
 
@@ -30,9 +30,11 @@ Verification asks:
 - Can it be matched to a Product?
 - Which Deliverables are required?
 - What information is still missing for those Deliverables?
-- Should the Merchandise wait, route to photo production, route to Thr3d, or become an Issue?
+- Should the Merchandise wait, route to photo production, require a THR3D outbound shipment, or become an Issue?
 
 Verification does not require every fact to be known in one sitting. If a PM has started verification but cannot finish, the Merchandise can wait for information with the current progress and missing reasons preserved.
+
+Verification is not represented by Workstreams, Work Orders, Workstream Assignments, Workflow Templates, Workflow Stages, or Work Order Types. Those were legacy implementation experiments and are not current domain concepts.
 
 ## Queue
 
@@ -46,7 +48,7 @@ New is automatic. Ready for Photo is gated by Required to Shoot. Planning and Wa
 
 Ready for Photo is shared with the future Production board. It is one queue over one Merchandise record, not a duplicated Production Request.
 
-Queue presentation is a user-experience concern, not a separate domain concept. Better card density, aging emphasis, comment signals, drag feedback, and checklist presentation should make Planning easier to use without creating new Queue values.
+Queue presentation is a user-experience concern, not a separate domain concept. Better card density, aging emphasis, comment signals, drag feedback, and checklist presentation should make Planning easier to use without creating new Queue values. Implementation names should preserve the distinction by using Queue and Planning Card terminology rather than Work Order, Workstream, or workflow-gate terminology.
 
 ## Required to Shoot
 
@@ -68,15 +70,33 @@ Product information may include name, identifier, brand, size, category, reporti
 
 Product supports readiness. It does not replace Merchandise as the operational center.
 
+Product must not carry operational workflow, physical storage, receipt, photo, issue, export, or production-status fields in active code. Those facts belong to Merchandise, Shipments, Issues, History, Creative Force, PhotoTrack, or reporting integrations.
+
 If Product information already exists, Marks Photo should reuse it. If it does not exist, Marks Photo should collect only the minimum missing information required to make the Merchandise production-ready.
 
 ## Shipment
 
 Shipment is the inbound logistics context for merchandise.
 
-Shipment explains how merchandise arrived, when it arrived, who received it, and what physical receiving context belongs to it.
+Shipment explains how merchandise arrived, when it arrived, who received it, and what physical shipment context belongs to it.
 
-Shipment supports Receiving. It does not own the lifecycle after merchandise has been captured.
+Shipment supports Shipments. It does not own the lifecycle after merchandise has been captured.
+
+Shipment Photo is physical evidence owned by a Shipment.
+
+Shipment Photos capture box labels, delivery context, damage, cartons, pallets, or other shared shipment context. Originals live in R2 under durable shipment-record keys. Airtable stores only metadata on the Shipment.
+
+Merchandise can display Shipment Photos through its linked Shipment, but it should not copy Shipment Photo metadata. Shared image carousels should show item-owned photos first and Shipment Photos last.
+
+## Shipments
+
+Shipments is the merchandise-team workspace for physical movement.
+
+It covers incoming merchandise, including receiving deliveries, photographing merchandise, assigning storage, and inventory intake. It also covers outgoing merchandise, beginning with THR3D shipments and later any other physical outbound movement the studio needs to track.
+
+Shipments is not a workflow engine. It does not decide whether merchandise is production-ready. Planning decides whether THR3D is required and finishes that decision; Shipments receives ready THR3D work in an `Outgoing` view so the merchandise team can box and ship the sample.
+
+For THR3D-only Merchandise, the Planning decision is intentionally minimal: Client, at least one merchandise photo, Quantity, and the `Thr3d` Deliverable. Product linkage and photo-production requirements do not apply. If Merchandise also has Packaging Photo or Ecomm Photo, the photo path remains authoritative and the sample must not enter the THR3D outgoing queue before photo production is complete.
 
 ## Client
 
@@ -101,14 +121,6 @@ deliverables describes what kind of production work is needed.
 Examples may include photography, packaging photography, THR3D, or other production modes, but the model should not seed speculative types until the operating need is proven.
 
 deliverables helps determine readiness requirements, planning needs, resources, and downstream handoff expectations.
-
-## Merchandise Resolution
-
-Merchandise Resolution describes what should happen to the physical merchandise.
-
-Examples may include proceed, wait, request replacement, hold, purge, return, no production, or send through a specific physical path.
-
-Merchandise Resolution is about the physical object and its operational fate. It is separate from Product information and separate from production execution status.
 
 ## Ready for Photo Handoff
 
@@ -146,8 +158,6 @@ Job provides production or reporting grouping when needed.
 
 deliverables describes the kind of production work required.
 
-Merchandise Resolution describes what should happen to the physical sample.
-
 Ready for Photo determines whether Merchandise can bridge from Planning into Production.
 
 Production executes the released work.
@@ -156,7 +166,7 @@ Production executes the released work.
 
 The same Merchandise appears differently depending on the workspace:
 
-- Receiving perspective: arrival and observation
+- Shipments perspective: physical movement into or out of the studio
 - Inventory perspective: physical presence and storage
 - Planning perspective: decisions, blockers, and Required to Shoot
 - Production perspective: acceptance, scheduling, and execution

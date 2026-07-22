@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from app import create_app  # noqa: E402
 from config import Config as C  # noqa: E402
-from routes import AUTH_SESSION_KEY, _evaluate_production_readiness_from_fields  # noqa: E402
+from routes import AUTH_SESSION_KEY, _evaluate_required_to_shoot_from_fields  # noqa: E402
 
 
 class ReleaseToProductionTests(unittest.TestCase):
@@ -35,7 +35,6 @@ class ReleaseToProductionTests(unittest.TestCase):
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated",
             C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready to Release",
             C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm Photo"],
-            C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "Keep at Walnut",
             C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
         }
         base.update(fields or {})
@@ -65,18 +64,18 @@ class ReleaseToProductionTests(unittest.TestCase):
         return {"id": "recProduct", "fields": base}
 
     def test_readiness_evaluation_requires_each_baseline_field(self):
-        ready = _evaluate_production_readiness_from_fields(self.entry()["fields"], self.product()["fields"])
+        ready = _evaluate_required_to_shoot_from_fields(self.entry()["fields"], self.product()["fields"])
         self.assertTrue(ready["ready"])
         self.assertEqual(ready["summary"], "7 of 7 Complete")
 
-        missing_verification = _evaluate_production_readiness_from_fields({
+        missing_verification = _evaluate_required_to_shoot_from_fields({
             **self.entry()["fields"],
             C.F_RECEIPT_ENTRY_MERCH_VERIFIED: False,
         }, self.product()["fields"])
         self.assertIn("Merchandise Verified", missing_verification["missing"])
         self.assertFalse(missing_verification["ready"])
 
-        missing_product = _evaluate_production_readiness_from_fields({
+        missing_product = _evaluate_required_to_shoot_from_fields({
             **self.entry()["fields"],
             C.F_RECEIPT_ENTRY_ITEM: [],
         }, {})
@@ -84,43 +83,44 @@ class ReleaseToProductionTests(unittest.TestCase):
         self.assertIn("Product Name", missing_product["missing"])
         self.assertIn("Identifier", missing_product["missing"])
 
-        missing_decisions = _evaluate_production_readiness_from_fields({
+        missing_decisions = _evaluate_required_to_shoot_from_fields({
             **self.entry()["fields"],
             C.F_RECEIPT_ENTRY_DELIVERABLES: "",
-            C.F_RECEIPT_ENTRY_MERCHANDISE_RESOLUTION: "",
         }, self.product()["fields"])
         self.assertIn("Deliverables", missing_decisions["missing"])
-        self.assertNotIn("Merchandise Resolution", missing_decisions["missing"])
 
-        missing_artwork = _evaluate_production_readiness_from_fields(self.entry()["fields"], self.product({
+        missing_artwork = _evaluate_required_to_shoot_from_fields(self.entry()["fields"], self.product({
             C.F_ITEM_ARTWORK_RECEIVED: False,
         })["fields"])
         self.assertIn("Artwork", missing_artwork["missing"])
 
-        missing_activation = _evaluate_production_readiness_from_fields(self.entry()["fields"], self.product({
+        missing_activation = _evaluate_required_to_shoot_from_fields(self.entry()["fields"], self.product({
             C.F_ITEM_REFERENCE_DATA: "",
         })["fields"])
         self.assertIn("Activation Information", missing_activation["missing"])
 
-        thr3d_ready = _evaluate_production_readiness_from_fields({
+        thr3d_ready = _evaluate_required_to_shoot_from_fields({
             **self.entry()["fields"],
             C.F_RECEIPT_ENTRY_ITEM: [],
+            C.F_RECEIPT_CLIENT: ["recClient"],
+            C.F_RECEIPT_ENTRY_QUANTITY: 1,
+            C.F_RECEIPT_ENTRY_PHOTO_METADATA: [{"object_key": "receiving/recShipment/recMerch-1.jpg"}],
             C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d"],
         }, {})
         self.assertTrue(thr3d_ready["ready"])
-        self.assertEqual(thr3d_ready["summary"], "2 of 2 Complete")
+        self.assertEqual(thr3d_ready["summary"], "4 of 4 Complete")
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes._now_iso", return_value="2026-07-20T12:00:00Z")
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
-    def test_successful_release_persists_release_audit_and_closes_intake(self, get_record, update_record, _now, _clients):
+    def test_successful_release_persists_release_audit_and_completes_intake(self, get_record, update_record, _now, _clients):
         get_record.side_effect = [self.entry(), self.receipt(), self.product()]
         update_record.return_value = self.entry({
             C.F_RECEIPT_ENTRY_RELEASED: True,
             C.F_RECEIPT_ENTRY_RELEASED_AT: "2026-07-20T12:00:00Z",
             C.F_RECEIPT_ENTRY_RELEASED_BY: ["recTestUser"],
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Closed",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Complete",
         })
 
         response = self.app.post("/api/merchandise/recMerch/release")
@@ -130,10 +130,10 @@ class ReleaseToProductionTests(unittest.TestCase):
         self.assertTrue(fields[C.F_RECEIPT_ENTRY_RELEASED])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_RELEASED_AT], "2026-07-20T12:00:00Z")
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_RELEASED_BY], ["recTestUser"])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Closed")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Complete")
         payload = response.get_json()
         self.assertTrue(payload["released"])
-        self.assertTrue(payload["productionReadiness"]["ready"])
+        self.assertTrue(payload["requiredToShoot"]["ready"])
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
