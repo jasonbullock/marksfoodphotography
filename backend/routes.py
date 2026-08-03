@@ -390,7 +390,7 @@ TOPCO_READINESS_PROFILE = {
         "Deliverables confirmed",
     ],
     "sources": [
-        {"label": "Activation", "description": "Topco activation message replaces the old email handoff."},
+        {"label": "Activation Package", "description": "Marks creates and stores the Topco project readiness package."},
         {"label": "Shipments", "description": "Marks captures received quantity, photos, and physical handling."},
     ],
     "deliverables": {
@@ -498,9 +498,9 @@ def _shape_activation(r):
         "clientIds": client_ids,
         "activationType": f.get(C.F_ACTIVATION_TYPE, ""),
         "status": f.get(C.F_ACTIVATION_STATUS, "") or "Draft",
-        "sourceMethod": f.get(C.F_ACTIVATION_SOURCE_METHOD, ""),
-        "sourceReference": f.get(C.F_ACTIVATION_SOURCE_REFERENCE, ""),
-        "originalMessage": f.get(C.F_ACTIVATION_ORIGINAL_MESSAGE, ""),
+        "creationMethod": f.get(C.F_ACTIVATION_CREATION_METHOD, ""),
+        "projectReference": f.get(C.F_ACTIVATION_PROJECT_REFERENCE, ""),
+        "activationPackage": f.get(C.F_ACTIVATION_PACKAGE, ""),
         "activationDate": f.get(C.F_ACTIVATION_DATE, ""),
         "dueUrgency": f.get(C.F_ACTIVATION_DUE_URGENCY, ""),
         "walnutScope": f.get(C.F_ACTIVATION_WALNUT_SCOPE, ""),
@@ -566,6 +566,15 @@ def list_activations():
 
 @api.post("/activations")
 def create_activation():
+    return _save_activation()
+
+
+@api.patch("/activations/<activation_id>")
+def update_activation(activation_id):
+    return _save_activation(activation_id)
+
+
+def _save_activation(activation_id=None):
     body = request.get_json(force=True, silent=True) or {}
     client_id = _activation_text(body, "clientId")
     if not client_id:
@@ -578,9 +587,9 @@ def create_activation():
     status = _activation_text(body, "status") or "Draft"
     if status not in C.ACTIVATION_STATUS_OPTIONS:
         return err(f"Status must be one of: {', '.join(C.ACTIVATION_STATUS_OPTIONS)}.")
-    source_method = _activation_text(body, "sourceMethod") or "Manual Entry"
-    if source_method not in C.ACTIVATION_SOURCE_METHOD_OPTIONS:
-        return err(f"Source Method must be one of: {', '.join(C.ACTIVATION_SOURCE_METHOD_OPTIONS)}.")
+    creation_method = _activation_text(body, "creationMethod") or "Manual Entry"
+    if creation_method not in C.ACTIVATION_CREATION_METHOD_OPTIONS:
+        return err(f"Creation Method must be one of: {', '.join(C.ACTIVATION_CREATION_METHOD_OPTIONS)}.")
     deliverables = _validate_deliverables(body.get("deliverables", []))
     if not isinstance(deliverables, list):
         return deliverables
@@ -590,15 +599,15 @@ def create_activation():
         total_images = _activation_number(body, "totalImages")
     except ValueError as exc:
         return err(str(exc))
-    name = _activation_text(body, "name") or _activation_text(body, "sourceReference") or "New Activation"
+    name = _activation_text(body, "name") or _activation_text(body, "projectReference") or "New Activation"
     fields = {
         C.F_ACTIVATION_NAME: name,
         C.F_ACTIVATION_CLIENT: [client_id],
         C.F_ACTIVATION_TYPE: activation_type,
         C.F_ACTIVATION_STATUS: status,
-        C.F_ACTIVATION_SOURCE_METHOD: source_method,
-        C.F_ACTIVATION_SOURCE_REFERENCE: _activation_text(body, "sourceReference"),
-        C.F_ACTIVATION_ORIGINAL_MESSAGE: _activation_text(body, "originalMessage"),
+        C.F_ACTIVATION_CREATION_METHOD: creation_method,
+        C.F_ACTIVATION_PROJECT_REFERENCE: _activation_text(body, "projectReference"),
+        C.F_ACTIVATION_PACKAGE: _activation_text(body, "activationPackage"),
         C.F_ACTIVATION_DUE_URGENCY: _activation_text(body, "dueUrgency"),
         C.F_ACTIVATION_WALNUT_SCOPE: _activation_text(body, "walnutScope"),
         C.F_ACTIVATION_ARTWORK_PATH: _activation_text(body, "artworkPath"),
@@ -620,10 +629,13 @@ def create_activation():
     if matched_merchandise_ids:
         fields[C.F_ACTIVATION_MATCHED_MERCHANDISE] = matched_merchandise_ids
     try:
-        record = airtable.create_record(C.ACTIVATIONS_TABLE, fields, by_field_id=False)
+        if activation_id:
+            record = airtable.update_record(C.ACTIVATIONS_TABLE, activation_id, fields, by_field_id=False)
+        else:
+            record = airtable.create_record(C.ACTIVATIONS_TABLE, fields, by_field_id=False)
     except requests.HTTPError as exc:
         return airtable_err(exc)
-    return jsonify({"record": _shape_activation(record)}), 201
+    return jsonify({"record": _shape_activation(record)}), 200 if activation_id else 201
 
 
 REQUIRED_TO_SHOOT_LABELS = {

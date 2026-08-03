@@ -131,9 +131,9 @@ class Config:
     F_ACTIVATION_CLIENT = "Client"
     F_ACTIVATION_TYPE = "Activation Type"
     F_ACTIVATION_STATUS = "Status"
-    F_ACTIVATION_SOURCE_METHOD = "Source Method"
-    F_ACTIVATION_SOURCE_REFERENCE = "Source Reference"
-    F_ACTIVATION_ORIGINAL_MESSAGE = "Original Message"
+    F_ACTIVATION_CREATION_METHOD = "Creation Method"
+    F_ACTIVATION_PROJECT_REFERENCE = "Project Reference"
+    F_ACTIVATION_PACKAGE = "Activation Package"
     F_ACTIVATION_DATE = "Activation Date"
     F_ACTIVATION_DUE_URGENCY = "Due / Urgency"
     F_ACTIVATION_WALNUT_SCOPE = "Walnut Scope"
@@ -148,7 +148,7 @@ class Config:
     F_ACTIVATION_NOTES = "Notes"
     ACTIVATION_STATUS_OPTIONS = ["Draft", "Active", "Needs Info", "Released", "Cancelled"]
     ACTIVATION_TYPE_OPTIONS = ["Topco eComm Activation", "Topco Packaging Activation"]
-    ACTIVATION_SOURCE_METHOD_OPTIONS = ["Manual Entry", "Pasted Email", "Imported Email", "Spreadsheet"]
+    ACTIVATION_CREATION_METHOD_OPTIONS = ["Manual Entry", "Spreadsheet"]
 
     # Field names — Jobs
     F_JOB_NAME = "Job"

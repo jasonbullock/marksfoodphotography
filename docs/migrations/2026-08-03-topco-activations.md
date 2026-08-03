@@ -4,6 +4,8 @@
 
 The existing Airtable `Activations` table was expanded from a single `Name` field into the first Topco activation schema.
 
+Activation is the client/project readiness package created in Marks. It is not an inbound email. Email or notification content may later be generated from this stored package, but the package is the source of truth for Topco Ready for Photo validation.
+
 This is additive schema work only. No existing records were deleted or modified.
 
 ## Table
@@ -18,9 +20,9 @@ This is additive schema work only. No existing records were deleted or modified.
 | Client | `fldoTTOddKcWBAn2U` | multipleRecordLinks |
 | Activation Type | `fldDKivrCSS21Hcpa` | singleSelect |
 | Status | `fldDF0dvyooiviYCz` | singleSelect |
-| Source Method | `fldcbcKzgICUgCNev` | singleSelect |
-| Source Reference | `flduUnoBRe5dw4sqH` | singleLineText |
-| Original Message | `flda0noXtTa6wC8yv` | multilineText |
+| Creation Method | `fldcbcKzgICUgCNev` | singleSelect |
+| Project Reference | `flduUnoBRe5dw4sqH` | singleLineText |
+| Activation Package | `flda0noXtTa6wC8yv` | multilineText |
 | Activation Date | `fldTgNShCXe8tgdvQ` | date |
 | Due / Urgency | `fldyz8KckRmqMwbal` | singleLineText |
 | Walnut Scope | `fldgJJ3Itz4PSzUwt` | singleLineText |
@@ -40,16 +42,30 @@ The backend now includes:
 
 - `GET /api/activations`
 - `POST /api/activations`
+- `PATCH /api/activations/:id`
 
 The frontend API wrapper now includes:
 
 - `api.listActivations`
 - `api.createActivation`
+- `api.updateActivation`
+
+The Clients/Admin Topco profile includes a basic Activation Package editor so package data can be created and revised while the final Planning experience is still taking shape.
+
+The Planning board also exposes a PM-facing `Create Activation Package` action. PMs can create the package from the frontend without opening Airtable or Admin.
 
 ## Deferred
 
-- Activation email parsing
-- Activation modal UI
 - UPC matching confirmation
 - automatic movement to `Ready for Photo`
-- activation email automation
+- notification/email generation from the stored Activation Package
+
+## Notes
+
+The live Airtable field labels were renamed on 2026-08-03 from the first-pass email/source terminology:
+
+- `Source Method` -> `Creation Method`
+- `Source Reference` -> `Project Reference`
+- `Original Message` -> `Activation Package`
+
+Airtable accepted the field label renames through the Metadata API. Airtable rejected the attempted single-select option rename for `Creation Method`; application code currently writes only `Manual Entry` or `Spreadsheet` so no email-oriented creation method is required by the app.

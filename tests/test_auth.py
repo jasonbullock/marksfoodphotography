@@ -346,6 +346,7 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(profile["mode"], "activation_driven")
         self.assertEqual(profile["matchingTarget"], "Activation row to received Merchandise")
         self.assertIn("Activation confirmed", profile["readyForPhotoRequires"])
+        self.assertEqual(profile["sources"][0]["label"], "Activation Package")
         self.assertIn("CVID", profile["deliverables"]["Ecomm Photo"]["requiredFields"])
         self.assertIn("Coordinator Description", profile["deliverables"]["Packaging Photo"]["requiredFields"])
         self.assertIn("Quantity received", profile["notRequiredFromActivation"])
@@ -378,7 +379,9 @@ class AuthTests(unittest.TestCase):
                 C.F_ACTIVATION_CLIENT: ["recTopco"],
                 C.F_ACTIVATION_TYPE: "Topco eComm Activation",
                 C.F_ACTIVATION_STATUS: "Draft",
-                C.F_ACTIVATION_SOURCE_METHOD: "Imported Email",
+                C.F_ACTIVATION_CREATION_METHOD: "Manual Entry",
+                C.F_ACTIVATION_PROJECT_REFERENCE: "26003302 / MI001868",
+                C.F_ACTIVATION_PACKAGE: "Project readiness package",
                 C.F_ACTIVATION_SKU_DETAILS_JSON: '[{"upc":"036800029804","cvid":"036800029804EGPA022600"}]',
                 C.F_ACTIVATION_DELIVERABLES: ["Ecomm Photo"],
             },
@@ -388,9 +391,9 @@ class AuthTests(unittest.TestCase):
             "clientId": "recTopco",
             "name": "New Topco eComm Activation",
             "activationType": "Topco eComm Activation",
-            "sourceMethod": "Imported Email",
-            "sourceReference": "FW: New Topco eComm Activation",
-            "originalMessage": "eComm image bundles are needed",
+            "creationMethod": "Manual Entry",
+            "projectReference": "26003302 / MI001868",
+            "activationPackage": "eComm image bundles are needed",
             "dueUrgency": "ASAP upon receipt",
             "walnutScope": "Full set renders - WALNUT (PHOTO)",
             "numberOfSkus": 3,
@@ -408,9 +411,48 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(table, C.ACTIVATIONS_TABLE)
         self.assertEqual(fields[C.F_ACTIVATION_CLIENT], ["recTopco"])
         self.assertEqual(fields[C.F_ACTIVATION_DELIVERABLES], ["Ecomm Photo"])
+        self.assertEqual(fields[C.F_ACTIVATION_CREATION_METHOD], "Manual Entry")
+        self.assertEqual(fields[C.F_ACTIVATION_PROJECT_REFERENCE], "26003302 / MI001868")
+        self.assertEqual(fields[C.F_ACTIVATION_PACKAGE], "eComm image bundles are needed")
         self.assertEqual(fields[C.F_ACTIVATION_NUMBER_OF_SKUS], 3)
         self.assertIn("036800029804EGPA022600", fields[C.F_ACTIVATION_SKU_DETAILS_JSON])
         self.assertEqual(response.get_json()["record"]["skuDetails"][0]["cvid"], "036800029804EGPA022600")
+        self.assertEqual(response.get_json()["record"]["activationPackage"], "Project readiness package")
+
+    @patch("routes.airtable.update_record")
+    def test_update_activation_edits_activation_package(self, update_record):
+        self.authenticate(user_record(role="PM", all_clients=False, client_ids=["recTopco"]))
+        update_record.return_value = {
+            "id": "recActivation",
+            "fields": {
+                C.F_ACTIVATION_NAME: "Topco Melons",
+                C.F_ACTIVATION_CLIENT: ["recTopco"],
+                C.F_ACTIVATION_TYPE: "Topco eComm Activation",
+                C.F_ACTIVATION_STATUS: "Active",
+                C.F_ACTIVATION_CREATION_METHOD: "Manual Entry",
+                C.F_ACTIVATION_PROJECT_REFERENCE: "MI001868",
+                C.F_ACTIVATION_PACKAGE: "Confirmed package",
+                C.F_ACTIVATION_DELIVERABLES: ["Ecomm Photo"],
+            },
+        }
+
+        response = self.client.patch("/api/activations/recActivation", json={
+            "clientId": "recTopco",
+            "name": "Topco Melons",
+            "status": "Active",
+            "activationType": "Topco eComm Activation",
+            "creationMethod": "Manual Entry",
+            "projectReference": "MI001868",
+            "activationPackage": "Confirmed package",
+            "deliverables": ["Ecomm Photo"],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        update_record.assert_called_once()
+        table, record_id, fields = update_record.call_args.args[:3]
+        self.assertEqual(table, C.ACTIVATIONS_TABLE)
+        self.assertEqual(record_id, "recActivation")
+        self.assertEqual(fields[C.F_ACTIVATION_PACKAGE], "Confirmed package")
 
 
 if __name__ == "__main__":

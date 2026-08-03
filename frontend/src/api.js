@@ -226,6 +226,7 @@ export const api = {
   },
 
   createActivation: async (payload = {}) => backend('POST', '/activations', payload),
+  updateActivation: async (id, payload = {}) => backend('PATCH', `/activations/${id}`, payload),
 
   listJobs: async (clientId) => {
     const params = new URLSearchParams();

@@ -5148,6 +5148,23 @@ input[type="checkbox"]:disabled {
   white-space: pre-line;
 }
 
+.planning-board-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 0 12px;
+}
+
+.planning-board-feedback {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 750;
+}
+
 .kanban-board {
   display: grid;
   grid-auto-flow: column;
@@ -8486,8 +8503,239 @@ input[type="checkbox"]:disabled {
   text-transform: uppercase;
 }
 
+.activation-package-editor {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.activation-package-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.activation-package-header p {
+  margin: 3px 0 0;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.activation-package-list {
+  display: grid;
+  gap: 6px;
+}
+
+.activation-package-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.activation-package-row:hover,
+.activation-package-row.is-active {
+  border-color: rgba(37, 99, 235, 0.45);
+  background: #eff6ff;
+}
+
+.activation-package-row span {
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.activation-package-row small {
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.activation-package-form {
+  display: grid;
+  gap: 10px;
+}
+
+.activation-package-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.activation-package-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.activation-package-wide {
+  min-width: 0;
+}
+
+.activation-deliverables {
+  justify-content: flex-start;
+}
+
+.mono-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.activation-package-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.activation-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 115;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.activation-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(960px, calc(100vw - 48px));
+  max-height: calc(100dvh - 56px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.24);
+}
+
+.activation-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.activation-modal-header h2 {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.activation-modal-header p {
+  margin: 6px 0 0;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.activation-modal-body {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 22px 20px;
+}
+
+.activation-modal-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 8px;
+  background: #fff;
+}
+
+.activation-sku-section {
+  display: grid;
+  gap: 10px;
+}
+
+.activation-sku-section-header,
+.activation-sku-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.activation-sku-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.activation-sku-row-top {
+  grid-column: 1 / -1;
+}
+
+.activation-sku-row-top strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.activation-sku-wide {
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 900px) {
   .client-readiness-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .activation-package-header,
+  .activation-package-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .activation-package-row small {
+    white-space: normal;
+  }
+
+  .activation-package-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .planning-board-actions,
+  .activation-modal-header,
+  .activation-modal-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .activation-modal-backdrop {
+    padding: 14px;
+  }
+
+  .activation-modal {
+    width: calc(100vw - 28px);
+    max-height: calc(100dvh - 28px);
+  }
+
+  .activation-sku-row {
     grid-template-columns: minmax(0, 1fr);
   }
 }

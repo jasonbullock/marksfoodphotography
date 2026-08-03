@@ -94,7 +94,9 @@ Topco readiness is documented as:
 - Packaging Photo activation data requires UPC, Job Number, Brand, and Coordinator Description
 - Quantity received, storage location, individual file names, and post-photo tracking statuses are not activation requirements
 
-The existing Airtable `Activations` table now has the fields needed to store Topco activation messages and SKU details. The backend supports `GET /api/activations` and `POST /api/activations`, and the frontend API wrapper exposes `api.listActivations` and `api.createActivation`. The current implementation does not yet parse activation emails, provide the Activation modal UI, confirm UPC matches, trigger email automation, or automatically move Topco Merchandise to Ready for Photo.
+Activation is the client/project readiness package created in Marks, not an inbound email. For Topco, the Activation package is the source of truth for the facts needed to validate whether the project is ready to shoot. Any email or notification is an output generated from the stored Activation package, not the source of truth.
+
+The existing Airtable `Activations` table now has the fields needed to store Topco activation packages and SKU details. The live fields previously named `Source Method`, `Source Reference`, and `Original Message` were renamed to `Creation Method`, `Project Reference`, and `Activation Package`. The backend supports `GET /api/activations`, `POST /api/activations`, and `PATCH /api/activations/:id`, and the frontend API wrapper exposes list/create/update helpers. The Clients/Admin Topco profile includes a basic Activation Package editor for creating or revising this readiness package. The Planning board now also exposes a PM-facing `Create Activation Package` action that opens a modal and creates an Activation record from the frontend. The Planning modal uses repeatable SKU rows for UPC, CVID, description, structure, job number, brand, and coordinator description, then stores those rows in the existing `SKU Details JSON` field. The current implementation does not yet confirm UPC matches, trigger notification automation, or automatically move Topco Merchandise to Ready for Photo.
 
 Detailed artifact: `docs/migrations/2026-08-03-topco-activations.md`.
 
@@ -195,8 +197,8 @@ Latest schema artifact: `docs/migrations/2026-07-22-minimal-operating-model-airt
 
 Latest verified commands:
 
-- Topco Activations schema/API verification on 2026-08-03: the existing Airtable `Activations` table `tbleD3EuIMJTG2OWT` was expanded with activation fields, `/api/activations` can list/create activation records, and the frontend wrapper exposes activation helpers. No release automation or workflow routing behavior changed.
-- `backend/.venv/bin/python -m unittest tests.test_auth tests.test_frontend_routing` passed, 67 tests.
+- Topco Activations schema/API verification on 2026-08-03: the existing Airtable `Activations` table `tbleD3EuIMJTG2OWT` was expanded with activation fields, renamed to Activation Package language, `/api/activations` can list/create/update activation records, and the frontend exposes activation helpers plus a Planning-board `Create Activation Package` modal with repeatable SKU rows. No release automation or workflow routing behavior changed.
+- `backend/.venv/bin/python -m unittest tests.test_auth tests.test_frontend_routing` passed, 70 tests.
 - `npm run build` in `frontend/` passed, with the existing Vite chunk-size warning.
 - `git diff --check` passed.
 - Planning New-card polish verification on 2026-08-03: browser check on `http://localhost:5175/__test/planning-thr3d` confirmed a New queue card keeps the simplified recognition presentation: promoted Time Here, item name, client in the unauthenticated regression fixture, no storage location, no Required-to-Shoot overlay indicators, and no `New Arrival`, `Needs PM review`, or `Deliverables not set` badge copy. Source-contract coverage confirms identifiers still render when present.

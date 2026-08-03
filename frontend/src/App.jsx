@@ -2897,7 +2897,193 @@ function SettingsPage({ cards = null } = {}) {
     { header: 'Readiness Mode', value: client => client.readinessProfile?.label || 'Standard' },
   ];
 
-  function ClientReadinessProfile({ profile }) {
+  function ActivationPackageEditor({ client }) {
+    const activations = useResource(() => client?.id ? api.listActivations({ clientId: client.id }) : Promise.resolve({ records: [] }), [client?.id]);
+    const [editingId, setEditingId] = useState(null);
+    const [form, setForm] = useState({
+      name: '',
+      activationType: 'Topco eComm Activation',
+      status: 'Draft',
+      creationMethod: 'Manual Entry',
+      projectReference: '',
+      dueUrgency: '',
+      walnutScope: '',
+      uploadLocation: '',
+      artworkPath: '',
+      activationPackage: '',
+      skuDetails: '',
+      deliverables: ['Ecomm Photo'],
+    });
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState('');
+
+    const updateForm = (key, value) => setForm(current => ({ ...current, [key]: value }));
+    const toggleDeliverable = value => setForm(current => ({
+      ...current,
+      deliverables: current.deliverables.includes(value)
+        ? current.deliverables.filter(item => item !== value)
+        : [...current.deliverables, value],
+    }));
+    const resetForm = () => {
+      setEditingId(null);
+      setSaveError('');
+      setForm({
+        name: '',
+        activationType: 'Topco eComm Activation',
+        status: 'Draft',
+        creationMethod: 'Manual Entry',
+        projectReference: '',
+        dueUrgency: '',
+        walnutScope: '',
+        uploadLocation: '',
+        artworkPath: '',
+        activationPackage: '',
+        skuDetails: '',
+        deliverables: ['Ecomm Photo'],
+      });
+    };
+    const editActivation = activation => {
+      setEditingId(activation.id);
+      setSaveError('');
+      setForm({
+        name: activation.name || '',
+        activationType: activation.activationType || 'Topco eComm Activation',
+        status: activation.status || 'Draft',
+        creationMethod: activation.creationMethod || 'Manual Entry',
+        projectReference: activation.projectReference || '',
+        dueUrgency: activation.dueUrgency || '',
+        walnutScope: activation.walnutScope || '',
+        uploadLocation: activation.uploadLocation || '',
+        artworkPath: activation.artworkPath || '',
+        activationPackage: activation.activationPackage || '',
+        skuDetails: activation.skuDetailsRaw || JSON.stringify(activation.skuDetails || [], null, 2),
+        deliverables: activation.deliverables?.length ? activation.deliverables : ['Ecomm Photo'],
+      });
+    };
+    const saveActivation = async event => {
+      event.preventDefault();
+      setSaving(true);
+      setSaveError('');
+      try {
+        const payload = {
+          ...form,
+          clientId: client.id,
+          skuDetails: form.skuDetails,
+        };
+        if (editingId) {
+          await api.updateActivation(editingId, payload);
+        } else {
+          await api.createActivation(payload);
+        }
+        resetForm();
+        await activations.reload({ quiet: true });
+      } catch (error) {
+        setSaveError(error.message || 'Could not save Activation Package.');
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    return (
+      <div className="activation-package-editor">
+        <div className="activation-package-header">
+          <div>
+            <span className="client-readiness-label">Activation Packages</span>
+            <p>Project readiness data created in Marks before work can become Ready for Photo.</p>
+          </div>
+          {editingId && <button className="btn btn-ghost" type="button" onClick={resetForm}>New package</button>}
+        </div>
+        <div className="activation-package-list">
+          {activations.loading && <span className="empty-state compact">Loading activation packages...</span>}
+          {!activations.loading && activations.error && <span className="error-state">{activations.error}</span>}
+          {!activations.loading && !activations.error && !(activations.data?.records || []).length && (
+            <span className="empty-state compact">No activation packages yet.</span>
+          )}
+          {(activations.data?.records || []).map(activation => (
+            <button className={`activation-package-row ${editingId === activation.id ? 'is-active' : ''}`} type="button" key={activation.id} onClick={() => editActivation(activation)}>
+              <span>{activation.name || 'Untitled Activation'}</span>
+              <small>{activation.status || 'Draft'} · {(activation.deliverables || []).join(', ') || 'No deliverables'}</small>
+            </button>
+          ))}
+        </div>
+        <form className="activation-package-form" onSubmit={saveActivation}>
+          <div className="activation-package-fields">
+            <label>
+              <span>Name</span>
+              <input className="form-input" value={form.name} onChange={event => updateForm('name', event.target.value)} placeholder="Topco Fresh Melons" />
+            </label>
+            <label>
+              <span>Project Reference</span>
+              <input className="form-input" value={form.projectReference} onChange={event => updateForm('projectReference', event.target.value)} placeholder="26003302 / MI001868" />
+            </label>
+            <label>
+              <span>Activation Type</span>
+              <select className="form-select" value={form.activationType} onChange={event => updateForm('activationType', event.target.value)}>
+                <option>Topco eComm Activation</option>
+                <option>Topco Packaging Activation</option>
+              </select>
+            </label>
+            <label>
+              <span>Status</span>
+              <select className="form-select" value={form.status} onChange={event => updateForm('status', event.target.value)}>
+                <option>Draft</option>
+                <option>Active</option>
+                <option>Needs Info</option>
+                <option>Released</option>
+                <option>Cancelled</option>
+              </select>
+            </label>
+            <label>
+              <span>Due / Urgency</span>
+              <input className="form-input" value={form.dueUrgency} onChange={event => updateForm('dueUrgency', event.target.value)} placeholder="ASAP upon receipt" />
+            </label>
+            <label>
+              <span>Walnut Scope</span>
+              <input className="form-input" value={form.walnutScope} onChange={event => updateForm('walnutScope', event.target.value)} placeholder="Full set renders - WALNUT (PHOTO)" />
+            </label>
+            <label>
+              <span>Upload Location</span>
+              <input className="form-input" value={form.uploadLocation} onChange={event => updateForm('uploadLocation', event.target.value)} />
+            </label>
+            <label>
+              <span>Artwork Path</span>
+              <input className="form-input" value={form.artworkPath} onChange={event => updateForm('artworkPath', event.target.value)} />
+            </label>
+          </div>
+          <div className="deliverables-toggle-group activation-deliverables">
+            {INTAKE_DELIVERABLE_OPTIONS.map(option => (
+              <button
+                key={option}
+                className={`deliverable-pill ${DELIVERABLE_ROUTE_MAP[option]} ${form.deliverables.includes(option) ? 'is-selected' : ''}`}
+                type="button"
+                aria-pressed={form.deliverables.includes(option)}
+                onClick={() => toggleDeliverable(option)}
+              >
+                {form.deliverables.includes(option) && <span aria-hidden="true">✓</span>}
+                {option}
+              </button>
+            ))}
+          </div>
+          <label className="activation-package-wide">
+            <span>Activation Package</span>
+            <textarea className="form-input" rows="5" value={form.activationPackage} onChange={event => updateForm('activationPackage', event.target.value)} placeholder="Describe the project, required shots, client instructions, and anything needed to validate Ready for Photo." />
+          </label>
+          <label className="activation-package-wide">
+            <span>SKU Details JSON</span>
+            <textarea className="form-input mono-input" rows="5" value={form.skuDetails} onChange={event => updateForm('skuDetails', event.target.value)} placeholder='[{"upc":"036800029804","cvid":"036800029804EGPA022600","description":"Cantaloupe 1 Ea"}]' />
+          </label>
+          {saveError && <div className="error-state">{saveError}</div>}
+          <div className="activation-package-actions">
+            <button className="btn btn-primary" type="submit" disabled={saving || !client?.id}>
+              {saving ? 'Saving...' : editingId ? 'Save Activation Package' : 'Create Activation Package'}
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  function ClientReadinessProfile({ client, profile }) {
     if (!profile) return <span className="badge badge-neutral">Standard</span>;
     const deliverables = Object.entries(profile.deliverables || {});
     return (
@@ -2922,12 +3108,13 @@ function SettingsPage({ cards = null } = {}) {
             </div>
           ))}
           <div>
-            <span className="client-readiness-label">Not required from activation</span>
+            <span className="client-readiness-label">Not required from activation package</span>
             <div className="requirements-chips">
               {(profile.notRequiredFromActivation || []).map(field => <span className="requirements-chip is-muted" key={field}>{field}</span>)}
             </div>
           </div>
         </div>
+        <ActivationPackageEditor client={client} />
       </div>
     );
   }
@@ -3078,7 +3265,7 @@ function SettingsPage({ cards = null } = {}) {
                   {client.readinessProfile && (
                     <tr className="client-readiness-row">
                       <td colSpan="6">
-                        <ClientReadinessProfile profile={client.readinessProfile} />
+                        <ClientReadinessProfile client={client} profile={client.readinessProfile} />
                       </td>
                     </tr>
                   )}
@@ -6599,6 +6786,183 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
   );
 }
 
+function PlanningActivationPackageModal({ clients = [], initialClientId = '', onClose, onSaved }) {
+  const topcoClient = clients.find(client => (client.name || '').trim().toLowerCase() === 'topco');
+  const defaultClientId = initialClientId || topcoClient?.id || clients[0]?.id || '';
+  const emptySkuRow = () => ({
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    upc: '',
+    cvid: '',
+    description: '',
+    structure: '',
+    jobNumber: '',
+    brand: '',
+    coordinatorDescription: '',
+  });
+  const [form, setForm] = useState({
+    clientId: defaultClientId,
+    name: '',
+    activationType: 'Topco eComm Activation',
+    status: 'Draft',
+    creationMethod: 'Manual Entry',
+    projectReference: '',
+    dueUrgency: '',
+    walnutScope: '',
+    uploadLocation: '',
+    artworkPath: '',
+    activationPackage: '',
+    skuRows: [emptySkuRow()],
+    deliverables: ['Ecomm Photo'],
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setForm(current => ({ ...current, clientId: current.clientId || defaultClientId }));
+  }, [defaultClientId]);
+
+  const updateForm = (key, value) => setForm(current => ({ ...current, [key]: value }));
+  const updateSkuRow = (rowId, key, value) => setForm(current => ({
+    ...current,
+    skuRows: current.skuRows.map(row => row.id === rowId ? { ...row, [key]: value } : row),
+  }));
+  const addSkuRow = () => setForm(current => ({ ...current, skuRows: [...current.skuRows, emptySkuRow()] }));
+  const removeSkuRow = rowId => setForm(current => ({
+    ...current,
+    skuRows: current.skuRows.length > 1 ? current.skuRows.filter(row => row.id !== rowId) : current.skuRows,
+  }));
+  const toggleDeliverable = value => setForm(current => ({
+    ...current,
+    deliverables: current.deliverables.includes(value)
+      ? current.deliverables.filter(item => item !== value)
+      : [...current.deliverables, value],
+  }));
+
+  async function saveActivationPackage(event) {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      const skuDetails = form.skuRows
+        .map(({ id, ...row }) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, String(value || '').trim()])))
+        .filter(row => Object.values(row).some(Boolean));
+      const result = await api.createActivation({ ...form, skuDetails });
+      onSaved?.(result.record);
+    } catch (saveError) {
+      setError(saveError.message || 'Could not save Activation Package.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return createPortal(
+    <div className="activation-modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="activation-modal" role="dialog" aria-modal="true" aria-label="Create Activation Package" onClick={event => event.stopPropagation()}>
+        <header className="activation-modal-header">
+          <div>
+            <span className="nr-eyebrow">Planning</span>
+            <h2>Create Activation Package</h2>
+            <p>Capture the Topco project facts needed before merchandise can be Ready for Photo.</p>
+          </div>
+          <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close Activation Package">
+            <Icon.Close />
+          </button>
+        </header>
+        <form className="activation-modal-body" onSubmit={saveActivationPackage}>
+          <div className="activation-package-fields">
+            <label>
+              <span>Client</span>
+              <select className="form-select" value={form.clientId} onChange={event => updateForm('clientId', event.target.value)} required>
+                {clients.map(client => <option value={client.id} key={client.id}>{client.name}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Name</span>
+              <input className="form-input" value={form.name} onChange={event => updateForm('name', event.target.value)} placeholder="Topco Fresh Melons" required />
+            </label>
+            <label>
+              <span>Activation Type</span>
+              <select className="form-select" value={form.activationType} onChange={event => updateForm('activationType', event.target.value)}>
+                <option>Topco eComm Activation</option>
+                <option>Topco Packaging Activation</option>
+              </select>
+            </label>
+            <label>
+              <span>Project Reference</span>
+              <input className="form-input" value={form.projectReference} onChange={event => updateForm('projectReference', event.target.value)} placeholder="26003302 / MI001868" />
+            </label>
+            <label>
+              <span>Due / Urgency</span>
+              <input className="form-input" value={form.dueUrgency} onChange={event => updateForm('dueUrgency', event.target.value)} placeholder="ASAP upon receipt" />
+            </label>
+            <label>
+              <span>Walnut Scope</span>
+              <input className="form-input" value={form.walnutScope} onChange={event => updateForm('walnutScope', event.target.value)} placeholder="Full set renders - WALNUT (PHOTO)" />
+            </label>
+            <label>
+              <span>Upload Location</span>
+              <input className="form-input" value={form.uploadLocation} onChange={event => updateForm('uploadLocation', event.target.value)} />
+            </label>
+            <label>
+              <span>Artwork Path</span>
+              <input className="form-input" value={form.artworkPath} onChange={event => updateForm('artworkPath', event.target.value)} />
+            </label>
+          </div>
+          <div className="deliverables-toggle-group activation-deliverables">
+            {INTAKE_DELIVERABLE_OPTIONS.map(option => (
+              <button
+                key={option}
+                className={`deliverable-pill ${DELIVERABLE_ROUTE_MAP[option]} ${form.deliverables.includes(option) ? 'is-selected' : ''}`}
+                type="button"
+                aria-pressed={form.deliverables.includes(option)}
+                onClick={() => toggleDeliverable(option)}
+              >
+                {form.deliverables.includes(option) && <span aria-hidden="true">✓</span>}
+                {option}
+              </button>
+            ))}
+          </div>
+          <label className="activation-package-wide">
+            <span>Activation Package</span>
+            <textarea className="form-input" rows="5" value={form.activationPackage} onChange={event => updateForm('activationPackage', event.target.value)} placeholder="Project instructions, required shots, activation facts, and PM notes." />
+          </label>
+          <section className="activation-sku-section">
+            <div className="activation-sku-section-header">
+              <span className="client-readiness-label">SKU Rows</span>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={addSkuRow}>Add SKU</button>
+            </div>
+            <div className="activation-sku-rows">
+              {form.skuRows.map((row, index) => (
+                <div className="activation-sku-row" key={row.id}>
+                  <div className="activation-sku-row-top">
+                    <strong>SKU {index + 1}</strong>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeSkuRow(row.id)} disabled={form.skuRows.length === 1}>Remove</button>
+                  </div>
+                  <label><span>UPC</span><input className="form-input" value={row.upc} onChange={event => updateSkuRow(row.id, 'upc', event.target.value)} /></label>
+                  <label><span>CVID</span><input className="form-input" value={row.cvid} onChange={event => updateSkuRow(row.id, 'cvid', event.target.value)} /></label>
+                  <label><span>Description</span><input className="form-input" value={row.description} onChange={event => updateSkuRow(row.id, 'description', event.target.value)} /></label>
+                  <label><span>Structure</span><input className="form-input" value={row.structure} onChange={event => updateSkuRow(row.id, 'structure', event.target.value)} placeholder="Hang Tag / Label / Carton" /></label>
+                  <label><span>Job Number</span><input className="form-input" value={row.jobNumber} onChange={event => updateSkuRow(row.id, 'jobNumber', event.target.value)} /></label>
+                  <label><span>Brand</span><input className="form-input" value={row.brand} onChange={event => updateSkuRow(row.id, 'brand', event.target.value)} /></label>
+                  <label className="activation-sku-wide"><span>Coordinator Description</span><input className="form-input" value={row.coordinatorDescription} onChange={event => updateSkuRow(row.id, 'coordinatorDescription', event.target.value)} /></label>
+                </div>
+              ))}
+            </div>
+          </section>
+          {error && <div className="error-state">{error}</div>}
+          <footer className="activation-modal-footer">
+            <button type="button" className="btn" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving || !form.clientId || !form.name.trim()}>
+              {saving ? 'Saving...' : 'Create Activation Package'}
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
 function MerchandiseReviewV2Page() {
   const authContext = useAuth();
   const auth = authContext?.auth || {};
@@ -6631,6 +6995,7 @@ function MerchandiseReviewV2Page() {
   const [locationFilter, setLocationFilter] = useState('');
   const [ageFilter, setAgeFilter] = useState('');
   const [deliverableFilter, setDeliverableFilter] = useState('');
+  const [activationModalOpen, setActivationModalOpen] = useState(false);
 
   const merchandiseIdsKey = records.map(record => record.id).sort().join('|');
 
@@ -6965,11 +7330,24 @@ function MerchandiseReviewV2Page() {
     setWorkspaceOpen(false);
   }
 
+  function handleActivationSaved(record) {
+    setActivationModalOpen(false);
+    setFeedback(`Activation Package created: ${record?.name || 'Untitled Activation'}.`);
+  }
+
   if (entries.loading) return <div className="empty-state">Loading Planning board...</div>;
   if (entries.error) return <div className="error-state">{entries.error}</div>;
 
   return (
     <div className="work-board-page">
+      <div className="planning-board-actions">
+        <div>
+          {feedback && <span className="planning-board-feedback">{feedback}</span>}
+        </div>
+        <button type="button" className="btn btn-primary" onClick={() => setActivationModalOpen(true)}>
+          Create Activation Package
+        </button>
+      </div>
       <KanbanBoard
         columns={planningQueues}
         itemsByColumn={itemsByColumn}
@@ -7019,6 +7397,14 @@ function MerchandiseReviewV2Page() {
           readonly={selectedWorkspaceMode === 'readonly'}
         />
       ) : null}
+      {activationModalOpen && (
+        <PlanningActivationPackageModal
+          clients={clients.data?.records || []}
+          initialClientId={clientFilter}
+          onClose={() => setActivationModalOpen(false)}
+          onSaved={handleActivationSaved}
+        />
+      )}
     </div>
   );
 }

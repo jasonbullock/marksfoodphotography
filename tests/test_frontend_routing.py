@@ -477,7 +477,7 @@ class FrontendRoutingTests(unittest.TestCase):
             ".activity-panel",
         ]:
             self.assertIn(text, self.styles)
-        deliverables_selector = self.source.split("function DeliverablesSelector", 1)[1].split("function IntakeDecisionSelect", 1)[0]
+        deliverables_selector = self.source.split("function DeliverablesSelector", 1)[1].split("function NewReviewProductIdentification", 1)[0]
         for text in [
             'type="checkbox"',
             "checked={selected}",
@@ -486,7 +486,7 @@ class FrontendRoutingTests(unittest.TestCase):
         ]:
             self.assertIn(text, deliverables_selector)
         self.assertNotIn("aria-pressed", deliverables_selector)
-        modal_section = self.source.split("function NewReviewModal", 1)[1].split("function MerchandiseReviewV2Page", 1)[0]
+        modal_section = self.source.split("function NewReviewModal", 1)[1].split("function PlanningActivationPackageModal", 1)[0]
         finish_handler = self.source.split("async function finishVerification", 1)[1].split("async function closePlanningWorkspace", 1)[0]
         self.assertNotIn("Save Deliverables", modal_section)
         self.assertNotIn("Resolution", modal_section)
@@ -675,12 +675,15 @@ class FrontendRoutingTests(unittest.TestCase):
 
     def test_admin_clients_show_activation_readiness_profiles(self):
         for text in [
-            "function ClientReadinessProfile({ profile })",
+            "function ClientReadinessProfile({ client, profile })",
             "client.readinessProfile?.label || 'Standard'",
             "Ready for Photo requires",
-            "Not required from activation",
+            "Not required from activation package",
             "client-readiness-profile",
             "client-readiness-grid",
+            "function ActivationPackageEditor({ client })",
+            "Activation Packages",
+            "Activation Package",
         ]:
             self.assertIn(text, self.source + self.styles)
 
@@ -689,6 +692,21 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("listActivations: async ({ clientId } = {})", api_source)
         self.assertIn("return backend('GET', `/activations", api_source)
         self.assertIn("createActivation: async (payload = {}) => backend('POST', '/activations', payload)", api_source)
+        self.assertIn("updateActivation: async (id, payload = {}) => backend('PATCH', `/activations/${id}`", api_source)
+
+    def test_planning_exposes_activation_package_creation(self):
+        for text in [
+            "function PlanningActivationPackageModal",
+            "Create Activation Package",
+            "api.createActivation({ ...form, skuDetails })",
+            "activationModalOpen",
+            "planning-board-actions",
+            "activation-modal",
+            "activation-sku-row",
+            "Add SKU",
+            "Coordinator Description",
+        ]:
+            self.assertIn(text, self.source + self.styles)
 
     def test_admin_does_not_expose_work_order_types_configuration(self):
         for text in [
