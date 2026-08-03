@@ -2978,7 +2978,7 @@ function SettingsPage({ cards = null } = {}) {
         resetForm();
         await activations.reload({ quiet: true });
       } catch (error) {
-        setSaveError(error.message || 'Could not save Activation Package.');
+        setSaveError(error.message || 'Could not save Activation.');
       } finally {
         setSaving(false);
       }
@@ -2988,16 +2988,16 @@ function SettingsPage({ cards = null } = {}) {
       <div className="activation-package-editor">
         <div className="activation-package-header">
           <div>
-            <span className="client-readiness-label">Activation Packages</span>
-            <p>Project readiness data created in Marks before work can become Ready for Photo.</p>
+            <span className="client-readiness-label">Activations</span>
+            <p>Activation data created in Marks before work can become Ready for Photo.</p>
           </div>
           {editingId && <button className="btn btn-ghost" type="button" onClick={resetForm}>New package</button>}
         </div>
         <div className="activation-package-list">
-          {activations.loading && <span className="empty-state compact">Loading activation packages...</span>}
+          {activations.loading && <span className="empty-state compact">Loading activations...</span>}
           {!activations.loading && activations.error && <span className="error-state">{activations.error}</span>}
           {!activations.loading && !activations.error && !(activations.data?.records || []).length && (
-            <span className="empty-state compact">No activation packages yet.</span>
+            <span className="empty-state compact">No activations yet.</span>
           )}
           {(activations.data?.records || []).map(activation => (
             <button className={`activation-package-row ${editingId === activation.id ? 'is-active' : ''}`} type="button" key={activation.id} onClick={() => editActivation(activation)}>
@@ -3065,7 +3065,7 @@ function SettingsPage({ cards = null } = {}) {
             ))}
           </div>
           <label className="activation-package-wide">
-            <span>Activation Package</span>
+            <span>Activation</span>
             <textarea className="form-input" rows="5" value={form.activationPackage} onChange={event => updateForm('activationPackage', event.target.value)} placeholder="Describe the project, required shots, client instructions, and anything needed to validate Ready for Photo." />
           </label>
           <label className="activation-package-wide">
@@ -3075,7 +3075,7 @@ function SettingsPage({ cards = null } = {}) {
           {saveError && <div className="error-state">{saveError}</div>}
           <div className="activation-package-actions">
             <button className="btn btn-primary" type="submit" disabled={saving || !client?.id}>
-              {saving ? 'Saving...' : editingId ? 'Save Activation Package' : 'Create Activation Package'}
+              {saving ? 'Saving...' : editingId ? 'Save Activation' : 'Add Activation'}
             </button>
           </div>
         </form>
@@ -3108,7 +3108,7 @@ function SettingsPage({ cards = null } = {}) {
             </div>
           ))}
           <div>
-            <span className="client-readiness-label">Not required from activation package</span>
+            <span className="client-readiness-label">Not required from activation</span>
             <div className="requirements-chips">
               {(profile.notRequiredFromActivation || []).map(field => <span className="requirements-chip is-muted" key={field}>{field}</span>)}
             </div>
@@ -5082,6 +5082,17 @@ function RequiredToShootPreview({ item, ready }) {
   );
 }
 
+function activationStateForPlanningCard(item) {
+  if (!item?.activationDriven) return null;
+  if (item.columnId === QUEUE_IDS.readyProduction) {
+    return { label: 'Activation Ready', tone: 'ready' };
+  }
+  if (item.columnId === QUEUE_IDS.waitingInformation || item.columnId === QUEUE_IDS.waitingActivation) {
+    return { label: 'Needs Activation', tone: 'waiting' };
+  }
+  return { label: 'Needs Activation', tone: 'needed' };
+}
+
 function ageBucketForItem(item) {
   const days = Number(item.record?.daysInHouse ?? item.record?.daysHere ?? item.record?.ageDays ?? 0);
   const label = item.timeHere || (days ? `${days}d` : '—');
@@ -5119,6 +5130,8 @@ function KanbanCardComponent({ item, selected, onSelect, disabled = false, showN
   const showMeta = showClient || showQuantity;
   const showStorage = !isNewQueue && storage;
   const showFooter = !isNewQueue || item.commentCount > 0 || item.unreadComments > 0;
+  const activationState = activationStateForPlanningCard(item);
+  const showRequiredPreview = !isNewQueue && !activationState;
   return (
     <button
       type="button"
@@ -5172,7 +5185,8 @@ function KanbanCardComponent({ item, selected, onSelect, disabled = false, showN
           </div>
         )}
         {hasDeliverables ? <DeliverableBadges values={deliverables} /> : (!isNewQueue && item.deliverableRoute && <strong className="kanban-card-deliverables">{item.deliverableRoute}</strong>)}
-        {!isNewQueue && <RequiredToShootPreview item={item} ready={ready} />}
+        {activationState && <span className={`kanban-activation-chip is-${activationState.tone}`}>{activationState.label}</span>}
+        {showRequiredPreview && <RequiredToShootPreview item={item} ready={ready} />}
         {showFooter && <div className="kanban-card-footer">
           {!isNewQueue && <span className={`kanban-status-chip is-${status}`}>{statusLabel}</span>}
           <span className="kanban-card-signals">
@@ -6849,7 +6863,7 @@ function PlanningActivationPackageModal({ clients = [], initialClientId = '', on
       const result = await api.createActivation({ ...form, skuDetails });
       onSaved?.(result.record);
     } catch (saveError) {
-      setError(saveError.message || 'Could not save Activation Package.');
+      setError(saveError.message || 'Could not save Activation.');
     } finally {
       setSaving(false);
     }
@@ -6857,14 +6871,14 @@ function PlanningActivationPackageModal({ clients = [], initialClientId = '', on
 
   return createPortal(
     <div className="activation-modal-backdrop" role="presentation" onClick={onClose}>
-      <section className="activation-modal" role="dialog" aria-modal="true" aria-label="Create Activation Package" onClick={event => event.stopPropagation()}>
+      <section className="activation-modal" role="dialog" aria-modal="true" aria-label="Add Activation" onClick={event => event.stopPropagation()}>
         <header className="activation-modal-header">
           <div>
             <span className="nr-eyebrow">Planning</span>
-            <h2>Create Activation Package</h2>
+            <h2>Add Activation</h2>
             <p>Capture the Topco project facts needed before merchandise can be Ready for Photo.</p>
           </div>
-          <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close Activation Package">
+          <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close Activation">
             <Icon.Close />
           </button>
         </header>
@@ -6923,12 +6937,12 @@ function PlanningActivationPackageModal({ clients = [], initialClientId = '', on
             ))}
           </div>
           <label className="activation-package-wide">
-            <span>Activation Package</span>
+            <span>Activation</span>
             <textarea className="form-input" rows="5" value={form.activationPackage} onChange={event => updateForm('activationPackage', event.target.value)} placeholder="Project instructions, required shots, activation facts, and PM notes." />
           </label>
           <section className="activation-sku-section">
             <div className="activation-sku-section-header">
-              <span className="client-readiness-label">SKU Rows</span>
+              <span className="client-readiness-label">SKUs</span>
               <button type="button" className="btn btn-ghost btn-sm" onClick={addSkuRow}>Add SKU</button>
             </div>
             <div className="activation-sku-rows">
@@ -6953,7 +6967,7 @@ function PlanningActivationPackageModal({ clients = [], initialClientId = '', on
           <footer className="activation-modal-footer">
             <button type="button" className="btn" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={saving || !form.clientId || !form.name.trim()}>
-              {saving ? 'Saving...' : 'Create Activation Package'}
+              {saving ? 'Saving...' : 'Add Activation'}
             </button>
           </footer>
         </form>
@@ -7026,6 +7040,9 @@ function MerchandiseReviewV2Page() {
 
   const clientMap = Object.fromEntries((clients.data?.records ?? []).map(client => [client.id, client]));
   const locationMap = Object.fromEntries((locations.data?.records ?? []).map(location => [location.id, location]));
+  const topcoClientIds = new Set((clients.data?.records ?? [])
+    .filter(client => (client.name || '').trim().toLowerCase() === 'topco')
+    .map(client => client.id));
   const selectedDeliverableRouteIdsByMerchandise = records.reduce((map, record) => {
     const deliverableRoutes = deliverablesForRecord(record)
       .map(deliverable => DELIVERABLE_ROUTE_MAP[deliverable])
@@ -7048,6 +7065,7 @@ function MerchandiseReviewV2Page() {
       planningBoard,
     });
     const card = buildPlanningCard(record, { assignment: planningCard, client, location });
+    const activationDriven = topcoClientIds.has(record.clientIds?.[0]) || (client?.name || '').trim().toLowerCase() === 'topco';
     const deliverables = deliverablesForRecord(record);
     const deliverableLabels = deliverables.map(deliverableRouteLabelForDeliverable).filter(Boolean);
     const deliverableRoutes = deliverables.map(deliverable => DELIVERABLE_ROUTE_MAP[deliverable]).filter(Boolean);
@@ -7070,6 +7088,7 @@ function MerchandiseReviewV2Page() {
       selectedDeliverableRouteIds: selectedDeliverableRouteIdsByMerchandise[record.id],
       isDraftPlanningCard: false,
       deliverables,
+      activationDriven,
       commentCount: comments.length,
       unreadComments,
       deliverableRoute: deliverableLabels.join(', ') || selectedDeliverableRouteIdsByMerchandise[record.id].map(deliverableRouteLabel).filter(Boolean).join(', ') || card.deliverableRoute,
@@ -7104,6 +7123,7 @@ function MerchandiseReviewV2Page() {
   const previousSelectedItem = selectedIndex > 0 ? selectedColumnItems[selectedIndex - 1] : null;
   const nextSelectedItem = selectedIndex >= 0 && selectedIndex < selectedColumnItems.length - 1 ? selectedColumnItems[selectedIndex + 1] : null;
   const showNewCardClient = auth.allClients || (auth.clientIds || []).length !== 1;
+  const canCreateTopcoActivation = topcoClientIds.size > 0 && (!clientFilter || topcoClientIds.has(clientFilter));
 
   useEffect(() => {
     setPhotoIndex(0);
@@ -7332,7 +7352,7 @@ function MerchandiseReviewV2Page() {
 
   function handleActivationSaved(record) {
     setActivationModalOpen(false);
-    setFeedback(`Activation Package created: ${record?.name || 'Untitled Activation'}.`);
+    setFeedback(`Activation created: ${record?.name || 'Untitled Activation'}.`);
   }
 
   if (entries.loading) return <div className="empty-state">Loading Planning board...</div>;
@@ -7344,9 +7364,11 @@ function MerchandiseReviewV2Page() {
         <div>
           {feedback && <span className="planning-board-feedback">{feedback}</span>}
         </div>
-        <button type="button" className="btn btn-primary" onClick={() => setActivationModalOpen(true)}>
-          Create Activation Package
-        </button>
+        {canCreateTopcoActivation && (
+          <button type="button" className="btn btn-primary" onClick={() => setActivationModalOpen(true)}>
+            Add Activation
+          </button>
+        )}
       </div>
       <KanbanBoard
         columns={planningQueues}

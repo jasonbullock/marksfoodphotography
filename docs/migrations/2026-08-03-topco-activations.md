@@ -50,9 +50,9 @@ The frontend API wrapper now includes:
 - `api.createActivation`
 - `api.updateActivation`
 
-The Clients/Admin Topco profile includes a basic Activation Package editor so package data can be created and revised while the final Planning experience is still taking shape.
+The Clients/Admin Topco profile includes a basic Activation editor so package data can be created and revised while the final Planning experience is still taking shape.
 
-The Planning board also exposes a PM-facing `Create Activation Package` action. PMs can create the package from the frontend without opening Airtable or Admin.
+The Planning board also exposes a PM-facing `Add Activation` action. PMs can create the activation from the frontend without opening Airtable or Admin.
 
 ## Deferred
 

@@ -5449,6 +5449,40 @@ input[type="checkbox"]:disabled {
   line-height: 1.2;
 }
 
+.kanban-activation-chip {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 23px;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.92);
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.kanban-activation-chip.is-needed {
+  border-color: rgba(245, 158, 11, 0.46);
+  background: rgba(255, 251, 235, 0.92);
+  color: #92400e;
+}
+
+.kanban-activation-chip.is-waiting {
+  border-color: rgba(37, 99, 235, 0.38);
+  background: rgba(239, 246, 255, 0.96);
+  color: #1d4ed8;
+}
+
+.kanban-activation-chip.is-ready {
+  border-color: rgba(22, 163, 74, 0.4);
+  background: rgba(240, 253, 244, 0.96);
+  color: #166534;
+}
+
 .deliverable-badge-row {
   display: flex;
   flex-wrap: wrap;

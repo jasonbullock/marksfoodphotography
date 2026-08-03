@@ -253,7 +253,8 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertNotIn("New Arrival", self.source)
         self.assertNotIn("Deliverables not set", self.source)
         self.assertIn("{!isNewQueue && <RequiredToShootIndicators items={item.requiredToShoot} />}", self.source)
-        self.assertIn("{!isNewQueue && <RequiredToShootPreview item={item} ready={ready} />}", self.source)
+        self.assertIn("const showRequiredPreview = !isNewQueue && !activationState", self.source)
+        self.assertIn("{showRequiredPreview && <RequiredToShootPreview item={item} ready={ready} />}", self.source)
         self.assertNotIn(".kanban-new-arrival-label", self.styles)
         self.assertNotIn(".kanban-new-soft-prompt", self.styles)
         self.assertIn(".kanban-status-chip.is-new", self.styles)
@@ -678,12 +679,12 @@ class FrontendRoutingTests(unittest.TestCase):
             "function ClientReadinessProfile({ client, profile })",
             "client.readinessProfile?.label || 'Standard'",
             "Ready for Photo requires",
-            "Not required from activation package",
+            "Not required from activation",
             "client-readiness-profile",
             "client-readiness-grid",
             "function ActivationPackageEditor({ client })",
-            "Activation Packages",
-            "Activation Package",
+            "Activations",
+            "Activation",
         ]:
             self.assertIn(text, self.source + self.styles)
 
@@ -697,14 +698,28 @@ class FrontendRoutingTests(unittest.TestCase):
     def test_planning_exposes_activation_package_creation(self):
         for text in [
             "function PlanningActivationPackageModal",
-            "Create Activation Package",
+            "Add Activation",
             "api.createActivation({ ...form, skuDetails })",
             "activationModalOpen",
+            "canCreateTopcoActivation",
+            "topcoClientIds",
             "planning-board-actions",
             "activation-modal",
             "activation-sku-row",
             "Add SKU",
             "Coordinator Description",
+        ]:
+            self.assertIn(text, self.source + self.styles)
+
+    def test_topco_cards_use_activation_state_instead_of_required_preview(self):
+        for text in [
+            "function activationStateForPlanningCard",
+            "item?.activationDriven",
+            "Needs Activation",
+            "Needs Activation",
+            "Activation Ready",
+            "kanban-activation-chip",
+            "const showRequiredPreview = !isNewQueue && !activationState",
         ]:
             self.assertIn(text, self.source + self.styles)
 

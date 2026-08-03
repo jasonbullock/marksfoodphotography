@@ -21,7 +21,7 @@ Quantity received, storage location, individual file names, and post-photo track
 
 The current implementation exposes this as a Topco client readiness profile in Clients/Admin and `/api/clients`, and stores activation package data in the existing `Activations` table. Activation is the client/project readiness package created in Marks, not an inbound email. Email or notification content may be generated from Activation data later, but it is an output channel and not the source of truth.
 
-The first Activation editing surface lives inside Admin > Clients as a basic Topco package editor while the daily Planning experience is still being shaped. Planning also exposes a PM-facing `Create Activation Package` action because PMs should not need Airtable or Admin access to create readiness packages. UPC matching confirmation, notification automation, and automatic movement to Ready for Photo remain future implementation work.
+The first Activation editing surface lives inside Admin > Clients as a basic Topco package editor while the daily Planning experience is still being shaped. Planning also exposes a PM-facing `Add Activation` action because PMs should not need Airtable or Admin access to create readiness packages. UPC matching confirmation, notification automation, and automatic movement to Ready for Photo remain future implementation work.
 
 ## 2026-07-22 - Planning Uses Draft -> Commit Modals
 
