@@ -328,6 +328,90 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([record["id"] for record in response.get_json()["records"]], ["recAllowed", "recOther"])
 
+    @patch("routes.airtable.list_records")
+    def test_topco_client_includes_activation_readiness_profile(self, list_records):
+        self.authenticate(user_record(role="Admin", all_clients=True))
+        list_records.return_value = {
+            "records": [
+                {"id": "recTopco", "fields": {C.F_CLIENT_NAME: "Topco", C.F_CLIENT_ACTIVE: True}},
+                {"id": "recOther", "fields": {C.F_CLIENT_NAME: "Other Client", C.F_CLIENT_ACTIVE: True}},
+            ],
+        }
+
+        response = self.client.get("/api/clients")
+
+        self.assertEqual(response.status_code, 200)
+        records = {record["name"]: record for record in response.get_json()["records"]}
+        profile = records["Topco"]["readinessProfile"]
+        self.assertEqual(profile["mode"], "activation_driven")
+        self.assertEqual(profile["matchingTarget"], "Activation row to received Merchandise")
+        self.assertIn("Activation confirmed", profile["readyForPhotoRequires"])
+        self.assertIn("CVID", profile["deliverables"]["Ecomm Photo"]["requiredFields"])
+        self.assertIn("Coordinator Description", profile["deliverables"]["Packaging Photo"]["requiredFields"])
+        self.assertIn("Quantity received", profile["notRequiredFromActivation"])
+        self.assertIsNone(records["Other Client"]["readinessProfile"])
+
+    @patch("routes.airtable.list_records")
+    def test_list_activations_filters_by_client_access(self, list_records):
+        self.authenticate(user_record(role="PM", all_clients=False, client_ids=["recTopco"]))
+        list_records.return_value = {
+            "records": [
+                {"id": "recActivation1", "fields": {C.F_ACTIVATION_NAME: "Topco Melons", C.F_ACTIVATION_CLIENT: ["recTopco"]}},
+                {"id": "recActivation2", "fields": {C.F_ACTIVATION_NAME: "Other", C.F_ACTIVATION_CLIENT: ["recOther"]}},
+            ],
+        }
+
+        response = self.client.get("/api/activations")
+
+        self.assertEqual(response.status_code, 200)
+        records = response.get_json()["records"]
+        self.assertEqual([record["id"] for record in records], ["recActivation1"])
+        self.assertEqual(records[0]["status"], "Draft")
+
+    @patch("routes.airtable.create_record")
+    def test_create_activation_writes_topco_activation_fields(self, create_record):
+        self.authenticate(user_record(role="PM", all_clients=False, client_ids=["recTopco"]))
+        create_record.return_value = {
+            "id": "recActivation",
+            "fields": {
+                C.F_ACTIVATION_NAME: "New Topco eComm Activation",
+                C.F_ACTIVATION_CLIENT: ["recTopco"],
+                C.F_ACTIVATION_TYPE: "Topco eComm Activation",
+                C.F_ACTIVATION_STATUS: "Draft",
+                C.F_ACTIVATION_SOURCE_METHOD: "Imported Email",
+                C.F_ACTIVATION_SKU_DETAILS_JSON: '[{"upc":"036800029804","cvid":"036800029804EGPA022600"}]',
+                C.F_ACTIVATION_DELIVERABLES: ["Ecomm Photo"],
+            },
+        }
+
+        response = self.client.post("/api/activations", json={
+            "clientId": "recTopco",
+            "name": "New Topco eComm Activation",
+            "activationType": "Topco eComm Activation",
+            "sourceMethod": "Imported Email",
+            "sourceReference": "FW: New Topco eComm Activation",
+            "originalMessage": "eComm image bundles are needed",
+            "dueUrgency": "ASAP upon receipt",
+            "walnutScope": "Full set renders - WALNUT (PHOTO)",
+            "numberOfSkus": 3,
+            "imagesPerBundle": 9,
+            "totalImages": 27,
+            "artworkPath": "smb://gfs-marks/Topco/_CGI/03 PROJECTS/Fresh_Melons",
+            "uploadLocation": "smb://gfs-marks/Topco/Fresh_Melons/3_IMAGES/3D",
+            "skuDetails": [{"description": "Cantaloupe 1 Ea", "upc": "036800029804", "cvid": "036800029804EGPA022600"}],
+            "deliverables": ["Ecomm Photo"],
+        })
+
+        self.assertEqual(response.status_code, 201)
+        create_record.assert_called_once()
+        table, fields = create_record.call_args.args[:2]
+        self.assertEqual(table, C.ACTIVATIONS_TABLE)
+        self.assertEqual(fields[C.F_ACTIVATION_CLIENT], ["recTopco"])
+        self.assertEqual(fields[C.F_ACTIVATION_DELIVERABLES], ["Ecomm Photo"])
+        self.assertEqual(fields[C.F_ACTIVATION_NUMBER_OF_SKUS], 3)
+        self.assertIn("036800029804EGPA022600", fields[C.F_ACTIVATION_SKU_DETAILS_JSON])
+        self.assertEqual(response.get_json()["record"]["skuDetails"][0]["cvid"], "036800029804EGPA022600")
+
 
 if __name__ == "__main__":
     unittest.main()

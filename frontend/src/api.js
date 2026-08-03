@@ -219,6 +219,14 @@ export const api = {
     return backend('GET', `/clients${params.toString() ? `?${params.toString()}` : ''}`);
   },
 
+  listActivations: async ({ clientId } = {}) => {
+    const params = new URLSearchParams();
+    if (clientId) params.set('clientId', clientId);
+    return backend('GET', `/activations${params.toString() ? `?${params.toString()}` : ''}`);
+  },
+
+  createActivation: async (payload = {}) => backend('POST', '/activations', payload),
+
   listJobs: async (clientId) => {
     const params = new URLSearchParams();
     if (clientId) params.set('clientId', clientId);

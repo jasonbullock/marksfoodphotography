@@ -145,6 +145,10 @@ The primary PM experience is the Merchandise Verification wizard:
 
 The wizard determines what should happen next. PMs do not need to complete every item in one sitting; saved, incomplete verification belongs in Waiting for Information with explicit missing-information reasons.
 
+Planning uses a Draft -> Commit interaction model. The board remains the last committed state of the business, and the modal is a safe draft workspace. Selecting `Thr3d`, `Packaging Photo`, `Ecomm Photo`, or any future Deliverable updates only the modal's draft calculation and footer preview. It must not move a card, refresh board columns, change badges, or reroute the Merchandise behind the modal.
+
+The modal footer is the single commit area. It previews the destination with `Will move to ...`, and `Finish & Move` is the only action that saves draft routing changes, updates `Deliverables`, updates `Intake Status`, refreshes the board, and allows the card to move. Closing or canceling the modal discards uncommitted draft changes and leaves the board exactly as it was. While the modal is active, the background board should behave as a static backdrop with drag/drop, hover actions, and background card clicks frozen.
+
 Planning decisions should produce one clear answer:
 
 > Is this merchandise ready to release to production?

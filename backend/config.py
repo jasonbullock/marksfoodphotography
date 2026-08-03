@@ -55,6 +55,7 @@ class Config:
     HISTORY_TABLE = "History"
     COMMENTS_TABLE = "Comments"
     IMPORTS_TABLE = "Imports"
+    ACTIVATIONS_TABLE = "Activations"
 
     # Field names — Locations
     F_LOCATION_NAME = "Location"
@@ -124,6 +125,30 @@ class Config:
     F_CLIENT_REQUIRED_PHOTO_FIELDS = "Required Photography Fields"
     F_CLIENT_ARTWORK_REQUIREMENT = "Artwork Requirement"
     F_CLIENT_MERCHANDISE_REQUIRED = "Merchandise Required"
+
+    # Field names - Activations
+    F_ACTIVATION_NAME = "Name"
+    F_ACTIVATION_CLIENT = "Client"
+    F_ACTIVATION_TYPE = "Activation Type"
+    F_ACTIVATION_STATUS = "Status"
+    F_ACTIVATION_SOURCE_METHOD = "Source Method"
+    F_ACTIVATION_SOURCE_REFERENCE = "Source Reference"
+    F_ACTIVATION_ORIGINAL_MESSAGE = "Original Message"
+    F_ACTIVATION_DATE = "Activation Date"
+    F_ACTIVATION_DUE_URGENCY = "Due / Urgency"
+    F_ACTIVATION_WALNUT_SCOPE = "Walnut Scope"
+    F_ACTIVATION_NUMBER_OF_SKUS = "Number of SKUs"
+    F_ACTIVATION_IMAGES_PER_BUNDLE = "Images Per Bundle"
+    F_ACTIVATION_TOTAL_IMAGES = "Total Images"
+    F_ACTIVATION_ARTWORK_PATH = "Artwork Path"
+    F_ACTIVATION_UPLOAD_LOCATION = "Upload Location"
+    F_ACTIVATION_SKU_DETAILS_JSON = "SKU Details JSON"
+    F_ACTIVATION_DELIVERABLES = "Deliverables"
+    F_ACTIVATION_MATCHED_MERCHANDISE = "Matched Merchandise"
+    F_ACTIVATION_NOTES = "Notes"
+    ACTIVATION_STATUS_OPTIONS = ["Draft", "Active", "Needs Info", "Released", "Cancelled"]
+    ACTIVATION_TYPE_OPTIONS = ["Topco eComm Activation", "Topco Packaging Activation"]
+    ACTIVATION_SOURCE_METHOD_OPTIONS = ["Manual Entry", "Pasted Email", "Imported Email", "Spreadsheet"]
 
     # Field names — Jobs
     F_JOB_NAME = "Job"

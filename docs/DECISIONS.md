@@ -1,5 +1,43 @@
 # Product Decisions
 
+## 2026-08-03 - Topco Readiness Is Activation-Driven
+
+Topco Planning should not start from matching newly received Merchandise to previously imported Product records.
+
+Topco starts from received Merchandise plus a Topco Activation. The PM-facing match target is an Activation row matched to received Merchandise, primarily by UPC. Product reference records may still be created or updated in the background when useful for history/reporting, but Product matching should not be the main PM blocker for Topco.
+
+Topco Ready for Photo requires:
+
+- Merchandise received
+- Activation confirmed
+- Activation row matched
+- Deliverables confirmed
+
+Topco Ecomm Photo activation data currently requires UPC, CVID, Description, Structure, Walnut Scope, and Upload Location.
+
+Topco Packaging Photo activation data currently requires UPC, Job Number, Brand, and Coordinator Description.
+
+Quantity received, storage location, individual file names, and post-photo tracking statuses are not Topco activation requirements. Quantity and physical handling remain Shipments facts. Creative Force owns detailed production file naming unless Marks Photo explicitly needs a token such as CVID or a folder reference to perform the handoff.
+
+The current implementation exposes this as a Topco client readiness profile in Clients/Admin and `/api/clients`, and stores activation event data in the existing `Activations` table. Activation email parsing, the Activation modal, email automation, matching confirmation, and automatic movement to Ready for Photo remain future implementation work.
+
+## 2026-07-22 - Planning Uses Draft -> Commit Modals
+
+Planning board cards represent committed business state. Planning modals represent draft work.
+
+The canonical interaction contract is:
+
+- Board = committed state.
+- Modal = draft workspace.
+- Footer = single commit area.
+- `Finish & Move` = only commit action for routing changes.
+- No optimistic routing, board refresh, card movement, badge movement, or background animation while the modal is open.
+- Background board interaction is frozen while the modal is active.
+- Cancel, Esc, close, and backdrop close discard uncommitted draft changes.
+- Cards move or animate only after the finish save succeeds and the board reloads.
+
+For the Merchandise Verification modal, selecting `Thr3d`, `Packaging Photo`, or `Ecomm Photo` updates only local modal state and the `Will move to ...` footer preview. The frontend must not call the Deliverables save endpoint or reload the Planning board from that selection. `Finish & Move` sends the selected `Deliverables`, destination `stage`, and blocking requirements together through `/api/merchandise/:id/intake-state`; after success, the board refreshes, the modal closes, and the card appears in its committed destination.
+
 ## 2026-07-22 - Merchandise Comments Are Lightweight Conversation Records
 
 Merchandise comments are intentionally small human discussion records.

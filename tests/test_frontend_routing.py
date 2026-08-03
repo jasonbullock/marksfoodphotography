@@ -1,4 +1,5 @@
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -244,6 +245,18 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("workspaceOpen", self.source)
         self.assertIn("function RequiredToShootPreview", self.source)
         self.assertIn("function ageBucketForItem", self.source)
+        self.assertIn("showNewCardClient", self.source)
+        self.assertIn("const showStorage = !isNewQueue && storage;", self.source)
+        self.assertIn("const showQuantity = !isNewQueue || Number(quantity) > 1;", self.source)
+        self.assertIn("const showFooter = !isNewQueue || item.commentCount > 0 || item.unreadComments > 0;", self.source)
+        self.assertNotIn("Needs PM review", self.source)
+        self.assertNotIn("New Arrival", self.source)
+        self.assertNotIn("Deliverables not set", self.source)
+        self.assertIn("{!isNewQueue && <RequiredToShootIndicators items={item.requiredToShoot} />}", self.source)
+        self.assertIn("{!isNewQueue && <RequiredToShootPreview item={item} ready={ready} />}", self.source)
+        self.assertNotIn(".kanban-new-arrival-label", self.styles)
+        self.assertNotIn(".kanban-new-soft-prompt", self.styles)
+        self.assertIn(".kanban-status-chip.is-new", self.styles)
         self.assertIn("const KanbanCard = memo(KanbanCardComponent)", self.source)
         self.assertIn("setDragState('drag-target')", self.source)
         self.assertIn("list.scrollTop = list.scrollHeight", self.source)
@@ -490,13 +503,19 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertNotIn("Intake notes", modal_section)
         for text in [
             "finishCurrentVerification",
-            "flushPendingDeliverablesSave",
             "finishState.status === 'loading'",
             "Finishing...",
             "disabled={finishDisabled}",
             "is-${finishState.status}",
+            "Finish & Move",
+            "Will move to",
+            "Draft only. The board will not move until Finish & Move.",
         ]:
             self.assertIn(text, modal_section)
+        self.assertNotIn("deliverablesAutosaveTimer", modal_section)
+        self.assertNotIn("api.updateMerchandiseIntakeDecisions", modal_section)
+        self.assertNotIn("Deliverables saved.", modal_section)
+        self.assertNotIn("Saving...", modal_section)
         required_info_section = self.source.split("function NewReviewRequiredInformation", 1)[1].split("function ImageLightbox", 1)[0]
         self.assertIn("if (state.thr3dOnly)", required_info_section)
         self.assertIn("(item.requiredToShoot || state.blockers || []).filter", required_info_section)
@@ -653,6 +672,23 @@ class FrontendRoutingTests(unittest.TestCase):
             "if (activeCard.id === 'planning-templates') return <WorkflowTemplatesSection />;",
         ]:
             self.assertNotIn(text, self.source)
+
+    def test_admin_clients_show_activation_readiness_profiles(self):
+        for text in [
+            "function ClientReadinessProfile({ profile })",
+            "client.readinessProfile?.label || 'Standard'",
+            "Ready for Photo requires",
+            "Not required from activation",
+            "client-readiness-profile",
+            "client-readiness-grid",
+        ]:
+            self.assertIn(text, self.source + self.styles)
+
+    def test_frontend_api_exposes_activation_endpoints(self):
+        api_source = (ROOT / "frontend/src/api.js").read_text()
+        self.assertIn("listActivations: async ({ clientId } = {})", api_source)
+        self.assertIn("return backend('GET', `/activations", api_source)
+        self.assertIn("createActivation: async (payload = {}) => backend('POST', '/activations', payload)", api_source)
 
     def test_admin_does_not_expose_work_order_types_configuration(self):
         for text in [
@@ -990,14 +1026,71 @@ class FrontendRoutingTests(unittest.TestCase):
             "<NewReviewModal",
             "requiredToShoot: undefined",
             "finishRegressionVerification",
+            "setSelectedId('')",
             "intakeStatus: 'Ready to Release'",
             "stage: QUEUE_IDS.sendThr3d",
             'data-testid="thr3d-outgoing-regression"',
             "THR3D / Outgoing",
+            "disabled={Boolean(selectedItem)}",
         ]:
             self.assertIn(text, harness_section)
+        self.assertNotIn("saveRegressionDeliverables", harness_section)
+        self.assertNotIn("setDraftRecord", harness_section)
         self.assertIn("window.location.pathname === '/__test/planning-thr3d'", self.source)
         self.assertIn("data-testid={`deliverable-${DELIVERABLE_ROUTE_MAP[option] || option.toLowerCase().replaceAll(' ', '-')}`}", self.source)
+
+    def test_planning_board_freezes_while_modal_is_open(self):
+        self.assertIn("function KanbanBoard({ columns, itemsByColumn, selectedId, onSelect, onMove, disabled = false, showNewCardClient = true })", self.source)
+        self.assertIn("className={`kanban-board ${disabled ? 'is-frozen' : ''}`}", self.source)
+        self.assertIn("draggable={!disabled}", self.source)
+        self.assertIn("disabled={workspaceOpen}", self.source)
+        self.assertIn(".kanban-board.is-frozen", self.styles)
+        self.assertIn("pointer-events: none", self.styles)
+
+    def test_thr3d_planning_card_lookup_returns_current_queue_name(self):
+        script = """
+import {
+  buildPlanningCard,
+  evaluateMerchandiseReviewAssignment,
+  MERCHANDISE_PLANNING_BOARD,
+  QUEUE_IDS,
+  queueById,
+} from './frontend/src/merchandiseRouting.js';
+
+const record = {
+  id: 'rec-thr3d-unit',
+  deliverables: ['Thr3d'],
+  quantity: 1,
+  clientIds: ['client-test'],
+  itemPhotos: [{ object_key: 'photo.jpg' }],
+};
+const emptyBoard = { ...MERCHANDISE_PLANNING_BOARD, queues: [] };
+const assignment = evaluateMerchandiseReviewAssignment(record, {
+  requestedQueueId: QUEUE_IDS.sendThr3d,
+  planningBoard: emptyBoard,
+});
+const card = buildPlanningCard(record, { assignment, client: { name: 'Test Client' } });
+const queue = queueById(emptyBoard, QUEUE_IDS.sendThr3d);
+
+if (queue.label !== 'Thr3d Shipment') throw new Error(`Expected Thr3d queue, got ${queue.label}`);
+if (card.planningCard.currentQueue !== QUEUE_IDS.sendThr3d) throw new Error(`Expected send-thr3d, got ${card.planningCard.currentQueue}`);
+if (card.planningCard.currentQueueName !== 'Thr3d Shipment') throw new Error(`Expected currentQueueName, got ${card.planningCard.currentQueueName}`);
+if (card.assignment !== card.planningCard) throw new Error('Planning card alias must match assignment');
+"""
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
+    def test_app_error_boundary_prevents_blank_root(self):
+        self.assertIn("class AppErrorBoundary extends Component", self.source)
+        self.assertIn("console.error('Uncaught Marks Photo UI error'", self.source)
+        self.assertIn("<AppErrorBoundary>", self.source)
+        self.assertIn(".app-error-boundary", self.styles)
 
 
 if __name__ == "__main__":

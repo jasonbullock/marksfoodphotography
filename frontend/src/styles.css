@@ -68,6 +68,22 @@ code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: v
   grid-template-columns: var(--sidebar-collapsed-w) minmax(0, 1fr);
 }
 
+.app-error-boundary {
+  margin: 32px auto;
+  max-width: 720px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff1f2;
+  color: #7f1d1d;
+  padding: 16px 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.app-error-boundary strong {
+  font-size: 16px;
+}
+
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 .sidebar {
   background: #1e2a3a;
@@ -5152,6 +5168,24 @@ input[type="checkbox"]:disabled {
   scroll-behavior: smooth;
 }
 
+.kanban-board.is-frozen {
+  pointer-events: none;
+  scroll-behavior: auto;
+}
+
+.kanban-board.is-frozen .kanban-column,
+.kanban-board.is-frozen .kanban-card {
+  transition: none;
+}
+
+.kanban-board.is-frozen .kanban-card,
+.kanban-board.is-frozen .kanban-card:hover,
+.kanban-board.is-frozen .kanban-card.is-selected {
+  cursor: default;
+  transform: none;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
 .kanban-column {
   display: grid;
   grid-template-rows: auto auto;
@@ -5264,6 +5298,11 @@ input[type="checkbox"]:disabled {
   text-align: left;
   cursor: pointer;
   transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease, background 0.14s ease;
+}
+
+.kanban-card.is-new-card {
+  border-color: rgba(37, 99, 235, 0.18);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
 }
 
 .kanban-card:hover,
@@ -5541,8 +5580,53 @@ input[type="checkbox"]:disabled {
   font-weight: 760;
 }
 
+.kanban-card-arrival-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
 .kanban-card-meta span {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kanban-card-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  min-width: 0;
+}
+
+.kanban-card-details span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 6px;
+  background: rgba(248, 250, 252, 0.78);
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 820;
+  line-height: 1.15;
+  overflow: hidden;
+}
+
+.kanban-card-details span:only-child {
+  grid-column: 1 / -1;
+}
+
+.kanban-card-details b {
+  min-width: 0;
+  color: var(--text-3);
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5640,6 +5724,12 @@ input[type="checkbox"]:disabled {
   color: var(--amber-text);
 }
 
+.kanban-status-chip.is-new {
+  border-color: rgba(37, 99, 235, 0.24);
+  background: rgba(239, 246, 255, 0.94);
+  color: #1d4ed8;
+}
+
 .kanban-status-chip.is-ready {
   border-color: var(--green-border);
   background: var(--green-bg);
@@ -5701,6 +5791,14 @@ input[type="checkbox"]:disabled {
   border-color: var(--amber-border);
   background: var(--amber-bg);
   color: var(--amber-text);
+}
+
+.kanban-age-badge.is-primary {
+  min-height: 20px;
+  border-color: rgba(15, 23, 42, 0.16);
+  background: #fff;
+  color: var(--text);
+  font-weight: 900;
 }
 
 .kanban-age-badge.is-old {
@@ -8287,7 +8385,8 @@ input[type="checkbox"]:disabled {
 .requirements-table th:nth-child(1) { width: 240px; }
 .requirements-table th:nth-child(2) { width: 160px; }
 .requirements-table th:nth-child(4),
-.requirements-table th:nth-child(5) { width: 150px; }
+.requirements-table th:nth-child(5),
+.requirements-table th:nth-child(6) { width: 150px; }
 
 .requirements-table td {
   vertical-align: middle;
@@ -8336,6 +8435,61 @@ input[type="checkbox"]:disabled {
   color: var(--text-2);
   font-size: 11px;
   font-weight: 700;
+}
+
+.requirements-chip.is-muted {
+  color: var(--text-3);
+  background: #fff;
+  border-style: dashed;
+}
+
+.client-readiness-row td {
+  padding-top: 0;
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.client-readiness-profile {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.client-readiness-profile-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.client-readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.client-readiness-grid > div {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.client-readiness-label {
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+@media (max-width: 900px) {
+  .client-readiness-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ── Intake import ───────────────────────────────────────────────────────── */

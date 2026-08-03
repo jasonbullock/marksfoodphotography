@@ -28,6 +28,12 @@ Software manages state.
 
 ---
 
+## 3a. Drafts stay drafts until Finish.
+
+Boards show committed state. Modals hold draft work. Nothing routes, moves, or animates until the user chooses the single finish action.
+
+---
+
 ## 4. The interface should answer:
 
 "What do we need to do with this merchandise right now?"

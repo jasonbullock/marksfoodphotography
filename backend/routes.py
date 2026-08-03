@@ -378,6 +378,58 @@ def airtable_status():
 
 # ── Clients ───────────────────────────────────────────────────────────────────
 
+TOPCO_READINESS_PROFILE = {
+    "mode": "activation_driven",
+    "label": "Activation-driven",
+    "matchingTarget": "Activation row to received Merchandise",
+    "matchKeys": ["UPC"],
+    "readyForPhotoRequires": [
+        "Merchandise received",
+        "Activation confirmed",
+        "Activation row matched",
+        "Deliverables confirmed",
+    ],
+    "sources": [
+        {"label": "Activation", "description": "Topco activation message replaces the old email handoff."},
+        {"label": "Shipments", "description": "Marks captures received quantity, photos, and physical handling."},
+    ],
+    "deliverables": {
+        "Ecomm Photo": {
+            "source": "Activation",
+            "requiredFields": [
+                "UPC",
+                "CVID",
+                "Description",
+                "Structure",
+                "Walnut Scope",
+                "Upload Location",
+            ],
+        },
+        "Packaging Photo": {
+            "source": "Activation",
+            "requiredFields": [
+                "UPC",
+                "Job Number",
+                "Brand",
+                "Coordinator Description",
+            ],
+        },
+    },
+    "notRequiredFromActivation": [
+        "Quantity received",
+        "Storage location",
+        "Individual file names",
+        "Post-photo tracking statuses",
+    ],
+}
+
+
+def _client_readiness_profile(client_name):
+    if (client_name or "").strip().lower() == "topco":
+        return TOPCO_READINESS_PROFILE
+    return None
+
+
 @api.get("/clients")
 def list_clients():
     data = airtable.list_records(
@@ -400,9 +452,10 @@ def list_clients():
 
 def _shape_client(r):
     f = r.get("fields", {})
+    name = f.get(C.F_CLIENT_NAME, "")
     return {
         "id": r["id"],
-        "name": f.get(C.F_CLIENT_NAME, ""),
+        "name": name,
         "codeType": f.get(C.F_CLIENT_IDENTIFIER_TYPE, ""),
         "identifierLabel": f.get(C.F_CLIENT_IDENTIFIER_LABEL, "") or "Identifier",
         "requiredPhotographyFields": f.get(C.F_CLIENT_REQUIRED_PHOTO_FIELDS, []) or ["Identifier"],
@@ -412,7 +465,165 @@ def _shape_client(r):
         "dispoDays": f.get(C.F_CLIENT_DISPO_DAYS),
         "jobPrefix": f.get(C.F_CLIENT_JOB_PREFIX, ""),
         "active": f.get(C.F_CLIENT_ACTIVE, False),
+        "readinessProfile": _client_readiness_profile(name),
     }
+
+
+def _json_field(value, fallback):
+    if isinstance(value, (dict, list)):
+        return value
+    if not value:
+        return fallback
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _int_or_none(value):
+    if value in (None, ""):
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _shape_activation(r):
+    f = r.get("fields", {})
+    client_ids = f.get(C.F_ACTIVATION_CLIENT, []) or []
+    return {
+        "id": r["id"],
+        "name": f.get(C.F_ACTIVATION_NAME, ""),
+        "clientIds": client_ids,
+        "activationType": f.get(C.F_ACTIVATION_TYPE, ""),
+        "status": f.get(C.F_ACTIVATION_STATUS, "") or "Draft",
+        "sourceMethod": f.get(C.F_ACTIVATION_SOURCE_METHOD, ""),
+        "sourceReference": f.get(C.F_ACTIVATION_SOURCE_REFERENCE, ""),
+        "originalMessage": f.get(C.F_ACTIVATION_ORIGINAL_MESSAGE, ""),
+        "activationDate": f.get(C.F_ACTIVATION_DATE, ""),
+        "dueUrgency": f.get(C.F_ACTIVATION_DUE_URGENCY, ""),
+        "walnutScope": f.get(C.F_ACTIVATION_WALNUT_SCOPE, ""),
+        "numberOfSkus": _int_or_none(f.get(C.F_ACTIVATION_NUMBER_OF_SKUS)),
+        "imagesPerBundle": _int_or_none(f.get(C.F_ACTIVATION_IMAGES_PER_BUNDLE)),
+        "totalImages": _int_or_none(f.get(C.F_ACTIVATION_TOTAL_IMAGES)),
+        "artworkPath": f.get(C.F_ACTIVATION_ARTWORK_PATH, ""),
+        "uploadLocation": f.get(C.F_ACTIVATION_UPLOAD_LOCATION, ""),
+        "skuDetails": _json_field(f.get(C.F_ACTIVATION_SKU_DETAILS_JSON, ""), []),
+        "skuDetailsRaw": f.get(C.F_ACTIVATION_SKU_DETAILS_JSON, ""),
+        "deliverables": f.get(C.F_ACTIVATION_DELIVERABLES, []) or [],
+        "matchedMerchandiseIds": f.get(C.F_ACTIVATION_MATCHED_MERCHANDISE, []) or [],
+        "notes": f.get(C.F_ACTIVATION_NOTES, ""),
+    }
+
+
+def _activation_text(body, key):
+    return str(body.get(key) or "").strip()
+
+
+def _activation_number(body, key):
+    value = body.get(key)
+    if value in (None, ""):
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        raise ValueError(f"{key} must be a number.")
+
+
+def _activation_json_text(value):
+    if value in (None, ""):
+        return ""
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return json.dumps(parsed, ensure_ascii=False)
+        except ValueError:
+            return value.strip()
+    return json.dumps(value, ensure_ascii=False)
+
+
+@api.get("/activations")
+def list_activations():
+    client_id = (request.args.get("clientId") or "").strip()
+    if client_id and not _client_permitted(client_id):
+        return err("You do not have access to this Client.", 403)
+    try:
+        data = airtable.list_records(
+            C.ACTIVATIONS_TABLE,
+            params={"sort[0][field]": C.F_ACTIVATION_NAME, "sort[0][direction]": "asc"},
+            by_field_id=False,
+        )
+    except requests.HTTPError as exc:
+        return airtable_err(exc)
+    records = [_shape_activation(record) for record in data.get("records", [])]
+    if client_id:
+        records = [record for record in records if client_id in record["clientIds"]]
+    else:
+        records = [record for record in records if _client_ids_permitted(record["clientIds"])]
+    return jsonify({"records": records})
+
+
+@api.post("/activations")
+def create_activation():
+    body = request.get_json(force=True, silent=True) or {}
+    client_id = _activation_text(body, "clientId")
+    if not client_id:
+        return err("Client is required.")
+    if not _client_permitted(client_id):
+        return err("You do not have access to this Client.", 403)
+    activation_type = _activation_text(body, "activationType") or "Topco eComm Activation"
+    if activation_type not in C.ACTIVATION_TYPE_OPTIONS:
+        return err(f"Activation Type must be one of: {', '.join(C.ACTIVATION_TYPE_OPTIONS)}.")
+    status = _activation_text(body, "status") or "Draft"
+    if status not in C.ACTIVATION_STATUS_OPTIONS:
+        return err(f"Status must be one of: {', '.join(C.ACTIVATION_STATUS_OPTIONS)}.")
+    source_method = _activation_text(body, "sourceMethod") or "Manual Entry"
+    if source_method not in C.ACTIVATION_SOURCE_METHOD_OPTIONS:
+        return err(f"Source Method must be one of: {', '.join(C.ACTIVATION_SOURCE_METHOD_OPTIONS)}.")
+    deliverables = _validate_deliverables(body.get("deliverables", []))
+    if not isinstance(deliverables, list):
+        return deliverables
+    try:
+        number_of_skus = _activation_number(body, "numberOfSkus")
+        images_per_bundle = _activation_number(body, "imagesPerBundle")
+        total_images = _activation_number(body, "totalImages")
+    except ValueError as exc:
+        return err(str(exc))
+    name = _activation_text(body, "name") or _activation_text(body, "sourceReference") or "New Activation"
+    fields = {
+        C.F_ACTIVATION_NAME: name,
+        C.F_ACTIVATION_CLIENT: [client_id],
+        C.F_ACTIVATION_TYPE: activation_type,
+        C.F_ACTIVATION_STATUS: status,
+        C.F_ACTIVATION_SOURCE_METHOD: source_method,
+        C.F_ACTIVATION_SOURCE_REFERENCE: _activation_text(body, "sourceReference"),
+        C.F_ACTIVATION_ORIGINAL_MESSAGE: _activation_text(body, "originalMessage"),
+        C.F_ACTIVATION_DUE_URGENCY: _activation_text(body, "dueUrgency"),
+        C.F_ACTIVATION_WALNUT_SCOPE: _activation_text(body, "walnutScope"),
+        C.F_ACTIVATION_ARTWORK_PATH: _activation_text(body, "artworkPath"),
+        C.F_ACTIVATION_UPLOAD_LOCATION: _activation_text(body, "uploadLocation"),
+        C.F_ACTIVATION_SKU_DETAILS_JSON: _activation_json_text(body.get("skuDetails")),
+        C.F_ACTIVATION_DELIVERABLES: deliverables,
+        C.F_ACTIVATION_NOTES: _activation_text(body, "notes"),
+    }
+    activation_date = _activation_text(body, "activationDate")
+    if activation_date:
+        fields[C.F_ACTIVATION_DATE] = activation_date
+    if number_of_skus is not None:
+        fields[C.F_ACTIVATION_NUMBER_OF_SKUS] = number_of_skus
+    if images_per_bundle is not None:
+        fields[C.F_ACTIVATION_IMAGES_PER_BUNDLE] = images_per_bundle
+    if total_images is not None:
+        fields[C.F_ACTIVATION_TOTAL_IMAGES] = total_images
+    matched_merchandise_ids = [item for item in _as_clean_string_list(body.get("matchedMerchandiseIds", [])) if item]
+    if matched_merchandise_ids:
+        fields[C.F_ACTIVATION_MATCHED_MERCHANDISE] = matched_merchandise_ids
+    try:
+        record = airtable.create_record(C.ACTIVATIONS_TABLE, fields, by_field_id=False)
+    except requests.HTTPError as exc:
+        return airtable_err(exc)
+    return jsonify({"record": _shape_activation(record)}), 201
 
 
 REQUIRED_TO_SHOOT_LABELS = {

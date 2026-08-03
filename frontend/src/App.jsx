@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, createContext, useContext, Fragment, memo } from 'react';
+import React, { Component, useState, useEffect, useCallback, useRef, createContext, useContext, Fragment, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
@@ -31,6 +31,33 @@ import {
   workspaceModeForQueue,
 } from './merchandiseRouting';
 import './styles.css';
+
+class AppErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('Uncaught Marks Photo UI error', error, info);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="app-error-boundary" role="alert">
+          <strong>Marks Photo hit a display error.</strong>
+          <span>{this.state.error?.message || 'Unknown interface error.'}</span>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 const Icon = {
@@ -2867,7 +2894,43 @@ function SettingsPage({ cards = null } = {}) {
     { header: 'Required Fields', value: client => (client.requiredPhotographyFields ?? []).join(', ') || 'Identifier' },
     { header: 'Artwork', value: client => client.artworkRequirement || 'Optional' },
     { header: 'Merchandise', value: client => client.merchandiseRequired === false ? 'Not required' : 'Required' },
+    { header: 'Readiness Mode', value: client => client.readinessProfile?.label || 'Standard' },
   ];
+
+  function ClientReadinessProfile({ profile }) {
+    if (!profile) return <span className="badge badge-neutral">Standard</span>;
+    const deliverables = Object.entries(profile.deliverables || {});
+    return (
+      <div className="client-readiness-profile">
+        <div className="client-readiness-profile-top">
+          <span className="badge badge-blue">{profile.label || 'Client profile'}</span>
+          <span>{profile.matchingTarget}</span>
+        </div>
+        <div className="client-readiness-grid">
+          <div>
+            <span className="client-readiness-label">Ready for Photo requires</span>
+            <div className="requirements-chips">
+              {(profile.readyForPhotoRequires || []).map(field => <span className="requirements-chip" key={field}>{field}</span>)}
+            </div>
+          </div>
+          {deliverables.map(([deliverable, config]) => (
+            <div key={deliverable}>
+              <span className="client-readiness-label">{deliverable}</span>
+              <div className="requirements-chips">
+                {(config.requiredFields || []).map(field => <span className="requirements-chip" key={field}>{field}</span>)}
+              </div>
+            </div>
+          ))}
+          <div>
+            <span className="client-readiness-label">Not required from activation</span>
+            <div className="requirements-chips">
+              {(profile.notRequiredFromActivation || []).map(field => <span className="requirements-chip is-muted" key={field}>{field}</span>)}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   async function randomizeDemoData() {
     if (!window.confirm('Randomize existing demo records for dashboard and Planning testing? This updates existing Airtable records directly.')) return;
@@ -2974,37 +3037,52 @@ function SettingsPage({ cards = null } = {}) {
                 <th>Required Fields</th>
                 <th>Artwork</th>
                 <th>Merchandise</th>
+                <th>Readiness</th>
               </tr>
             </thead>
             <tbody>
-              {clients.loading && <tr><td colSpan="5" className="empty-state">Loading clients…</td></tr>}
+              {clients.loading && <tr><td colSpan="6" className="empty-state">Loading clients…</td></tr>}
               {!clients.loading && clientList.map(client => (
-                <tr key={client.id}>
-                  <td>
-                    <div className="requirements-client">
-                      <span>{client.name}</span>
-                      <small>{client.identifierLabel || 'Identifier'}</small>
-                    </div>
-                  </td>
-                  <td><span className="requirements-code">{client.codeType || '—'}</span></td>
-                  <td>
-                    <div className="requirements-chips">
-                      {((client.requiredPhotographyFields ?? []).length ? client.requiredPhotographyFields : ['Identifier']).map(field => (
-                        <span className="requirements-chip" key={field}>{field}</span>
-                      ))}
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`badge ${client.artworkRequirement === 'Required' ? 'badge-amber' : 'badge-neutral'}`}>
-                      {client.artworkRequirement || 'Optional'}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`badge ${client.merchandiseRequired === false ? 'badge-neutral' : 'badge-blue'}`}>
-                      {client.merchandiseRequired === false ? 'Not required' : 'Required'}
-                    </span>
-                  </td>
-                </tr>
+                <Fragment key={client.id}>
+                  <tr>
+                    <td>
+                      <div className="requirements-client">
+                        <span>{client.name}</span>
+                        <small>{client.identifierLabel || 'Identifier'}</small>
+                      </div>
+                    </td>
+                    <td><span className="requirements-code">{client.codeType || '—'}</span></td>
+                    <td>
+                      <div className="requirements-chips">
+                        {((client.requiredPhotographyFields ?? []).length ? client.requiredPhotographyFields : ['Identifier']).map(field => (
+                          <span className="requirements-chip" key={field}>{field}</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`badge ${client.artworkRequirement === 'Required' ? 'badge-amber' : 'badge-neutral'}`}>
+                        {client.artworkRequirement || 'Optional'}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge ${client.merchandiseRequired === false ? 'badge-neutral' : 'badge-blue'}`}>
+                        {client.merchandiseRequired === false ? 'Not required' : 'Required'}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge ${client.readinessProfile ? 'badge-blue' : 'badge-neutral'}`}>
+                        {client.readinessProfile?.label || 'Standard'}
+                      </span>
+                    </td>
+                  </tr>
+                  {client.readinessProfile && (
+                    <tr className="client-readiness-row">
+                      <td colSpan="6">
+                        <ClientReadinessProfile profile={client.readinessProfile} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -4761,11 +4839,11 @@ function RequiredToShootIndicators({ items }) {
   if (!visibleItems.length) return null;
   const doneCount = visibleItems.filter(item => item.satisfied).length;
   return (
-    <div className="requiredToShoot-indicators" aria-label={`${doneCount} of ${visibleItems.length} steps complete`}>
+    <div className="required-to-shoot-indicators" aria-label={`${doneCount} of ${visibleItems.length} steps complete`}>
       {visibleItems.map(item => (
         <span
           key={item.key}
-          className={`requiredToShoot-dot ${item.satisfied ? 'is-done' : 'is-todo'}`}
+          className={`required-to-shoot-dot ${item.satisfied ? 'is-done' : 'is-todo'}`}
           title={`${item.label}: ${item.satisfied ? 'Complete' : (item.detail || 'Not done')}`}
         />
       ))}
@@ -4825,57 +4903,100 @@ function ageBucketForItem(item) {
   return { label, tone: 'fresh' };
 }
 
-function KanbanCardComponent({ item, selected, onSelect }) {
+function KanbanCardComponent({ item, selected, onSelect, disabled = false, showNewCardClient = true }) {
   const blockers = visibleRequirementBlockers(item.requiredToShoot || []);
+  const required = requiredToShootSummary(item);
   const flagged = item.issueBadge === 'Issue';
   const validated = !flagged && item.statusBadge === 'Validated';
-  const ready = !flagged && blockers.length === 0;
-  const required = requiredToShootSummary(item);
+  const ready = !flagged && required.total > 0 && blockers.length === 0;
+  const notStarted = !flagged && required.total === 0;
   const age = ageBucketForItem(item);
-  const status = flagged ? 'flag' : ready ? 'ready' : 'todo';
+  const isNewQueue = item.columnId === QUEUE_IDS.newReview;
+  const status = flagged ? 'flag' : isNewQueue ? 'new' : ready ? 'ready' : 'todo';
   const statusLabel = flagged
     ? 'Flagged'
-    : ready
-      ? 'Required to Shoot complete'
-      : `${blockers.length} still needed`;
+    : isNewQueue
+      ? 'New'
+      : ready
+      ? 'Ready to finish'
+      : notStarted
+        ? 'Not started'
+        : `${blockers.length} still needed`;
   const quantity = item.record?.quantity || 1;
+  const identifier = item.identifier || item.record?.skuId || item.record?.linkedItem?.identifier || '';
+  const storage = item.location || item.record?.locationName || '';
+  const deliverables = normalizeDeliverableList(item.deliverables || item.record?.deliverables);
+  const hasDeliverables = deliverables.length > 0;
+  const showClient = !isNewQueue || showNewCardClient;
+  const showQuantity = !isNewQueue || Number(quantity) > 1;
+  const showMeta = showClient || showQuantity;
+  const showStorage = !isNewQueue && storage;
+  const showFooter = !isNewQueue || item.commentCount > 0 || item.unreadComments > 0;
   return (
     <button
       type="button"
-      className={`kanban-card status-${status} ${selected ? 'is-selected' : ''}`}
+      className={`kanban-card status-${status} ${isNewQueue ? 'is-new-card' : ''} ${selected ? 'is-selected' : ''}`}
       onClick={() => onSelect?.(item.id)}
-      draggable
+      draggable={!disabled}
       onDragStart={event => {
+        if (disabled) {
+          event.preventDefault();
+          return;
+        }
         event.dataTransfer.setData('text/plain', item.id);
         event.dataTransfer.effectAllowed = 'move';
       }}
+      disabled={disabled}
       aria-label={`Open ${item.title}${flagged ? ' (flagged)' : ''}`}
     >
       <div className="kanban-card-media">
         <RecordThumbnail record={item.record} />
         {flagged && <span className="kanban-card-flag" aria-label="Flagged for an issue">⚑ Flagged</span>}
         {validated && <span className="kanban-card-validated">✓ Validated</span>}
-        <RequiredToShootIndicators items={item.requiredToShoot} />
+        {!isNewQueue && <RequiredToShootIndicators items={item.requiredToShoot} />}
       </div>
       <div className="kanban-card-body">
+        {isNewQueue && (
+          <div className="kanban-card-arrival-row">
+            <span className={`kanban-age-badge is-primary is-${age.tone}`} aria-label={`Time here ${age.label}`}>{age.label} here</span>
+          </div>
+        )}
         <h3>{item.title}</h3>
-        <p className="kanban-card-meta">
-          <span>{item.client || 'Unknown client'}</span>
-          <span>Qty {quantity}</span>
-        </p>
-        {item.deliverables?.length ? <DeliverableBadges values={item.deliverables} /> : (item.deliverableRoute && <strong className="kanban-card-deliverables">{item.deliverableRoute}</strong>)}
-        <RequiredToShootPreview item={item} ready={ready} />
-        <div className="kanban-card-footer">
-          <span className={`kanban-status-chip is-${status}`}>{statusLabel}</span>
+        {showMeta && (
+          <p className="kanban-card-meta">
+            {showClient && <span>{item.client || 'Unknown client'}</span>}
+            {showQuantity && <span>Qty {quantity}</span>}
+          </p>
+        )}
+        {(identifier || showStorage) && (
+          <div className="kanban-card-details" aria-label="Merchandise details">
+            {identifier && (
+              <span>
+                <b>ID</b>
+                {identifier}
+              </span>
+            )}
+            {showStorage && (
+              <span>
+                <b>Storage</b>
+                {storage}
+              </span>
+            )}
+          </div>
+        )}
+        {hasDeliverables ? <DeliverableBadges values={deliverables} /> : (!isNewQueue && item.deliverableRoute && <strong className="kanban-card-deliverables">{item.deliverableRoute}</strong>)}
+        {!isNewQueue && <RequiredToShootPreview item={item} ready={ready} />}
+        {showFooter && <div className="kanban-card-footer">
+          {!isNewQueue && <span className={`kanban-status-chip is-${status}`}>{statusLabel}</span>}
           <span className="kanban-card-signals">
-            <span className={`kanban-age-badge is-${age.tone}`} aria-label={`Age ${age.label}`}>{age.label}</span>
+            {!isNewQueue && <span className={`kanban-age-badge is-${age.tone}`} aria-label={`Age ${age.label}`}>{age.label}</span>}
             <span className={`kanban-comment-signal ${item.unreadComments > 0 ? 'has-unread' : ''}`} aria-label={`${item.commentCount || 0} comments${item.unreadComments > 0 ? `, ${item.unreadComments} new` : ''}`}>
               {item.unreadComments > 0 && <span className="kanban-unread-dot" aria-hidden="true" />}
               <span aria-hidden="true">💬</span>
               {item.commentCount || 0}
             </span>
           </span>
-        </div>
+        </div>}
       </div>
     </button>
   );
@@ -4883,7 +5004,7 @@ function KanbanCardComponent({ item, selected, onSelect }) {
 
 const KanbanCard = memo(KanbanCardComponent);
 
-function KanbanColumn({ column, items, selectedId, onSelect, onMove }) {
+function KanbanColumn({ column, items, selectedId, onSelect, onMove, disabled = false, showNewCardClient = true }) {
   const [dragState, setDragState] = useState('');
   const title = column.label || column.displayName || column.title || column.name;
   const missingArtwork = items.filter(item => requiredToShootSummary(item).missing.some(label => /artwork/i.test(label))).length;
@@ -4893,6 +5014,7 @@ function KanbanColumn({ column, items, selectedId, onSelect, onMove }) {
       className={`kanban-column ${dragState ? `is-${dragState}` : ''}`}
       aria-label={title}
       onDragOver={event => {
+        if (disabled) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
         setDragState('drag-target');
@@ -4901,6 +5023,7 @@ function KanbanColumn({ column, items, selectedId, onSelect, onMove }) {
         if (!event.currentTarget.contains(event.relatedTarget)) setDragState('');
       }}
       onDrop={event => {
+        if (disabled) return;
         event.preventDefault();
         setDragState('');
         const itemId = event.dataTransfer.getData('text/plain');
@@ -4920,16 +5043,16 @@ function KanbanColumn({ column, items, selectedId, onSelect, onMove }) {
       <div className="kanban-column-list">
         {items.length === 0 && <div className="kanban-empty">No cards in this queue.</div>}
         {items.map(item => (
-          <KanbanCard item={item} key={item.id} selected={selectedId === item.id} onSelect={onSelect} />
+          <KanbanCard item={item} key={item.id} selected={selectedId === item.id} onSelect={disabled ? undefined : onSelect} disabled={disabled} showNewCardClient={showNewCardClient} />
         ))}
       </div>
     </section>
   );
 }
 
-function KanbanBoard({ columns, itemsByColumn, selectedId, onSelect, onMove }) {
+function KanbanBoard({ columns, itemsByColumn, selectedId, onSelect, onMove, disabled = false, showNewCardClient = true }) {
   return (
-    <div className="kanban-board" role="list" aria-label="Planning Board">
+    <div className={`kanban-board ${disabled ? 'is-frozen' : ''}`} role="list" aria-label="Planning Board" aria-disabled={disabled ? 'true' : undefined}>
       {columns.map(column => (
         <KanbanColumn
           column={column}
@@ -4938,6 +5061,8 @@ function KanbanBoard({ columns, itemsByColumn, selectedId, onSelect, onMove }) {
           selectedId={selectedId}
           onSelect={onSelect}
           onMove={onMove}
+          disabled={disabled}
+          showNewCardClient={showNewCardClient}
         />
       ))}
     </div>
@@ -6261,11 +6386,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
   const [intakeDraft, setIntakeDraft] = useState(() => ({
     deliverables: deliverablesForRecord(item.record),
   }));
-  const [intakeSaving, setIntakeSaving] = useState('');
-  const intakeSaveInFlight = useRef(false);
-  const deliverablesAutosaveTimer = useRef(null);
   const [intakeFeedback, setIntakeFeedback] = useState('');
-  const [deliverablesError, setDeliverablesError] = useState('');
   const [finishState, setFinishState] = useState({ status: 'idle', message: '' });
   const product = item.record?.linkedItem || {};
   const activePhoto = photos[photoIndex] || photos[0];
@@ -6280,12 +6401,12 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
   const finishBlocked = wizardState.thr3dOnly
     ? wizardState.blockers.length > 0
     : !wizardState.merchandiseVerified || wizardState.deliverables.length === 0;
-  const finishDisabled = finishBusy || intakeSaving === 'deliverables' || finishBlocked || wizardState.deliverables.length === 0;
+  const finishDisabled = finishBusy || finishBlocked || wizardState.deliverables.length === 0;
   const finishLabel = wizardState.deliverables.length === 0
       ? 'Choose deliverables'
       : !wizardState.thr3dOnly && !wizardState.merchandiseVerified
         ? 'Verify to continue'
-      : `Finish → ${routeDestination}`;
+      : 'Finish & Move';
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -6313,49 +6434,9 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
       deliverables: deliverablesForRecord(item.record),
     });
     setIntakeFeedback('');
-    setDeliverablesError('');
     setFinishState({ status: 'idle', message: '' });
     onMarkCommentsRead?.(item.merchandiseId);
   }, [item.id]);
-
-  useEffect(() => () => {
-    if (deliverablesAutosaveTimer.current) clearTimeout(deliverablesAutosaveTimer.current);
-  }, []);
-
-  async function saveIntakeDecision(field, value) {
-    if (intakeSaveInFlight.current) return;
-    intakeSaveInFlight.current = true;
-    const previousDraft = intakeDraft;
-    const cleanValue = normalizeDeliverableList(value);
-    const nextDraft = { ...intakeDraft, [field]: cleanValue };
-    setIntakeDraft(nextDraft);
-    setIntakeSaving(field);
-    setIntakeFeedback('');
-    if (field === 'deliverables') setDeliverablesError('');
-    try {
-      const payload = { deliverables: cleanValue };
-      const updated = await api.updateMerchandiseIntakeDecisions(item.merchandiseId, payload);
-      const updatedDeliverables = deliverablesForRecord(updated);
-      setIntakeDraft({
-        deliverables: updatedDeliverables,
-      });
-      if (field === 'deliverables') {
-        setDeliverablesError('');
-      }
-      await onRefresh?.();
-      setIntakeFeedback(field === 'deliverables' ? 'Deliverables saved.' : 'Saved.');
-    } catch (error) {
-      if (field === 'deliverables') {
-        setDeliverablesError(deliverablesSaveErrorMessage(error));
-      } else {
-        setIntakeDraft(previousDraft);
-        setIntakeFeedback(error.message || 'Could not save Planning decision.');
-      }
-    } finally {
-      intakeSaveInFlight.current = false;
-      setIntakeSaving('');
-    }
-  }
 
   function stageDeliverables(value) {
     const cleanValue = normalizeDeliverableList(value);
@@ -6363,27 +6444,13 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
       const nextDraft = { ...draft, deliverables: cleanValue };
       return nextDraft;
     });
-    setDeliverablesError('');
-    setIntakeFeedback('Saving...');
-    if (deliverablesAutosaveTimer.current) clearTimeout(deliverablesAutosaveTimer.current);
-    deliverablesAutosaveTimer.current = setTimeout(() => {
-      saveIntakeDecision('deliverables', cleanValue);
-    }, 350);
-  }
-
-  async function flushPendingDeliverablesSave() {
-    if (deliverablesAutosaveTimer.current) {
-      clearTimeout(deliverablesAutosaveTimer.current);
-      deliverablesAutosaveTimer.current = null;
-      await saveIntakeDecision('deliverables', intakeDraft.deliverables);
-    }
+    setIntakeFeedback('Draft only. The board will not move until Finish & Move.');
   }
 
   async function finishCurrentVerification() {
     if (finishBusy) return;
     setFinishState({ status: 'loading', message: 'Finishing verification...' });
     try {
-      await flushPendingDeliverablesSave();
       const result = await onFinish?.(item, wizardStateForItem(item, intakeDraft.deliverables));
       if (result?.ok === false) {
         setFinishState({ status: 'error', message: result.message || 'Could not finish verification. Try again.' });
@@ -6487,16 +6554,8 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
               <DeliverablesSelector
                 values={intakeDraft.deliverables}
                 onChange={stageDeliverables}
-                disabled={intakeSaving === 'deliverables'}
+                disabled={finishBusy}
               />
-              {deliverablesError && (
-                <div className="deliverables-inline-error">
-                  <span>{deliverablesError}</span>
-                  <button type="button" onClick={() => saveIntakeDecision('deliverables', intakeDraft.deliverables)} disabled={intakeSaving === 'deliverables'}>
-                    Retry
-                  </button>
-                </div>
-              )}
               {intakeFeedback && <span className="new-review-inline-status">{intakeFeedback}</span>}
             </ReviewStep>
 
@@ -6524,7 +6583,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
         <footer className="new-review-modal-footer">
           <button type="button" className="btn" onClick={() => previousItem && onSelectItem(previousItem.id)} disabled={!previousItem}>Previous Merchandise</button>
           <div className="new-review-finish-summary">
-            <span>Routes to <strong>{routeDestination}</strong></span>
+            <span>Will move to <strong>{routeDestination}</strong></span>
             {finishState.message && <strong className={`is-${finishState.status}`}>{finishState.message}</strong>}
           </div>
           <button type="button" className="btn btn-primary" onClick={finishCurrentVerification} disabled={finishDisabled}>
@@ -6541,6 +6600,8 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
 }
 
 function MerchandiseReviewV2Page() {
+  const authContext = useAuth();
+  const auth = authContext?.auth || {};
   const entries = useResource(() => api.listMerchandiseReviewEntries());
   const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
@@ -6677,6 +6738,7 @@ function MerchandiseReviewV2Page() {
   const selectedIndex = selectedItem ? selectedColumnItems.findIndex(item => item.id === selectedItem.id) : -1;
   const previousSelectedItem = selectedIndex > 0 ? selectedColumnItems[selectedIndex - 1] : null;
   const nextSelectedItem = selectedIndex >= 0 && selectedIndex < selectedColumnItems.length - 1 ? selectedColumnItems[selectedIndex + 1] : null;
+  const showNewCardClient = auth.allClients || (auth.clientIds || []).length !== 1;
 
   useEffect(() => {
     setPhotoIndex(0);
@@ -6914,6 +6976,8 @@ function MerchandiseReviewV2Page() {
         selectedId={selectedId}
         onSelect={openPlanningWorkspace}
         onMove={moveBoardItem}
+        disabled={workspaceOpen}
+        showNewCardClient={showNewCardClient}
       />
       {workspaceOpen && selectedItem ? (
         <NewReviewModal
@@ -6963,7 +7027,7 @@ function PlanningThr3dRegressionPage() {
   const [selectedId, setSelectedId] = useState('');
   const [photoIndex, setPhotoIndex] = useState(0);
   const [finishedRecord, setFinishedRecord] = useState(null);
-  const record = {
+  const baseRecord = {
     id: 'test-thr3d-merch',
     productName: 'Regression Test Merchandise',
     quantity: 1,
@@ -6987,6 +7051,11 @@ function PlanningThr3dRegressionPage() {
       name: 'Regression Shipment',
       clientIds: ['test-client'],
     },
+  };
+  const record = {
+    ...baseRecord,
+    intakeStatus: finishedRecord?.intakeStatus || baseRecord.intakeStatus,
+    deliverables: finishedRecord?.deliverables || baseRecord.deliverables,
   };
   const planningCard = evaluateMerchandiseReviewAssignment(record, {
     requestedQueueId: QUEUE_IDS.newReview,
@@ -7026,6 +7095,7 @@ function PlanningThr3dRegressionPage() {
       released: false,
     };
     setFinishedRecord(updatedRecord);
+    setSelectedId('');
     return {
       ok: true,
       message: 'Verification finished. Routed to Thr3d Shipment.',
@@ -7042,6 +7112,7 @@ function PlanningThr3dRegressionPage() {
         selectedId={selectedId}
         onSelect={setSelectedId}
         onMove={() => {}}
+        disabled={Boolean(selectedItem)}
       />
       {selectedItem && (
         <NewReviewModal
@@ -8235,10 +8306,12 @@ export default function App() {
   }
 
   return (
-    <AuthContext.Provider value={{ auth, setAuth, rolePermissions, setRolePermissions }}>
-      <BrowserRouter>
-        {auth ? <AppLayout /> : <LoginScreen onLogin={setAuth} />}
-      </BrowserRouter>
-    </AuthContext.Provider>
+    <AppErrorBoundary>
+      <AuthContext.Provider value={{ auth, setAuth, rolePermissions, setRolePermissions }}>
+        <BrowserRouter>
+          {auth ? <AppLayout /> : <LoginScreen onLogin={setAuth} />}
+        </BrowserRouter>
+      </AuthContext.Provider>
+    </AppErrorBoundary>
   );
 }

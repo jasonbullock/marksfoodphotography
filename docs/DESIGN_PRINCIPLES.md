@@ -104,6 +104,24 @@ The primary PM Planning experience should guide verification rather than expose 
 
 Planning should feel polished through density, responsiveness, hierarchy, and clarity rather than through new architecture. Refine cards, drag feedback, empty columns, comments, Activity, aging badges, and focus states before adding new workflow concepts.
 
+## 11a. Draft -> Commit Is The Workflow Pattern
+
+Workflow boards show committed business state. Modal workspaces hold draft state.
+
+For Planning and future workflow modals:
+
+- Board = committed state.
+- Modal = draft workspace.
+- Footer = single commit area.
+- `Finish & Move` = the only commit action for routing changes.
+- Field edits update only the modal draft and any in-modal preview.
+- Do not optimistically route, refresh, resort, badge-flash, or move board cards while a modal is open.
+- Freeze background board interaction while a modal is active: no drag, hover-driven movement, drop targets, or background card actions.
+- Closing, canceling, pressing Esc, or clicking outside discards uncommitted draft changes.
+- Cards animate or visibly move only after the commit save succeeds and fresh data is loaded.
+
+The footer should preview the outcome in business language, for example `Will move to Thr3d Shipment` or `Will move to Ready for Photo`, while keeping the primary button label stable as `Finish & Move`.
+
 ## 12. Production Is An Execution Perspective
 
 Production answers how the studio will execute accepted work.

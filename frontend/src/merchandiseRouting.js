@@ -719,7 +719,10 @@ export function planningBoardForClient(clientId, registry = PLANNING_BOARD_REGIS
 }
 
 export function queuesForBoard(planningBoard = MERCHANDISE_PLANNING_BOARD) {
-  return [...planningBoard.queues]
+  const queues = Array.isArray(planningBoard?.queues) && planningBoard.queues.length
+    ? planningBoard.queues
+    : MERCHANDISE_PLANNING_BOARD.queues;
+  return [...queues]
     .filter(queueConfig => queueConfig.boardVisible !== false && queueConfig.visible !== false)
     .sort((a, b) => a.order - b.order);
 }
@@ -729,7 +732,11 @@ export function workspaceModeForQueue(queueConfig) {
 }
 
 export function queueById(planningBoard, queueId) {
-  return planningBoard.queues.find(item => item.id === queueId) || planningBoard.queues[0];
+  const queues = queuesForBoard(planningBoard);
+  return queues.find(item => item.id === queueId)
+    || queues.find(item => item.id === QUEUE_IDS.newReview)
+    || MERCHANDISE_PLANNING_BOARD.queues.find(item => item.id === queueId)
+    || MERCHANDISE_PLANNING_BOARD.queues.find(item => item.id === QUEUE_IDS.newReview);
 }
 
 export function deriveMerchandiseReviewQueue(record, requirements, requestedQueueId, reviewState, planningBoard = MERCHANDISE_PLANNING_BOARD) {
@@ -742,11 +749,12 @@ export function deriveMerchandiseReviewQueue(record, requirements, requestedQueu
 
 export function createPlanningCard({ planningBoard = MERCHANDISE_PLANNING_BOARD, record, queueId, requirements, owner, deliverableRoute, persistedAssignment } = {}) {
   const queueConfig = queueById(planningBoard, queueId);
-  const planningTemplate = deliverableRoute?.planningTemplate || persistedAssignment?.planningBoardId || planningBoard.id;
+  const activeBoard = planningBoard?.id ? planningBoard : MERCHANDISE_PLANNING_BOARD;
+  const planningTemplate = deliverableRoute?.planningTemplate || persistedAssignment?.planningBoardId || activeBoard.id;
   return {
     id: persistedAssignment?.id || `${record?.id || 'merchandise'}:${deliverableRoute?.id || deliverableRoute?.key || 'unassigned'}`,
     planningBoardId: planningTemplate,
-    planningName: deliverableRoute?.planningName || persistedAssignment?.planningName || planningTemplate || planningBoard.name,
+    planningName: deliverableRoute?.planningName || persistedAssignment?.planningName || planningTemplate || activeBoard.name,
     subjectType: deliverableRoute ? 'deliverable-route' : 'merchandise',
     subjectId: persistedAssignment?.id || record?.id || '',
     merchandiseId: record?.id || '',
@@ -754,7 +762,7 @@ export function createPlanningCard({ planningBoard = MERCHANDISE_PLANNING_BOARD,
     deliverableRoute,
     currentQueue: queueConfig.id,
     currentQueueName: queueConfig.label || queueConfig.displayName,
-    currentOwner: owner || queueConfig.ownerRole || queueConfig.owner || planningBoard.owner,
+    currentOwner: owner || queueConfig.ownerRole || queueConfig.owner || activeBoard.owner,
     currentStatus: persistedAssignment?.currentStatus || queueConfig.status || REQUIREMENT_STATUS.notStarted,
     queue: queueConfig,
     requirements,
@@ -851,6 +859,7 @@ export function buildMerchandisePlanningCard(record, { assignment, client, locat
     merchandiseId: record.id,
     record,
     assignment,
+    planningCard: assignment,
     requiredToShoot: assignment.requirements,
     columnId: assignment.currentQueue,
     title: record.productName || record.linkedItem?.product || record.linkedItem?.name || 'Unidentified Merchandise',
