@@ -32,9 +32,9 @@ class ReleaseToProductionTests(unittest.TestCase):
             C.F_RECEIPT_ENTRY_SKU_ID: "000123",
             C.F_RECEIPT_ENTRY_RECEIPT: ["recShipment"],
             C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
-            C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready to Release",
-            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm Photo"],
+            C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready for Photo",
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm"],
             C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
         }
         base.update(fields or {})
@@ -161,7 +161,7 @@ class ReleaseToProductionTests(unittest.TestCase):
         get_record.side_effect = [
             self.entry({
                 C.F_RECEIPT_ENTRY_ITEM: [],
-                C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm Photo"],
+                C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm"],
             }),
             self.receipt(),
         ]

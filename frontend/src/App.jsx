@@ -176,6 +176,97 @@ function valueForExport(value) {
   return String(value);
 }
 
+const DEFAULT_WALNUT_SCOPE_SUGGESTIONS = ['Full Set Renders - WALNUT (Photo)'];
+const DEFAULT_STRUCTURE_SUGGESTIONS = ['Hang Tag / Label'];
+const DEFAULT_DUE_URGENCY_SUGGESTIONS = ['ASAP upon receipt'];
+
+function normalizeSuggestionText(value) {
+  const text = String(value || '').trim();
+  if (text.toLowerCase() === 'full set renders') return DEFAULT_WALNUT_SCOPE_SUGGESTIONS[0];
+  return text;
+}
+
+function textSuggestions(values = [], defaults = []) {
+  const seen = new Set();
+  return [...defaults, ...values]
+    .map(normalizeSuggestionText)
+    .filter(Boolean)
+    .filter(value => {
+      const key = value.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function activationFieldSuggestions(records = [], field, defaults = []) {
+  return textSuggestions((records || []).map(record => record?.[field]), defaults);
+}
+
+function activationSkuFieldSuggestions(records = [], field, defaults = []) {
+  const values = (records || []).flatMap(record => (
+    Array.isArray(record?.skuDetails)
+      ? record.skuDetails.map(row => row?.[field])
+      : []
+  ));
+  return textSuggestions(values, defaults);
+}
+
+function SuggestiveTextInput({ label, value, onChange, placeholder = '', suggestions = [], className = '' }) {
+  const [open, setOpen] = useState(false);
+  const inputId = useRef(`suggestive-input-${Math.random().toString(16).slice(2)}`).current;
+  const listId = `${inputId}-options`;
+  const query = String(value || '').trim().toLowerCase();
+  const visibleSuggestions = suggestions
+    .filter(suggestion => {
+      const text = String(suggestion || '').trim();
+      if (!text) return false;
+      if (query && text.toLowerCase() === query) return false;
+      return !query || text.toLowerCase().includes(query);
+    })
+    .slice(0, 6);
+
+  return (
+    <label className={`suggestive-text-field ${className}`.trim()}>
+      <span>{label}</span>
+      <input
+        id={inputId}
+        className="form-input"
+        value={value}
+        onChange={event => {
+          onChange(event.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        placeholder={placeholder}
+        autoComplete="off"
+        aria-autocomplete="list"
+        aria-controls={visibleSuggestions.length ? listId : undefined}
+        aria-expanded={open && visibleSuggestions.length > 0}
+      />
+      {open && visibleSuggestions.length > 0 && (
+        <div className="suggestive-text-options" id={listId} role="listbox">
+          {visibleSuggestions.map(suggestion => (
+            <button
+              type="button"
+              role="option"
+              key={suggestion}
+              onMouseDown={event => event.preventDefault()}
+              onClick={() => {
+                onChange(suggestion);
+                setOpen(false);
+              }}
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      )}
+    </label>
+  );
+}
+
 function ExcelExportButton({ filename, columns, rows, disabled, label = 'Export to Excel' }) {
   return (
     <button
@@ -597,7 +688,7 @@ const DASHBOARD_QUEUES = [
   {
     id: 'waiting_merchandise',
     title: 'Waiting for Merchandise',
-    description: 'Products waiting for required merchandise to be received or matched.',
+    description: 'Products waiting for required merchandise to be received or identified.',
     empty: 'No products waiting for merchandise.',
     matches: item => isOpenFoodHubItem(item) && item.requiredToShoot?.state === 'waiting_for_merchandise',
   },
@@ -611,7 +702,7 @@ const DASHBOARD_QUEUES = [
   {
     id: 'missing_data',
     title: 'Missing Critical Data',
-    description: 'Products missing required client data for photography requiredToShoot.',
+    description: 'Products missing Required to Shoot client data.',
     empty: 'No products missing critical data.',
     matches: item => isOpenFoodHubItem(item) && item.requiredToShoot?.state === 'missing_data',
   },
@@ -784,7 +875,7 @@ function Dashboard({ navigate }) {
 
   // Shipments logged by the merchandise team and awaiting Merchandise Review.
   const reviewReceipts = receiptList
-    .filter(r => (r.entries ?? []).some(e => e.merchStatus !== 'Validated'))
+    .filter(r => (r.entries ?? []).some(e => e.intakeStatus !== 'Complete'))
     .map(r => ({
       ...r,
       daysAgo: r.receivedDate ? Math.max(0, Math.floor((today - new Date(r.receivedDate)) / 86400000)) : null,
@@ -1430,7 +1521,7 @@ function ShipmentsPage() {
   const locations = useResource(() => api.listLocations());
   const carrierOptions = useResource(() => api.airtableSingleSelectOptions({ tableName: 'Shipments', fieldName: 'Carrier' }));
   const allReceipts = useResource(() => api.listShipments());
-  const thr3dOutgoing = useResource(() => api.listThr3dOutgoing());
+  const thr3dOutgoing = useResource(() => api.listThr3dShippingItems());
 
   const [receipt, setReceipt] = useState(null);
   const [session, setSession] = useState({ clientId: '', carrier: '', tracking: '', boxQuantity: 1, received: toDatetimeLocal(), notes: '' });
@@ -1466,6 +1557,9 @@ function ShipmentsPage() {
   const [search, setSearch] = useState('');
   const [clientFilter, setClientFilter] = useState('');
   const [tab, setTab] = useState('incoming'); // 'incoming' | 'outgoing' | 'all'
+  const [allReceiptsLayout, setAllReceiptsLayout] = useState('list'); // 'date' | 'list'
+  const [allReceiptsDateScope, setAllReceiptsDateScope] = useState('this-week'); // 'previous-week' | 'this-week' | 'month'
+  const [thr3dShipDrafts, setThr3dShipDrafts] = useState({});
 
   const cameraInputRef = useRef(null);
   const libraryInputRef = useRef(null);
@@ -1484,7 +1578,6 @@ function ShipmentsPage() {
   const clientNameById = Object.fromEntries(clientList.map(c => [c.id, c.name]));
   const receiptList = allReceipts.data?.records ?? [];
   const thr3dOutgoingRecords = thr3dOutgoing.data?.records ?? [];
-  const [allReceiptsView, setAllReceiptsView] = useState('receipts'); // 'receipts' | 'items'
   const twoDaysAgo = Date.now() - 5 * 24 * 60 * 60 * 1000;
   const isSearching = search.trim().length > 0;
   const filteredReceipts = receiptList.filter(r => {
@@ -1589,7 +1682,8 @@ function ShipmentsPage() {
     setShipmentPhotoPreviews(prev => [...prev, ...localPreviews]);
     setShipmentPhotoUploading(true);
     try {
-      const activeReceipt = await ensureDeliveryReceipt();
+      const activeReceipt = receipt || await createShipment({ toast: false });
+      if (!activeReceipt) throw new Error('Shipment could not be saved.');
       const data = await api.uploadShipmentPhotos(activeReceipt.id, selected);
       setReceipt(data.shipment || activeReceipt);
       setToast(`${selected.length} shipment photo${selected.length === 1 ? '' : 's'} uploaded`);
@@ -1652,38 +1746,43 @@ function ShipmentsPage() {
     setTimeout(() => productNameRef.current?.focus(), 0);
   }
 
-  async function createDelivery() {
+  async function createShipment({ toast: showToast = true } = {}) {
+    if (receipt) return receipt;
+    const boxQuantity = Number(session.boxQuantity);
+    if (!Number.isFinite(boxQuantity) || boxQuantity < 1) {
+      setError('Box Quantity must be at least 1.');
+      return null;
+    }
+    setSaving('shipment');
     setError('');
-    setSaving('create');
     try {
-      await ensureDeliveryReceipt();
-      setTimeout(() => productNameRef.current?.focus(), 80);
+      const created = await api.startReceivingSession({
+        clientId: session.clientId,
+        carrier: session.carrier.trim(),
+        tracking: session.tracking.trim(),
+        boxQuantity,
+        received: session.received,
+        notes: session.notes || '',
+      });
+      setReceipt(created);
+      setSavedEntries(created.entries || []);
+      allReceipts.reload();
+      if (showToast) setToast('Shipment created.');
+      return created;
     } catch (err) {
       setError(err.message || 'Could not create shipment.');
+      return null;
     } finally {
       setSaving('');
     }
   }
 
-  async function ensureDeliveryReceipt() {
-    if (receipt) return receipt;
-    const boxQuantity = Number(session.boxQuantity);
-    if (!Number.isFinite(boxQuantity) || boxQuantity < 1) throw new Error('Box Quantity must be at least 1.');
-    const created = await api.startReceivingSession({
-      clientId: session.clientId,
-      carrier: session.carrier.trim(),
-      tracking: session.tracking.trim(),
-      boxQuantity,
-      received: session.received,
-    });
-    setReceipt(created);
-    setSavedEntries(created.entries || []);
-    allReceipts.reload();
-    return created;
-  }
-
   async function saveNext() {
     setError('');
+    if (!receipt) {
+      setError('Create the shipment before adding merchandise.');
+      return;
+    }
     if (entryPhotos.length === 0) {
       setError('Add at least one photo before saving.');
       return;
@@ -1701,7 +1800,7 @@ function ShipmentsPage() {
     setSaving('entry');
     let uploadDelay;
     try {
-      const activeReceipt = await ensureDeliveryReceipt();
+      const activeReceipt = receipt;
       let saved;
       const matchPayload = {};
       if (matchChoice.status === 'matched') {
@@ -1806,6 +1905,34 @@ function ShipmentsPage() {
     }
   }
 
+  function openReceiptForEdit(receiptId) {
+    selectReceipt(receiptId);
+    setTab('incoming');
+  }
+
+  async function deleteShipmentFromHistory(shipment) {
+    if (!shipment?.id) return;
+    const entries = shipment.entries || [];
+    if (entries.length) {
+      setError('Remove merchandise from this Shipment before deleting it.');
+      return;
+    }
+    const clientName = (shipment.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'this shipment';
+    if (!window.confirm(`Delete ${clientName}? This cannot be undone.`)) return;
+    setSaving('delete-shipment');
+    setError('');
+    try {
+      await api.deleteReceivingSession(shipment.id);
+      if (receipt?.id === shipment.id) startNewSession();
+      allReceipts.reload();
+      setToast('Shipment deleted.');
+    } catch (err) {
+      setError(err.message || 'Could not delete shipment.');
+    } finally {
+      setSaving('');
+    }
+  }
+
   async function saveReceiptHeader() {
     if (!receipt) return;
     setSaving('header');
@@ -1852,10 +1979,9 @@ function ShipmentsPage() {
       condition: saved.condition || 'Good',
       notes: saved.notes || '',
     });
-    // Restore match state so editing a matched item shows the match, not suggestions
-    // API returns `merchStatus` (not matchStatus), fall back to inferring from itemIds
-    const effectiveStatus = saved.matchStatus || saved.merchStatus || ((saved.itemIds || []).length ? 'Matched' : '');
-    const isMatched = effectiveStatus === 'Matched' || effectiveStatus === 'Validated';
+    // Restore product-info state from the linked Product, not from physical Merch Status.
+    const effectiveStatus = saved.matchStatus || '';
+    const isMatched = (saved.itemIds || []).length > 0;
     const needsMatch = effectiveStatus === 'Needs Match' || saved.noClearMatch;
     if (isMatched && (saved.itemIds || []).length > 0) {
       setMatchChoice({
@@ -1911,8 +2037,45 @@ function ShipmentsPage() {
     populateEntryFromSaved(saved);
   }
 
+  function updateThr3dShipDraft(recordId, field, value) {
+    setThr3dShipDrafts(prev => ({
+      ...prev,
+      [recordId]: {
+        carrier: prev[recordId]?.carrier || carrierList[0] || 'UPS',
+        tracking: prev[recordId]?.tracking || '',
+        ...prev[recordId],
+        [field]: value,
+      },
+    }));
+  }
+
+  async function shipThr3dItem(record) {
+    if (!record?.id) return;
+    const draft = thr3dShipDrafts[record.id] || {};
+    setSaving(`thr3d-${record.id}`);
+    setError('');
+    try {
+      await api.shipThr3dShippingItem(record.id, {
+        carrier: draft.carrier || carrierList[0] || 'UPS',
+        tracking: draft.tracking || '',
+      });
+      setThr3dShipDrafts(prev => {
+        const next = { ...prev };
+        delete next[record.id];
+        return next;
+      });
+      thr3dOutgoing.reload();
+      allReceipts.reload();
+      setToast('THR3D item shipped.');
+    } catch (err) {
+      setError(err.message || 'Could not ship THR3D item.');
+    } finally {
+      setSaving('');
+    }
+  }
+
   function receivedItemMerchStatus(saved) {
-    return saved.merchStatus || ((saved.itemIds || []).length ? 'Matched' : 'Received');
+    return saved.merchStatus || 'Received';
   }
 
   if (clients.error || locations.error) return <div className="error-state">{clients.error || locations.error}</div>;
@@ -1996,10 +2159,10 @@ function ShipmentsPage() {
                 <input ref={shipmentCameraInputRef} type="file" accept="image/*" capture="environment" multiple hidden onChange={e => { uploadShipmentPhotoFiles(e.target.files); e.target.value = ''; }} />
                 <input ref={shipmentLibraryInputRef} type="file" accept="image/*" multiple hidden onChange={e => { uploadShipmentPhotoFiles(e.target.files); e.target.value = ''; }} />
                 <div className="recv-photo-btns shipment-photo-actions">
-                  <button type="button" className="recv-camera-btn" onClick={() => shipmentCameraInputRef.current?.click()} disabled={shipmentPhotoUploading}><Camera size={17} strokeWidth={2} aria-hidden="true" />Take Photo</button>
-                  <button type="button" className="recv-library-btn" onClick={() => shipmentLibraryInputRef.current?.click()} disabled={shipmentPhotoUploading}><Images size={17} strokeWidth={2} aria-hidden="true" />Library</button>
+                  <button type="button" className="recv-camera-btn" onClick={() => shipmentCameraInputRef.current?.click()} disabled={shipmentPhotoUploading || saving === 'shipment'}><Camera size={17} strokeWidth={2} aria-hidden="true" />Take Photo</button>
+                  <button type="button" className="recv-library-btn" onClick={() => shipmentLibraryInputRef.current?.click()} disabled={shipmentPhotoUploading || saving === 'shipment'}><Images size={17} strokeWidth={2} aria-hidden="true" />Library</button>
                 </div>
-                {!receipt && <small className="recv-field-hint">Selecting photos creates the shipment before uploading.</small>}
+                {!receipt && <small className="recv-field-hint">Adding shipment photos saves this shipment and unlocks merchandise entry.</small>}
                 {shipmentPhotoUploading && <div className="receiving-upload-progress" role="status"><span />Uploading...</div>}
                 {shipmentPhotoError && <div className="recv-field-error">{shipmentPhotoError}</div>}
                 {(shipmentPhotos.length > 0 || shipmentPhotoPreviews.length > 0) && (
@@ -2028,10 +2191,16 @@ function ShipmentsPage() {
                 )}
               </div>
               {!receipt && error && <div className="recv-field-error">{error}</div>}
-              {!receipt && (
-                <button type="button" className="recv-create-btn" onClick={createDelivery} disabled={Boolean(saving)}>
-                  {saving === 'create' ? 'Creating...' : 'Create Shipment'}
-                </button>
+              {receipt ? (
+                <div className="recv-autosave-card is-saved" role="status">
+                  <strong>Shipment saved</strong>
+                  <span>Changes to shipment details save when you leave each field.</span>
+                </div>
+              ) : (
+                <div className="recv-autosave-card is-pending" role="status">
+                  <strong>Shipment needs photos</strong>
+                  <span>Add shipment photos to save this shipment.</span>
+                </div>
               )}
             </div>
             {receipt && (
@@ -2048,15 +2217,10 @@ function ShipmentsPage() {
           {/* Panel 2: Add Merchandise */}
           <div className="recv-item-panel">
             <div className="recv-panel-head">
-              <span className={`recv-panel-step${!receipt ? ' is-inactive' : ''}`}>2</span>
+              <span className="recv-panel-step">2</span>
               <strong className="recv-panel-title">Add Merchandise</strong>
             </div>
-            {!receipt ? (
-              <div className="recv-panel-locked">
-                <span>Create a shipment first to start adding merchandise.</span>
-              </div>
-            ) : (
-              <>
+            <>
                 {editingEntryId && createPortal(
                   <div
                     className="recv-edit-backdrop"
@@ -2219,13 +2383,12 @@ function ShipmentsPage() {
                       </div>
                     </details>
                     {error && <div className="recv-field-error">{error}</div>}
-                    <button type="button" className="recv-save-btn" onClick={saveNext} disabled={Boolean(saving) || entryPhotos.length === 0}>
+                    <button type="button" className="recv-save-btn" onClick={saveNext} disabled={!receipt || Boolean(saving) || entryPhotos.length === 0}>
                       {saving === 'entry' ? 'Saving…' : editingEntryId ? 'Update merchandise' : 'Save & next →'}
                     </button>
                   </div>{/* end recv-form-content */}
                 </div>
-              </>
-            )}
+            </>
           </div>
 
           {/* Panel 3: Merchandise Logged */}
@@ -2241,8 +2404,9 @@ function ShipmentsPage() {
                 const locationId = saved.locationIds?.[0] || saved.locationId;
                 const locationName = locationNameById[locationId] || '';
                 const merchStatus = receivedItemMerchStatus(saved);
-                const statusClass = (merchStatus === 'Matched' || merchStatus === 'Validated') ? 'is-ok' : 'is-warn';
-                const statusIcon = (merchStatus === 'Matched' || merchStatus === 'Validated') ? '✓' : '!';
+                const isConfirmedStatus = ['Received', 'Ready to Ship', 'Shipped', 'Disposed'].includes(merchStatus);
+                const statusClass = isConfirmedStatus ? 'is-ok' : 'is-warn';
+                const statusIcon = merchStatus === 'Received' ? '' : (isConfirmedStatus ? '✓' : '!');
                 return (
                   <div
                     key={saved.id || index}
@@ -2256,7 +2420,7 @@ function ShipmentsPage() {
                       <strong>{receivingEntryLabel(saved)}</strong>
                       <small>Qty {saved.quantity || 1}{locationName ? ` · ${locationName}` : ''}</small>
                       <small className="receiving-status-line">
-                        <span className={statusClass}>{statusIcon} {merchStatus}</span>
+                        <span className={statusClass}>{statusIcon ? `${statusIcon} ` : ''}{merchStatus}</span>
                       </small>
                     </span>
                     <span className="receiving-current-actions">
@@ -2275,7 +2439,7 @@ function ShipmentsPage() {
             <div>
               <div className="recv-outgoing-kicker">Shipments Outgoing</div>
               <h3>THR3D Queue</h3>
-              <p>Ready THR3D merchandise from Planning appears here for the merchandise team to box and ship.</p>
+              <p>THR3D shipping items from Planning appear here for the merchandise team to box and ship.</p>
             </div>
             <span className="recv-session-badge">{thr3dOutgoingRecords.length} ready</span>
           </div>
@@ -2285,28 +2449,61 @@ function ShipmentsPage() {
             <div className="error-state">{thr3dOutgoing.error}</div>
           ) : thr3dOutgoingRecords.length === 0 ? (
             <div className="recv-outgoing-empty">
-              <strong>No THR3D merchandise is ready to ship.</strong>
-              <span>Finished Planning records with Deliverables including Thr3d will appear here until they are released or no longer physically in studio.</span>
+              <strong>No THR3D shipping items need attention.</strong>
+              <span>Confirmed THR3D quantities from New Merch will appear here until they are shipped.</span>
             </div>
           ) : (
             <div className="recv-outgoing-list">
               {thr3dOutgoingRecords.map(record => {
-                const clientName = (record.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown client';
-                const locationName = locationNameById[record.currentLocationId || record.locationId] || 'Location needed';
-                const shipment = record.shipmentLinkage || record.shipment || {};
-                const shipmentLabel = [shipment.name, shipment.tracking].filter(Boolean).join(' · ') || 'No shipment details';
+                const merch = record.receivedMerch || record;
+                const clientName = (merch.clientIds || record.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown client';
+                const locationName = locationNameById[merch.currentLocationId || merch.locationId] || 'Location needed';
+                const shipment = merch.shipmentLinkage || merch.shipment || record.shipmentLinkage || record.shipment || {};
+                const shipmentLabel = [shipment.name, shipment.tracking].filter(Boolean).join(' · ') || 'Original shipment not linked';
+                const identifier = merch.skuId || merch.observedIdentifier || 'No identifier';
+                const quantity = record.quantityToShip || record.quantity || merch.quantity || 1;
+                const status = record.shippingStatus || 'Needs Shipment';
+                const draft = thr3dShipDrafts[record.id] || {};
+                const canShip = status !== 'Shipped';
                 return (
                   <article className="recv-outgoing-row" key={record.id}>
-                    <RecordThumbnail record={record} className="receiving-current-thumb" />
+                    <RecordThumbnail record={merch} className="receiving-current-thumb" />
                     <div className="recv-outgoing-main">
-                      <strong>{record.productName || record.name || 'Unnamed merchandise'}</strong>
-                      <span>{clientName} · Qty {record.quantity || 1}</span>
-                      <small>{record.skuId || record.observedIdentifier || 'No identifier'} · {locationName}</small>
+                      <strong>{record.name || merch.productName || merch.name || 'Unnamed THR3D item'}</strong>
+                      <span>{clientName} · Qty to ship {quantity}</span>
+                      <small>{identifier} · {locationName}</small>
                     </div>
                     <div className="recv-outgoing-meta">
-                      <span>{record.timeHere || 'Unknown age'}</span>
-                      <small>{formatInventoryDate(record.dateReceived || record.received)}</small>
+                      <span>{status}</span>
+                      <small>{merch.timeHere || 'Unknown age'} · {formatInventoryDate(merch.dateReceived || merch.received)}</small>
                       <small>{shipmentLabel}</small>
+                      {canShip && (
+                        <div className="recv-outgoing-ship">
+                          <select
+                            value={draft.carrier || carrierList[0] || 'UPS'}
+                            onChange={e => updateThr3dShipDraft(record.id, 'carrier', e.target.value)}
+                            disabled={saving === `thr3d-${record.id}`}
+                          >
+                            {(carrierList.length ? carrierList : ['UPS', 'FedEx', 'USPS', 'DHL', 'Courier', 'Freight', 'Hand Delivery', 'Internal', 'Other']).map(carrier => (
+                              <option key={carrier} value={carrier}>{carrier}</option>
+                            ))}
+                          </select>
+                          <input
+                            value={draft.tracking || ''}
+                            onChange={e => updateThr3dShipDraft(record.id, 'tracking', e.target.value)}
+                            placeholder="Tracking"
+                            disabled={saving === `thr3d-${record.id}`}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => shipThr3dItem(record)}
+                            disabled={saving === `thr3d-${record.id}` || !(draft.tracking || '').trim()}
+                          >
+                            {saving === `thr3d-${record.id}` ? 'Shipping...' : 'Ship'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </article>
                 );
@@ -2326,25 +2523,108 @@ function ShipmentsPage() {
               autoFocus
             />
             <div className="recv-all-view-toggle">
-              <button type="button" className={`recv-all-view-btn${allReceiptsView === 'receipts' ? ' is-active' : ''}`} onClick={() => setAllReceiptsView('receipts')}>By Shipment</button>
-              <button type="button" className={`recv-all-view-btn${allReceiptsView === 'items' ? ' is-active' : ''}`} onClick={() => setAllReceiptsView('items')}>By Merchandise</button>
+              <button type="button" className={`recv-all-view-btn${allReceiptsLayout === 'list' ? ' is-active' : ''}`} onClick={() => setAllReceiptsLayout('list')}>List</button>
+              <button type="button" className={`recv-all-view-btn${allReceiptsLayout === 'date' ? ' is-active' : ''}`} onClick={() => setAllReceiptsLayout('date')}>Date</button>
             </div>
+            {allReceiptsLayout === 'date' && (
+              <div className="recv-date-scope-toggle">
+                <button type="button" className={`recv-all-view-btn${allReceiptsDateScope === 'previous-week' ? ' is-active' : ''}`} onClick={() => setAllReceiptsDateScope('previous-week')}>Previous Week</button>
+                <button type="button" className={`recv-all-view-btn${allReceiptsDateScope === 'this-week' ? ' is-active' : ''}`} onClick={() => setAllReceiptsDateScope('this-week')}>This Week</button>
+                <button type="button" className={`recv-all-view-btn${allReceiptsDateScope === 'month' ? ' is-active' : ''}`} onClick={() => setAllReceiptsDateScope('month')}>Month</button>
+              </div>
+            )}
           </div>
           {isSearching && (
             <div className="recv-all-scope-note">{filteredReceipts.length} shipment{filteredReceipts.length !== 1 ? 's' : ''} found · <button type="button" className="recv-all-scope-search" onClick={() => setSearch('')}>Clear</button></div>
           )}
-          <div className="recv-cal-grid">
+          {allReceiptsLayout === 'list' ? (
+            <div className="recv-all-list">
+              <div className="recv-all-list-head" aria-hidden="true">
+                <span>Client</span>
+                <span>Carrier</span>
+                <span>Tracking</span>
+                <span>Received</span>
+                <span>Items</span>
+                <span>Status</span>
+                <span></span>
+              </div>
+              {allReceipts.loading ? (
+                <div className="empty-state">Loading...</div>
+              ) : (
+                (isSearching ? filteredReceipts : receiptList)
+                  .slice()
+                  .sort((a, b) => new Date(b.received || 0) - new Date(a.received || 0))
+                  .map(r => {
+                    const clientName = (r.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown';
+                    const entries = r.entries || [];
+                    const productInfoCount = entries.filter(e => (e.itemIds || []).length > 0).length;
+                    const pendingCount = entries.length - productInfoCount;
+                    const canDelete = entries.length === 0;
+                    return (
+                      <div key={r.id} className="recv-all-item">
+                        <button type="button" className="recv-all-item-open" onClick={() => openReceiptForEdit(r.id)} aria-label={`Edit shipment for ${clientName}`}>
+                          <span className="recv-all-item-client">{clientName}</span>
+                          <span className="recv-all-item-meta">{r.carrier || 'Unknown carrier'}</span>
+                          <span className="recv-all-item-meta">{r.tracking || '-'}</span>
+                          <span className="recv-all-item-meta">{formatInventoryDate(r.received) || '-'}</span>
+                          <span className="recv-session-badge">{entries.length} item{entries.length === 1 ? '' : 's'}</span>
+                          <span className="recv-all-status-stack">
+                            {productInfoCount > 0 && <span className="recv-sidebar-badge is-ok">{productInfoCount} with product info</span>}
+                            {pendingCount > 0 && <span className="recv-sidebar-badge is-warn">{pendingCount} missing product info</span>}
+                            {!productInfoCount && !pendingCount && <span className="recv-sidebar-badge">Empty</span>}
+                          </span>
+                        </button>
+                        <span className="recv-all-row-actions">
+                          <button type="button" className="recv-all-item-edit" onClick={() => openReceiptForEdit(r.id)}>Edit</button>
+                          <button
+                            type="button"
+                            className="recv-all-delete"
+                            onClick={() => deleteShipmentFromHistory(r)}
+                            disabled={!canDelete || saving === 'delete-shipment'}
+                            title={canDelete ? 'Delete shipment' : 'Remove merchandise before deleting this shipment'}
+                          >
+                            Delete
+                          </button>
+                        </span>
+                      </div>
+                    );
+                  })
+              )}
+              {!allReceipts.loading && (isSearching ? filteredReceipts : receiptList).length === 0 && (
+                <div className="empty-state">No shipments match that search.</div>
+              )}
+            </div>
+          ) : (
+          <div className={`recv-cal-grid is-${allReceiptsDateScope}`}>
             {allReceipts.loading && <div className="empty-state" style={{gridColumn:'1/-1'}}>Loading…</div>}
             {!allReceipts.loading && (() => {
-              // Build the 5 day columns (today and 4 prior days)
               const today = new Date(); today.setHours(0,0,0,0);
-              const cols = Array.from({ length: 5 }, (_, i) => {
-                const d = new Date(today); d.setDate(today.getDate() - (4 - i));
-                return d;
-              });
               function sameDay(d1, d2) {
                 return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
               }
+              function startOfWeek(date) {
+                const d = new Date(date);
+                d.setDate(d.getDate() - d.getDay());
+                d.setHours(0, 0, 0, 0);
+                return d;
+              }
+              function weekColumns(offsetWeeks = 0) {
+                const start = startOfWeek(today);
+                start.setDate(start.getDate() + offsetWeeks * 7);
+                return Array.from({ length: 7 }, (_, i) => {
+                  const d = new Date(start);
+                  d.setDate(start.getDate() + i);
+                  return d;
+                });
+              }
+              function monthColumns() {
+                const first = new Date(today.getFullYear(), today.getMonth(), 1);
+                const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+                return Array.from({ length: last.getDate() }, (_, i) => new Date(first.getFullYear(), first.getMonth(), i + 1));
+              }
+              const cols = allReceiptsDateScope === 'month'
+                ? monthColumns()
+                : weekColumns(allReceiptsDateScope === 'previous-week' ? -1 : 0);
               function colLabel(d) {
                 if (sameDay(d, today)) return { day: 'Today', num: d.getDate(), isToday: true };
                 const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
@@ -2368,14 +2648,14 @@ function ShipmentsPage() {
                         {receipts.map(r => {
                           const clientName = (r.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown';
                           const entries = r.entries || [];
-                          const matchedCount = entries.filter(e => e.merchStatus === 'Matched' || e.merchStatus === 'Validated').length;
-                          const pendingCount = entries.length - matchedCount;
+                          const productInfoCount = entries.filter(e => (e.itemIds || []).length > 0).length;
+                          const pendingCount = entries.length - productInfoCount;
                           return (
-                            <button key={r.id} type="button" className="recv-search-row" onClick={() => { selectReceipt(r.id); setTab('new'); }}>
+                            <button key={r.id} type="button" className="recv-search-row" onClick={() => openReceiptForEdit(r.id)}>
                               <div className="recv-day-row-main"><strong>{clientName}</strong><span>{[r.carrier, r.tracking].filter(Boolean).join(' · ')}</span></div>
                               <div className="recv-day-row-right">
-                                {matchedCount > 0 && <span className="recv-sidebar-badge is-ok">{matchedCount} matched</span>}
-                                {pendingCount > 0 && <span className="recv-sidebar-badge is-warn">{pendingCount} unmatched</span>}
+                                {productInfoCount > 0 && <span className="recv-sidebar-badge is-ok">{productInfoCount} with product info</span>}
+                                {pendingCount > 0 && <span className="recv-sidebar-badge is-warn">{pendingCount} missing product info</span>}
                                 <span className="recv-all-item-edit">Open →</span>
                               </div>
                             </button>
@@ -2389,17 +2669,7 @@ function ShipmentsPage() {
               // Normal 5-column calendar view
               return cols.map(colDate => {
                 const { day, num, isToday } = colLabel(colDate);
-                const colReceipts = allReceiptsView === 'receipts'
-                  ? receiptList.filter(r => r.received && sameDay(new Date(r.received), colDate))
-                  : [];
-                const colItems = allReceiptsView === 'items'
-                  ? receiptList.filter(r => r.received && sameDay(new Date(r.received), colDate))
-                      .flatMap(r => {
-                        const clientName = (r.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown';
-                        return (r.entries || []).map(e => ({ ...e, _clientName: clientName, _receiptId: r.id }));
-                      })
-                  : [];
-                const cards = allReceiptsView === 'receipts' ? colReceipts : colItems;
+                const colReceipts = receiptList.filter(r => r.received && sameDay(new Date(r.received), colDate));
                 return (
                   <div key={colDate.toISOString()} className={`recv-cal-col${isToday ? ' is-today' : ''}`}>
                     <div className="recv-cal-col-head">
@@ -2407,30 +2677,21 @@ function ShipmentsPage() {
                       <span className={`recv-cal-day-num${isToday ? ' is-today' : ''}`}>{num}</span>
                     </div>
                     <div className="recv-cal-col-body">
-                      {cards.length === 0 && <div className="recv-cal-empty">—</div>}
-                      {allReceiptsView === 'receipts' && colReceipts.map(r => {
+                      {colReceipts.length === 0 && <div className="recv-cal-empty">—</div>}
+                      {colReceipts.map(r => {
                         const clientName = (r.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown';
                         const entries = r.entries || [];
-                        const matchedCount = entries.filter(e => e.merchStatus === 'Matched' || e.merchStatus === 'Validated').length;
-                        const pendingCount = entries.length - matchedCount;
+                        const productInfoCount = entries.filter(e => (e.itemIds || []).length > 0).length;
+                        const pendingCount = entries.length - productInfoCount;
                         return (
-                          <button key={r.id} type="button" className="recv-cal-card" onClick={() => { selectReceipt(r.id); setTab('new'); }}>
+                          <button key={r.id} type="button" className="recv-cal-card" onClick={() => openReceiptForEdit(r.id)}>
                             <strong className="recv-cal-card-client">{clientName}</strong>
                             {r.carrier && <span className="recv-cal-card-meta">{[r.carrier, r.tracking].filter(Boolean).join(' · ')}</span>}
                             <div className="recv-cal-card-badges">
-                              {matchedCount > 0 && <span className="recv-sidebar-badge is-ok">{matchedCount} matched</span>}
-                              {pendingCount > 0 && <span className="recv-sidebar-badge is-warn">{pendingCount} unmatched</span>}
+                              {productInfoCount > 0 && <span className="recv-sidebar-badge is-ok">{productInfoCount} with product info</span>}
+                              {pendingCount > 0 && <span className="recv-sidebar-badge is-warn">{pendingCount} missing product info</span>}
                             </div>
                           </button>
-                        );
-                      })}
-                      {allReceiptsView === 'items' && colItems.map((item, i) => {
-                        const isMatched = item.merchStatus === 'Matched' || (item.itemIds || []).length > 0;
-                        return (
-                          <div key={item.id || i} className={`recv-cal-card recv-cal-card--item${isMatched ? ' is-matched' : ''}`}>
-                            <strong className="recv-cal-card-client">{item.productName || item.name || '—'}</strong>
-                            <span className="recv-cal-card-meta">{item._clientName}</span>
-                          </div>
                         );
                       })}
                     </div>
@@ -2439,6 +2700,7 @@ function ShipmentsPage() {
               });
             })()}
           </div>
+          )}
           {!isSearching && (
             <div className="recv-all-scope-note" style={{marginTop: 8}}>
               <button type="button" className="recv-all-scope-search" onClick={() => setSearch(' ')}>Search all history</button>
@@ -2891,201 +3153,16 @@ function SettingsPage({ cards = null } = {}) {
   const clientRequirementsExportColumns = [
     { header: 'Client', key: 'name' },
     { header: 'Identifier Type', value: client => client.codeType || client.identifierLabel || '' },
-    { header: 'Required Fields', value: client => (client.requiredPhotographyFields ?? []).join(', ') || 'Identifier' },
+    { header: 'Required to Shoot', value: client => (client.requiredToShoot ?? []).join(', ') || 'Identifier' },
     { header: 'Artwork', value: client => client.artworkRequirement || 'Optional' },
     { header: 'Merchandise', value: client => client.merchandiseRequired === false ? 'Not required' : 'Required' },
     { header: 'Readiness Mode', value: client => client.readinessProfile?.label || 'Standard' },
   ];
 
-  function ActivationPackageEditor({ client }) {
-    const activations = useResource(() => client?.id ? api.listActivations({ clientId: client.id }) : Promise.resolve({ records: [] }), [client?.id]);
-    const [editingId, setEditingId] = useState(null);
-    const [form, setForm] = useState({
-      name: '',
-      activationType: 'Topco eComm Activation',
-      status: 'Draft',
-      creationMethod: 'Manual Entry',
-      projectReference: '',
-      dueUrgency: '',
-      walnutScope: '',
-      uploadLocation: '',
-      artworkPath: '',
-      activationPackage: '',
-      skuDetails: '',
-      deliverables: ['Ecomm Photo'],
-    });
-    const [saving, setSaving] = useState(false);
-    const [saveError, setSaveError] = useState('');
-
-    const updateForm = (key, value) => setForm(current => ({ ...current, [key]: value }));
-    const toggleDeliverable = value => setForm(current => ({
-      ...current,
-      deliverables: current.deliverables.includes(value)
-        ? current.deliverables.filter(item => item !== value)
-        : [...current.deliverables, value],
-    }));
-    const resetForm = () => {
-      setEditingId(null);
-      setSaveError('');
-      setForm({
-        name: '',
-        activationType: 'Topco eComm Activation',
-        status: 'Draft',
-        creationMethod: 'Manual Entry',
-        projectReference: '',
-        dueUrgency: '',
-        walnutScope: '',
-        uploadLocation: '',
-        artworkPath: '',
-        activationPackage: '',
-        skuDetails: '',
-        deliverables: ['Ecomm Photo'],
-      });
-    };
-    const editActivation = activation => {
-      setEditingId(activation.id);
-      setSaveError('');
-      setForm({
-        name: activation.name || '',
-        activationType: activation.activationType || 'Topco eComm Activation',
-        status: activation.status || 'Draft',
-        creationMethod: activation.creationMethod || 'Manual Entry',
-        projectReference: activation.projectReference || '',
-        dueUrgency: activation.dueUrgency || '',
-        walnutScope: activation.walnutScope || '',
-        uploadLocation: activation.uploadLocation || '',
-        artworkPath: activation.artworkPath || '',
-        activationPackage: activation.activationPackage || '',
-        skuDetails: activation.skuDetailsRaw || JSON.stringify(activation.skuDetails || [], null, 2),
-        deliverables: activation.deliverables?.length ? activation.deliverables : ['Ecomm Photo'],
-      });
-    };
-    const saveActivation = async event => {
-      event.preventDefault();
-      setSaving(true);
-      setSaveError('');
-      try {
-        const payload = {
-          ...form,
-          clientId: client.id,
-          skuDetails: form.skuDetails,
-        };
-        if (editingId) {
-          await api.updateActivation(editingId, payload);
-        } else {
-          await api.createActivation(payload);
-        }
-        resetForm();
-        await activations.reload({ quiet: true });
-      } catch (error) {
-        setSaveError(error.message || 'Could not save Activation.');
-      } finally {
-        setSaving(false);
-      }
-    };
-
-    return (
-      <div className="activation-package-editor">
-        <div className="activation-package-header">
-          <div>
-            <span className="client-readiness-label">Activations</span>
-            <p>Activation data created in Marks before work can become Ready for Photo.</p>
-          </div>
-          {editingId && <button className="btn btn-ghost" type="button" onClick={resetForm}>New package</button>}
-        </div>
-        <div className="activation-package-list">
-          {activations.loading && <span className="empty-state compact">Loading activations...</span>}
-          {!activations.loading && activations.error && <span className="error-state">{activations.error}</span>}
-          {!activations.loading && !activations.error && !(activations.data?.records || []).length && (
-            <span className="empty-state compact">No activations yet.</span>
-          )}
-          {(activations.data?.records || []).map(activation => (
-            <button className={`activation-package-row ${editingId === activation.id ? 'is-active' : ''}`} type="button" key={activation.id} onClick={() => editActivation(activation)}>
-              <span>{activation.name || 'Untitled Activation'}</span>
-              <small>{activation.status || 'Draft'} · {(activation.deliverables || []).join(', ') || 'No deliverables'}</small>
-            </button>
-          ))}
-        </div>
-        <form className="activation-package-form" onSubmit={saveActivation}>
-          <div className="activation-package-fields">
-            <label>
-              <span>Name</span>
-              <input className="form-input" value={form.name} onChange={event => updateForm('name', event.target.value)} placeholder="Topco Fresh Melons" />
-            </label>
-            <label>
-              <span>Project Reference</span>
-              <input className="form-input" value={form.projectReference} onChange={event => updateForm('projectReference', event.target.value)} placeholder="26003302 / MI001868" />
-            </label>
-            <label>
-              <span>Activation Type</span>
-              <select className="form-select" value={form.activationType} onChange={event => updateForm('activationType', event.target.value)}>
-                <option>Topco eComm Activation</option>
-                <option>Topco Packaging Activation</option>
-              </select>
-            </label>
-            <label>
-              <span>Status</span>
-              <select className="form-select" value={form.status} onChange={event => updateForm('status', event.target.value)}>
-                <option>Draft</option>
-                <option>Active</option>
-                <option>Needs Info</option>
-                <option>Released</option>
-                <option>Cancelled</option>
-              </select>
-            </label>
-            <label>
-              <span>Due / Urgency</span>
-              <input className="form-input" value={form.dueUrgency} onChange={event => updateForm('dueUrgency', event.target.value)} placeholder="ASAP upon receipt" />
-            </label>
-            <label>
-              <span>Walnut Scope</span>
-              <input className="form-input" value={form.walnutScope} onChange={event => updateForm('walnutScope', event.target.value)} placeholder="Full set renders - WALNUT (PHOTO)" />
-            </label>
-            <label>
-              <span>Upload Location</span>
-              <input className="form-input" value={form.uploadLocation} onChange={event => updateForm('uploadLocation', event.target.value)} />
-            </label>
-            <label>
-              <span>Artwork Path</span>
-              <input className="form-input" value={form.artworkPath} onChange={event => updateForm('artworkPath', event.target.value)} />
-            </label>
-          </div>
-          <div className="deliverables-toggle-group activation-deliverables">
-            {INTAKE_DELIVERABLE_OPTIONS.map(option => (
-              <button
-                key={option}
-                className={`deliverable-pill ${DELIVERABLE_ROUTE_MAP[option]} ${form.deliverables.includes(option) ? 'is-selected' : ''}`}
-                type="button"
-                aria-pressed={form.deliverables.includes(option)}
-                onClick={() => toggleDeliverable(option)}
-              >
-                {form.deliverables.includes(option) && <span aria-hidden="true">✓</span>}
-                {option}
-              </button>
-            ))}
-          </div>
-          <label className="activation-package-wide">
-            <span>Activation</span>
-            <textarea className="form-input" rows="5" value={form.activationPackage} onChange={event => updateForm('activationPackage', event.target.value)} placeholder="Describe the project, required shots, client instructions, and anything needed to validate Ready for Photo." />
-          </label>
-          <label className="activation-package-wide">
-            <span>SKU Details JSON</span>
-            <textarea className="form-input mono-input" rows="5" value={form.skuDetails} onChange={event => updateForm('skuDetails', event.target.value)} placeholder='[{"upc":"036800029804","cvid":"036800029804EGPA022600","description":"Cantaloupe 1 Ea"}]' />
-          </label>
-          {saveError && <div className="error-state">{saveError}</div>}
-          <div className="activation-package-actions">
-            <button className="btn btn-primary" type="submit" disabled={saving || !client?.id}>
-              {saving ? 'Saving...' : editingId ? 'Save Activation' : 'Add Activation'}
-            </button>
-          </div>
-        </form>
-      </div>
-    );
-  }
-
-  function ClientReadinessProfile({ client, profile }) {
+  function ClientReadinessProfile({ profile }) {
     if (!profile) return <span className="badge badge-neutral">Standard</span>;
     const deliverables = Object.entries(profile.deliverables || {});
+    const pathPrefixes = Object.entries(profile.pathPrefixes || {});
     return (
       <div className="client-readiness-profile">
         <div className="client-readiness-profile-top">
@@ -3113,8 +3190,18 @@ function SettingsPage({ cards = null } = {}) {
               {(profile.notRequiredFromActivation || []).map(field => <span className="requirements-chip is-muted" key={field}>{field}</span>)}
             </div>
           </div>
+          {pathPrefixes.length > 0 && (
+            <div className="client-readiness-paths">
+              <span className="client-readiness-label">Server paths</span>
+              {pathPrefixes.map(([key, value]) => (
+                <div className="client-readiness-path" key={key}>
+                  <span>{key === 'artwork' ? 'Artwork prefix' : key === 'upload' ? 'Upload prefix' : key}</span>
+                  <code>{value}</code>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-        <ActivationPackageEditor client={client} />
       </div>
     );
   }
@@ -3221,7 +3308,7 @@ function SettingsPage({ cards = null } = {}) {
               <tr>
                 <th>Client</th>
                 <th>Identifier Type</th>
-                <th>Required Fields</th>
+                <th>Required to Shoot</th>
                 <th>Artwork</th>
                 <th>Merchandise</th>
                 <th>Readiness</th>
@@ -3241,7 +3328,7 @@ function SettingsPage({ cards = null } = {}) {
                     <td><span className="requirements-code">{client.codeType || '—'}</span></td>
                     <td>
                       <div className="requirements-chips">
-                        {((client.requiredPhotographyFields ?? []).length ? client.requiredPhotographyFields : ['Identifier']).map(field => (
+                        {((client.requiredToShoot ?? []).length ? client.requiredToShoot : ['Identifier']).map(field => (
                           <span className="requirements-chip" key={field}>{field}</span>
                         ))}
                       </div>
@@ -3265,7 +3352,7 @@ function SettingsPage({ cards = null } = {}) {
                   {client.readinessProfile && (
                     <tr className="client-readiness-row">
                       <td colSpan="6">
-                        <ClientReadinessProfile client={client} profile={client.readinessProfile} />
+                        <ClientReadinessProfile profile={client.readinessProfile} />
                       </td>
                     </tr>
                   )}
@@ -3599,7 +3686,7 @@ function IntakePage({ navigate }) {
   }
 
   const visibleRows = (preview?.previewRows ?? []).slice(0, 10);
-  const clientRequiredFields = selectedClient?.requiredPhotographyFields?.length ? selectedClient.requiredPhotographyFields : ['Identifier'];
+  const clientRequiredFields = selectedClient?.requiredToShoot?.length ? selectedClient.requiredToShoot : ['Identifier'];
   const normalizedClientRequiredFields = clientRequiredFields.map(field => field === 'ID' ? 'Identifier' : ['Product Name', 'Product/File Name'].includes(field) ? 'Product or File Name' : field);
   const photographyTargets = ['Identifier', ...normalizedClientRequiredFields.filter(field => ['Product or File Name', 'Brand'].includes(field))].filter((target, index, list) => list.indexOf(target) === index);
   const photographyRequiredTargets = new Set(['Identifier', ...normalizedClientRequiredFields]);
@@ -4316,7 +4403,7 @@ const MERCHANDISE_REVIEW_AGE_OPTIONS = [
 ];
 
 function reviewStateFor(record) {
-  return record?.reviewState || (record?.merchStatus === 'Validated' ? 'Validated' : record?.merchStatus === 'Issue' ? 'Issue' : 'Needs Review');
+  return record?.reviewState || (record?.merchStatus === 'Issue' ? 'Issue' : 'Needs Review');
 }
 
 function MerchandiseReviewPage() {
@@ -4830,6 +4917,7 @@ const PM_QUEUE_COLUMNS = [
   { id: QUEUE_IDS.waitingInformation, label: 'Waiting', description: 'Waiting on answers, files, or decisions.' },
   { id: QUEUE_IDS.readyProduction, label: 'Ready for Photo', description: 'Shared handoff queue for Production.' },
 ];
+const PLANNING_QUEUE_LABELS = Object.fromEntries(PM_QUEUE_COLUMNS.map(column => [column.id, column.label]));
 
 function loadJsonMap(key) {
   try {
@@ -4862,14 +4950,14 @@ function normalizeDeliverableRouteSelection(decision = {}, fallbackDeliverableRo
 }
 
 function intakeRequestedQueueForRecord(record) {
+  if (record?.newMerchStatus === 'Workflows Created') return QUEUE_IDS.waitingActivation;
   const deliverables = deliverablesForRecord(record);
   if (deliverables.length === 1 && deliverables[0] === 'Thr3d') return QUEUE_IDS.sendThr3d;
   if (record?.intakeStatus === 'Waiting on Information') return QUEUE_IDS.waitingInformation;
-  if (record?.intakeStatus === 'Ready to Release') return QUEUE_IDS.readyProduction;
+  if (record?.intakeStatus === 'Ready for Photo') return QUEUE_IDS.readyProduction;
   if (record?.intakeStatus === 'Needs Review') return QUEUE_IDS.newReview;
   const reviewState = reviewStateFor(record);
   if (reviewState === 'Validated') return QUEUE_IDS.readyProduction;
-  if (record?.merchStatus === 'Matched') return QUEUE_IDS.waitingActivation;
   return QUEUE_IDS.newReview;
 }
 
@@ -4879,15 +4967,15 @@ function deliverableRouteLabelForDeliverable(deliverable) {
 }
 
 const DELIVERABLE_ALIASES = {
-  packaging: 'Packaging Photo',
-  'packaging photo': 'Packaging Photo',
-  'packaging photography': 'Packaging Photo',
-  ecomm: 'Ecomm Photo',
-  'ecomm photo': 'Ecomm Photo',
-  ecommerce: 'Ecomm Photo',
-  'ecommerce photo': 'Ecomm Photo',
-  'ecommerce photography': 'Ecomm Photo',
-  'gs1 ecomm': 'Ecomm Photo',
+  packaging: 'Packaging',
+  'packaging photo': 'Packaging',
+  'packaging photography': 'Packaging',
+  ecomm: 'Ecomm',
+  'ecomm photo': 'Ecomm',
+  ecommerce: 'Ecomm',
+  'ecommerce photo': 'Ecomm',
+  'ecommerce photography': 'Ecomm',
+  'gs1 ecomm': 'Ecomm',
   thr3d: 'Thr3d',
   '3d': 'Thr3d',
   thread: 'Thr3d',
@@ -4995,14 +5083,111 @@ function wizardStateForItem(item, draftDeliverables) {
     blockers,
     missingLabels,
     thr3dOnly: isThr3dOnlyDeliverables(deliverables),
-    photoDeliverables: deliverables.filter(value => value === 'Packaging Photo' || value === 'Ecomm Photo'),
+    photoDeliverables: deliverables.filter(value => value === 'Packaging' || value === 'Ecomm'),
+  };
+}
+
+function clampQuantity(value, min, max) {
+  const number = Number.parseInt(value, 10);
+  if (!Number.isFinite(number)) return min;
+  return Math.max(min, Math.min(max, number));
+}
+
+function defaultThr3dAllocation(quantity = 1) {
+  const totalQuantity = Math.max(1, Number.parseInt(quantity, 10) || 1);
+  return Math.max(1, Math.floor(totalQuantity / 2));
+}
+
+function workstreamAssignmentsForDeliverables(deliverables = [], quantity = 1, allocation = {}) {
+  const normalized = enforceExclusiveGs1Deliverables(normalizeDeliverableList(deliverables));
+  const totalQuantity = Math.max(1, Number.parseInt(quantity, 10) || 1);
+  const hasPackaging = normalized.includes('Packaging');
+  const hasEcomm = normalized.includes('Ecomm');
+  const hasThr3d = normalized.includes('Thr3d');
+  const maxSplitThr3d = totalQuantity > 1 ? totalQuantity - 1 : 1;
+  const thr3dQuantity = hasPackaging && hasThr3d
+    ? clampQuantity(allocation.thr3d ?? defaultThr3dAllocation(totalQuantity), 1, maxSplitThr3d)
+    : totalQuantity;
+  const packagingQuantity = hasPackaging && hasThr3d && totalQuantity > 1
+    ? Math.max(1, totalQuantity - thr3dQuantity)
+    : totalQuantity;
+  return {
+    workstreams: [
+      ...(hasEcomm ? [{ type: 'Ecomm', quantity: totalQuantity }] : []),
+      ...(hasPackaging ? [{ type: 'Packaging', quantity: packagingQuantity }] : []),
+    ],
+    thr3d: hasThr3d ? { quantity: thr3dQuantity } : null,
+  };
+}
+
+function enforceExclusiveGs1Deliverables(values = [], changedOption = '') {
+  const normalized = normalizeDeliverableList(values);
+  if (!normalized.includes('Ecomm') || !normalized.includes('Thr3d')) return normalized;
+  const removeOption = changedOption === 'Thr3d' ? 'Ecomm' : 'Thr3d';
+  return normalized.filter(value => value !== removeOption);
+}
+
+function queueIdForWorkstreamStatus(status) {
+  const value = String(status || '').trim().toLowerCase();
+  if (value === 'waiting') return QUEUE_IDS.waitingInformation;
+  if (value === 'ready for photo') return QUEUE_IDS.readyProduction;
+  return QUEUE_IDS.waitingActivation;
+}
+
+function workstreamStatusForQueueId(queueId) {
+  if (queueId === QUEUE_IDS.waitingInformation) return 'Waiting';
+  if (queueId === QUEUE_IDS.readyProduction) return 'Ready for Photo';
+  return 'Planning';
+}
+
+function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = {} } = {}) {
+  const record = card.receivedMerch || {};
+  const type = card.type || 'Workstream';
+  const client = clientMap[record.clientIds?.[0]];
+  const location = record.locationId ? locationMap[record.locationId] : null;
+  const baseAssignment = evaluateMerchandiseReviewAssignment(
+    { ...record, deliverables: [type] },
+    {
+      requestedQueueId: QUEUE_IDS.waitingActivation,
+      reviewState: record.reviewState || 'Needs Review',
+      client,
+      planningBoard: planningBoardForClient(record.clientIds?.[0]),
+    },
+  );
+  const baseCard = buildPlanningCard(record, { assignment: baseAssignment, client, location });
+  const columnId = queueIdForWorkstreamStatus(card.status);
+  return {
+    ...baseCard,
+    id: card.id,
+    merchandiseId: record.id,
+    workstreamCardId: card.id,
+    subjectType: 'workstream-card',
+    title: `${type}: ${record.productName || record.description || card.name || 'Received Merch'}`,
+    columnId,
+    queueLabel: PLANNING_QUEUE_LABELS[columnId] || 'Planning',
+    deliverables: [type],
+    deliverableRoute: type,
+    workstreamType: type,
+    workstreamStatus: card.status || 'New',
+    workstreamQuantity: card.quantity || 0,
+    commentCount: 0,
+    unreadComments: 0,
+    quantity: card.quantity || record.quantity || 1,
+    record: {
+      ...record,
+      deliverables: [type],
+      workstreamCardId: card.id,
+      workstreamType: type,
+      workstreamStatus: card.status || 'New',
+      workstreamQuantity: card.quantity || 0,
+    },
   };
 }
 
 function deliverableToneClass(value) {
   return {
-    'Packaging Photo': 'is-packaging-photo',
-    'Ecomm Photo': 'is-ecomm-photo',
+    Packaging: 'is-packaging-photo',
+    Ecomm: 'is-ecomm-photo',
     Thr3d: 'is-thr3d',
   }[normalizeDeliverableValue(value)] || 'is-neutral';
 }
@@ -5085,7 +5270,9 @@ function RequiredToShootPreview({ item, ready }) {
 function activationStateForPlanningCard(item) {
   if (!item?.activationDriven) return null;
   if (item.columnId === QUEUE_IDS.readyProduction) {
-    return { label: 'Activation Ready', tone: 'ready' };
+    return item.activation?.id
+      ? { label: 'Activation Ready', tone: 'ready' }
+      : { label: 'Needs Activation', tone: 'waiting' };
   }
   if (item.columnId === QUEUE_IDS.waitingInformation || item.columnId === QUEUE_IDS.waitingActivation) {
     return { label: 'Needs Activation', tone: 'waiting' };
@@ -5105,7 +5292,6 @@ function KanbanCardComponent({ item, selected, onSelect, disabled = false, showN
   const blockers = visibleRequirementBlockers(item.requiredToShoot || []);
   const required = requiredToShootSummary(item);
   const flagged = item.issueBadge === 'Issue';
-  const validated = !flagged && item.statusBadge === 'Validated';
   const ready = !flagged && required.total > 0 && blockers.length === 0;
   const notStarted = !flagged && required.total === 0;
   const age = ageBucketForItem(item);
@@ -5125,17 +5311,20 @@ function KanbanCardComponent({ item, selected, onSelect, disabled = false, showN
   const storage = item.location || item.record?.locationName || '';
   const deliverables = normalizeDeliverableList(item.deliverables || item.record?.deliverables);
   const hasDeliverables = deliverables.length > 0;
-  const showClient = !isNewQueue || showNewCardClient;
+  const showClient = showNewCardClient;
   const showQuantity = !isNewQueue || Number(quantity) > 1;
   const showMeta = showClient || showQuantity;
-  const showStorage = !isNewQueue && storage;
+  const showStorage = false && !isNewQueue && storage;
   const showFooter = !isNewQueue || item.commentCount > 0 || item.unreadComments > 0;
   const activationState = activationStateForPlanningCard(item);
   const showRequiredPreview = !isNewQueue && !activationState;
+  const showRequiredIndicators = !isNewQueue && !activationState;
+  const showStatusChip = !isNewQueue && !activationState;
+  const isWorkstreamCard = item.subjectType === 'workstream-card';
   return (
     <button
       type="button"
-      className={`kanban-card status-${status} ${isNewQueue ? 'is-new-card' : ''} ${selected ? 'is-selected' : ''}`}
+      className={`kanban-card status-${status} ${isNewQueue ? 'is-new-card' : ''} ${isWorkstreamCard ? 'is-workstream-card' : ''} ${selected ? 'is-selected' : ''}`}
       onClick={() => onSelect?.(item.id)}
       draggable={!disabled}
       onDragStart={event => {
@@ -5152,13 +5341,18 @@ function KanbanCardComponent({ item, selected, onSelect, disabled = false, showN
       <div className="kanban-card-media">
         <RecordThumbnail record={item.record} />
         {flagged && <span className="kanban-card-flag" aria-label="Flagged for an issue">⚑ Flagged</span>}
-        {validated && <span className="kanban-card-validated">✓ Validated</span>}
-        {!isNewQueue && <RequiredToShootIndicators items={item.requiredToShoot} />}
+        {showRequiredIndicators && <RequiredToShootIndicators items={item.requiredToShoot} />}
       </div>
       <div className="kanban-card-body">
         {isNewQueue && (
           <div className="kanban-card-arrival-row">
             <span className={`kanban-age-badge is-primary is-${age.tone}`} aria-label={`Time here ${age.label}`}>{age.label} here</span>
+          </div>
+        )}
+        {isWorkstreamCard && (
+          <div className="kanban-card-workstream-row">
+            <span>Workstream Card</span>
+            <strong>{item.workstreamStatus || item.record?.workstreamStatus || 'New'}</strong>
           </div>
         )}
         <h3>{item.title}</h3>
@@ -5185,10 +5379,16 @@ function KanbanCardComponent({ item, selected, onSelect, disabled = false, showN
           </div>
         )}
         {hasDeliverables ? <DeliverableBadges values={deliverables} /> : (!isNewQueue && item.deliverableRoute && <strong className="kanban-card-deliverables">{item.deliverableRoute}</strong>)}
+        {isWorkstreamCard && (
+          <div className="kanban-card-workstream-meta">
+            <span>{item.workstreamType || item.record?.workstreamType} work</span>
+            <span>Assigned Qty {item.workstreamQuantity || item.record?.workstreamQuantity || quantity}</span>
+          </div>
+        )}
         {activationState && <span className={`kanban-activation-chip is-${activationState.tone}`}>{activationState.label}</span>}
         {showRequiredPreview && <RequiredToShootPreview item={item} ready={ready} />}
         {showFooter && <div className="kanban-card-footer">
-          {!isNewQueue && <span className={`kanban-status-chip is-${status}`}>{statusLabel}</span>}
+          {showStatusChip && <span className={`kanban-status-chip is-${status}`}>{statusLabel}</span>}
           <span className="kanban-card-signals">
             {!isNewQueue && <span className={`kanban-age-badge is-${age.tone}`} aria-label={`Age ${age.label}`}>{age.label}</span>}
             <span className={`kanban-comment-signal ${item.unreadComments > 0 ? 'has-unread' : ''}`} aria-label={`${item.commentCount || 0} comments${item.unreadComments > 0 ? `, ${item.unreadComments} new` : ''}`}>
@@ -5204,6 +5404,149 @@ function KanbanCardComponent({ item, selected, onSelect, disabled = false, showN
 }
 
 const KanbanCard = memo(KanbanCardComponent);
+
+function activationSummary(activation = {}) {
+  const linkedCount = (activation.linkedMerchandiseIds || activation.matchedMerchandiseIds || []).length;
+  const itemCount = Array.isArray(activation.skuDetails) ? activation.skuDetails.length : 0;
+  return `${linkedCount || itemCount} linked · ${normalizeDeliverableList(activation.deliverables).join(', ') || 'No deliverables'}`;
+}
+
+function activationLinkedMerchandiseIds(activation = {}) {
+  const rowIds = Array.isArray(activation.skuDetails)
+    ? activation.skuDetails.map(row => row?.merchandiseId)
+    : [];
+  return [
+    ...(activation.linkedMerchandiseIds || activation.matchedMerchandiseIds || []),
+    ...rowIds,
+  ].filter(Boolean);
+}
+
+function activationByMerchandiseId(activations = []) {
+  return activations.reduce((map, activation) => {
+    activationLinkedMerchandiseIds(activation).forEach(merchandiseId => {
+      if (!map[merchandiseId]) map[merchandiseId] = activation;
+    });
+    return map;
+  }, {});
+}
+
+function PlanningActivationListModal({ activations = [], loading = false, onClose, onEdit, onAdd }) {
+  const editableActivations = activations.filter(activationEditableForPhoto);
+  return createPortal(
+    <div className="activation-modal-backdrop" role="presentation" onClick={onClose}>
+      <section className="activation-list-modal" role="dialog" aria-modal="true" aria-label="Edit Activations" onClick={event => event.stopPropagation()}>
+        <header className="activation-modal-header">
+          <div>
+            <span className="nr-eyebrow">Topco</span>
+            <h2>Edit Activations</h2>
+          </div>
+          <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close Activations">
+            <Icon.Close />
+          </button>
+        </header>
+        <div className="activation-list-body">
+          {loading ? (
+            <div className="planning-activation-empty">Loading Activations...</div>
+          ) : editableActivations.length ? (
+            editableActivations.map(activation => (
+              <button type="button" className="activation-list-row" onClick={() => onEdit?.(activation)} key={activation.id}>
+                <span>
+                  <strong>{activation.name || 'Untitled Activation'}</strong>
+                  <small>{activation.dueUrgency || activation.status || 'Draft'}</small>
+                </span>
+                <em>{activationSummary(activation)}</em>
+              </button>
+            ))
+          ) : (
+            <div className="planning-activation-empty">No pending photo Activations to edit.</div>
+          )}
+        </div>
+        <footer className="activation-modal-footer">
+          <button type="button" className="btn" onClick={onClose}>Close</button>
+          <button type="button" className="btn btn-primary" onClick={onAdd}>Add Activation</button>
+        </footer>
+      </section>
+    </div>,
+    document.body
+  );
+}
+
+function activationEditableForPhoto(activation = {}) {
+  return !['Released', 'Cancelled', 'Complete'].includes(String(activation.status || '').trim());
+}
+
+function activationAvailableForPlanningItem(activation = {}, item = {}) {
+  if (!activationEditableForPhoto(activation)) return false;
+  const activationClientIds = activation.clientIds || [];
+  const itemClientIds = item.record?.clientIds || [];
+  if (!activationClientIds.length || !itemClientIds.length) return true;
+  return activationClientIds.some(clientId => itemClientIds.includes(clientId));
+}
+
+function activationRowFromPlanningItem(item = {}) {
+  const record = item.record || {};
+  return {
+    merchandiseId: item.merchandiseId || item.id || '',
+    description: record.description || record.productName || item.title || '',
+    upc: record.skuId || item.identifier || '',
+    cvid: '',
+    structure: '',
+  };
+}
+
+function activationWithPlanningItem(activation, item) {
+  const row = activationRowFromPlanningItem(item);
+  const existingRows = Array.isArray(activation?.skuDetails) ? activation.skuDetails : [];
+  const hasRow = existingRows.some(existing => existing?.merchandiseId === row.merchandiseId);
+  return {
+    ...(activation || {}),
+    clientIds: activation?.clientIds?.length ? activation.clientIds : item.record?.clientIds || [],
+    deliverables: normalizeDeliverableList(activation?.deliverables || item.deliverables || ['Ecomm'])
+      .filter(value => ACTIVATION_DELIVERABLE_OPTIONS.includes(value)),
+    skuDetails: hasRow ? existingRows : [...existingRows, row],
+    linkedMerchandiseIds: [
+      ...new Set([
+        ...(activation?.linkedMerchandiseIds || activation?.matchedMerchandiseIds || []),
+        row.merchandiseId,
+      ].filter(Boolean)),
+    ],
+  };
+}
+
+function NewReviewActivationPanel({ item, activations = [], onNewActivation, onAddToActivation }) {
+  const editableActivations = activations.filter(activation => activationAvailableForPlanningItem(activation, item));
+  const [activationId, setActivationId] = useState('');
+
+  useEffect(() => {
+    setActivationId('');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id, editableActivations.map(activation => activation.id).join('|')]);
+
+  const selectedActivation = editableActivations.find(activation => activation.id === activationId);
+  return (
+    <div className="new-review-activation-panel">
+      <p className="review-step-lead">Link this merchandise to a pending photo Activation, or start a new Activation with this item already included.</p>
+      <div className="new-review-activation-actions">
+        <label>
+          Pending Activation
+          <select className="form-input" value={activationId} onChange={event => setActivationId(event.target.value)}>
+            <option value="">Choose Activation...</option>
+            {editableActivations.map(activation => (
+              <option value={activation.id} key={activation.id}>{activation.name || 'Untitled Activation'}</option>
+            ))}
+          </select>
+        </label>
+        <button type="button" className="btn btn-blue-outline" onClick={() => selectedActivation && onAddToActivation?.(selectedActivation, item)} disabled={!selectedActivation}>
+          Add to Activation
+        </button>
+        <button type="button" className="btn btn-primary" onClick={() => onNewActivation?.(item)}>
+          New Activation
+        </button>
+      </div>
+      {selectedActivation && <small>{activationSummary(selectedActivation)}</small>}
+    </div>
+  );
+}
 
 function KanbanColumn({ column, items, selectedId, onSelect, onMove, disabled = false, showNewCardClient = true }) {
   const [dragState, setDragState] = useState('');
@@ -5376,7 +5719,7 @@ function ReleaseToProductionAction({ item, onRelease, busy }) {
       <button type="button" className="btn btn-primary" onClick={() => onRelease?.(item)} disabled={disabled}>
         {busy ? 'Releasing...' : released ? 'Released to Production' : 'Release to Production'}
       </button>
-      {!released && !requiredToShoot.ready && <span>Complete all requiredToShoot requirements.</span>}
+      {!released && !requiredToShoot.ready && <span>Complete all Required to Shoot requirements.</span>}
       {released && <span>Released {formatInventoryDate(item.record?.releasedAt)}</span>}
     </div>
   );
@@ -5415,6 +5758,9 @@ function PlanningWorkspaceSection({ section, item, photos, activePhotoUrl, photo
       {section === WORKSPACE_SECTIONS.merchandiseSummary && (
         <>
           <div className="planning-fact-grid">
+            {item.subjectType === 'workstream-card' && <PlanningFact label="Card Type" value={`${item.workstreamType || record.workstreamType || 'Workstream'} Workstream`} />}
+            {item.subjectType === 'workstream-card' && <PlanningFact label="Assigned Qty" value={item.workstreamQuantity || record.workstreamQuantity || item.quantity} />}
+            {item.subjectType === 'workstream-card' && <PlanningFact label="Workstream Status" value={item.workstreamStatus || record.workstreamStatus || 'New'} />}
             <PlanningFact label={DOMAIN_TERMS.packageName} value={record.productName} />
             <PlanningFact label="Client" value={item.client} />
             <PlanningFact label="Queue" value={item.planningCard.currentQueueName} />
@@ -5433,7 +5779,7 @@ function PlanningWorkspaceSection({ section, item, photos, activePhotoUrl, photo
             <PlanningFact label="Job Number" value={product.itemJobNumber || product.pickupJobNumber} />
             <PlanningFact label="Required To Shoot" value={product.requiredToShoot?.ready ? 'Ready' : product.requiredToShoot?.missing?.join(', ') || 'Pending'} />
           </div>
-        ) : <div className="planning-empty-inline">No Product is linked yet. Product information remains a requiredToShoot blocker.</div>
+        ) : <div className="planning-empty-inline">No Product is linked yet. Product information remains a Required to Shoot blocker.</div>
       )}
       {section === WORKSPACE_SECTIONS.deliverables && (
         <div className="planning-empty-inline">{item.deliverableRoute || 'Deliverables have not been captured in the current data.'}</div>
@@ -5499,7 +5845,7 @@ function requirementResolution(requirement = {}) {
   if (requirement.key === 'product-information') return 'Link an existing Product or complete the missing Product fields.';
   if (requirement.key === 'artwork') return 'Confirm artwork availability on the linked Product or client source.';
   if (requirement.key === 'activation-information') return 'Add the existing activation, campaign, or reporting reference information.';
-  return 'Resolve the missing requiredToShoot information.';
+  return 'Resolve the missing Required to Shoot information.';
 }
 
 function requirementBlockerLabel(requirement = {}) {
@@ -5948,22 +6294,27 @@ function PlanningWorkspaceDrawer({ item, onClose, onMove, onSave, onSaveContinue
   );
 }
 
-const INTAKE_DELIVERABLE_OPTIONS = ['Packaging Photo', 'Ecomm Photo', 'Thr3d'];
+const INTAKE_DELIVERABLE_OPTIONS = ['Packaging', 'Ecomm', 'Thr3d'];
+const ACTIVATION_DELIVERABLE_OPTIONS = ['Packaging', 'Ecomm'];
 const DELIVERABLE_ROUTE_MAP = {
-  'Ecomm Photo': 'ecomm-photo',
-  'Packaging Photo': 'packaging-photo',
+  Ecomm: 'ecomm-photo',
+  Packaging: 'packaging-photo',
   Thr3d: 'thr3d',
 };
+const THR3D_SHIP_CONFIRMATION_MESSAGE = 'This item will be removed from the Walnut work queue and be shipped to Thr3d.';
 
-function DeliverablesSelector({ values = [], onChange, disabled = false }) {
+function DeliverablesSelector({ values = [], onChange, disabled = false, options = INTAKE_DELIVERABLE_OPTIONS, exclusiveGs1 = true }) {
   const normalizedValues = normalizeDeliverableList(values);
   const selectedValues = new Set(normalizedValues);
 
   function toggle(option) {
     if (disabled) return;
-    const nextValues = selectedValues.has(option)
+    let nextValues = selectedValues.has(option)
       ? normalizedValues.filter(value => value !== option)
       : [...normalizedValues, option];
+    if (exclusiveGs1) {
+      nextValues = enforceExclusiveGs1Deliverables(nextValues, option);
+    }
     onChange(nextValues);
   }
 
@@ -5971,11 +6322,11 @@ function DeliverablesSelector({ values = [], onChange, disabled = false }) {
     <fieldset className="intake-deliverables-field">
       <legend className="sr-only">Deliverables</legend>
       <div className="intake-deliverable-options">
-        {INTAKE_DELIVERABLE_OPTIONS.map(option => {
+        {options.map(option => {
           const selected = selectedValues.has(option);
           return (
             <label
-              className={`intake-deliverable-option ${selected ? 'is-selected' : ''}`}
+              className={`intake-deliverable-option ${deliverableToneClass(option)} ${selected ? 'is-selected' : ''}`}
               key={option}
             >
           <input
@@ -6317,10 +6668,10 @@ function ActivityPanel({ events = [] }) {
 
 // Collapsing step: when its work is done it folds to a one-line summary, so the
 // pane always keeps the open/actionable steps loud and the finished ones quiet.
-function ReviewStep({ n, title, done, flagged, statusText, statusTone, summary, children }) {
+function ReviewStep({ n, title, done, flagged, statusText, statusTone, summary, children, collapseWhenDone = true }) {
   const [manualOpen, setManualOpen] = useState(false);
   useEffect(() => { if (!done) setManualOpen(false); }, [done]);
-  const collapsed = done && !flagged && !manualOpen;
+  const collapsed = collapseWhenDone && done && !flagged && !manualOpen;
   const mark = flagged ? '⚑' : done ? '✓' : n;
   return (
     <section className={`review-step ${collapsed ? 'is-collapsed' : 'is-open'} ${done ? 'is-done' : ''} ${flagged ? 'is-flagged' : ''}`}>
@@ -6581,11 +6932,12 @@ function ImageLightbox({ photos, index, setIndex, onClose }) {
   );
 }
 
-function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, previousItem, nextItem, onSelectItem, onRefresh, photos, photoIndex, setPhotoIndex, comments, commentSaving, commentError, activity, onAddComment, onMarkCommentsRead }) {
+function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, previousItem, nextItem, onSelectItem, onRefresh, photos, photoIndex, setPhotoIndex, comments, commentSaving, commentError, activity, onAddComment, onMarkCommentsRead, activations = [], onNewActivation, onAddToActivation }) {
   const [zoom, setZoom] = useState(1);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [intakeDraft, setIntakeDraft] = useState(() => ({
     deliverables: deliverablesForRecord(item.record),
+    allocation: { thr3d: defaultThr3dAllocation(item.record?.quantity) },
   }));
   const [intakeFeedback, setIntakeFeedback] = useState('');
   const [finishState, setFinishState] = useState({ status: 'idle', message: '' });
@@ -6594,20 +6946,27 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
   const activePhotoUrl = receivingPhotoUrl(activePhoto);
   const wizardState = wizardStateForItem(item, intakeDraft.deliverables);
   const finishBusy = finishState.status === 'loading';
-  const routeDestination = wizardState.thr3dOnly && wizardState.blockers.length === 0
-    ? 'Thr3d Shipment'
-    : wizardState.blockers.length === 0 && wizardState.photoDeliverables.length
-    ? 'Ready for Photo'
-      : 'Waiting for Information';
+  const totalQuantity = Math.max(1, Number.parseInt(item.record?.quantity, 10) || 1);
+  const showQuantityAllocation = wizardState.deliverables.includes('Packaging') && wizardState.deliverables.includes('Thr3d') && totalQuantity > 1;
+  const assignmentPreview = workstreamAssignmentsForDeliverables(wizardState.deliverables, totalQuantity, intakeDraft.allocation);
+  const packagingAllocation = assignmentPreview.workstreams.find(workstream => workstream.type === 'Packaging')?.quantity || 0;
+  const thr3dAllocation = assignmentPreview.thr3d?.quantity || defaultThr3dAllocation(totalQuantity);
+  const assignmentLabels = [
+    ...assignmentPreview.workstreams.map(workstream => `${workstream.type}: ${workstream.quantity}`),
+    ...(assignmentPreview.thr3d ? [`THR3D: ${assignmentPreview.thr3d.quantity}`] : []),
+  ];
+  const routeDestination = assignmentLabels.length ? assignmentLabels.join(' / ') : 'Choose work';
   const finishBlocked = wizardState.thr3dOnly
     ? wizardState.blockers.length > 0
     : !wizardState.merchandiseVerified || wizardState.deliverables.length === 0;
   const finishDisabled = finishBusy || finishBlocked || wizardState.deliverables.length === 0;
   const finishLabel = wizardState.deliverables.length === 0
       ? 'Choose deliverables'
+      : wizardState.thr3dOnly && !finishBlocked
+        ? 'Confirm & Assign'
       : !wizardState.thr3dOnly && !wizardState.merchandiseVerified
         ? 'Verify to continue'
-      : 'Finish & Move';
+      : 'Confirm & Assign';
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -6633,6 +6992,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
   useEffect(() => {
     setIntakeDraft({
       deliverables: deliverablesForRecord(item.record),
+      allocation: { thr3d: defaultThr3dAllocation(item.record?.quantity) },
     });
     setIntakeFeedback('');
     setFinishState({ status: 'idle', message: '' });
@@ -6645,21 +7005,38 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
       const nextDraft = { ...draft, deliverables: cleanValue };
       return nextDraft;
     });
-    setIntakeFeedback('Draft only. The board will not move until Finish & Move.');
+    setIntakeFeedback('Draft only. Nothing changes until Confirm & Assign.');
+  }
+
+  function stageThr3dAllocation(value) {
+    const maxSplitThr3d = totalQuantity > 1 ? totalQuantity - 1 : 1;
+    const thr3d = clampQuantity(value, 1, maxSplitThr3d);
+    setIntakeDraft(draft => ({
+      ...draft,
+      allocation: { ...(draft.allocation || {}), thr3d },
+    }));
+    setIntakeFeedback('Draft only. Nothing changes until Confirm & Assign.');
   }
 
   async function finishCurrentVerification() {
     if (finishBusy) return;
-    setFinishState({ status: 'loading', message: 'Finishing verification...' });
+    const latestState = wizardStateForItem(item, intakeDraft.deliverables);
+    latestState.assignment = workstreamAssignmentsForDeliverables(latestState.deliverables, totalQuantity, intakeDraft.allocation);
+    const willShipToThr3d = latestState.thr3dOnly && (latestState.blockers || []).length === 0;
+    if (willShipToThr3d && !window.confirm(THR3D_SHIP_CONFIRMATION_MESSAGE)) {
+      setFinishState({ status: 'idle', message: 'Thr3d shipment cancelled.' });
+      return;
+    }
+    setFinishState({ status: 'loading', message: 'Creating work...' });
     try {
-      const result = await onFinish?.(item, wizardStateForItem(item, intakeDraft.deliverables));
+      const result = await onFinish?.(item, latestState);
       if (result?.ok === false) {
-        setFinishState({ status: 'error', message: result.message || 'Could not finish verification. Try again.' });
+        setFinishState({ status: 'error', message: result.message || 'Could not assign work. Try again.' });
         return;
       }
-      setFinishState({ status: 'success', message: result?.message || 'Verification finished.' });
+      setFinishState({ status: 'success', message: result?.message || 'Work created.' });
     } catch (error) {
-      setFinishState({ status: 'error', message: error.message || 'Could not finish verification. Try again.' });
+      setFinishState({ status: 'error', message: error.message || 'Could not assign work. Try again.' });
     }
   }
 
@@ -6751,12 +7128,45 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
               statusText={deliverablesDone ? `✓ ${wizardState.deliverables.length} chosen` : 'Choose at least one'}
               statusTone={deliverablesDone ? 'ok' : 'wait'}
               summary={wizardState.deliverables.join(', ') || '—'}
+              collapseWhenDone={false}
             >
               <DeliverablesSelector
                 values={intakeDraft.deliverables}
                 onChange={stageDeliverables}
                 disabled={finishBusy}
               />
+              {showQuantityAllocation && (
+                <div className="quantity-allocation-panel">
+                  <div className="quantity-allocation-head">
+                    <strong>Quantity Allocation</strong>
+                    <span>Total Qty {totalQuantity}</span>
+                  </div>
+                  <div className="quantity-allocation-grid">
+                    <label>
+                      <span>THR3D</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max={Math.max(1, totalQuantity - 1)}
+                        inputMode="numeric"
+                        value={thr3dAllocation}
+                        onChange={event => stageThr3dAllocation(event.target.value)}
+                        disabled={finishBusy}
+                      />
+                    </label>
+                    <label>
+                      <span>Packaging</span>
+                      <input type="number" value={packagingAllocation} readOnly disabled />
+                    </label>
+                  </div>
+                </div>
+              )}
+              {wizardState.thr3dOnly && (
+                <div className="thr3d-ship-warning" role="alert">
+                  <strong>Thr3d shipping path</strong>
+                  <span>{THR3D_SHIP_CONFIRMATION_MESSAGE}</span>
+                </div>
+              )}
               {intakeFeedback && <span className="new-review-inline-status">{intakeFeedback}</span>}
             </ReviewStep>
 
@@ -6771,6 +7181,23 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
               <NewReviewRequiredInformation item={item} state={wizardState} />
             </ReviewStep>
 
+            {item.activationDriven && (
+              <section className="review-step is-open">
+                <header className="review-step-head">
+                  <span className="review-step-num review-step-num-plain">·</span>
+                  <h3>Activation</h3>
+                </header>
+                <div className="review-step-body">
+                  <NewReviewActivationPanel
+                    item={item}
+                    activations={activations}
+                    onNewActivation={onNewActivation}
+                    onAddToActivation={onAddToActivation}
+                  />
+                </div>
+              </section>
+            )}
+
             <ConversationPanel
               comments={comments}
               onAddComment={body => onAddComment?.(item.merchandiseId, body)}
@@ -6784,11 +7211,11 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
         <footer className="new-review-modal-footer">
           <button type="button" className="btn" onClick={() => previousItem && onSelectItem(previousItem.id)} disabled={!previousItem}>Previous Merchandise</button>
           <div className="new-review-finish-summary">
-            <span>Will move to <strong>{routeDestination}</strong></span>
+            <span>Will create <strong>{routeDestination}</strong></span>
             {finishState.message && <strong className={`is-${finishState.status}`}>{finishState.message}</strong>}
           </div>
           <button type="button" className="btn btn-primary" onClick={finishCurrentVerification} disabled={finishDisabled}>
-            {finishBusy ? 'Finishing...' : finishLabel}
+            {finishBusy ? 'Creating...' : finishLabel}
           </button>
           <button type="button" className="btn" onClick={() => nextItem && onSelectItem(nextItem.id)} disabled={!nextItem}>Next Merchandise</button>
         </footer>
@@ -6800,174 +7227,360 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
   );
 }
 
-function PlanningActivationPackageModal({ clients = [], initialClientId = '', onClose, onSaved }) {
+function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [], initialClientId = '', initialActivation = null, onClose, onSaved }) {
   const topcoClient = clients.find(client => (client.name || '').trim().toLowerCase() === 'topco');
   const defaultClientId = initialClientId || topcoClient?.id || clients[0]?.id || '';
-  const emptySkuRow = () => ({
+  const emptyItem = () => ({
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    merchandiseId: '',
+    description: '',
     upc: '',
     cvid: '',
-    description: '',
     structure: '',
-    jobNumber: '',
-    brand: '',
-    coordinatorDescription: '',
   });
-  const [form, setForm] = useState({
-    clientId: defaultClientId,
-    name: '',
-    activationType: 'Topco eComm Activation',
-    status: 'Draft',
-    creationMethod: 'Manual Entry',
-    projectReference: '',
-    dueUrgency: '',
-    walnutScope: '',
-    uploadLocation: '',
-    artworkPath: '',
-    activationPackage: '',
-    skuRows: [emptySkuRow()],
-    deliverables: ['Ecomm Photo'],
-  });
+  const formFromActivation = activation => {
+    const skuRows = Array.isArray(activation?.skuDetails)
+      ? activation.skuDetails.map((row, index) => ({
+          id: `${activation.id || 'activation'}-${index}-${Math.random().toString(16).slice(2)}`,
+          merchandiseId: String(row?.merchandiseId || ''),
+          description: String(row?.description || ''),
+          upc: String(row?.upc || ''),
+          cvid: String(row?.cvid || ''),
+          structure: String(row?.structure || ''),
+        }))
+      : [];
+    return {
+      clientId: activation?.clientIds?.[0] || defaultClientId,
+      name: activation?.name || '',
+      dueUrgency: activation?.dueUrgency || '',
+      deliverables: normalizeDeliverableList(activation?.deliverables || ['Ecomm']).filter(value => ACTIVATION_DELIVERABLE_OPTIONS.includes(value)),
+      walnutScope: activation?.walnutScope || '',
+      artworkPath: activation?.artworkPath || '',
+      uploadLocation: activation?.uploadLocation || '',
+      notes: activation?.notes || '',
+      skuRows: skuRows.length ? skuRows : [emptyItem()],
+    };
+  };
+  const [form, setForm] = useState(() => formFromActivation(initialActivation));
   const [saving, setSaving] = useState(false);
+  const [saveAction, setSaveAction] = useState('');
   const [error, setError] = useState('');
+  const activationHistory = useResource(
+    () => form.clientId ? api.listActivations({ clientId: form.clientId }) : Promise.resolve({ records: [] }),
+    [form.clientId]
+  );
 
   useEffect(() => {
     setForm(current => ({ ...current, clientId: current.clientId || defaultClientId }));
   }, [defaultClientId]);
 
+  useEffect(() => {
+    setForm(formFromActivation(initialActivation));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialActivation?.id, defaultClientId]);
+
+  const selectedClient = clients.find(client => client.id === form.clientId) || topcoClient;
+  const pathPrefixes = selectedClient?.readinessProfile?.pathPrefixes || {};
+  const walnutScopeSuggestions = activationFieldSuggestions(
+    activationHistory.data?.records,
+    'walnutScope',
+    DEFAULT_WALNUT_SCOPE_SUGGESTIONS
+  );
+  const dueUrgencySuggestions = activationFieldSuggestions(
+    activationHistory.data?.records,
+    'dueUrgency',
+    DEFAULT_DUE_URGENCY_SUGGESTIONS
+  );
+  const structureSuggestions = activationSkuFieldSuggestions(
+    activationHistory.data?.records,
+    'structure',
+    DEFAULT_STRUCTURE_SUGGESTIONS
+  );
+  const topcoMerchandiseOptions = merchandiseOptions
+    .filter(item => !form.clientId || item.clientId === form.clientId)
+    .sort((a, b) => a.label.localeCompare(b.label));
   const updateForm = (key, value) => setForm(current => ({ ...current, [key]: value }));
-  const updateSkuRow = (rowId, key, value) => setForm(current => ({
+  const updateItem = (rowId, key, value) => setForm(current => ({
     ...current,
     skuRows: current.skuRows.map(row => row.id === rowId ? { ...row, [key]: value } : row),
   }));
-  const addSkuRow = () => setForm(current => ({ ...current, skuRows: [...current.skuRows, emptySkuRow()] }));
-  const removeSkuRow = rowId => setForm(current => ({
+  const addItem = () => setForm(current => ({ ...current, skuRows: [...current.skuRows, emptyItem()] }));
+  const removeItem = rowId => setForm(current => ({
     ...current,
-    skuRows: current.skuRows.length > 1 ? current.skuRows.filter(row => row.id !== rowId) : current.skuRows,
+    skuRows: current.skuRows.filter(row => row.id !== rowId),
   }));
-  const toggleDeliverable = value => setForm(current => ({
-    ...current,
-    deliverables: current.deliverables.includes(value)
-      ? current.deliverables.filter(item => item !== value)
-      : [...current.deliverables, value],
-  }));
+  const itemRows = form.skuRows;
+  const itemCount = itemRows.length;
+  const fieldStatus = value => String(value || '').trim() ? 'is-present' : 'is-missing';
+  const fieldText = (value, fallback) => String(value || '').trim() || fallback;
+  const activationRequiredFields = [
+    ['Name', form.name],
+    ['Due / Urgency', form.dueUrgency],
+    ['Walnut Scope', form.walnutScope],
+    ['Artwork Path', form.artworkPath],
+    ['Upload Location', form.uploadLocation],
+  ];
+  const activationMissing = activationRequiredFields.filter(([, value]) => !String(value || '').trim()).map(([label]) => label);
+  const itemRequiredFields = row => [
+    ['Linked Merchandise', row.merchandiseId],
+    ['Description', row.description],
+    ['UPC', row.upc],
+    ['CVID', row.cvid],
+    ['Structure', row.structure],
+  ];
+  const itemMissingFields = row => itemRequiredFields(row).filter(([, value]) => !String(value || '').trim()).map(([label]) => label);
+  const modalTitle = initialActivation?.id ? 'Edit Activation' : 'Add Activation';
+  const PreviewValue = ({ value, fallback, children }) => {
+    const present = String(value || '').trim();
+    return <span className={`activation-preview-token ${present ? 'is-present' : 'is-missing'}`}>{children || present || fallback}</span>;
+  };
+  const previewPath = (value, prefix = '') => {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return text;
+    return `${prefix || ''}${text}`;
+  };
+  function PreviewPath({ value, prefix, fallback }) {
+    const path = previewPath(value, prefix);
+    if (!path) return <PreviewValue value="" fallback={fallback} />;
+    return <a className="activation-preview-link" href={path}>{path}</a>;
+  }
 
-  async function saveActivationPackage(event) {
-    event.preventDefault();
+  const buildActivationPayload = status => {
+    const skuDetails = form.skuRows
+      .map(({ id, ...row }) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, String(value || '').trim()])))
+      .filter(row => Object.values(row).some(Boolean));
+    return {
+      clientId: form.clientId,
+      name: form.name.trim() || 'Topco Activation',
+      status,
+      dueUrgency: form.dueUrgency,
+      deliverables: form.deliverables,
+      walnutScope: form.walnutScope,
+      artworkPath: form.artworkPath,
+      uploadLocation: form.uploadLocation,
+      notes: form.notes,
+      activationPackage: form.notes,
+      skuDetails,
+      linkedMerchandiseIds: skuDetails.map(row => row.merchandiseId).filter(Boolean),
+      numberOfSkus: skuDetails.length,
+    };
+  };
+
+  async function saveActivationPackage(action = 'draft') {
     setSaving(true);
+    setSaveAction(action);
     setError('');
     try {
-      const skuDetails = form.skuRows
-        .map(({ id, ...row }) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, String(value || '').trim()])))
-        .filter(row => Object.values(row).some(Boolean));
-      const result = await api.createActivation({ ...form, skuDetails });
-      onSaved?.(result.record);
+      const localMissing = [
+        ...(action === 'move' && itemRows.length === 0 ? ['Linked Merchandise'] : []),
+        ...(action === 'move' ? activationMissing : []),
+        ...(action === 'move' && !form.deliverables.length ? ['Deliverables'] : []),
+        ...(action === 'move' ? itemRows.flatMap((row, index) => itemMissingFields(row).map(field => `Item ${index + 1} ${field}`)) : []),
+      ];
+      if (localMissing.length) {
+        setError(`Complete before Move to Photo: ${localMissing.join(', ')}.`);
+        return;
+      }
+      const payload = buildActivationPayload(action === 'move' ? 'Active' : 'Draft');
+      const result = initialActivation?.id
+        ? await api.updateActivation(initialActivation.id, payload)
+        : await api.createActivation(payload);
+      if (action === 'move') {
+        const moved = await api.moveActivationToPhoto(result.record.id);
+        onSaved?.(moved.activation, { moved: true, movedCount: moved.movedCount });
+      } else {
+        onSaved?.(result.record, { moved: false });
+      }
     } catch (saveError) {
-      setError(saveError.message || 'Could not save Activation.');
+      const missing = Array.isArray(saveError.payload?.missing) ? ` Missing: ${saveError.payload.missing.join(', ')}` : '';
+      setError(`${saveError.message || 'Could not save Activation.'}${missing}`);
     } finally {
       setSaving(false);
+      setSaveAction('');
     }
   }
 
   return createPortal(
     <div className="activation-modal-backdrop" role="presentation" onClick={onClose}>
-      <section className="activation-modal" role="dialog" aria-modal="true" aria-label="Add Activation" onClick={event => event.stopPropagation()}>
+      <section className="activation-modal activation-modal-simple" role="dialog" aria-modal="true" aria-label={modalTitle} onClick={event => event.stopPropagation()}>
         <header className="activation-modal-header">
           <div>
-            <span className="nr-eyebrow">Planning</span>
-            <h2>Add Activation</h2>
-            <p>Capture the Topco project facts needed before merchandise can be Ready for Photo.</p>
+            <span className="nr-eyebrow">Topco</span>
+            <h2>{modalTitle}</h2>
           </div>
           <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close Activation">
             <Icon.Close />
           </button>
         </header>
-        <form className="activation-modal-body" onSubmit={saveActivationPackage}>
-          <div className="activation-package-fields">
-            <label>
-              <span>Client</span>
-              <select className="form-select" value={form.clientId} onChange={event => updateForm('clientId', event.target.value)} required>
-                {clients.map(client => <option value={client.id} key={client.id}>{client.name}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>Name</span>
-              <input className="form-input" value={form.name} onChange={event => updateForm('name', event.target.value)} placeholder="Topco Fresh Melons" required />
-            </label>
-            <label>
-              <span>Activation Type</span>
-              <select className="form-select" value={form.activationType} onChange={event => updateForm('activationType', event.target.value)}>
-                <option>Topco eComm Activation</option>
-                <option>Topco Packaging Activation</option>
-              </select>
-            </label>
-            <label>
-              <span>Project Reference</span>
-              <input className="form-input" value={form.projectReference} onChange={event => updateForm('projectReference', event.target.value)} placeholder="26003302 / MI001868" />
-            </label>
-            <label>
-              <span>Due / Urgency</span>
-              <input className="form-input" value={form.dueUrgency} onChange={event => updateForm('dueUrgency', event.target.value)} placeholder="ASAP upon receipt" />
-            </label>
-            <label>
-              <span>Walnut Scope</span>
-              <input className="form-input" value={form.walnutScope} onChange={event => updateForm('walnutScope', event.target.value)} placeholder="Full set renders - WALNUT (PHOTO)" />
-            </label>
-            <label>
-              <span>Upload Location</span>
-              <input className="form-input" value={form.uploadLocation} onChange={event => updateForm('uploadLocation', event.target.value)} />
-            </label>
-            <label>
-              <span>Artwork Path</span>
-              <input className="form-input" value={form.artworkPath} onChange={event => updateForm('artworkPath', event.target.value)} />
-            </label>
-          </div>
-          <div className="deliverables-toggle-group activation-deliverables">
-            {INTAKE_DELIVERABLE_OPTIONS.map(option => (
-              <button
-                key={option}
-                className={`deliverable-pill ${DELIVERABLE_ROUTE_MAP[option]} ${form.deliverables.includes(option) ? 'is-selected' : ''}`}
-                type="button"
-                aria-pressed={form.deliverables.includes(option)}
-                onClick={() => toggleDeliverable(option)}
-              >
-                {form.deliverables.includes(option) && <span aria-hidden="true">✓</span>}
-                {option}
-              </button>
-            ))}
-          </div>
-          <label className="activation-package-wide">
-            <span>Activation</span>
-            <textarea className="form-input" rows="5" value={form.activationPackage} onChange={event => updateForm('activationPackage', event.target.value)} placeholder="Project instructions, required shots, activation facts, and PM notes." />
-          </label>
-          <section className="activation-sku-section">
-            <div className="activation-sku-section-header">
-              <span className="client-readiness-label">SKUs</span>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={addSkuRow}>Add SKU</button>
-            </div>
-            <div className="activation-sku-rows">
-              {form.skuRows.map((row, index) => (
-                <div className="activation-sku-row" key={row.id}>
-                  <div className="activation-sku-row-top">
-                    <strong>SKU {index + 1}</strong>
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeSkuRow(row.id)} disabled={form.skuRows.length === 1}>Remove</button>
+        <form className="activation-modal-body activation-simple-form" onSubmit={event => { event.preventDefault(); saveActivationPackage('draft'); }}>
+          <div className="activation-builder-layout">
+            <div className="activation-builder-inputs">
+              <section className="activation-simple-section">
+                <div className="activation-section-heading">
+                  <div>
+                    <span className="client-readiness-label">Activation</span>
+                    <p>One request package. These fields apply to every item below.</p>
                   </div>
-                  <label><span>UPC</span><input className="form-input" value={row.upc} onChange={event => updateSkuRow(row.id, 'upc', event.target.value)} /></label>
-                  <label><span>CVID</span><input className="form-input" value={row.cvid} onChange={event => updateSkuRow(row.id, 'cvid', event.target.value)} /></label>
-                  <label><span>Description</span><input className="form-input" value={row.description} onChange={event => updateSkuRow(row.id, 'description', event.target.value)} /></label>
-                  <label><span>Structure</span><input className="form-input" value={row.structure} onChange={event => updateSkuRow(row.id, 'structure', event.target.value)} placeholder="Hang Tag / Label / Carton" /></label>
-                  <label><span>Job Number</span><input className="form-input" value={row.jobNumber} onChange={event => updateSkuRow(row.id, 'jobNumber', event.target.value)} /></label>
-                  <label><span>Brand</span><input className="form-input" value={row.brand} onChange={event => updateSkuRow(row.id, 'brand', event.target.value)} /></label>
-                  <label className="activation-sku-wide"><span>Coordinator Description</span><input className="form-input" value={row.coordinatorDescription} onChange={event => updateSkuRow(row.id, 'coordinatorDescription', event.target.value)} /></label>
+                  <span className={`activation-completion-pill ${activationMissing.length ? 'is-missing' : 'is-complete'}`}>
+                    {activationMissing.length ? `${activationMissing.length} missing` : 'Complete'}
+                  </span>
                 </div>
-              ))}
+                <div className="activation-simple-grid">
+                  <label><span>Name</span><input className="form-input" value={form.name} onChange={event => updateForm('name', event.target.value)} placeholder="Fresh Melons" /></label>
+                  <SuggestiveTextInput
+                    label="Due / Urgency"
+                    value={form.dueUrgency}
+                    onChange={value => updateForm('dueUrgency', value)}
+                    placeholder="ASAP upon receipt"
+                    suggestions={dueUrgencySuggestions}
+                  />
+                  <SuggestiveTextInput
+                    label="Walnut Scope"
+                    value={form.walnutScope}
+                    onChange={value => updateForm('walnutScope', value)}
+                    placeholder="Full Set Renders - WALNUT (Photo)"
+                    suggestions={walnutScopeSuggestions}
+                  />
+                  <div className="activation-deliverables-field">
+                    <span>Deliverables</span>
+                    <DeliverablesSelector
+                      values={form.deliverables}
+                      options={ACTIVATION_DELIVERABLE_OPTIONS}
+                      onChange={value => updateForm('deliverables', normalizeDeliverableList(value))}
+                    />
+                  </div>
+                  <label>
+                    <span className="activation-label-stack">
+                      Artwork Path
+                      <small>{pathPrefixes.artwork || 'Enter artwork path'}</small>
+                    </span>
+                    <input className="form-input" value={form.artworkPath} onChange={event => updateForm('artworkPath', event.target.value)} placeholder="Fresh_Melons/26003302..." />
+                  </label>
+                  <label>
+                    <span className="activation-label-stack">
+                      Upload Location
+                      <small>{pathPrefixes.upload || 'Enter upload location'}</small>
+                    </span>
+                    <input className="form-input" value={form.uploadLocation} onChange={event => updateForm('uploadLocation', event.target.value)} placeholder="Fresh_Melons/26003302.../3_IMAGES/3D" />
+                  </label>
+                  <label className="activation-simple-wide"><span>Notes</span><textarea className="form-input" value={form.notes} onChange={event => updateForm('notes', event.target.value)} placeholder="Anything the producer needs to know" /></label>
+                </div>
+              </section>
+
+              <section className="activation-simple-section">
+                <div className="activation-sku-section-header">
+                  <div>
+                    <span className="client-readiness-label">Items</span>
+                    <p>Each row is one received item/SKU that must be linked and complete.</p>
+                  </div>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={addItem}>Add Item</button>
+                </div>
+                <div className="activation-sku-rows">
+                  {itemRows.length === 0 && (
+                    <div className="activation-empty-items">
+                      No items linked. Add an item before moving this Activation to Photo.
+                    </div>
+                  )}
+                  {itemRows.map((row, index) => (
+                    <div className="activation-sku-row activation-simple-item" key={row.id}>
+                      <div className="activation-sku-row-top">
+                        <div>
+                          <strong>Item {index + 1}</strong>
+                          <small>{itemMissingFields(row).length ? `Missing: ${itemMissingFields(row).join(', ')}` : 'Item complete'}</small>
+                        </div>
+                        <span className={`activation-completion-pill ${itemMissingFields(row).length ? 'is-missing' : 'is-complete'}`}>
+                          {itemMissingFields(row).length ? `${itemMissingFields(row).length} missing` : 'Complete'}
+                        </span>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeItem(row.id)}>Remove</button>
+                      </div>
+                      <label className="activation-merchandise-match-field">
+                        <span>Link Merchandise</span>
+                        <select className="form-input" value={row.merchandiseId} onChange={event => updateItem(row.id, 'merchandiseId', event.target.value)}>
+                          <option value="">Choose received merchandise...</option>
+                          {topcoMerchandiseOptions.map(item => <option value={item.id} key={item.id}>{item.label}</option>)}
+                        </select>
+                      </label>
+                      <SuggestiveTextInput
+                        label="Structure"
+                        value={row.structure}
+                        onChange={value => updateItem(row.id, 'structure', value)}
+                        placeholder="Hang Tag / Label"
+                        suggestions={structureSuggestions}
+                        className="activation-structure-field"
+                      />
+                      <label className="activation-description-field"><span>Description</span><input className="form-input" value={row.description} onChange={event => updateItem(row.id, 'description', event.target.value)} placeholder="Cantaloupe 1 Ea" /></label>
+                      <label><span>UPC</span><input className="form-input" value={row.upc} onChange={event => updateItem(row.id, 'upc', event.target.value)} /></label>
+                      <label><span>CVID</span><input className="form-input" value={row.cvid} onChange={event => updateItem(row.id, 'cvid', event.target.value)} /></label>
+                    </div>
+                  ))}
+                </div>
+              </section>
             </div>
-          </section>
+
+            <aside className="activation-email-preview" aria-label="Activation email preview">
+              <div className="activation-email-preview-header">
+                <span className="client-readiness-label">Email Preview</span>
+                <span>Live</span>
+              </div>
+              <div className="activation-email-preview-body">
+                <p className="activation-email-subject"><strong>Subject:</strong> Topco eComm Activation - <PreviewValue value={form.name} fallback="Activation name" /></p>
+                <p><strong>eComm image bundles are needed for the following projects:</strong></p>
+                <ul>
+                  {itemRows.map((row, index) => (
+                    <li key={row.id}>
+                      <PreviewValue value={row.description} fallback={`Item ${index + 1} description`} />
+                      {' '}<PreviewValue value={row.cvid} fallback="CVID" />{' - 1 SKU'}
+                    </li>
+                  ))}
+                </ul>
+                <div className="activation-preview-lines">
+                  <strong>Number of SKUs:</strong> <span className="activation-preview-token is-present">{itemCount}</span>
+                  <br />
+                  <strong>Samples received:</strong> <PreviewValue value={form.name} fallback="project/sample group" />
+                  <br />
+                  <strong>Walnut scope:</strong> <PreviewValue value={form.walnutScope} fallback="Walnut scope" />
+                  <br />
+                  <strong>Due:</strong> <PreviewValue value={form.dueUrgency} fallback="Due / urgency" />
+                  <br />
+                  <strong>Path to artwork:</strong> <PreviewPath value={form.artworkPath} prefix={pathPrefixes.artwork} fallback="Artwork path" />
+                  <br />
+                  <strong>Location for image uploads:</strong> <PreviewPath value={form.uploadLocation} prefix={pathPrefixes.upload} fallback="Upload location" />
+                </div>
+                <p className="activation-preview-table-title"><strong>Sku Details</strong></p>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Description</th>
+                      <th>Structure</th>
+                      <th>UPC</th>
+                      <th>CVID</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {itemRows.map(row => (
+                      <tr key={`${row.id}-details`}>
+                        <td className={fieldStatus(row.description)}>{fieldText(row.description, 'Description')}</td>
+                        <td className={fieldStatus(row.structure)}>{fieldText(row.structure, 'Structure')}</td>
+                        <td className={fieldStatus(row.upc)}>{fieldText(row.upc, 'UPC')}</td>
+                        <td className={fieldStatus(row.cvid)}>{fieldText(row.cvid, 'CVID')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p>{form.notes || 'Once completed, please send for review/approval. Thanks!'}</p>
+              </div>
+            </aside>
+          </div>
+
           {error && <div className="error-state">{error}</div>}
           <footer className="activation-modal-footer">
             <button type="button" className="btn" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving || !form.clientId || !form.name.trim()}>
-              {saving ? 'Saving...' : 'Add Activation'}
+            <button type="submit" className="btn btn-blue-outline" disabled={saving || !form.clientId}>
+              {saving && saveAction === 'draft' ? 'Saving...' : 'Save Draft'}
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => saveActivationPackage('move')} disabled={saving || !form.clientId}>
+              {saving && saveAction === 'move' ? 'Moving...' : 'Move to Photo'}
             </button>
           </footer>
         </form>
@@ -6981,6 +7594,7 @@ function MerchandiseReviewV2Page() {
   const authContext = useAuth();
   const auth = authContext?.auth || {};
   const entries = useResource(() => api.listMerchandiseReviewEntries());
+  const workstreamCards = useResource(() => api.listWorkstreamCards());
   const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
   const records = entries.data?.records ?? [];
@@ -7010,6 +7624,9 @@ function MerchandiseReviewV2Page() {
   const [ageFilter, setAgeFilter] = useState('');
   const [deliverableFilter, setDeliverableFilter] = useState('');
   const [activationModalOpen, setActivationModalOpen] = useState(false);
+  const [activationListOpen, setActivationListOpen] = useState(false);
+  const [selectedActivation, setSelectedActivation] = useState(null);
+  const [localActivations, setLocalActivations] = useState([]);
 
   const merchandiseIdsKey = records.map(record => record.id).sort().join('|');
 
@@ -7043,7 +7660,21 @@ function MerchandiseReviewV2Page() {
   const topcoClientIds = new Set((clients.data?.records ?? [])
     .filter(client => (client.name || '').trim().toLowerCase() === 'topco')
     .map(client => client.id));
-  const selectedDeliverableRouteIdsByMerchandise = records.reduce((map, record) => {
+  const activationClientId = clientFilter && topcoClientIds.has(clientFilter)
+    ? clientFilter
+    : [...topcoClientIds][0] || '';
+  const activations = useResource(
+    () => activationClientId ? api.listActivations({ clientId: activationClientId }) : Promise.resolve({ records: [] }),
+    [activationClientId]
+  );
+  const activationRecords = [
+    ...(activations.data?.records || []),
+    ...localActivations.filter(local => !(activations.data?.records || []).some(record => record.id === local.id)),
+  ];
+  const linkedActivationByMerchandiseId = activationByMerchandiseId(activationRecords);
+  const activationLinksLoaded = Boolean(activations.data);
+  const activePlanningRecords = records.filter(record => record.newMerchStatus !== 'Workflows Created');
+  const selectedDeliverableRouteIdsByMerchandise = activePlanningRecords.reduce((map, record) => {
     const deliverableRoutes = deliverablesForRecord(record)
       .map(deliverable => DELIVERABLE_ROUTE_MAP[deliverable])
       .filter(Boolean);
@@ -7052,7 +7683,7 @@ function MerchandiseReviewV2Page() {
       : normalizeDeliverableRouteSelection(legacyDeliverableRouteDecisions[record.id] || {}, "");
     return map;
   }, {});
-  const boardItems = records.map(record => {
+  const receivedMerchItems = activePlanningRecords.map(record => {
     const override = artworkOverrides[record.id];
     const client = clientMap[record.clientIds?.[0]];
     const location = record.locationId ? locationMap[record.locationId] : null;
@@ -7069,15 +7700,19 @@ function MerchandiseReviewV2Page() {
     const deliverables = deliverablesForRecord(record);
     const deliverableLabels = deliverables.map(deliverableRouteLabelForDeliverable).filter(Boolean);
     const deliverableRoutes = deliverables.map(deliverable => DELIVERABLE_ROUTE_MAP[deliverable]).filter(Boolean);
+    const linkedActivation = linkedActivationByMerchandiseId[record.id] || null;
     const comments = Array.isArray(conversations[record.id]) ? conversations[record.id] : [];
     const readThrough = commentReads[record.id] || '';
     const unreadComments = comments.filter(comment => comment.createdAt > readThrough).length;
     const overriddenQueue = queueOverrides[record.id];
-    const columnId = record.intakeStatus === 'Ready to Release'
+    const baseColumnId = record.intakeStatus === 'Ready for Photo'
       ? QUEUE_IDS.readyProduction
       : overriddenQueue && PM_QUEUE_COLUMNS.some(column => column.id === overriddenQueue)
         ? overriddenQueue
         : card.columnId;
+    const columnId = activationDriven && activationLinksLoaded && !linkedActivation && baseColumnId === QUEUE_IDS.readyProduction
+      ? QUEUE_IDS.waitingActivation
+      : baseColumnId;
     return {
       ...card,
       id: record.id,
@@ -7089,15 +7724,18 @@ function MerchandiseReviewV2Page() {
       isDraftPlanningCard: false,
       deliverables,
       activationDriven,
+      activation: linkedActivation,
       commentCount: comments.length,
       unreadComments,
       deliverableRoute: deliverableLabels.join(', ') || selectedDeliverableRouteIdsByMerchandise[record.id].map(deliverableRouteLabel).filter(Boolean).join(', ') || card.deliverableRoute,
     };
   });
-  const clientOptions = [...new Set(records.map(record => record.clientIds?.[0]).filter(Boolean))]
+  const workstreamItems = (workstreamCards.data?.records || []).map(card => buildWorkstreamPlanningItem(card, { clientMap, locationMap }));
+  const boardItems = [...receivedMerchItems, ...workstreamItems];
+  const clientOptions = [...new Set(activePlanningRecords.map(record => record.clientIds?.[0]).filter(Boolean))]
     .map(id => ({ id, name: clientMap[id]?.name || 'Unknown client' }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const locationOptions = [...new Set(records.map(record => record.locationId).filter(Boolean))]
+  const locationOptions = [...new Set(activePlanningRecords.map(record => record.locationId).filter(Boolean))]
     .map(id => ({ id, name: locationMap[id]?.name || 'Unknown location' }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const searchText = search.trim().toLowerCase();
@@ -7123,7 +7761,24 @@ function MerchandiseReviewV2Page() {
   const previousSelectedItem = selectedIndex > 0 ? selectedColumnItems[selectedIndex - 1] : null;
   const nextSelectedItem = selectedIndex >= 0 && selectedIndex < selectedColumnItems.length - 1 ? selectedColumnItems[selectedIndex + 1] : null;
   const showNewCardClient = auth.allClients || (auth.clientIds || []).length !== 1;
-  const canCreateTopcoActivation = topcoClientIds.size > 0 && (!clientFilter || topcoClientIds.has(clientFilter));
+  const canCreateTopcoActivation = topcoClientIds.size > 0;
+  const activationMerchandiseOptions = boardItems
+    .filter(item => topcoClientIds.has(item.record?.clientIds?.[0]))
+    .map(item => {
+      const parts = [
+        item.title,
+        item.identifier,
+        item.timeHere,
+      ].map(value => String(value || '').trim()).filter(Boolean);
+      return {
+        id: item.merchandiseId,
+        clientId: item.record?.clientIds?.[0] || '',
+        title: item.title || '',
+        identifier: item.identifier || '',
+        brand: item.record?.linkedItem?.brand || '',
+        label: parts.join(' · ') || item.merchandiseId,
+      };
+    });
 
   useEffect(() => {
     setPhotoIndex(0);
@@ -7189,6 +7844,10 @@ function MerchandiseReviewV2Page() {
     const destination = planningQueues.find(column => column.id === columnId);
     if (!destination || item.columnId === columnId) return;
     if (columnId === QUEUE_IDS.readyProduction) {
+      if (item.activationDriven && !item.activation?.id) {
+        setFeedback('Cannot move to Ready for Photo. Missing: linked Activation');
+        return;
+      }
       const blockers = visibleRequirementBlockers(item.requiredToShoot || []);
       if (blockers.length) {
         setFeedback(`Cannot move to Ready for Photo. Missing: ${blockers.map(requirementLabelForUser).join(', ')}`);
@@ -7196,7 +7855,11 @@ function MerchandiseReviewV2Page() {
       }
     }
     try {
-      if ([QUEUE_IDS.newReview, QUEUE_IDS.waitingInformation, QUEUE_IDS.sendThr3d, QUEUE_IDS.readyProduction].includes(columnId)) {
+      if (item.subjectType === 'workstream-card') {
+        await api.updateWorkstreamCard(item.workstreamCardId, {
+          status: workstreamStatusForQueueId(columnId),
+        });
+      } else if ([QUEUE_IDS.newReview, QUEUE_IDS.waitingInformation, QUEUE_IDS.sendThr3d, QUEUE_IDS.readyProduction].includes(columnId)) {
         await api.updateMerchandiseIntakeState(item.merchandiseId, {
           stage: columnId,
           blockingRequirements: item.requiredToShoot.filter(requirement => requirement.visible !== false && !requirement.satisfied).map(requirementLabelForUser),
@@ -7211,7 +7874,7 @@ function MerchandiseReviewV2Page() {
       });
       recordActivity(item.merchandiseId, `Moved to ${destination.label}.`, { actor: 'Planning', action: `Moved to ${destination.label}.` });
       await refreshV2WorkflowData();
-      setSelectedId(item.merchandiseId);
+      setSelectedId(item.id);
       setFeedback(`Moved ${item.title || 'merchandise'} to ${destination.label}.`);
     } catch (error) {
       setFeedback(error.message || 'Could not move Merchandise.');
@@ -7251,7 +7914,10 @@ function MerchandiseReviewV2Page() {
   }
 
   async function refreshV2WorkflowData({ quiet = true } = {}) {
-    await entries.reload({ quiet });
+    await Promise.all([
+      entries.reload({ quiet }),
+      workstreamCards.reload({ quiet }),
+    ]);
   }
 
   async function saveIntakeReadiness(item) {
@@ -7311,33 +7977,30 @@ function MerchandiseReviewV2Page() {
     if (finishSavingId) return { ok: false, message: 'Verification is already finishing.' };
     setFinishSavingId(item.merchandiseId);
     setFeedback('');
-    const blockers = state.blockers || visibleRequirementBlockers(item.requiredToShoot || []);
     const deliverables = normalizeDeliverableList(state.deliverables || item.deliverables);
-    const stage = state.thr3dOnly && blockers.length === 0
-      ? QUEUE_IDS.sendThr3d
-      : blockers.length === 0 && state.photoDeliverables.length
-        ? QUEUE_IDS.readyProduction
-        : QUEUE_IDS.waitingInformation;
+    const assignment = state.assignment || workstreamAssignmentsForDeliverables(deliverables, item.record?.quantity);
+    const expectedProductId = item.record?.linkedItem?.id || item.record?.itemIds?.[0] || '';
     try {
-      const updated = await api.updateMerchandiseIntakeState(item.merchandiseId, {
-        stage,
-        deliverables,
-        blockingRequirements: blockers.map(requirementLabelForUser),
+      const result = await api.confirmAssignMerchandise(item.merchandiseId, {
+        expectedProductId,
+        workstreams: assignment.workstreams,
+        thr3d: assignment.thr3d,
       });
       await refreshV2WorkflowData();
       setSelectedId('');
       setWorkspaceOpen(false);
-      const routedLabel = stage === QUEUE_IDS.sendThr3d
-        ? 'Thr3d Shipment'
-        : planningQueues.find(column => column.id === stage)?.label || 'Planning';
-      const message = stage === QUEUE_IDS.waitingInformation
-        ? `Verification saved. Still needed: ${blockers.map(requirementLabelForUser).join(', ') || 'more information'}.`
-        : `Verification finished. Routed to ${routedLabel}.`;
+      const workCount = result.workstreamCards?.length || 0;
+      const shipCount = result.thr3dShippingItems?.length || 0;
+      const created = [
+        workCount ? `${workCount} photo card${workCount === 1 ? '' : 's'}` : '',
+        shipCount ? `${shipCount} THR3D shipping item${shipCount === 1 ? '' : 's'}` : '',
+      ].filter(Boolean).join(' and ');
+      const message = `Workflows created: ${created || 'assignment saved'}.`;
       setFeedback(message);
-      return { ok: true, message, stage, record: updated };
+      return { ok: true, message, record: result.merchandise };
     } catch (error) {
       const missing = Array.isArray(error.payload?.missing) ? ` Missing: ${error.payload.missing.join(', ')}` : '';
-      const message = `${error.message || 'Could not finish verification.'}${missing}`;
+      const message = `${error.message || 'Could not create work.'}${missing}`;
       setFeedback(message);
       return { ok: false, message };
     } finally {
@@ -7350,13 +8013,69 @@ function MerchandiseReviewV2Page() {
     setWorkspaceOpen(false);
   }
 
-  function handleActivationSaved(record) {
-    setActivationModalOpen(false);
-    setFeedback(`Activation created: ${record?.name || 'Untitled Activation'}.`);
+  function openActivationModal(activation = null) {
+    setActivationListOpen(false);
+    setSelectedActivation(activation);
+    setActivationModalOpen(true);
   }
 
-  if (entries.loading) return <div className="empty-state">Loading Planning board...</div>;
+  function newActivationFromPlanningItem(item) {
+    const row = activationRowFromPlanningItem(item);
+    const deliverables = normalizeDeliverableList(item.deliverables || ['Ecomm'])
+      .filter(value => ACTIVATION_DELIVERABLE_OPTIONS.includes(value));
+    return {
+      clientIds: item.record?.clientIds || [],
+      name: '',
+      dueUrgency: '',
+      deliverables: deliverables.length ? deliverables : ['Ecomm'],
+      walnutScope: '',
+      artworkPath: '',
+      uploadLocation: '',
+      notes: '',
+      skuDetails: [row],
+      linkedMerchandiseIds: row.merchandiseId ? [row.merchandiseId] : [],
+    };
+  }
+
+  function openNewActivationForItem(item) {
+    setWorkspaceOpen(false);
+    openActivationModal(newActivationFromPlanningItem(item));
+  }
+
+  function openActivationWithItem(activation, item) {
+    setWorkspaceOpen(false);
+    openActivationModal(activationWithPlanningItem(activation, item));
+  }
+
+  function closeActivationModal() {
+    setActivationModalOpen(false);
+    setSelectedActivation(null);
+  }
+
+  async function handleActivationSaved(record, result = {}) {
+    if (record?.id) {
+      setLocalActivations(current => [
+        record,
+        ...current.filter(activation => activation.id !== record.id),
+      ]);
+    }
+    closeActivationModal();
+    if (result.moved) {
+      setFeedback(`Moved ${result.movedCount || 0} linked card${result.movedCount === 1 ? '' : 's'} to Ready for Photo.`);
+      await activations.reload({ quiet: true }).catch(() => {});
+      await refreshV2WorkflowData();
+    } else {
+      setFeedback(`Activation draft saved: ${record?.name || 'Untitled Activation'}.`);
+      await activations.reload({ quiet: true }).catch(() => {
+        setFeedback(`Activation saved: ${record?.name || 'Untitled Activation'}. Refresh if it does not appear in the list.`);
+      });
+      await refreshV2WorkflowData();
+    }
+  }
+
+  if (entries.loading || workstreamCards.loading) return <div className="empty-state">Loading Planning board...</div>;
   if (entries.error) return <div className="error-state">{entries.error}</div>;
+  if (workstreamCards.error) return <div className="error-state">{workstreamCards.error}</div>;
 
   return (
     <div className="work-board-page">
@@ -7365,9 +8084,14 @@ function MerchandiseReviewV2Page() {
           {feedback && <span className="planning-board-feedback">{feedback}</span>}
         </div>
         {canCreateTopcoActivation && (
-          <button type="button" className="btn btn-primary" onClick={() => setActivationModalOpen(true)}>
-            Add Activation
-          </button>
+          <div className="planning-board-action-buttons">
+            <button type="button" className="btn btn-blue-outline" onClick={() => setActivationListOpen(true)}>
+              Edit Activations
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => openActivationModal(null)}>
+              Add Activation
+            </button>
+          </div>
         )}
       </div>
       <KanbanBoard
@@ -7399,6 +8123,9 @@ function MerchandiseReviewV2Page() {
           activity={Array.isArray(activityByMerchandise[selectedItem.merchandiseId]) ? activityByMerchandise[selectedItem.merchandiseId] : []}
           onAddComment={addConversationComment}
           onMarkCommentsRead={markCommentsRead}
+          activations={activationRecords}
+          onNewActivation={openNewActivationForItem}
+          onAddToActivation={openActivationWithItem}
         />
       ) : selectedItem ? (
         <PlanningWorkspaceDrawer
@@ -7419,11 +8146,22 @@ function MerchandiseReviewV2Page() {
           readonly={selectedWorkspaceMode === 'readonly'}
         />
       ) : null}
+      {activationListOpen && (
+        <PlanningActivationListModal
+          activations={activationRecords}
+          loading={activations.loading}
+          onClose={() => setActivationListOpen(false)}
+          onEdit={openActivationModal}
+          onAdd={() => openActivationModal(null)}
+        />
+      )}
       {activationModalOpen && (
         <PlanningActivationPackageModal
           clients={clients.data?.records || []}
+          merchandiseOptions={activationMerchandiseOptions}
           initialClientId={clientFilter}
-          onClose={() => setActivationModalOpen(false)}
+          initialActivation={selectedActivation}
+          onClose={closeActivationModal}
           onSaved={handleActivationSaved}
         />
       )}
@@ -7488,7 +8226,7 @@ function PlanningThr3dRegressionPage() {
   };
   const selectedItem = selectedId ? item : null;
   const photos = recordPhotos(record);
-  const outgoingRecords = finishedRecord?.intakeStatus === 'Ready to Release'
+  const outgoingRecords = finishedRecord?.intakeStatus === 'Ready for Photo'
     && finishedRecord.deliverables?.length === 1
     && finishedRecord.deliverables[0] === 'Thr3d'
     ? [finishedRecord]
@@ -7498,8 +8236,8 @@ function PlanningThr3dRegressionPage() {
     const updatedRecord = {
       ...currentItem.record,
       deliverables: normalizeDeliverableList(state.deliverables),
-      intakeStatus: 'Ready to Release',
-      merchStatus: 'Received',
+      intakeStatus: 'Ready for Photo',
+      merchStatus: 'Ready to Ship',
       released: false,
     };
     setFinishedRecord(updatedRecord);

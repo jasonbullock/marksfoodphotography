@@ -54,18 +54,18 @@ class IntakeDecisionTests(unittest.TestCase):
     def test_valid_intake_decisions_save_and_serialize(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo", "Ecomm Photo"],
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging", "Ecomm"],
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
-            "deliverables": ["Packaging Photo", "Ecomm Photo"],
+            "deliverables": ["Packaging", "Ecomm"],
         })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging Photo", "Ecomm Photo"])
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging", "Ecomm"])
         payload = response.get_json()
-        self.assertEqual(payload["deliverables"], ["Packaging Photo", "Ecomm Photo"])
+        self.assertEqual(payload["deliverables"], ["Packaging", "Ecomm"])
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
@@ -73,7 +73,7 @@ class IntakeDecisionTests(unittest.TestCase):
     def test_single_deliverable_saves_as_multi_select_payload(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo"],
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging"],
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
@@ -82,9 +82,9 @@ class IntakeDecisionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging Photo"])
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging"])
         payload = response.get_json()
-        self.assertEqual(payload["deliverables"], ["Packaging Photo"])
+        self.assertEqual(payload["deliverables"], ["Packaging"])
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
@@ -92,7 +92,7 @@ class IntakeDecisionTests(unittest.TestCase):
     def test_legacy_and_airtable_multiselect_shapes_are_normalized(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo", "Ecomm Photo", "Thr3d"],
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging", "Ecomm", "Thr3d"],
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
@@ -101,8 +101,8 @@ class IntakeDecisionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging Photo", "Ecomm Photo", "Thr3d"])
-        self.assertEqual(response.get_json()["deliverables"], ["Packaging Photo", "Ecomm Photo", "Thr3d"])
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging", "Ecomm", "Thr3d"])
+        self.assertEqual(response.get_json()["deliverables"], ["Packaging", "Ecomm", "Thr3d"])
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
@@ -110,7 +110,7 @@ class IntakeDecisionTests(unittest.TestCase):
     def test_comma_separated_legacy_deliverables_are_normalized(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo", "Ecomm Photo"],
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging", "Ecomm"],
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
@@ -118,7 +118,7 @@ class IntakeDecisionTests(unittest.TestCase):
         })
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(update_record.call_args.args[2][C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging Photo", "Ecomm Photo"])
+        self.assertEqual(update_record.call_args.args[2][C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging", "Ecomm"])
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
@@ -126,12 +126,12 @@ class IntakeDecisionTests(unittest.TestCase):
     def test_malformed_deliverable_shapes_are_normalized_before_airtable(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo", "Ecomm Photo", "Thr3d"],
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging", "Ecomm", "Thr3d"],
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
             "deliverables": [
-                '["Packaging Photo"]',
+                '["Packaging"]',
                 ['"Ecomm"'],
                 {"name": '"THR3D"'},
                 "",
@@ -144,7 +144,7 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             update_record.call_args.args[2][C.F_RECEIPT_ENTRY_DELIVERABLES],
-            ["Packaging Photo", "Ecomm Photo", "Thr3d"],
+            ["Packaging", "Ecomm", "Thr3d"],
         )
 
     @patch("routes.airtable.get_record")
@@ -181,16 +181,16 @@ class IntakeDecisionTests(unittest.TestCase):
     def test_thr3d_deliverable_does_not_write_resolution(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d", "Ecomm Photo"],
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d", "Ecomm"],
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
-            "deliverables": ["Thr3d", "Ecomm Photo"],
+            "deliverables": ["Thr3d", "Ecomm"],
         })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Thr3d", "Ecomm Photo"])
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Thr3d", "Ecomm"])
         self.assertTrue(all("Resolution" not in key for key in fields))
 
     @patch("routes._clients_by_id", return_value={})
@@ -199,7 +199,7 @@ class IntakeDecisionTests(unittest.TestCase):
     def test_intake_state_waiting_info_uses_intake_status(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry({C.F_RECEIPT_ENTRY_NOTES: "Receiver note"}), self.receipt()]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo"],
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging"],
             C.F_RECEIPT_ENTRY_NOTES: "Receiver note",
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
             C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Waiting on Information",
@@ -207,17 +207,329 @@ class IntakeDecisionTests(unittest.TestCase):
 
         response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
             "stage": "waiting-info",
-            "deliverables": ["Packaging Photo"],
+            "deliverables": ["Packaging"],
             "blockingRequirements": ["Product not identified"],
         })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging Photo"])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging"])
+        self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_STATUS, fields)
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Waiting on Information")
         self.assertNotIn(C.F_RECEIPT_ENTRY_NOTES, fields)
         self.assertEqual(response.get_json()["reviewState"], "Waiting for Product Data")
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.create_record")
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_confirm_assign_creates_ecomm_and_packaging_cards(self, get_record, update_record, create_record, _clients):
+        product = {"id": "recProduct", "fields": {C.F_ITEM_CLIENT: ["recClient"], C.F_ITEM_NAME: "Frozen Pizza"}}
+        get_record.side_effect = [self.entry({C.F_RECEIPT_ENTRY_QUANTITY: 10}), self.receipt(), product]
+        create_record.side_effect = [
+            {
+                "id": "recEcomm",
+                "fields": {
+                    C.F_WORKSTREAM_CARD_NAME: "Frozen Pizza Box - 000123 - Ecomm",
+                    C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+                    C.F_WORKSTREAM_CARD_EXPECTED_PRODUCT: ["recProduct"],
+                    C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
+                    C.F_WORKSTREAM_CARD_STATUS: "New",
+                    C.F_WORKSTREAM_CARD_QUANTITY: 4,
+                },
+            },
+            {
+                "id": "recPackaging",
+                "fields": {
+                    C.F_WORKSTREAM_CARD_NAME: "Frozen Pizza Box - 000123 - Packaging",
+                    C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+                    C.F_WORKSTREAM_CARD_EXPECTED_PRODUCT: ["recProduct"],
+                    C.F_WORKSTREAM_CARD_TYPE: "Packaging",
+                    C.F_WORKSTREAM_CARD_STATUS: "New",
+                    C.F_WORKSTREAM_CARD_QUANTITY: 6,
+                },
+            },
+        ]
+        update_record.return_value = self.entry({
+            C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
+            C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS: "Workflows Created",
+            C.F_RECEIPT_ENTRY_MANUAL_PRODUCT_INFO: '{"upc": "000123"}',
+        })
+
+        response = self.app.post("/api/merchandise/recMerch/confirm-assign", json={
+            "expectedProductId": "recProduct",
+            "manualProductInfo": {"upc": "000123"},
+            "workstreams": [
+                {"type": "Ecomm", "quantity": 4},
+                {"type": "Packaging", "quantity": 6},
+            ],
+        })
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(create_record.call_count, 2)
+        self.assertEqual(create_record.call_args_list[0].args[0], C.WORKSTREAM_CARDS_TABLE)
+        self.assertEqual(create_record.call_args_list[1].args[0], C.WORKSTREAM_CARDS_TABLE)
+        update_fields = update_record.call_args.args[2]
+        self.assertEqual(update_fields[C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS], "Workflows Created")
+        self.assertEqual(update_fields[C.F_RECEIPT_ENTRY_ITEM], ["recProduct"])
+        self.assertEqual(update_fields[C.F_RECEIPT_ENTRY_MANUAL_PRODUCT_INFO], '{"upc": "000123"}')
+        payload = response.get_json()
+        self.assertEqual([card["type"] for card in payload["workstreamCards"]], ["Ecomm", "Packaging"])
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.create_record")
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_confirm_assign_creates_packaging_card_and_thr3d_shipping_item(self, get_record, update_record, create_record, _clients):
+        get_record.side_effect = [self.entry({C.F_RECEIPT_ENTRY_QUANTITY: 10}), self.receipt()]
+        create_record.side_effect = [
+            {
+                "id": "recPackaging",
+                "fields": {
+                    C.F_WORKSTREAM_CARD_NAME: "Frozen Pizza Box - 000123 - Packaging",
+                    C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+                    C.F_WORKSTREAM_CARD_TYPE: "Packaging",
+                    C.F_WORKSTREAM_CARD_STATUS: "New",
+                    C.F_WORKSTREAM_CARD_QUANTITY: 6,
+                },
+            },
+            {
+                "id": "recThr3d",
+                "fields": {
+                    C.F_THR3D_SHIPPING_ITEM_NAME: "Frozen Pizza Box - 000123 - THR3D",
+                    C.F_THR3D_SHIPPING_ITEM_RECEIVED_MERCH: ["recMerch"],
+                    C.F_THR3D_SHIPPING_ITEM_QUANTITY: 4,
+                    C.F_THR3D_SHIPPING_ITEM_STATUS: "Needs Shipment",
+                },
+            },
+        ]
+        update_record.return_value = self.entry({C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS: "Workflows Created"})
+
+        response = self.app.post("/api/merchandise/recMerch/confirm-assign", json={
+            "workstreams": [{"type": "Packaging", "quantity": 6}],
+            "thr3d": {"quantity": 4},
+        })
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(create_record.call_args_list[0].args[0], C.WORKSTREAM_CARDS_TABLE)
+        self.assertEqual(create_record.call_args_list[1].args[0], C.THR3D_SHIPPING_ITEMS_TABLE)
+        payload = response.get_json()
+        self.assertEqual(payload["workstreamCards"][0]["type"], "Packaging")
+        self.assertEqual(payload["thr3dShippingItems"][0]["shippingStatus"], "Needs Shipment")
+
+    @patch("routes.airtable.get_record")
+    def test_confirm_assign_rejects_ecomm_and_thr3d_together(self, get_record):
+        get_record.side_effect = [self.entry(), self.receipt()]
+
+        response = self.app.post("/api/merchandise/recMerch/confirm-assign", json={
+            "workstreams": [{"type": "Ecomm", "quantity": 5}],
+            "thr3d": {"quantity": 5},
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Ecomm and THR3D are alternate GS1 paths", response.get_json()["error"])
+
+    @patch("routes.airtable.get_record")
+    def test_confirm_assign_rejects_packaging_thr3d_quantity_mismatch(self, get_record):
+        get_record.side_effect = [self.entry({C.F_RECEIPT_ENTRY_QUANTITY: 10}), self.receipt()]
+
+        response = self.app.post("/api/merchandise/recMerch/confirm-assign", json={
+            "workstreams": [{"type": "Packaging", "quantity": 5}],
+            "thr3d": {"quantity": 4},
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Packaging and THR3D quantities must add up", response.get_json()["error"])
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.get_record")
+    @patch("routes.airtable.list_records")
+    def test_workstream_cards_endpoint_enriches_parent_merchandise(self, list_records, get_record, _clients):
+        list_records.return_value = {
+            "records": [{
+                "id": "recCard",
+                "fields": {
+                    C.F_WORKSTREAM_CARD_NAME: "Frozen Pizza - Ecomm",
+                    C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+                    C.F_WORKSTREAM_CARD_EXPECTED_PRODUCT: ["recProduct"],
+                    C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
+                    C.F_WORKSTREAM_CARD_STATUS: "New",
+                    C.F_WORKSTREAM_CARD_QUANTITY: 4,
+                },
+            }]
+        }
+        product = {"id": "recProduct", "fields": {C.F_ITEM_CLIENT: ["recClient"], C.F_ITEM_NAME: "Frozen Pizza"}}
+        get_record.side_effect = [self.entry(), self.receipt(), product]
+
+        response = self.app.get("/api/workstream-cards")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["records"][0]["type"], "Ecomm")
+        self.assertEqual(payload["records"][0]["receivedMerch"]["id"], "recMerch")
+        self.assertEqual(payload["records"][0]["expectedProduct"]["id"], "recProduct")
+
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_update_workstream_card_status_updates_child_record_only(self, get_record, update_record):
+        workstream_card = {
+            "id": "recCard",
+            "fields": {
+                C.F_WORKSTREAM_CARD_NAME: "Frozen Pizza - Packaging",
+                C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+                C.F_WORKSTREAM_CARD_TYPE: "Packaging",
+                C.F_WORKSTREAM_CARD_STATUS: "Planning",
+                C.F_WORKSTREAM_CARD_QUANTITY: 6,
+            },
+        }
+        get_record.side_effect = [workstream_card, self.entry(), self.receipt()]
+        update_record.return_value = {
+            "id": "recCard",
+            "fields": {
+                **workstream_card["fields"],
+                C.F_WORKSTREAM_CARD_STATUS: "Ready for Photo",
+            },
+        }
+
+        response = self.app.patch("/api/workstream-cards/recCard", json={"status": "Ready for Photo"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(update_record.call_args.args[0], C.WORKSTREAM_CARDS_TABLE)
+        self.assertEqual(update_record.call_args.args[1], "recCard")
+        self.assertEqual(update_record.call_args.args[2], {C.F_WORKSTREAM_CARD_STATUS: "Ready for Photo"})
+        self.assertTrue(update_record.call_args.kwargs["typecast"])
+        self.assertEqual(response.get_json()["record"]["status"], "Ready for Photo")
+
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_update_workstream_card_status_accepts_in_production(self, get_record, update_record):
+        workstream_card = {
+            "id": "recCard",
+            "fields": {
+                C.F_WORKSTREAM_CARD_NAME: "Frozen Pizza - Ecomm",
+                C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+                C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
+                C.F_WORKSTREAM_CARD_STATUS: "Ready for Photo",
+                C.F_WORKSTREAM_CARD_QUANTITY: 6,
+            },
+        }
+        get_record.side_effect = [workstream_card, self.entry(), self.receipt()]
+        update_record.return_value = {
+            "id": "recCard",
+            "fields": {
+                **workstream_card["fields"],
+                C.F_WORKSTREAM_CARD_STATUS: "In Production",
+            },
+        }
+
+        response = self.app.patch("/api/workstream-cards/recCard", json={"status": "In Production"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(update_record.call_args.args[2], {C.F_WORKSTREAM_CARD_STATUS: "In Production"})
+        self.assertEqual(response.get_json()["record"]["status"], "In Production")
+
+    def test_update_workstream_card_status_rejects_unknown_status(self):
+        response = self.app.patch("/api/workstream-cards/recCard", json={"status": "Blocked"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Workstream Card Status must be one of", response.get_json()["error"])
+
+    @patch("routes.airtable.get_record")
+    @patch("routes.airtable.list_records")
+    def test_thr3d_shipping_items_endpoint_enriches_parent_merchandise(self, list_records, get_record):
+        list_records.return_value = {
+            "records": [{
+                "id": "recThr3dItem",
+                "fields": {
+                    C.F_THR3D_SHIPPING_ITEM_NAME: "Frozen Pizza - THR3D",
+                    C.F_THR3D_SHIPPING_ITEM_RECEIVED_MERCH: ["recMerch"],
+                    C.F_THR3D_SHIPPING_ITEM_QUANTITY: 4,
+                    C.F_THR3D_SHIPPING_ITEM_STATUS: "Needs Shipment",
+                },
+            }, {
+                "id": "recShippedThr3dItem",
+                "fields": {
+                    C.F_THR3D_SHIPPING_ITEM_NAME: "Shipped Pizza - THR3D",
+                    C.F_THR3D_SHIPPING_ITEM_RECEIVED_MERCH: ["recMerch"],
+                    C.F_THR3D_SHIPPING_ITEM_QUANTITY: 1,
+                    C.F_THR3D_SHIPPING_ITEM_STATUS: "Shipped",
+                },
+            }]
+        }
+        get_record.side_effect = [self.entry(), self.receipt()]
+
+        response = self.app.get("/api/thr3d-shipping-items")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(len(payload["records"]), 1)
+        self.assertEqual(payload["records"][0]["quantityToShip"], 4)
+        self.assertEqual(payload["records"][0]["receivedMerch"]["id"], "recMerch")
+
+    @patch("routes._now_iso", return_value="2026-08-05T14:30:00+00:00")
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.create_record")
+    @patch("routes.airtable.get_record")
+    def test_ship_thr3d_shipping_item_creates_outbound_shipment_and_marks_shipped(self, get_record, create_record, update_record, _now):
+        shipping_item = {
+            "id": "recThr3dItem",
+            "fields": {
+                C.F_THR3D_SHIPPING_ITEM_NAME: "Frozen Pizza - THR3D",
+                C.F_THR3D_SHIPPING_ITEM_RECEIVED_MERCH: ["recMerch"],
+                C.F_THR3D_SHIPPING_ITEM_QUANTITY: 4,
+                C.F_THR3D_SHIPPING_ITEM_STATUS: "Needs Shipment",
+            },
+        }
+        get_record.side_effect = [
+            shipping_item,
+            self.entry({C.F_RECEIPT_ENTRY_QUANTITY: 4}),
+            self.receipt(),
+        ]
+        create_record.return_value = {
+            "id": "recOutboundShipment",
+            "fields": {
+                C.F_RECEIPT_NAME: "THR3D outbound - Frozen Pizza - THR3D",
+                C.F_RECEIPT_CLIENT: ["recClient"],
+                C.F_RECEIPT_CARRIER: "UPS",
+                C.F_RECEIPT_TRACKING: "1Z999",
+                C.F_RECEIPT_BOX_QUANTITY: 1,
+                C.F_RECEIPT_RECEIVED: "2026-08-05T14:30:00+00:00",
+            },
+        }
+        update_record.side_effect = [
+            {
+                "id": "recThr3dItem",
+                "fields": {
+                    **shipping_item["fields"],
+                    C.F_THR3D_SHIPPING_ITEM_STATUS: "Shipped",
+                    C.F_THR3D_SHIPPING_ITEM_OUTBOUND_SHIPMENT: ["recOutboundShipment"],
+                },
+            },
+            self.entry({
+                C.F_RECEIPT_ENTRY_QUANTITY: 4,
+                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Shipped",
+            }),
+        ]
+
+        response = self.app.post("/api/thr3d-shipping-items/recThr3dItem/ship", json={
+            "carrier": "ups",
+            "tracking": "1Z999",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(create_record.call_args.args[0], C.SHIPMENTS_TABLE)
+        shipment_fields = create_record.call_args.args[1]
+        self.assertEqual(shipment_fields[C.F_RECEIPT_CARRIER], "UPS")
+        self.assertEqual(shipment_fields[C.F_RECEIPT_TRACKING], "1Z999")
+        self.assertEqual(shipment_fields[C.F_RECEIPT_CLIENT], ["recClient"])
+        self.assertEqual(update_record.call_args_list[0].args[0], C.THR3D_SHIPPING_ITEMS_TABLE)
+        self.assertEqual(update_record.call_args_list[0].args[2][C.F_THR3D_SHIPPING_ITEM_STATUS], "Shipped")
+        self.assertEqual(update_record.call_args_list[0].args[2][C.F_THR3D_SHIPPING_ITEM_OUTBOUND_SHIPMENT], ["recOutboundShipment"])
+        self.assertEqual(update_record.call_args_list[1].args[0], C.MERCHANDISE_TABLE)
+        self.assertEqual(update_record.call_args_list[1].args[2][C.F_RECEIPT_ENTRY_MERCH_STATUS], "Shipped")
+        payload = response.get_json()
+        self.assertEqual(payload["record"]["shippingStatus"], "Shipped")
+        self.assertEqual(payload["record"]["outboundShipment"]["tracking"], "1Z999")
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
@@ -240,8 +552,8 @@ class IntakeDecisionTests(unittest.TestCase):
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Thr3d"])
         self.assertTrue(all("Resolution" not in key for key in fields))
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Ready to Release")
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Ready for Photo")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Ready to Ship")
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
@@ -268,7 +580,7 @@ class IntakeDecisionTests(unittest.TestCase):
 
         response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
             "stage": "send-thr3d",
-            "deliverables": ["Packaging Photo", "Thr3d"],
+            "deliverables": ["Packaging", "Thr3d"],
         })
 
         self.assertEqual(response.status_code, 400)
@@ -283,7 +595,7 @@ class IntakeDecisionTests(unittest.TestCase):
         get_record.side_effect = [
             self.entry({
                 C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
-                C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo"],
+                C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging"],
                 C.F_RECEIPT_ENTRY_NOTES: "Receiver note",
                 C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
             }),
@@ -293,21 +605,20 @@ class IntakeDecisionTests(unittest.TestCase):
         ]
         update_record.return_value = self.entry({
             C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
-            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo"],
-            C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated",
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging"],
             C.F_RECEIPT_ENTRY_NOTES: "Receiver note",
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
             "stage": "ready-production",
-            "deliverables": ["Packaging Photo"],
+            "deliverables": ["Packaging"],
         })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging Photo"])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Validated")
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Ready to Release")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging"])
+        self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_STATUS, fields)
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Ready for Photo")
         self.assertNotIn(C.F_RECEIPT_ENTRY_NOTES, fields)
 
     @patch("routes._clients_by_id", return_value={})
@@ -324,7 +635,7 @@ class IntakeDecisionTests(unittest.TestCase):
 
     @patch("routes.airtable.get_record")
     def test_intake_state_ready_production_requires_product(self, get_record):
-        get_record.side_effect = [self.entry({C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo"]}), self.receipt()]
+        get_record.side_effect = [self.entry({C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging"]}), self.receipt()]
 
         response = self.app.patch("/api/merchandise/recMerch/intake-state", json={"stage": "ready-production"})
 

@@ -123,7 +123,7 @@ function shapeClient(r) {
     name: f[F.CLIENT_NAME] ?? '',
     codeType: f[F.CLIENT_IDENTIFIER_TYPE] ?? '',
     identifierLabel: f['Identifier Label'] ?? 'Identifier',
-    requiredPhotographyFields: f['Required Photography Fields'] ?? ['Identifier'],
+    requiredToShoot: f['Required to Shoot'] ?? ['Identifier'],
     artworkRequirement: f['Artwork Requirement'] ?? 'Optional',
     merchandiseRequired: f['Merchandise Required'] ?? true,
     holdDays: f[F.CLIENT_HOLD_DAYS] ?? null,
@@ -227,6 +227,7 @@ export const api = {
 
   createActivation: async (payload = {}) => backend('POST', '/activations', payload),
   updateActivation: async (id, payload = {}) => backend('PATCH', `/activations/${id}`, payload),
+  moveActivationToPhoto: async (id) => backend('POST', `/activations/${id}/move-to-photo`),
 
   listJobs: async (clientId) => {
     const params = new URLSearchParams();
@@ -293,6 +294,7 @@ api.createReceipt = async (payload) => backend('POST', '/receiving', payload);
 api.startReceivingSession = async (payload) => backend('POST', '/receiving/sessions', payload);
 api.getReceivingSession = async (id) => backend('GET', `/receiving/${id}`);
 api.updateReceivingSession = async (id, payload) => backend('PATCH', `/receiving/${id}`, payload);
+api.deleteReceivingSession = async (id) => backend('DELETE', `/shipments/${id}`);
 api.createReceiptEntry = async (receiptId, payload) => backend('POST', `/receiving/${receiptId}/entries`, payload);
 api.updateReceiptEntry = async (receiptId, entryId, payload) => backend('PATCH', `/receiving/${receiptId}/entries/${entryId}`, payload);
 api.deleteReceiptEntry = async (receiptId, entryId) => backend('DELETE', `/receiving/${receiptId}/entries/${entryId}`);
@@ -316,6 +318,10 @@ api.deleteShipmentPhoto = async (shipmentId, photoId) => backend('DELETE', `/shi
 api.listMerchandise = async () => backend('GET', '/merchandise');
 api.listVerificationEntries = async () => backend('GET', '/verification/entries');
 api.listMerchandiseReviewEntries = async () => backend('GET', '/merchandise/review');
+api.listWorkstreamCards = async () => backend('GET', '/workstream-cards');
+api.updateWorkstreamCard = async (id, payload) => backend('PATCH', `/workstream-cards/${id}`, payload);
+api.listThr3dShippingItems = async () => backend('GET', '/thr3d-shipping-items');
+api.shipThr3dShippingItem = async (id, payload) => backend('POST', `/thr3d-shipping-items/${id}/ship`, payload);
 api.searchVerificationItems = async ({ q, clientId, includeItemId } = {}) => {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
@@ -339,6 +345,7 @@ api.validateMerchandiseReviewEntry = async (entryId) => backend('POST', `/mercha
 api.removeMerchandiseReviewMatch = async (entryId) => backend('POST', `/merchandise/review/${entryId}/remove-match`);
 api.updateMerchandiseIntakeDecisions = async (entryId, payload = {}) => backend('PATCH', `/merchandise/${entryId}/intake-decisions`, payload);
 api.updateMerchandiseIntakeState = async (entryId, payload = {}) => backend('PATCH', `/merchandise/${entryId}/intake-state`, payload);
+api.confirmAssignMerchandise = async (entryId, payload = {}) => backend('POST', `/merchandise/${entryId}/confirm-assign`, payload);
 api.listMerchandiseComments = async (entryId) => backend('GET', `/merchandise/${entryId}/comments`);
 api.createMerchandiseComment = async (entryId, comment) => backend('POST', `/merchandise/${entryId}/comments`, { comment });
 api.releaseMerchandiseToProduction = async (entryId) => backend('POST', `/merchandise/${entryId}/release`);

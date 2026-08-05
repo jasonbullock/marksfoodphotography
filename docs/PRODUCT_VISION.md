@@ -65,7 +65,7 @@ Shipments captures physical movement. It records what physically arrived, includ
 
 Shipment photos are shipment-owned evidence for boxes, labels, delivery context, and damage. Originals belong in R2 with metadata on the Shipment, and downstream workspaces should display them through the Shipment relationship rather than copying them onto Merchandise.
 
-Shipments may contain lightweight internal views such as `Incoming` and `Outgoing`. `Outgoing` initially means THR3D shipments: merchandise that Planning marked for THR3D, finished as `Ready to Release`, and the merchandise team needs to box and ship.
+Shipments may contain lightweight internal views such as `Incoming` and `Outgoing`. `Outgoing` initially means THR3D shipments: merchandise that Planning assigned to THR3D, with quantity-to-ship and outbound tracking, so the merchandise team can box and ship it.
 
 ### Inventory
 
@@ -77,9 +77,9 @@ Inventory answers what the studio physically has. It is a shelf and storage pers
 
 Ownership: Project Management and operations readiness.
 
-Planning is where uncertainty is resolved before production. It identifies the product, evaluates client requirements, determines deliverables, records blockers or exceptions, and establishes whether the work is ready for photo production.
+Planning is where uncertainty is resolved before production. It identifies the Received Merch, matches Expected Product when available, captures manual product information when no Expected Product exists, assigns the Ecomm/Packaging workstreams or THR3D shipping item, records blockers or exceptions, and establishes whether each child work item is ready for handoff.
 
-Planning is the PM preparation perspective. Its board is a freeform PM workspace organized by Queue, not an automatic workflow engine. The implementation should preserve that language internally: Planning cards, queues, deliverables, and Required to Shoot blockers, not Work Orders, workflow assignments, Workstreams, or hidden gates.
+Planning is the PM preparation perspective. Its New Merch intake list is where unsplit Received Merch is confirmed and assigned. After `Confirm & Assign`, separate child work exists for Ecomm and Packaging because they have different dependencies; THR3D remains a shipping item owned by Shipments. The implementation must not revive the legacy workflow-engine tables or Product-level workstream routing.
 
 The PM-facing Planning experience should guide Merchandise Verification step by step. The interface should show `Required to Shoot` and the next business outcome rather than asking PMs to manage a generic readiness gate.
 
@@ -87,7 +87,7 @@ Planning should feel like polished operations software: fast to scan, calm to us
 
 Queue is separate from Merchandise Status. Queue organizes PM work; Merchandise Status describes the physical or operational state of the sample.
 
-Intake Status is intentionally small: `Needs Review`, `Waiting on Information`, `Ready to Release`, and `Complete`. Planning Queue is PM organization, not a second persisted workflow state.
+Intake Status is intentionally small: `Needs Review`, `Waiting on Information`, `Ready for Photo`, and `Complete`. Planning Queue is PM organization, not a second persisted workflow state.
 
 ### Ready for Photo
 
@@ -121,9 +121,9 @@ PhotoTrack answers whether production succeeded and where produced assets stand 
 
 Marks Photo should be organized around merchandise readiness, not around database tables or workflow mechanics.
 
-The prior workflow-table experiment is not part of the product direction. Workstreams, Work Orders, Workstream Assignments, Workflow Templates, Workflow Stages, Work Order Types, Product-level Workstream routing, Product-level production/storage state, and Merchandise Resolution should not be required to receive, plan, release, or ship merchandise.
+The prior workflow-table experiment is not part of the product direction. Legacy Workstreams tables, Work Orders, Workstream Assignments, Workflow Templates, Workflow Stages, Work Order Types, Product-level Workstream routing, Product-level production/storage state, and Merchandise Resolution should not be required to receive, plan, release, or ship merchandise. Current workstream cards are scoped Ecomm or Packaging child work, not that legacy workflow engine.
 
-Products are not an operations workspace. They carry durable reference and reporting facts only; operational facts belong to Merchandise, Shipments, Issues, History, Creative Force, PhotoTrack, or reporting integrations.
+Products are Expected Product records imported from the master spreadsheet. They are not an operations workspace. They carry durable reference and reporting facts only; manual intake facts, physical facts, workstream state, and outbound shipping facts belong to Received Merch, Workstream Cards, Shipments, Issues, History, Creative Force, PhotoTrack, or reporting integrations.
 
 The application presents different perspectives of the same merchandise:
 

@@ -246,14 +246,16 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("function RequiredToShootPreview", self.source)
         self.assertIn("function ageBucketForItem", self.source)
         self.assertIn("showNewCardClient", self.source)
-        self.assertIn("const showStorage = !isNewQueue && storage;", self.source)
+        self.assertIn("const showStorage = false && !isNewQueue && storage;", self.source)
         self.assertIn("const showQuantity = !isNewQueue || Number(quantity) > 1;", self.source)
         self.assertIn("const showFooter = !isNewQueue || item.commentCount > 0 || item.unreadComments > 0;", self.source)
         self.assertNotIn("Needs PM review", self.source)
         self.assertNotIn("New Arrival", self.source)
         self.assertNotIn("Deliverables not set", self.source)
-        self.assertIn("{!isNewQueue && <RequiredToShootIndicators items={item.requiredToShoot} />}", self.source)
+        self.assertIn("const showRequiredIndicators = !isNewQueue && !activationState", self.source)
+        self.assertIn("{showRequiredIndicators && <RequiredToShootIndicators items={item.requiredToShoot} />}", self.source)
         self.assertIn("const showRequiredPreview = !isNewQueue && !activationState", self.source)
+        self.assertIn("const showStatusChip = !isNewQueue && !activationState", self.source)
         self.assertIn("{showRequiredPreview && <RequiredToShootPreview item={item} ready={ready} />}", self.source)
         self.assertNotIn(".kanban-new-arrival-label", self.styles)
         self.assertNotIn(".kanban-new-soft-prompt", self.styles)
@@ -303,8 +305,16 @@ class FrontendRoutingTests(unittest.TestCase):
             "shipmentCameraInputRef",
             "shipmentLibraryInputRef",
             "shipmentPhotoPreviews",
-            "const activeReceipt = await ensureDeliveryReceipt();",
             "<label>Shipment Photos</label>",
+            "async function createShipment({ toast: showToast = true } = {})",
+            "const activeReceipt = receipt || await createShipment({ toast: false });",
+            "Adding shipment photos saves this shipment and unlocks merchandise entry.",
+            "Shipment needs photos",
+            "Add shipment photos to save this shipment.",
+            "Create the shipment before adding merchandise.",
+            "Shipment saved",
+            "Changes to shipment details save when you leave each field.",
+            "recv-autosave-card",
             'type="file" accept="image/*" capture="environment" multiple hidden',
             'type="file" accept="image/*" multiple hidden',
             'className="recv-photo-btns shipment-photo-actions"',
@@ -319,23 +329,80 @@ class FrontendRoutingTests(unittest.TestCase):
             self.assertIn(text, self.source)
         self.assertNotIn("📷 Take Photo", self.source)
         self.assertNotIn("🖼 Library", self.source)
+        self.assertNotIn("Shipment will autosave", self.source)
+        self.assertNotIn("Selecting photos will start and save this shipment automatically.", self.source)
+        self.assertNotIn("Save merchandise or add shipment photos to start this shipment.", self.source)
+        self.assertNotIn("Create & Take Photo", self.source)
+        self.assertNotIn("Create & Library", self.source)
+        self.assertNotIn("recv-create-btn", self.source + self.styles)
         self.assertIn("api.listShipmentPhotos", (ROOT / "frontend" / "src" / "api.js").read_text())
         self.assertIn("api.uploadShipmentPhotos", (ROOT / "frontend" / "src" / "api.js").read_text())
         self.assertIn("api.deleteShipmentPhoto", (ROOT / "frontend" / "src" / "api.js").read_text())
 
+    def test_all_shipments_can_switch_list_date_and_open_for_edit(self):
+        shipments_section = self.source.split("function ShipmentsPage", 1)[1].split("function JobsPage", 1)[0]
+        for text in [
+            "useState('list'); // 'date' | 'list'",
+            "allReceiptsDateScope",
+            "setAllReceiptsDateScope('previous-week')",
+            "setAllReceiptsDateScope('this-week')",
+            "setAllReceiptsDateScope('month')",
+            "Previous Week",
+            "This Week",
+            "Month",
+            "setAllReceiptsLayout('list')",
+            "setAllReceiptsLayout('date')",
+            "function openReceiptForEdit(receiptId)",
+            "async function deleteShipmentFromHistory(shipment)",
+            "setTab('incoming')",
+            "Delete",
+            "recv-all-list",
+            "recv-all-list-head",
+            "recv-all-item-open",
+            "recv-all-row-actions",
+            "recv-all-delete",
+            "recv-cal-grid",
+            "recv-date-scope-toggle",
+            "api.deleteReceivingSession(shipment.id)",
+            "Remove merchandise from this Shipment before deleting it.",
+            "weekColumns(allReceiptsDateScope === 'previous-week' ? -1 : 0)",
+            "monthColumns()",
+            "onClick={() => openReceiptForEdit(r.id)}",
+            "onClick={() => deleteShipmentFromHistory(r)}",
+        ]:
+            self.assertIn(text, shipments_section + self.styles)
+        self.assertNotIn("By Shipment", shipments_section)
+        self.assertNotIn("By Merchandise", shipments_section)
+        self.assertNotIn("allReceiptsView", shipments_section)
+        self.assertNotIn("setTab('new')", shipments_section)
+
     def test_shipments_exposes_incoming_and_thr3d_outgoing_views(self):
         for text in [
             "useState('incoming')",
-            "api.listThr3dOutgoing()",
+            "api.listThr3dShippingItems()",
             "{ id: 'incoming', label: 'Incoming'",
             "{ id: 'outgoing', label: 'THR3D / Outgoing'",
             "THR3D Queue",
-            "Ready THR3D merchandise from Planning appears here",
-            "Finished Planning records with Deliverables including Thr3d",
+            "THR3D shipping items from Planning appear here",
+            "Confirmed THR3D quantities from New Merch",
             "recv-outgoing-row",
             "recv-outgoing-view",
+            "api.shipThr3dShippingItem(record.id",
+            "recv-outgoing-ship",
+            "placeholder=\"Tracking\"",
+            "Shipping...",
         ]:
             self.assertIn(text, self.source)
+
+    def test_shipments_received_badge_is_confirmed_not_warning(self):
+        shipments_section = self.source.split("function ShipmentsPage", 1)[1].split("function MerchandisePage", 1)[0]
+        self.assertIn("['Received', 'Ready to Ship', 'Shipped', 'Disposed'].includes(merchStatus)", shipments_section)
+        self.assertIn("const statusIcon = merchStatus === 'Received' ? ''", shipments_section)
+        self.assertIn("statusIcon ? `${statusIcon} ` : ''", shipments_section)
+        ok_section = self.styles.split(".receiving-status-line .is-ok", 1)[1].split("}", 1)[0]
+        self.assertIn("var(--green-bg)", ok_section)
+        self.assertIn("var(--green-text)", ok_section)
+        self.assertIn("var(--green-border)", ok_section)
 
     def test_planning_carousel_distinguishes_shipment_photos(self):
         for text in [
@@ -483,6 +550,7 @@ class FrontendRoutingTests(unittest.TestCase):
             'type="checkbox"',
             "checked={selected}",
             "onChange={() => toggle(option)}",
+            "enforceExclusiveGs1Deliverables(nextValues, option)",
             "selected ? 'is-selected' : ''",
         ]:
             self.assertIn(text, deliverables_selector)
@@ -505,14 +573,23 @@ class FrontendRoutingTests(unittest.TestCase):
         for text in [
             "finishCurrentVerification",
             "finishState.status === 'loading'",
-            "Finishing...",
+            "Creating...",
             "disabled={finishDisabled}",
             "is-${finishState.status}",
-            "Finish & Move",
-            "Will move to",
-            "Draft only. The board will not move until Finish & Move.",
+            "Confirm & Assign",
+            "Will create",
+            "Draft only. Nothing changes until Confirm & Assign.",
+            "collapseWhenDone={false}",
+            "window.confirm(THR3D_SHIP_CONFIRMATION_MESSAGE)",
+            "thr3d-ship-warning",
+            "quantity-allocation-panel",
+            "Quantity Allocation",
+            "stageThr3dAllocation",
+            "Packaging",
+            "readOnly disabled",
         ]:
             self.assertIn(text, modal_section)
+        self.assertIn("This item will be removed from the Walnut work queue and be shipped to Thr3d.", self.source)
         self.assertNotIn("deliverablesAutosaveTimer", modal_section)
         self.assertNotIn("api.updateMerchandiseIntakeDecisions", modal_section)
         self.assertNotIn("Deliverables saved.", modal_section)
@@ -524,21 +601,21 @@ class FrontendRoutingTests(unittest.TestCase):
             required_info_section.index("if (state.thr3dOnly)"),
             required_info_section.index("(item.requiredToShoot || state.blockers || []).filter"),
         )
-        self.assertIn("? 'Thr3d Shipment'", modal_section)
         self.assertNotIn("'Ready for Thr3d'", modal_section)
         for text in [
-            "const blockers = state.blockers || visibleRequirementBlockers(item.requiredToShoot || [])",
-            "stage,",
-            "deliverables,",
+            "state.assignment || workstreamAssignmentsForDeliverables(deliverables, item.record?.quantity)",
+            "api.confirmAssignMerchandise(item.merchandiseId",
+            "workstreams: assignment.workstreams",
+            "thr3d: assignment.thr3d",
             "setSelectedId('')",
             "setWorkspaceOpen(false)",
-            "return { ok: true, message, stage, record: updated }",
+            "return { ok: true, message, record: result.merchandise }",
             "return { ok: false, message }",
         ]:
             self.assertIn(text, finish_handler)
         for text in [
-            "Ecomm Photo",
-            "Packaging Photo",
+            "Ecomm",
+            "Packaging",
             "Thr3d",
             "planningTemplate",
             "initialQueue",
@@ -547,7 +624,7 @@ class FrontendRoutingTests(unittest.TestCase):
         ]:
             self.assertIn(text, self.merchandise_routing)
         registry_section = self.merchandise_routing.split("export const DELIVERABLE_ROUTES = [", 1)[1].split("];", 1)[0]
-        for text in ["GS1 Ecomm", "Packaging Photography", "Video", "Other", "Styled Photo"]:
+        for text in ["GS1 Ecomm", "Packaginggraphy", "Video", "Other", "Styled Photo"]:
             self.assertNotIn(text, registry_section)
         for text in [
             "Production Path",
@@ -566,12 +643,21 @@ class FrontendRoutingTests(unittest.TestCase):
             "api.updateMerchandiseIntakeState",
             "intakeRequestedQueueForRecord(record)",
             "record?.intakeStatus === 'Waiting on Information'",
-            "record?.intakeStatus === 'Ready to Release'",
+            "record?.intakeStatus === 'Ready for Photo'",
             "record?.intakeStatus === 'Needs Review'",
             "return QUEUE_IDS.newReview;",
             "merchandiseId",
             "isDraftPlanningCard",
             "kanban-card-deliverables",
+            "is-workstream-card",
+            "kanban-card-workstream-row",
+            "kanban-card-workstream-meta",
+            "Workstream Card",
+            "Assigned Qty",
+            "queueIdForWorkstreamStatus",
+            "workstreamStatusForQueueId",
+            "api.updateWorkstreamCard(item.workstreamCardId",
+            "status: workstreamStatusForQueueId(columnId)",
             "PM_QUEUE_STORAGE_KEY",
             "onDrop={event =>",
             "Cannot move to Ready for Photo. Missing:",
@@ -596,6 +682,8 @@ class FrontendRoutingTests(unittest.TestCase):
             "/intake-decisions",
             "updateMerchandiseIntakeState",
             "/intake-state",
+            "confirmAssignMerchandise",
+            "/confirm-assign",
         ]:
             self.assertIn(text, (ROOT / "frontend" / "src" / "api.js").read_text())
         api_source = (ROOT / "frontend" / "src" / "api.js").read_text()
@@ -610,6 +698,9 @@ class FrontendRoutingTests(unittest.TestCase):
         ]:
             self.assertNotIn(text, (ROOT / "frontend" / "src" / "api.js").read_text())
         self.assertIn(".kanban-card-deliverables", self.styles)
+        self.assertIn(".kanban-card.is-workstream-card", self.styles)
+        self.assertIn(".kanban-card-workstream-row", self.styles)
+        self.assertIn(".kanban-card-workstream-meta", self.styles)
 
     def test_unified_modal_replaces_waiting_information_controls_in_active_intake(self):
         for text in [
@@ -676,17 +767,26 @@ class FrontendRoutingTests(unittest.TestCase):
 
     def test_admin_clients_show_activation_readiness_profiles(self):
         for text in [
-            "function ClientReadinessProfile({ client, profile })",
+            "function ClientReadinessProfile({ profile })",
             "client.readinessProfile?.label || 'Standard'",
             "Ready for Photo requires",
             "Not required from activation",
+            "Server paths",
+            "Artwork prefix",
+            "Upload prefix",
+            "client-readiness-paths",
+            "client-readiness-path",
             "client-readiness-profile",
             "client-readiness-grid",
-            "function ActivationPackageEditor({ client })",
-            "Activations",
             "Activation",
         ]:
             self.assertIn(text, self.source + self.styles)
+        admin_section = self.source.split("function SettingsPage", 1)[1].split("async function randomizeDemoData", 1)[0]
+        self.assertNotIn("function ActivationPackageEditor", admin_section)
+        self.assertNotIn("SKU Details JSON", admin_section)
+        self.assertNotIn("Save Activation", admin_section)
+        self.assertNotIn("Add Activation", admin_section)
+        self.assertNotIn("activation-package-", self.styles)
 
     def test_frontend_api_exposes_activation_endpoints(self):
         api_source = (ROOT / "frontend/src/api.js").read_text()
@@ -694,20 +794,109 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("return backend('GET', `/activations", api_source)
         self.assertIn("createActivation: async (payload = {}) => backend('POST', '/activations', payload)", api_source)
         self.assertIn("updateActivation: async (id, payload = {}) => backend('PATCH', `/activations/${id}`", api_source)
+        self.assertIn("moveActivationToPhoto: async (id) => backend('POST', `/activations/${id}/move-to-photo`", api_source)
 
     def test_planning_exposes_activation_package_creation(self):
         for text in [
             "function PlanningActivationPackageModal",
+            "DEFAULT_WALNUT_SCOPE_SUGGESTIONS",
+            "DEFAULT_STRUCTURE_SUGGESTIONS",
+            "DEFAULT_DUE_URGENCY_SUGGESTIONS",
+            "ACTIVATION_DELIVERABLE_OPTIONS",
+            "Full Set Renders - WALNUT (Photo)",
+            "Hang Tag / Label",
+            "ASAP upon receipt",
+            "function SuggestiveTextInput",
+            "activationFieldSuggestions",
+            "activationSkuFieldSuggestions",
             "Add Activation",
-            "api.createActivation({ ...form, skuDetails })",
+            "api.createActivation(payload)",
+            "api.updateActivation(initialActivation.id, payload)",
+            "api.moveActivationToPhoto(result.record.id)",
+            "Activation draft saved:",
+            "Activation saved:",
+            "skuDetails,",
+            "linkedMerchandiseIds:",
             "activationModalOpen",
+            "selectedActivation",
+            "localActivations",
+            "setLocalActivations(current => [",
+            "activations={activationRecords}",
             "canCreateTopcoActivation",
+            "activationMerchandiseOptions",
+            "function PlanningActivationListModal",
+            "activationEditableForPhoto",
+            "No pending photo Activations to edit.",
+            "Edit Activations",
+            "activationListOpen",
+            "activation-list-modal",
+            "activation-list-row",
+            "function NewReviewActivationPanel",
+            "activationRowFromPlanningItem",
+            "activationWithPlanningItem",
+            "function activationAvailableForPlanningItem",
+            "if (!activationClientIds.length || !itemClientIds.length) return true;",
+            "const [activationId, setActivationId] = useState('');",
+            "Pending Activation",
+            "Add to Activation",
+            "New Activation",
+            "new-review-activation-panel",
+            "new-review-activation-actions",
+            "btn-blue-outline",
             "topcoClientIds",
+            "const canCreateTopcoActivation = topcoClientIds.size > 0;",
             "planning-board-actions",
+            "planning-board-action-buttons",
             "activation-modal",
+            "activation-modal-simple",
+            "activation-simple-form",
+            "activation-simple-grid",
+            ".activation-simple-form .form-input",
+            "font-weight: 500",
+            "select.form-input",
+            "activation-deliverables-field",
+            "activation-label-stack",
+            ".activation-sku-rows",
+            "activation-merchandise-match-field",
+            "activation-structure-field",
+            "activation-description-field",
+            "<DeliverablesSelector",
+            "options={ACTIVATION_DELIVERABLE_OPTIONS}",
+            "const ACTIVATION_DELIVERABLE_OPTIONS = ['Packaging', 'Ecomm'];",
+            "activation-builder-layout",
+            "activation-email-preview",
+            "activation-email-subject",
+            "activation-preview-lines",
+            "activation-preview-table-title",
+            "activation-preview-link",
+            ".activation-email-preview-body tbody tr:last-child td",
+            "activation-preview-token",
+            "function PreviewPath",
+            "pathPrefixes.artwork",
+            "pathPrefixes.upload",
+            "Fresh_Melons/26003302",
+            "suggestive-text-field",
+            "suggestive-text-options",
+            "activation-completion-pill",
+            "activationMissing",
+            "itemMissingFields",
+            "const modalTitle = initialActivation?.id ? 'Edit Activation' : 'Add Activation';",
+            "aria-label={modalTitle}",
+            "<h2>{modalTitle}</h2>",
+            "Email Preview",
+            "Subject:",
+            "Link Merchandise",
+            "Save Draft",
+            "Move to Photo",
             "activation-sku-row",
-            "Add SKU",
-            "Coordinator Description",
+            "activation-empty-items",
+            "No items linked. Add an item before moving this Activation to Photo.",
+            "itemRows.length === 0 ? ['Linked Merchandise'] : []",
+            "!form.deliverables.length ? ['Deliverables'] : []",
+            "Add Item",
+            "Items",
+            "CVID",
+            "Structure",
         ]:
             self.assertIn(text, self.source + self.styles)
 
@@ -720,6 +909,12 @@ class FrontendRoutingTests(unittest.TestCase):
             "Activation Ready",
             "kanban-activation-chip",
             "const showRequiredPreview = !isNewQueue && !activationState",
+            "function activationByMerchandiseId",
+            "activationLinkedMerchandiseIds",
+            "linkedActivationByMerchandiseId",
+            "activationLinksLoaded",
+            "!linkedActivation && baseColumnId === QUEUE_IDS.readyProduction",
+            "Cannot move to Ready for Photo. Missing: linked Activation",
         ]:
             self.assertIn(text, self.source + self.styles)
 
@@ -1060,7 +1255,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "requiredToShoot: undefined",
             "finishRegressionVerification",
             "setSelectedId('')",
-            "intakeStatus: 'Ready to Release'",
+            "intakeStatus: 'Ready for Photo'",
             "stage: QUEUE_IDS.sendThr3d",
             'data-testid="thr3d-outgoing-regression"',
             "THR3D / Outgoing",

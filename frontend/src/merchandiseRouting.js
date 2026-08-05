@@ -31,7 +31,7 @@ export const DELIVERABLE_ROUTE_IDS = {
 export const DELIVERABLE_ROUTES = [
   {
     id: DELIVERABLE_ROUTE_IDS.ecommPhoto,
-    label: 'Ecomm Photo',
+    label: 'Ecomm',
     description: 'Ecommerce photography deliverable.',
     active: true,
     planningTemplate: 'ecomm-review',
@@ -45,7 +45,7 @@ export const DELIVERABLE_ROUTES = [
   },
   {
     id: DELIVERABLE_ROUTE_IDS.packagingPhoto,
-    label: 'Packaging Photo',
+    label: 'Packaging',
     description: 'Packaging photography deliverable.',
     active: true,
     planningTemplate: 'packaging-review',
@@ -400,7 +400,7 @@ function deliverableValues(record) {
 }
 
 function selectedPhotoDeliverables(record) {
-  return deliverableValues(record).filter(value => value === 'Packaging Photo' || value === 'Ecomm Photo');
+  return deliverableValues(record).filter(value => value === 'Packaging' || value === 'Ecomm');
 }
 
 function isThr3dOnly(record) {
@@ -483,7 +483,7 @@ function deliverablesRequirement(record) {
     label: 'Deliverables',
     status: deliverables.length ? REQUIREMENT_STATUS.complete : REQUIREMENT_STATUS.blocked,
     tone: deliverables.length ? 'green' : 'red',
-    detail: deliverables.length ? deliverables.join(', ') : 'Choose Packaging Photo, Ecomm Photo, Thr3d, or a combination.',
+    detail: deliverables.length ? deliverables.join(', ') : 'Choose Packaging, Ecomm, Thr3d, or a combination.',
     satisfied: deliverables.length > 0,
     overrideAllowed: false,
   });
@@ -640,11 +640,11 @@ export function evaluateMerchandiseReviewRequirements(record, { artworkOverride,
   const photoDeliverables = selectedPhotoDeliverables(record);
   if (!photoDeliverables.length) return baseRequirements;
   const photoRequirements = [productInformationRequirement(record)];
-  if (photoDeliverables.includes('Ecomm Photo')) {
+  if (photoDeliverables.includes('Ecomm')) {
     photoRequirements.push(artworkRequirement(record, { artworkOverride, client }));
     photoRequirements.push(activationInformationRequirement(record, { client }));
   }
-  if (photoDeliverables.includes('Packaging Photo')) {
+  if (photoDeliverables.includes('Packaging')) {
     photoRequirements.push(artworkRequirement(record, { artworkOverride, client }));
   }
   const byKey = {};
@@ -742,7 +742,7 @@ export function queueById(planningBoard, queueId) {
 export function deriveMerchandiseReviewQueue(record, requirements, requestedQueueId, reviewState, planningBoard = MERCHANDISE_PLANNING_BOARD) {
   const visibleQueueIds = new Set(queuesForBoard(planningBoard).map(queueConfig => queueConfig.id));
   if (requestedQueueId && visibleQueueIds.has(requestedQueueId)) return requestedQueueId;
-  if ((reviewState === 'Validated' || record?.intakeStatus === 'Ready to Release') && visibleQueueIds.has(QUEUE_IDS.readyProduction)) return QUEUE_IDS.readyProduction;
+  if ((reviewState === 'Validated' || record?.intakeStatus === 'Ready for Photo') && visibleQueueIds.has(QUEUE_IDS.readyProduction)) return QUEUE_IDS.readyProduction;
   if (record?.intakeStatus === 'Waiting on Information' && visibleQueueIds.has(QUEUE_IDS.waitingInformation)) return QUEUE_IDS.waitingInformation;
   return visibleQueueIds.has(QUEUE_IDS.newReview) ? QUEUE_IDS.newReview : [...visibleQueueIds][0];
 }
@@ -869,7 +869,7 @@ export function buildMerchandisePlanningCard(record, { assignment, client, locat
     timeHere: record.timeHere || 'Unknown',
     quantity: record.quantity || 1,
     issueBadge: record.reviewState === 'Issue' || record.merchStatus === 'Issue' || record.blockingIssues?.length ? 'Issue' : '',
-    statusBadge: record.reviewState === 'Validated' || record.merchStatus === 'Validated' ? 'Validated' : '',
+    statusBadge: record.reviewState === 'Validated' ? 'Validated' : '',
     primaryDeliverableRoute,
     deliverableRoute: assignment.deliverableRoute?.label || deliverableRouteLabel(primaryDeliverableRoute) || product.deliverableRoute || '',
   };

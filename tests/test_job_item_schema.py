@@ -136,7 +136,7 @@ class JobItemSchemaTests(unittest.TestCase):
             "fields": {
                 C.Config.F_CLIENT_NAME: "UNFI",
                 C.Config.F_CLIENT_IDENTIFIER_TYPE: "UPC-12",
-                C.Config.F_CLIENT_REQUIRED_PHOTO_FIELDS: ["Identifier"],
+                C.Config.F_CLIENT_REQUIRED_TO_SHOOT: ["Identifier"],
             },
         }
         source_rows = [["PRJ-260701", "041900310012", "Organic Honey Oat Cereal"]]
@@ -172,7 +172,7 @@ class JobItemSchemaTests(unittest.TestCase):
             "fields": {
                 C.Config.F_CLIENT_NAME: "UNFI",
                 C.Config.F_CLIENT_IDENTIFIER_TYPE: "UPC-12",
-                C.Config.F_CLIENT_REQUIRED_PHOTO_FIELDS: ["Identifier"],
+                C.Config.F_CLIENT_REQUIRED_TO_SHOOT: ["Identifier"],
             },
         }
         mapping = {
@@ -207,7 +207,7 @@ class JobItemSchemaTests(unittest.TestCase):
             "fields": {
                 C.Config.F_CLIENT_NAME: "Kroger",
                 C.Config.F_CLIENT_IDENTIFIER_TYPE: "UPC-12",
-                C.Config.F_CLIENT_REQUIRED_PHOTO_FIELDS: ["Identifier"],
+                C.Config.F_CLIENT_REQUIRED_TO_SHOOT: ["Identifier"],
             },
         }
         mapping = {

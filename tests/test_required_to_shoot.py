@@ -13,7 +13,7 @@ class RequiredToShootTests(unittest.TestCase):
         base = {
             "identifierLabel": "UPC",
             "codeType": "UPC-12",
-            "requiredPhotographyFields": ["Identifier", "Product Name"],
+            "requiredToShoot": ["Identifier", "Product Name"],
             "artworkRequirement": "Optional",
             "merchandiseRequired": True,
         }

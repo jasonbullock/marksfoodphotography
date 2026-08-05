@@ -18,6 +18,7 @@ HISTORICAL_MERCH_STATUSES = {
     "sent to thr3d",
     "sent to thread",
 }
+MERCH_STATUS_OPTIONS = ["Received", "Issue", "Ready to Ship", "Shipped", "Disposed"]
 
 def single_select_field(name, options):
     return {
@@ -81,8 +82,8 @@ def ensure_intake_status_schema(merchandise_table, *, dry_run=False):
         return decision
 
     decision["reason"] = (
-        "Merch Status is not reused because it already drives inventory/review compatibility "
-        "with Received, Matched, Validated, and Issue."
+        "Merch Status is not reused because it describes physical merchandise state "
+        "with Received, Issue, Ready to Ship, Shipped, and Disposed."
     )
     if merch_status:
         decision["merchStatusChoices"] = option_names(merch_status)
@@ -139,9 +140,6 @@ def planned_record_update(record):
     if marker_present:
         update[Config.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Waiting on Information"
         reason = "migrated_marker"
-    elif str(fields.get(Config.F_RECEIPT_ENTRY_MERCH_STATUS, "") or "").strip() == "Validated":
-        update[Config.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Ready to Release"
-        reason = "defaulted_ready"
     else:
         update[Config.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Needs Review"
         reason = "defaulted_needs_review"

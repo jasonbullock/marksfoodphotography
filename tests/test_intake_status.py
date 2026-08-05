@@ -37,7 +37,7 @@ class IntakeStatusUtilityTests(unittest.TestCase):
     @patch("ensure_intake_status_field.create_field", return_value={"id": "fldIntakeStatus"})
     def test_creates_new_field_when_merch_status_is_not_safe(self, create_field):
         table = self.table([
-            self.field(C.F_RECEIPT_ENTRY_MERCH_STATUS, ["Received", "Matched", "Validated", "Issue"]),
+            self.field(C.F_RECEIPT_ENTRY_MERCH_STATUS, ["Received", "Issue", "Ready to Ship", "Shipped", "Disposed"]),
         ])
 
         result = self.utility.ensure_intake_status_schema(table, dry_run=False)
@@ -78,7 +78,7 @@ class IntakeStatusUtilityTests(unittest.TestCase):
         record = {
             "id": "rec1",
             "fields": {
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready to Release",
+                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready for Photo",
                 C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
             },
         }
@@ -97,14 +97,14 @@ class IntakeStatusUtilityTests(unittest.TestCase):
         self.assertEqual(reason, "defaulted_needs_review")
         self.assertEqual(update[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Needs Review")
 
-    def test_validated_blank_defaults_to_ready_to_release(self):
+    def test_legacy_validated_blank_defaults_to_needs_review(self):
         update, reason = self.utility.planned_record_update({
             "id": "rec1",
             "fields": {C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated"},
         })
 
-        self.assertEqual(reason, "defaulted_ready")
-        self.assertEqual(update[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Ready to Release")
+        self.assertEqual(reason, "defaulted_needs_review")
+        self.assertEqual(update[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Needs Review")
 
     def test_closed_records_are_not_reopened(self):
         update, reason = self.utility.planned_record_update({

@@ -44,7 +44,7 @@ class MerchandiseInventoryTests(unittest.TestCase):
                         C.F_RECEIPT_ENTRY_QUANTITY: 3,
                         C.F_RECEIPT_ENTRY_LOCATION: ["recShelf"],
                         C.F_RECEIPT_ENTRY_ITEM: ["recReadyProduct"],
-                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Matched",
+                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
                     },
                 },
                 {
@@ -72,7 +72,7 @@ class MerchandiseInventoryTests(unittest.TestCase):
                         C.F_RECEIPT_ENTRY_NAME: "Cancelled Product Package",
                         C.F_RECEIPT_ENTRY_RECEIPT: ["recFreshShipment"],
                         C.F_RECEIPT_ENTRY_ITEM: ["recCancelledProduct"],
-                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Matched",
+                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
                     },
                 },
                 {
@@ -104,7 +104,7 @@ class MerchandiseInventoryTests(unittest.TestCase):
                     "fields": {
                         C.F_RECEIPT_ENTRY_NAME: "Invalid Date Package",
                         C.F_RECEIPT_ENTRY_RECEIPT: ["recInvalidDateShipment"],
-                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Matched",
+                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
                     },
                 },
                 {
@@ -113,7 +113,7 @@ class MerchandiseInventoryTests(unittest.TestCase):
                         C.F_RECEIPT_ENTRY_NAME: "Completed Package",
                         C.F_RECEIPT_ENTRY_RECEIPT: ["recFreshShipment"],
                         C.F_RECEIPT_ENTRY_ITEM: ["recCompleteProduct"],
-                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated",
+                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
                         C.F_RECEIPT_ENTRY_RELEASED: True,
                         C.F_RECEIPT_ENTRY_RELEASED_AT: "2026-07-20T12:00:00Z",
                     },
@@ -124,7 +124,7 @@ class MerchandiseInventoryTests(unittest.TestCase):
                         C.F_RECEIPT_ENTRY_NAME: "Old Complete Package",
                         C.F_RECEIPT_ENTRY_RECEIPT: ["recOldShipment"],
                         C.F_RECEIPT_ENTRY_ITEM: ["recCompleteProduct"],
-                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated",
+                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
                     },
                 },
             ]
@@ -250,7 +250,7 @@ class MerchandiseInventoryTests(unittest.TestCase):
         self.assertEqual(fresh["storageLocation"], "Shelf A")
         self.assertEqual(fresh["timeHere"], "Today")
         self.assertEqual(fresh["ageGroup"], "0-7")
-        self.assertEqual(fresh["status"], "Matched")
+        self.assertEqual(fresh["status"], "Received")
 
     @patch("routes._now_utc", return_value=datetime(2026, 7, 16, 12, 0, tzinfo=timezone.utc))
     @patch("routes.airtable.list_records")
@@ -303,7 +303,7 @@ class MerchandiseInventoryTests(unittest.TestCase):
         records = response.get_json()["records"]
         by_id = {record["id"]: record for record in records}
         self.assertIn("recCompletedMerch", by_id)
-        self.assertEqual(by_id["recCompletedMerch"]["status"], "Validated")
+        self.assertEqual(by_id["recCompletedMerch"]["status"], "Received")
         self.assertTrue(by_id["recCompletedMerch"]["released"])
         self.assertIn("recOldCompleteMerch", by_id)
         self.assertEqual(by_id["recOldCompleteMerch"]["status"], "Disposition Due")

@@ -40,6 +40,8 @@ class Config:
         "AIRTABLE_MERCHANDISE_TABLE",
         os.getenv("AIRTABLE_RECEIPT_ENTRIES_TABLE", "Merchandise"),
     )
+    WORKSTREAM_CARDS_TABLE = os.getenv("AIRTABLE_WORKSTREAM_CARDS_TABLE", "Workstream Cards")
+    THR3D_SHIPPING_ITEMS_TABLE = os.getenv("AIRTABLE_THR3D_SHIPPING_ITEMS_TABLE", "THR3D Shipping Items")
 
     # Deprecated compatibility aliases. Use canonical constants in new backend
     # code. These stay for one migration cycle to protect older routes, tests,
@@ -104,15 +106,41 @@ class Config:
     F_RECEIPT_ENTRY_ITEM = "Product"
     F_RECEIPT_ENTRY_MERCH_STATUS = "Merch Status"
     F_RECEIPT_ENTRY_INTAKE_STATUS = "Intake Status"
+    F_RECEIPT_ENTRY_NEW_MERCH_STATUS = "New Merch Status"
     F_RECEIPT_ENTRY_DELIVERABLES = "Deliverables"
+    F_RECEIPT_ENTRY_MANUAL_PRODUCT_INFO = "Manual Product Info"
     F_RECEIPT_ENTRY_RELEASED = "Released"
     F_RECEIPT_ENTRY_RELEASED_AT = "Released At"
     F_RECEIPT_ENTRY_RELEASED_BY = "Released By"
     F_RECEIPT_ENTRY_MERCH_VERIFIED = "Merchandise Verified"
     F_RECEIPT_ENTRY_MERCH_VERIFIED_AT = "Merchandise Verified At"
     F_RECEIPT_ENTRY_MERCH_VERIFIED_BY = "Merchandise Verified By"
-    INTAKE_STATUS_OPTIONS = ["Needs Review", "Waiting on Information", "Ready to Release", "Complete"]
-    DELIVERABLE_OPTIONS = ["Packaging Photo", "Ecomm Photo", "Thr3d"]
+    INTAKE_STATUS_OPTIONS = ["Needs Review", "Waiting on Information", "Ready for Photo", "Complete"]
+    NEW_MERCH_STATUS_OPTIONS = ["Needs Review", "Workflows Created"]
+    DELIVERABLE_OPTIONS = ["Packaging", "Ecomm", "Thr3d"]
+
+    # Field names - Workstream Cards
+    F_WORKSTREAM_CARD_NAME = "Workstream Card"
+    F_WORKSTREAM_CARD_RECEIVED_MERCH = "Received Merch"
+    F_WORKSTREAM_CARD_EXPECTED_PRODUCT = "Expected Product"
+    F_WORKSTREAM_CARD_TYPE = "Workstream Type"
+    F_WORKSTREAM_CARD_STATUS = "Status"
+    F_WORKSTREAM_CARD_QUANTITY = "Quantity"
+    F_WORKSTREAM_CARD_MANUAL_PRODUCT_INFO = "Manual Product Info"
+    F_WORKSTREAM_CARD_NOTES = "Notes"
+    WORKSTREAM_TYPE_OPTIONS = ["Ecomm", "Packaging"]
+    WORKSTREAM_CARD_STATUS_OPTIONS = ["New", "Planning", "Waiting", "Ready for Photo", "In Production"]
+
+    # Field names - THR3D Shipping Items
+    F_THR3D_SHIPPING_ITEM_NAME = "THR3D Shipping Item"
+    F_THR3D_SHIPPING_ITEM_RECEIVED_MERCH = "Received Merch"
+    F_THR3D_SHIPPING_ITEM_EXPECTED_PRODUCT = "Expected Product"
+    F_THR3D_SHIPPING_ITEM_QUANTITY = "Quantity to Ship"
+    F_THR3D_SHIPPING_ITEM_STATUS = "Shipping Status"
+    F_THR3D_SHIPPING_ITEM_OUTBOUND_SHIPMENT = "Outbound Shipment"
+    F_THR3D_SHIPPING_ITEM_MANUAL_PRODUCT_INFO = "Manual Product Info"
+    F_THR3D_SHIPPING_ITEM_NOTES = "Notes"
+    THR3D_SHIPPING_STATUS_OPTIONS = ["Needs Shipment", "Shipped"]
 
     # Field names — Clients
     F_CLIENT_NAME = "Client"
@@ -122,16 +150,14 @@ class Config:
     F_CLIENT_JOB_PREFIX = "Job Prefix"
     F_CLIENT_ACTIVE = "Active"
     F_CLIENT_IDENTIFIER_LABEL = "Identifier Label"
-    F_CLIENT_REQUIRED_PHOTO_FIELDS = "Required Photography Fields"
+    F_CLIENT_REQUIRED_TO_SHOOT = "Required to Shoot"
     F_CLIENT_ARTWORK_REQUIREMENT = "Artwork Requirement"
     F_CLIENT_MERCHANDISE_REQUIRED = "Merchandise Required"
 
     # Field names - Activations
     F_ACTIVATION_NAME = "Name"
     F_ACTIVATION_CLIENT = "Client"
-    F_ACTIVATION_TYPE = "Activation Type"
     F_ACTIVATION_STATUS = "Status"
-    F_ACTIVATION_CREATION_METHOD = "Creation Method"
     F_ACTIVATION_PROJECT_REFERENCE = "Project Reference"
     F_ACTIVATION_PACKAGE = "Activation Package"
     F_ACTIVATION_DATE = "Activation Date"
@@ -144,11 +170,10 @@ class Config:
     F_ACTIVATION_UPLOAD_LOCATION = "Upload Location"
     F_ACTIVATION_SKU_DETAILS_JSON = "SKU Details JSON"
     F_ACTIVATION_DELIVERABLES = "Deliverables"
-    F_ACTIVATION_MATCHED_MERCHANDISE = "Matched Merchandise"
+    F_ACTIVATION_LINKED_MERCHANDISE = "Linked Merchandise"
+    F_ACTIVATION_MATCHED_MERCHANDISE = F_ACTIVATION_LINKED_MERCHANDISE
     F_ACTIVATION_NOTES = "Notes"
     ACTIVATION_STATUS_OPTIONS = ["Draft", "Active", "Needs Info", "Released", "Cancelled"]
-    ACTIVATION_TYPE_OPTIONS = ["Topco eComm Activation", "Topco Packaging Activation"]
-    ACTIVATION_CREATION_METHOD_OPTIONS = ["Manual Entry", "Spreadsheet"]
 
     # Field names — Jobs
     F_JOB_NAME = "Job"

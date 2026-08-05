@@ -174,6 +174,46 @@ class ReceivingTests(unittest.TestCase):
         self.assertIn("quantity", response.get_json()["error"])
         create_record.assert_not_called()
 
+    @patch("routes.airtable.delete_record")
+    @patch("routes._receipt_entries_by_receipt_id")
+    @patch("routes.airtable.get_record")
+    def test_delete_empty_shipment_deletes_record(self, get_record, entries_by_receipt, delete_record):
+        get_record.return_value = {
+            "id": "recShipment",
+            "fields": {
+                C.F_RECEIPT_CLIENT: [],
+                C.F_RECEIPT_NOTES: "",
+            },
+        }
+        entries_by_receipt.return_value = {"recShipment": []}
+
+        response = self.app.delete("/api/shipments/recShipment")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["deleted"], True)
+        delete_record.assert_called_once_with(C.SHIPMENTS_TABLE, "recShipment")
+
+    @patch("routes.airtable.delete_record")
+    @patch("routes._receipt_entries_by_receipt_id")
+    @patch("routes.airtable.get_record")
+    def test_delete_shipment_blocks_when_entries_exist(self, get_record, entries_by_receipt, delete_record):
+        get_record.return_value = {
+            "id": "recShipment",
+            "fields": {
+                C.F_RECEIPT_CLIENT: [],
+                C.F_RECEIPT_NOTES: "",
+            },
+        }
+        entries_by_receipt.return_value = {"recShipment": [{"id": "recEntry"}]}
+
+        response = self.app.delete("/api/shipments/recShipment")
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertEqual(payload["entryCount"], 1)
+        self.assertIn("Remove merchandise", payload["error"])
+        delete_record.assert_not_called()
+
     @patch("routes._create_history_event")
     @patch("routes.airtable.create_record")
     def test_mobile_receiving_can_start_empty_session(self, create_record, history):
@@ -347,10 +387,10 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         fields = create_record.call_args.args[1]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_ITEM], ["recItem"])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Matched")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
         payload = response.get_json()
         self.assertEqual(payload["itemIds"], ["recItem"])
-        self.assertEqual(payload["merchStatus"], "Matched")
+        self.assertEqual(payload["merchStatus"], "Received")
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.list_records")
@@ -403,7 +443,7 @@ class ReceivingTests(unittest.TestCase):
             "fields": {
                 C.F_RECEIPT_ENTRY_RECEIPT: ["recReceipt"],
                 C.F_RECEIPT_ENTRY_ITEM: ["recItem"],
-                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated",
+                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
                 C.F_RECEIPT_ENTRY_PHOTO_METADATA: json.dumps([{"object_key": "receiving/x/x-1.jpg"}]),
             },
         }
@@ -534,7 +574,7 @@ class ReceivingTests(unittest.TestCase):
                 C.F_RECEIPT_ENTRY_QUANTITY: 1,
                 C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
                 C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d"],
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready to Release",
+                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready for Photo",
             }
             base.update(fields)
             return {"id": record_id, "fields": base}
@@ -550,7 +590,7 @@ class ReceivingTests(unittest.TestCase):
                         C.F_RECEIPT_ENTRY_LOCATION: ["recLocation"],
                     }),
                     merchandise_record("recMixedPhotoThr3d", {
-                        C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging Photo", "Thr3d"],
+                        C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging", "Thr3d"],
                     }),
                     merchandise_record("recNeedsReview", {
                         C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review",
@@ -559,10 +599,10 @@ class ReceivingTests(unittest.TestCase):
                         C.F_RECEIPT_ENTRY_RELEASED: True,
                     }),
                     merchandise_record("recShipped", {
-                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Shipped to Thr3d",
+                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Shipped",
                     }),
                     merchandise_record("recPhoto", {
-                        C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm Photo"],
+                        C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm"],
                     }),
                 ]}
             if table == C.RECEIPTS_TABLE:
@@ -625,7 +665,7 @@ class ReceivingTests(unittest.TestCase):
             "fields": {
                 **entry_record["fields"],
                 C.F_RECEIPT_ENTRY_ITEM: ["recItem"],
-                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Matched",
+                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
             },
         }
 
@@ -637,13 +677,12 @@ class ReceivingTests(unittest.TestCase):
             "recEntry",
             {
                 C.F_RECEIPT_ENTRY_ITEM: ["recItem"],
-                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Matched",
                 C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review",
             },
             by_field_id=False,
         )
         self.assertNotEqual(update_record.call_args.args[0], C.ITEMS_TABLE)
-        self.assertEqual(response.get_json()["merchStatus"], "Matched")
+        self.assertEqual(response.get_json()["merchStatus"], "Received")
 
     def test_receiving_photo_storage_rejects_local_mode(self):
         storage = ReceivingPhotoStorage(r2_config(RECEIVING_PHOTO_STORAGE="local"), s3_client=mock_s3_client())

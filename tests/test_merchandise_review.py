@@ -189,7 +189,7 @@ class MerchandiseReviewTests(unittest.TestCase):
         entries = [
             self.entry("recNeedsReview", {
                 C.F_RECEIPT_ENTRY_ITEM: ["recProductClean"],
-                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Matched",
+                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
                 C.F_RECEIPT_ENTRY_PHOTO_METADATA: '[{"object_key":"merchandise/recNeedsReview/image-1.jpg"}]',
             }),
             self.entry("recWaiting", {
@@ -198,7 +198,8 @@ class MerchandiseReviewTests(unittest.TestCase):
             }),
             self.entry("recValidated", {
                 C.F_RECEIPT_ENTRY_ITEM: ["recProductValidated"],
-                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated",
+                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
+                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready for Photo",
             }),
             self.entry("recIssueState", {
                 C.F_RECEIPT_ENTRY_ITEM: ["recProductIssue"],
@@ -324,19 +325,20 @@ class MerchandiseReviewTests(unittest.TestCase):
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.list_records")
     @patch("routes.airtable.get_record")
-    def test_validate_success_marks_merchandise_validated(self, get_record, list_records, update_record, _clients):
+    def test_validate_success_marks_merchandise_ready_without_changing_physical_status(self, get_record, list_records, update_record, _clients):
         entry = self.entry("recEntry", {C.F_RECEIPT_ENTRY_ITEM: ["recProduct"]})
         get_record.side_effect = [entry, self.receipt(), self.product()]
         list_records.return_value = {"records": []}
         update_record.return_value = self.entry("recEntry", {
             C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
-            C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated",
+            C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready for Photo",
         })
 
         response = self.app.post("/api/merchandise/review/recEntry/validate", json={"status": "Validated"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(update_record.call_args.args[2][C.F_RECEIPT_ENTRY_MERCH_STATUS], "Validated")
+        self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_STATUS, update_record.call_args.args[2])
         self.assertEqual(response.get_json()["reviewState"], "Validated")
 
     @patch("routes.airtable.update_record")

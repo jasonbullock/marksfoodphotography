@@ -52,7 +52,7 @@ Merchandise is the operational center of Marks Photo.
 
 Products, Jobs, Clients, Shipments, deliverabless, and reporting references support the merchandise lifecycle. They should not displace merchandise as the thing the application is helping Walnut move toward production.
 
-Products are reference records. Do not put physical movement, storage, condition, photos, issue state, export state, production state, or Planning routing on Products to make a view easier to build.
+Products are imported Expected Product reference records. Do not put manual intake facts, physical movement, storage, condition, photos, issue state, export state, production state, or Planning routing on Products to make a view easier to build.
 
 ## 6. One Shared Ready For Photo Handoff
 
@@ -100,7 +100,7 @@ It owns product identification, client requirements, deliverables, blockers or e
 
 Planning should make uncertainty actionable.
 
-The primary PM Planning experience should guide verification rather than expose a database form. Use progressive steps when the PM must first verify Merchandise, identify Product, choose Deliverables, then resolve only the required missing information for those Deliverables.
+The primary PM Planning experience should guide New Merch intake rather than expose a database form. Use progressive steps when the PM must first confirm Received Merch, match Expected Product when possible, capture manual product information when needed, then assign Ecomm, Packaging, or THR3D.
 
 Planning should feel polished through density, responsiveness, hierarchy, and clarity rather than through new architecture. Refine cards, drag feedback, empty columns, comments, Activity, aging badges, and focus states before adding new workflow concepts.
 
@@ -162,7 +162,7 @@ Prefer:
 
 Avoid exposing implementation language such as readiness, engine, transition, assignment, schema, or table unless the user is in an administrative or developer context.
 
-Do not expose or rebuild legacy workflow architecture language such as Workstreams, Work Orders, Workstream Assignments, Workflow Templates, Workflow Stages, Work Order Types, or Merchandise Resolution in normal product UI.
+Do not expose or rebuild legacy workflow architecture language such as Work Orders, Workstream Assignments, Workflow Templates, Workflow Stages, Work Order Types, or Merchandise Resolution in normal product UI. When using `workstream card`, mean only the current scoped child work item for Ecomm or Packaging, not the removed workflow-engine architecture.
 
 For the Planning board, prefer:
 
