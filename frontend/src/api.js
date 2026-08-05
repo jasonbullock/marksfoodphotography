@@ -275,6 +275,8 @@ api.listProducts = async (jobId) => {
   return backend('GET', `/products${params.toString() ? `?${params.toString()}` : ''}`);
 };
 api.getProduct = (id) => backend('GET', `/products/${id}`);
+api.updateProduct = api.updateSku;
+api.deleteProduct = (id) => backend('DELETE', `/products/${id}`);
 
 api.listReceipts = async ({ clientId, unassignedClient } = {}) => {
   const params = new URLSearchParams();

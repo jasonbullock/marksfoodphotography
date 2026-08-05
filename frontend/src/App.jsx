@@ -4,14 +4,21 @@ import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, use
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   Camera,
+  ChevronDown,
+  ChevronUp,
+  Columns3,
   ClipboardList,
   Download as DownloadIcon,
+  Filter as FilterIcon,
+  Group as GroupIcon,
   Images,
   Kanban,
   Layers,
   PackageOpen,
   SquareKanban,
   Tag,
+  Trash2,
+  X,
   } from 'lucide-react';
   import { api } from './api';
   import { Select as FormSelect } from './design-system.jsx';
@@ -999,12 +1006,12 @@ function Dashboard({ navigate }) {
         </div>
 
         <div className="dash-card">
-          <div className="dash-card-title">Pipeline Queues — click to filter</div>
+          <div className="dash-card-title">Product Readiness Overview</div>
           <div className="dash-tile-grid">
             {DASHBOARD_QUEUES.map(q => (
               <div key={q.id} className="dash-tile"
                 style={{ borderLeftColor: QUEUE_COLORS[q.id] }}
-                onClick={() => navigate('skus', { queue: q.id })}>
+                onClick={() => navigate('skus')}>
                 <div className="dash-tile-count" style={{ color: QUEUE_COLORS[q.id] }}>{queueCounts[q.id] ?? 0}</div>
                 <div className="dash-tile-title">{q.title}</div>
               </div>
@@ -2756,7 +2763,7 @@ function JobsPage({ navigate }) {
         />
       </DataTableToolbar>
 
-      <div className="table-wrap">
+      <div className="table-wrap products-grid-wrap">
         <table>
           <thead>
             <tr>
@@ -2878,11 +2885,61 @@ function NewJobPage({ navigate }) {
 }
 
 // ── Products page ─────────────────────────────────────────────────────────────
-function ProductsPage({ navigate, jobId: initJobId, queue: initQueue }) {
+const DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS = ['client', 'name', 'identifier', 'product', 'itemJobNumber', 'brand', 'job'];
+const PRODUCT_GRID_ROW_HEIGHTS = ['small', 'medium', 'tall'];
+
+function normalizedProductColumnOrder(order) {
+  const source = Array.isArray(order) ? order : DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS;
+  return [
+    ...source.filter(id => DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS.includes(id)),
+    ...DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS.filter(id => !source.includes(id)),
+  ];
+}
+
+function loadProductGridPreferences(key) {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) || '{}');
+    return {
+      visibleColumnIds: Array.isArray(parsed.visibleColumnIds) ? parsed.visibleColumnIds : DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS,
+      columnOrder: normalizedProductColumnOrder(parsed.columnOrder),
+      widths: parsed.widths && typeof parsed.widths === 'object' ? parsed.widths : {},
+      rowHeight: PRODUCT_GRID_ROW_HEIGHTS.includes(parsed.rowHeight) ? parsed.rowHeight : 'medium',
+      alternateRows: Boolean(parsed.alternateRows),
+    };
+  } catch {
+    return { visibleColumnIds: DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS, columnOrder: DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS, widths: {}, rowHeight: 'medium', alternateRows: false };
+  }
+}
+
+function saveProductGridPreferences(key, value) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // The grid still works if browser storage is unavailable.
+  }
+}
+
+function normalizeProductGridCondition(condition, columns) {
+  const column = columns.find(candidate => candidate.id === condition.columnId);
+  const selectOperators = ['equals', 'not-equals', 'empty', 'not-empty'];
+  const textOperators = ['contains', 'equals', 'empty', 'not-empty'];
+  if (column?.filterType === 'select') {
+    return {
+      ...condition,
+      operator: selectOperators.includes(condition.operator) ? condition.operator : 'equals',
+    };
+  }
+  return {
+    ...condition,
+    operator: textOperators.includes(condition.operator) ? condition.operator : 'contains',
+  };
+}
+
+function ProductsPage({ navigate, jobId: initJobId }) {
+  const { auth } = useAuth();
   const jobs = useResource(() => api.listJobs());
   const clients = useResource(() => api.listClients());
   const [jobFilter, setJobFilter] = useState(initJobId ?? '');
-  const [queueFilter, setQueueFilter] = useState(initQueue ?? '');
   const items = useResource(
     () => api.listProducts(jobFilter || undefined),
     [jobFilter]
@@ -2893,25 +2950,91 @@ function ProductsPage({ navigate, jobId: initJobId, queue: initQueue }) {
   const selectedJob = jobList.find(job => job.id === jobFilter);
   const scopedClientId = selectedJob?.clientIds?.length === 1 ? selectedJob.clientIds[0] : '';
   const identifierLabel = getIdentifierLabel({ clientId: scopedClientId, clients: clientList, allClients: !scopedClientId });
+  const userPreferenceKey = `marks:products-grid:${auth?.user?.id || auth?.id || auth?.email || 'local'}`;
   const [itemList, setItemList] = useState([]);
-  const [selectedItemId, setSelectedItemId] = useState('');
-  const [itemDetail, setItemDetail] = useState(null);
-  const [detailError, setDetailError] = useState('');
-  const itemReferenceEntries = referenceDataEntries(itemDetail);
-  const selectedQueue = queueForId(queueFilter);
-  const visibleItems = selectedQueue ? itemList.filter(selectedQueue.matches) : itemList;
+  const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
+  const [groupPopoverOpen, setGroupPopoverOpen] = useState(false);
+  const [columnsPopoverOpen, setColumnsPopoverOpen] = useState(false);
+  const [gridSearch, setGridSearch] = useState('');
+  const [gridConditions, setGridConditions] = useState([]);
+  const [groupByColumnId, setGroupByColumnId] = useState('');
+  const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
+  const [editDrafts, setEditDrafts] = useState({});
+  const [savingCell, setSavingCell] = useState('');
+  const [gridError, setGridError] = useState('');
+  const [columnPrefs, setColumnPrefs] = useState(() => loadProductGridPreferences(userPreferenceKey));
+  const [draggingColumnId, setDraggingColumnId] = useState('');
+  const [fillDrag, setFillDrag] = useState(null);
+  const [fillTargetItemId, setFillTargetItemId] = useState('');
+  const resizeRef = useRef(null);
+  const filterMenuRef = useRef(null);
+  const groupMenuRef = useRef(null);
+  const columnsMenuRef = useRef(null);
 
   useEffect(() => {
     setJobFilter(initJobId ?? '');
   }, [initJobId]);
 
   useEffect(() => {
-    setQueueFilter(initQueue ?? '');
-  }, [initQueue]);
-
-  useEffect(() => {
     if (items.data?.records) setItemList(items.data.records);
   }, [items.data]);
+
+  useEffect(() => {
+    setColumnPrefs(loadProductGridPreferences(userPreferenceKey));
+  }, [userPreferenceKey]);
+
+  useEffect(() => {
+    saveProductGridPreferences(userPreferenceKey, columnPrefs);
+  }, [userPreferenceKey, columnPrefs]);
+
+  useEffect(() => {
+    function closeProductPopovers(event) {
+      if (event.key === 'Escape') {
+        setFilterPopoverOpen(false);
+        setGroupPopoverOpen(false);
+        setColumnsPopoverOpen(false);
+        return;
+      }
+      if (event.type !== 'mousedown') return;
+      const target = event.target;
+      if (
+        filterMenuRef.current?.contains(target)
+        || groupMenuRef.current?.contains(target)
+        || columnsMenuRef.current?.contains(target)
+      ) return;
+      setFilterPopoverOpen(false);
+      setGroupPopoverOpen(false);
+      setColumnsPopoverOpen(false);
+    }
+    document.addEventListener('mousedown', closeProductPopovers);
+    document.addEventListener('keydown', closeProductPopovers);
+    return () => {
+      document.removeEventListener('mousedown', closeProductPopovers);
+      document.removeEventListener('keydown', closeProductPopovers);
+    };
+  }, []);
+
+  useEffect(() => {
+    function moveResize(event) {
+      const resize = resizeRef.current;
+      if (!resize) return;
+      const nextWidth = Math.max(96, Math.round(resize.startWidth + event.clientX - resize.startX));
+      setColumnPrefs(current => ({
+        ...current,
+        widths: { ...(current.widths || {}), [resize.columnId]: nextWidth },
+      }));
+    }
+    function stopResize() {
+      resizeRef.current = null;
+      document.body.classList.remove('is-resizing-products-grid');
+    }
+    document.addEventListener('mousemove', moveResize);
+    document.addEventListener('mouseup', stopResize);
+    return () => {
+      document.removeEventListener('mousemove', moveResize);
+      document.removeEventListener('mouseup', stopResize);
+    };
+  }, []);
 
   function jobNames(item) {
     const names = (item.jobIds ?? [])
@@ -2919,122 +3042,682 @@ function ProductsPage({ navigate, jobId: initJobId, queue: initQueue }) {
       .filter(Boolean);
     return names.length ? names.join(', ') : '—';
   }
+  function clientNames(item) {
+    const names = (item.clientIds ?? [])
+      .map(id => clientList.find(client => client.id === id)?.name)
+      .filter(Boolean);
+    return names.length ? names.join(', ') : '—';
+  }
+  const productGridColumns = [
+    { id: 'client', header: 'Client', value: item => clientNames(item), editable: false, locked: true, defaultWidth: 150, filterType: 'select' },
+    { id: 'name', header: 'Product', key: 'name', editable: true, defaultWidth: 260 },
+    { id: 'identifier', header: identifierLabel, key: 'identifier', patchKey: 'productId', editable: true, monospace: true, defaultWidth: 180 },
+    { id: 'product', header: 'Product or File Name', key: 'product', editable: true, defaultWidth: 260 },
+    { id: 'itemJobNumber', header: DOMAIN_TERMS.productJobNumber, key: 'itemJobNumber', editable: true, defaultWidth: 190 },
+    { id: 'brand', header: 'Brand', key: 'brand', editable: true, defaultWidth: 150 },
+    { id: 'job', header: 'Job', value: item => jobNames(item), editable: false, defaultWidth: 320, filterType: 'select' },
+  ];
+  const visibleColumnIds = columnPrefs.visibleColumnIds || DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS;
+  const orderedColumnIds = normalizedProductColumnOrder(columnPrefs.columnOrder);
+  const orderedProductGridColumns = orderedColumnIds
+    .map(columnId => productGridColumns.find(column => column.id === columnId))
+    .filter(Boolean);
+  const productGridRowHeight = PRODUCT_GRID_ROW_HEIGHTS.includes(columnPrefs.rowHeight) ? columnPrefs.rowHeight : 'medium';
+  const alternateProductRows = Boolean(columnPrefs.alternateRows);
+  const visibleProductGridColumns = orderedProductGridColumns.filter(column => column.locked || visibleColumnIds.includes(column.id));
+  const lastVisibleProductGridColumnId = visibleProductGridColumns.at(-1)?.id || '';
+  const tableColumnCount = visibleProductGridColumns.length + 1;
+  const productGridColumnWidths = Object.fromEntries(visibleProductGridColumns.map(column => [
+    column.id,
+    columnPrefs.widths?.[column.id] || column.defaultWidth || 160,
+  ]));
+  const productGridTableWidth = visibleProductGridColumns.reduce((total, column) => total + productGridColumnWidths[column.id], 56);
+  const activeConditionCount = gridConditions.filter(condition => (
+    ['empty', 'not-empty'].includes(condition.operator) || String(condition.value || '').trim()
+  )).length;
+  const activeFilterCount = activeConditionCount + (gridSearch.trim() ? 1 : 0);
+  const productFilterOperatorLabels = {
+    contains: 'contains',
+    equals: 'is',
+    'not-equals': 'is not',
+    empty: 'is empty',
+    'not-empty': 'is not empty',
+  };
+  const activeFilterChips = [
+    ...(gridSearch.trim() ? [{ id: 'search', label: `Search: ${gridSearch.trim()}`, clear: () => setGridSearch('') }] : []),
+    ...gridConditions
+      .filter(condition => ['empty', 'not-empty'].includes(condition.operator) || String(condition.value || '').trim())
+      .map(condition => {
+        const column = visibleProductGridColumns.find(candidate => candidate.id === condition.columnId);
+        const operator = productFilterOperatorLabels[condition.operator] || condition.operator;
+        const value = ['empty', 'not-empty'].includes(condition.operator) ? '' : ` ${condition.value}`;
+        return {
+          id: condition.id,
+          label: `${column?.header || 'Field'} ${operator}${value}`,
+          clear: () => removeGridCondition(condition.id),
+        };
+      }),
+  ];
+  const baseVisibleItems = itemList;
+  const filteredItems = baseVisibleItems.filter(item => {
+    const search = gridSearch.trim().toLowerCase();
+    const matchesSearch = !search || visibleProductGridColumns.some(column => (
+      String(productCellValue(item, column)).toLowerCase().includes(search)
+    ));
+    if (!matchesSearch) return false;
+    return gridConditions.every(condition => matchesGridCondition(item, condition));
+  });
+  const sortedItems = [...filteredItems].sort((a, b) => {
+    const column = visibleProductGridColumns.find(col => col.id === sortConfig.key);
+    if (!column) return 0;
+    const left = String(productCellValue(a, column)).toLowerCase();
+    const right = String(productCellValue(b, column)).toLowerCase();
+    const result = left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
+    return sortConfig.direction === 'desc' ? -result : result;
+  });
+  const visibleItems = sortedItems;
+  const visibleProductIndexById = Object.fromEntries(visibleItems.map((item, index) => [item.id, index]));
+  const groupByColumn = visibleProductGridColumns.find(column => column.id === groupByColumnId);
+  const groupedVisibleItems = groupByColumn
+    ? Object.entries(visibleItems.reduce((groups, item) => {
+        const label = String(productCellValue(item, groupByColumn) || '').trim() || 'Blank';
+        if (!groups[label]) groups[label] = [];
+        groups[label].push(item);
+        return groups;
+      }, {})).map(([label, records]) => ({ label, records }))
+    : [{ label: '', records: visibleItems }];
   const productExportColumns = [
-    { header: 'Product', key: 'name' },
-    { header: identifierLabel, key: 'identifier' },
-    { header: 'Product or File Name', key: 'product' },
-    { header: DOMAIN_TERMS.productJobNumber, key: 'itemJobNumber' },
-    { header: 'Brand', key: 'brand' },
-    { header: 'Job', value: item => jobNames(item) },
+    ...visibleProductGridColumns.map(column => ({
+      header: column.header,
+      key: column.key,
+      value: column.value,
+    })),
   ];
 
-  async function selectItem(itemId) {
-    setSelectedItemId(itemId);
-    setDetailError('');
+  function productColumnOptions(column) {
+    if (column.filterType !== 'select') return [];
+    return [...new Set(itemList.map(item => String(productCellValue(item, column) || '').trim()).filter(Boolean))].sort((a, b) => (
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+    ));
+  }
+
+  function productCellValue(item, column) {
+    if (column.value) return column.value(item);
+    return item[column.key] ?? '';
+  }
+
+  function matchesGridCondition(item, condition) {
+    const column = visibleProductGridColumns.find(candidate => candidate.id === condition.columnId);
+    if (!column) return true;
+    const rawValue = String(productCellValue(item, column) || '');
+    const value = rawValue.trim().toLowerCase();
+    const target = String(condition.value || '').trim().toLowerCase();
+    if (condition.operator === 'empty') return !value;
+    if (condition.operator === 'not-empty') return Boolean(value);
+    if (!target) return true;
+    if (condition.operator === 'not-equals') return value !== target;
+    if (condition.operator === 'equals') return value === target;
+    return value.includes(target);
+  }
+
+  function addGridCondition() {
+    setGridConditions(current => [
+      ...current,
+      { id: Date.now().toString(36), columnId: visibleProductGridColumns[0]?.id || 'name', operator: 'contains', value: '' },
+    ]);
+  }
+
+  function updateGridCondition(conditionId, patch) {
+    setGridConditions(current => current.map(condition => (
+      condition.id === conditionId ? normalizeProductGridCondition({ ...condition, ...patch }, visibleProductGridColumns) : condition
+    )));
+  }
+
+  function removeGridCondition(conditionId) {
+    setGridConditions(current => current.filter(condition => condition.id !== conditionId));
+  }
+
+  function toggleProductSort(columnId) {
+    setSortConfig(current => (
+      current.key === columnId
+        ? { key: columnId, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key: columnId, direction: 'asc' }
+    ));
+  }
+
+  function toggleProductColumn(columnId) {
+    const column = productGridColumns.find(candidate => candidate.id === columnId);
+    if (!column || column.locked) return;
+    setColumnPrefs(current => {
+      const currentIds = current.visibleColumnIds || DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS;
+      const nextIds = currentIds.includes(columnId)
+        ? currentIds.filter(id => id !== columnId)
+        : [...currentIds, columnId];
+      return { ...current, visibleColumnIds: nextIds };
+    });
+  }
+
+  function moveProductColumnBefore(sourceColumnId, targetColumnId) {
+    if (!sourceColumnId || !targetColumnId || sourceColumnId === targetColumnId) return;
+    setColumnPrefs(current => {
+      const order = normalizedProductColumnOrder(current.columnOrder);
+      const fromIndex = order.indexOf(sourceColumnId);
+      const toIndex = order.indexOf(targetColumnId);
+      if (fromIndex < 0 || toIndex < 0) return current;
+      const nextOrder = [...order];
+      const [moved] = nextOrder.splice(fromIndex, 1);
+      nextOrder.splice(toIndex, 0, moved);
+      return { ...current, columnOrder: nextOrder };
+    });
+  }
+
+  function startColumnResize(event, column) {
+    event.preventDefault();
+    event.stopPropagation();
+    resizeRef.current = {
+      columnId: column.id,
+      startX: event.clientX,
+      startWidth: columnPrefs.widths?.[column.id] || column.defaultWidth || 160,
+    };
+    document.body.classList.add('is-resizing-products-grid');
+  }
+
+  function draftKey(itemId, columnId) {
+    return `${itemId}:${columnId}`;
+  }
+
+  async function saveProductCell(item, column, rawValue) {
+    const nextValue = rawValue.trim();
+    const currentValue = String(item[column.key] ?? '');
+    const key = draftKey(item.id, column.id);
+    if (nextValue === currentValue) {
+      setEditDrafts(current => {
+        const copy = { ...current };
+        delete copy[key];
+        return copy;
+      });
+      return;
+    }
+    setSavingCell(key);
+    setGridError('');
     try {
-      const data = await api.getProduct(itemId);
-      setItemDetail(data.record);
+      const patchKey = column.patchKey || column.key;
+      const data = await api.updateProduct(item.id, {
+        [patchKey]: nextValue,
+        codeType: item.codeType,
+        identifierLabel,
+      });
+      const updated = data.record || data;
+      setItemList(current => current.map(row => row.id === item.id ? updated : row));
+      setEditDrafts(current => {
+        const copy = { ...current };
+        delete copy[key];
+        return copy;
+      });
     } catch (error) {
-      setItemDetail(null);
-      setDetailError(error.message);
+      setGridError(error.message || 'Could not save Product edit.');
+    } finally {
+      setSavingCell('');
+    }
+  }
+
+  async function applyProductCellFill(source, targetItem) {
+    if (!source?.column?.editable || !targetItem || source.itemId === targetItem.id) return;
+    const column = source.column;
+    const nextValue = String(source.value || '').trim();
+    const sourceIndex = visibleProductIndexById[source.itemId];
+    const targetIndex = visibleProductIndexById[targetItem.id];
+    if (sourceIndex === undefined || targetIndex === undefined) return;
+    const start = Math.min(sourceIndex, targetIndex);
+    const end = Math.max(sourceIndex, targetIndex);
+    const targetItems = visibleItems.slice(start, end + 1).filter(item => item.id !== source.itemId);
+    if (targetItems.length === 0) return;
+    setGridError('');
+    try {
+      const patchKey = column.patchKey || column.key;
+      for (const item of targetItems) {
+        const currentValue = String(item[column.key] ?? '');
+        if (nextValue === currentValue) continue;
+        const key = draftKey(item.id, column.id);
+        setSavingCell(key);
+        setEditDrafts(current => ({ ...current, [key]: nextValue }));
+        const data = await api.updateProduct(item.id, {
+          [patchKey]: nextValue,
+          codeType: item.codeType,
+          identifierLabel,
+        });
+        const updated = data.record || data;
+        setItemList(current => current.map(row => row.id === item.id ? updated : row));
+        setEditDrafts(current => {
+          const copy = { ...current };
+          delete copy[key];
+          return copy;
+        });
+      }
+    } catch (error) {
+      setGridError(error.message || 'Could not fill Product cells.');
+    } finally {
+      setSavingCell('');
+    }
+  }
+
+  function isProductFillSelected(item, column) {
+    if (!fillDrag || fillDrag.column?.id !== column.id || !fillTargetItemId) return false;
+    const sourceIndex = visibleProductIndexById[fillDrag.itemId];
+    const targetIndex = visibleProductIndexById[fillTargetItemId];
+    const itemIndex = visibleProductIndexById[item.id];
+    if (sourceIndex === undefined || targetIndex === undefined || itemIndex === undefined) return false;
+    return itemIndex >= Math.min(sourceIndex, targetIndex) && itemIndex <= Math.max(sourceIndex, targetIndex);
+  }
+
+  function startProductFillDrag(event, item, column, value) {
+    setFillDrag({ itemId: item.id, column, value });
+    setFillTargetItemId(item.id);
+    event.dataTransfer.effectAllowed = 'copy';
+    event.dataTransfer.setData('text/plain', value);
+  }
+
+  function enterProductFillTarget(item, column) {
+    if (fillDrag?.column?.id === column.id) setFillTargetItemId(item.id);
+  }
+
+  function overProductFillTarget(event, item, column) {
+    if (fillDrag?.column?.id !== column.id || fillDrag.itemId === item.id) return;
+    event.preventDefault();
+    setFillTargetItemId(item.id);
+    event.dataTransfer.dropEffect = 'copy';
+  }
+
+  function dropProductFill(event, item, column) {
+    if (fillDrag?.column?.id !== column.id) return;
+    event.preventDefault();
+    applyProductCellFill(fillDrag, item);
+    setFillDrag(null);
+    setFillTargetItemId('');
+  }
+
+  function endProductFillDrag() {
+    setFillDrag(null);
+    setFillTargetItemId('');
+  }
+
+  async function deleteProduct(item) {
+    const label = item.name || item.product || item.identifier || 'this Product';
+    if (!window.confirm(`Delete ${label}? This removes the Product reference record and cannot be undone.`)) return;
+    setGridError('');
+    try {
+      await api.deleteProduct(item.id);
+      setItemList(current => current.filter(row => row.id !== item.id));
+    } catch (error) {
+      setGridError(error.message || 'Could not delete Product.');
     }
   }
 
   return (
     <div className="page-stack">
-      <div className="filter-bar">
-        <select value={queueFilter} onChange={e => setQueueFilter(e.target.value)}>
-          <option value="">All queues</option>
-          {DASHBOARD_QUEUES.map(queue => (
-            <option key={queue.id} value={queue.id}>{queue.title}</option>
-          ))}
-        </select>
-        <select value={jobFilter} onChange={e => setJobFilter(e.target.value)}>
-          <option value="">All jobs</option>
-          {jobList.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
-        </select>
-      </div>
-
       {items.error && <div className="error-state">{items.error}</div>}
+      {gridError && <div className="error-state">{gridError}</div>}
 
       <DataTableToolbar>
-        <ExcelExportButton
-          filename={todayExportFilename('products')}
-          columns={productExportColumns}
-          rows={visibleItems}
-          disabled={items.loading}
-        />
+        <div className="products-grid-toolbar">
+          <select className="products-job-filter" value={jobFilter} onChange={e => setJobFilter(e.target.value)} aria-label="Filter Products by job">
+            <option value="">All jobs</option>
+            {jobList.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
+          </select>
+          <div className="products-grid-actions">
+            {activeFilterChips.length > 0 && (
+              <div className="products-active-filters" aria-label="Active Product filters">
+                {activeFilterChips.map(chip => (
+                  <button
+                    type="button"
+                    className="products-active-filter-chip"
+                    onClick={chip.clear}
+                    title={`Clear ${chip.label}`}
+                    key={chip.id}
+                  >
+                    <span>{chip.label}</span>
+                    <X size={13} strokeWidth={2.4} aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="products-grid-filter-menu" ref={filterMenuRef}>
+            <button
+              type="button"
+              className={`btn btn-ghost table-filter-button${activeFilterCount ? ' is-active' : ''}`}
+              onClick={() => setFilterPopoverOpen(open => !open)}
+            >
+              <FilterIcon size={16} strokeWidth={2} />
+              Filter{activeFilterCount ? ` ${activeFilterCount}` : ''}
+            </button>
+            {filterPopoverOpen && (
+              <div className="products-filter-popover" role="dialog" aria-label="Product filters">
+                <div className="products-filter-title">Filter</div>
+                <input
+                  className="products-filter-search"
+                  value={gridSearch}
+                  onChange={event => setGridSearch(event.target.value)}
+                  placeholder="Describe what you want to see"
+                  aria-label="Search products"
+                />
+                {gridConditions.length === 0 ? (
+                  <div className="products-filter-empty">No filter conditions are applied</div>
+                ) : (
+                  <div className="products-filter-conditions">
+                    {gridConditions.map(condition => {
+                      const conditionColumn = visibleProductGridColumns.find(column => column.id === condition.columnId) || visibleProductGridColumns[0];
+                      const isSelectFilter = conditionColumn?.filterType === 'select';
+                      const valueOptions = productColumnOptions(conditionColumn);
+                      return (
+                        <div className="products-filter-condition" key={condition.id}>
+                          <select value={condition.columnId} onChange={event => updateGridCondition(condition.id, { columnId: event.target.value, value: '' })}>
+                            {visibleProductGridColumns.map(column => <option value={column.id} key={column.id}>{column.header}</option>)}
+                          </select>
+                          <select value={condition.operator} onChange={event => updateGridCondition(condition.id, { operator: event.target.value })}>
+                            {isSelectFilter ? (
+                              <>
+                                <option value="equals">is</option>
+                                <option value="not-equals">is not</option>
+                                <option value="empty">is empty</option>
+                                <option value="not-empty">is not empty</option>
+                              </>
+                            ) : (
+                              <>
+                                <option value="contains">contains</option>
+                                <option value="equals">is</option>
+                                <option value="empty">is empty</option>
+                                <option value="not-empty">is not empty</option>
+                              </>
+                            )}
+                          </select>
+                          {!['empty', 'not-empty'].includes(condition.operator) && (
+                            isSelectFilter ? (
+                              <select
+                                value={condition.value}
+                                onChange={event => updateGridCondition(condition.id, { value: event.target.value })}
+                                aria-label="Filter value"
+                              >
+                                <option value="">Choose value…</option>
+                                {valueOptions.map(option => <option value={option} key={option}>{option}</option>)}
+                              </select>
+                            ) : (
+                              <input
+                                value={condition.value}
+                                onChange={event => updateGridCondition(condition.id, { value: event.target.value })}
+                                placeholder="Value"
+                                aria-label="Filter value"
+                              />
+                            )
+                          )}
+                          <button type="button" className="products-filter-remove" onClick={() => removeGridCondition(condition.id)} aria-label="Remove filter">×</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="products-filter-footer">
+                  <button type="button" className="products-filter-add" onClick={addGridCondition}>+ Add condition</button>
+                  {activeFilterCount > 0 && (
+                    <button
+                      type="button"
+                      className="products-filter-clear"
+                      onClick={() => {
+                        setGridSearch('');
+                        setGridConditions([]);
+                      }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            </div>
+            <div className="products-grid-filter-menu" ref={columnsMenuRef}>
+            <button
+              type="button"
+              className="btn btn-ghost table-filter-button"
+              onClick={() => setColumnsPopoverOpen(open => !open)}
+            >
+              <Columns3 size={16} strokeWidth={2} />
+              Columns
+            </button>
+            {columnsPopoverOpen && (
+              <div className="products-filter-popover products-columns-popover" role="dialog" aria-label="Product columns">
+                <div className="products-filter-title">Columns</div>
+                <div className="products-columns-list">
+                  {orderedProductGridColumns.map(column => (
+                    <div
+                      className={`products-column-option${draggingColumnId === column.id ? ' is-dragging' : ''}`}
+                      key={column.id}
+                      draggable
+                      onDragStart={event => {
+                        setDraggingColumnId(column.id);
+                        event.dataTransfer.effectAllowed = 'move';
+                        event.dataTransfer.setData('text/plain', column.id);
+                      }}
+                      onDragOver={event => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                      }}
+                      onDrop={event => {
+                        event.preventDefault();
+                        moveProductColumnBefore(event.dataTransfer.getData('text/plain') || draggingColumnId, column.id);
+                        setDraggingColumnId('');
+                      }}
+                      onDragEnd={() => setDraggingColumnId('')}
+                    >
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={column.locked || visibleColumnIds.includes(column.id)}
+                          disabled={column.locked}
+                          onChange={() => toggleProductColumn(column.id)}
+                        />
+                        <span>{column.header}</span>
+                      </label>
+                      <span className="products-column-drag-handle" aria-hidden="true">::</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="products-view-options">
+                  <div className="products-view-option-label">Row height</div>
+                  <div className="products-row-height-control" role="group" aria-label="Product row height">
+                    {PRODUCT_GRID_ROW_HEIGHTS.map(size => (
+                      <button
+                        type="button"
+                        className={productGridRowHeight === size ? 'is-active' : ''}
+                        onClick={() => setColumnPrefs(current => ({ ...current, rowHeight: size }))}
+                        key={size}
+                      >
+                        {size}
+                      </button>
+                    ))}
+                  </div>
+                  <label className="products-column-option products-stripe-option">
+                    <input
+                      type="checkbox"
+                      checked={alternateProductRows}
+                      onChange={event => setColumnPrefs(current => ({ ...current, alternateRows: event.target.checked }))}
+                    />
+                    <span>Alternate row backgrounds</span>
+                  </label>
+                </div>
+              </div>
+            )}
+            </div>
+            <div className="products-grid-filter-menu" ref={groupMenuRef}>
+            <button
+              type="button"
+              className={`btn btn-ghost table-filter-button${groupByColumnId ? ' is-active' : ''}`}
+              onClick={() => setGroupPopoverOpen(open => !open)}
+            >
+              <GroupIcon size={16} strokeWidth={2} />
+              Group{groupByColumn ? `: ${groupByColumn.header}` : ''}
+            </button>
+            {groupPopoverOpen && (
+              <div className="products-filter-popover products-group-popover" role="dialog" aria-label="Product grouping">
+                <div className="products-filter-title">Group</div>
+                <div className="products-group-body">
+                  <label>
+                    <span>Group by</span>
+                    <select value={groupByColumnId} onChange={event => setGroupByColumnId(event.target.value)}>
+                      <option value="">No grouping</option>
+                      {visibleProductGridColumns.map(column => <option value={column.id} key={column.id}>{column.header}</option>)}
+                    </select>
+                  </label>
+                  {!groupByColumnId && <div className="products-filter-empty">No grouping is applied</div>}
+                </div>
+                {groupByColumnId && (
+                  <div className="products-filter-footer">
+                    <button type="button" className="products-filter-clear" onClick={() => setGroupByColumnId('')}>Clear</button>
+                  </div>
+                )}
+              </div>
+            )}
+            </div>
+            <ExcelExportButton
+              filename={todayExportFilename('products')}
+              columns={productExportColumns}
+              rows={visibleItems}
+              disabled={items.loading}
+            />
+          </div>
+        </div>
       </DataTableToolbar>
 
-      <div className="table-wrap">
-        <table>
+      <div className="table-wrap products-grid-wrap">
+        <table
+          className={`products-grid-table is-${productGridRowHeight}-rows${alternateProductRows ? ' has-alternate-rows' : ''}`}
+          style={{ width: `max(100%, ${productGridTableWidth}px)` }}
+        >
+          <colgroup>
+            {visibleProductGridColumns.map(column => (
+              <col
+                key={column.id}
+                style={column.id === lastVisibleProductGridColumnId ? undefined : { width: `${productGridColumnWidths[column.id]}px` }}
+              />
+            ))}
+            <col className="products-grid-actions-col" />
+          </colgroup>
           <thead>
             <tr>
-              <th></th>
-              <th>Product</th>
-              <th>{identifierLabel}</th>
-              <th>Product or File Name</th>
-              <th>{DOMAIN_TERMS.productJobNumber}</th>
-              <th>Brand</th>
-              <th>Job</th>
+              {visibleProductGridColumns.map(column => (
+                <th key={column.id}>
+                  <button
+                    type="button"
+                    className="table-sort-button"
+                    onClick={() => toggleProductSort(column.id)}
+                    aria-label={`Sort by ${column.header}`}
+                  >
+                    {column.header}
+                    {sortConfig.key === column.id && (
+                      sortConfig.direction === 'asc'
+                        ? <ChevronUp className="table-sort-icon" size={13} strokeWidth={2.4} aria-hidden="true" />
+                        : <ChevronDown className="table-sort-icon" size={13} strokeWidth={2.4} aria-hidden="true" />
+                    )}
+                  </button>
+                  <span
+                    className="products-column-resizer"
+                    onMouseDown={event => startColumnResize(event, column)}
+                    role="separator"
+                    aria-label={`Resize ${column.header}`}
+                  />
+                </th>
+              ))}
+              <th className="products-grid-actions-header" aria-label="Actions"></th>
             </tr>
           </thead>
           <tbody>
-            {items.loading && <tr><td colSpan="10" className="empty-state">Loading…</td></tr>}
+            {items.loading && <tr><td colSpan={tableColumnCount} className="empty-state">Loading…</td></tr>}
             {!items.loading && visibleItems.length === 0 && (
-              <tr><td colSpan="10" className="empty-state">No Products found</td></tr>
+              <tr><td colSpan={tableColumnCount} className="empty-state">No Products found</td></tr>
             )}
-            {visibleItems.map(item => (
-              <tr key={item.id} onClick={() => selectItem(item.id)} style={{ cursor: 'pointer' }}>
-                <td className="item-thumb-cell"><RecordThumbnail record={item} className="item-list-thumb" /></td>
-                <td style={{ fontWeight: 600 }}>{item.name || '—'}</td>
-                <td>
-                  {item.identifier
-                    ? <code>{item.identifier}</code>
-                    : <span style={{ color: 'var(--red)', fontWeight: 700, fontSize: 11 }}>Missing {identifierLabel}</span>
-                  }
-                </td>
-                <td>{item.product || '—'}</td>
-                <td>{item.itemJobNumber || '—'}</td>
-                <td>{item.brand || '—'}</td>
-                <td>{jobNames(item)}</td>
-              </tr>
-            ))}
+            {groupedVisibleItems.reduce((rows, group) => {
+              if (groupByColumn) {
+                rows.push(
+                  <tr className="products-grid-group-row" key={`group-${group.label}`}>
+                    <td colSpan={tableColumnCount}>
+                      <span>{group.label}</span>
+                      <strong>{group.records.length}</strong>
+                    </td>
+                  </tr>
+                );
+              }
+              group.records.forEach(item => {
+                const rowIndex = rows.filter(row => row?.props?.className !== 'products-grid-group-row').length;
+                rows.push(
+                  <tr className={alternateProductRows && rowIndex % 2 === 1 ? 'is-alt-row' : ''} key={item.id}>
+                    {visibleProductGridColumns.map(column => {
+                      const key = draftKey(item.id, column.id);
+                      const value = editDrafts[key] ?? String(productCellValue(item, column) || '');
+                      if (!column.editable) return <td key={column.id}>{value || '—'}</td>;
+                      return (
+                        <td key={column.id}>
+                          <div className={`products-grid-cell-editor${isProductFillSelected(item, column) ? ' is-fill-target' : ''}`}>
+                            <input
+                              className={`products-grid-cell-input${column.monospace ? ' is-code' : ''}`}
+                              value={value}
+                              disabled={savingCell === key}
+                              draggable
+                              onDragStart={event => startProductFillDrag(event, item, column, value)}
+                              onDragEnter={() => enterProductFillTarget(item, column)}
+                              onDragOver={event => overProductFillTarget(event, item, column)}
+                              onDrop={event => dropProductFill(event, item, column)}
+                              onDragEnd={endProductFillDrag}
+                              onClick={event => event.stopPropagation()}
+                              onFocus={event => event.target.select()}
+                              onChange={event => setEditDrafts(current => ({ ...current, [key]: event.target.value }))}
+                              onBlur={event => {
+                                if (event.currentTarget.dataset.cancelEdit === 'true') {
+                                  event.currentTarget.dataset.cancelEdit = '';
+                                  return;
+                                }
+                                saveProductCell(item, column, event.target.value);
+                              }}
+                              onKeyDown={event => {
+                                if (event.key === 'Enter') event.currentTarget.blur();
+                                if (event.key === 'Escape') {
+                                  event.currentTarget.dataset.cancelEdit = 'true';
+                                  setEditDrafts(current => {
+                                    const copy = { ...current };
+                                    delete copy[key];
+                                    return copy;
+                                  });
+                                  event.currentTarget.blur();
+                                }
+                              }}
+                              aria-label={`${column.header} for ${item.name || item.id}`}
+                            />
+                            <span
+                              className="products-grid-fill-handle"
+                              draggable
+                              onDragStart={event => startProductFillDrag(event, item, column, value)}
+                              onDragEnd={endProductFillDrag}
+                              aria-hidden="true"
+                            />
+                          </div>
+                        </td>
+                      );
+                    })}
+                    <td className="products-grid-row-actions" aria-label="Actions">
+                      <button
+                        type="button"
+                        className="products-delete-button"
+                        onClick={() => deleteProduct(item)}
+                        aria-label={`Delete ${item.name || item.product || 'Product'}`}
+                      >
+                        <Trash2 size={15} strokeWidth={2} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              });
+              return rows;
+            }, [])}
           </tbody>
         </table>
       </div>
-      {detailError && <div className="error-state">{detailError}</div>}
-      {itemDetail && (
-        <div className="panel">
-          <div className="panel-header">
-            <span className="panel-title">Product Reference</span>
-          </div>
-          <div className="settings-list">
-            <div className="setting-row"><span className="setting-key">{getIdentifierLabel({ record: itemDetail, clients: clientList })}</span><span className="setting-val">{itemDetail.identifier || 'Missing'}</span></div>
-            <div className="setting-row"><span className="setting-key">Product or File Name</span><span className="setting-val">{itemDetail.product || 'Missing'}</span></div>
-            <div className="setting-row"><span className="setting-key">{DOMAIN_TERMS.productJobNumber}</span><span className="setting-val">{itemDetail.itemJobNumber || '—'}</span></div>
-            <div className="setting-row"><span className="setting-key">Description</span><span className="setting-val">{itemDetail.description || '—'}</span></div>
-            <div className="setting-row"><span className="setting-key">Master or Variant</span><span className="setting-val">{itemDetail.masterOrVariant || '—'}</span></div>
-            <div className="setting-row"><span className="setting-key">Pickup Job Number</span><span className="setting-val">{itemDetail.pickupJobNumber || '—'}</span></div>
-            <div className="setting-row"><span className="setting-key">Artwork</span><span className="setting-val">{itemDetail.artworkReceived ? 'Received' : 'Not received'}</span></div>
-          </div>
-          {itemReferenceEntries.length > 0 && (
-            <>
-              <div className="panel-header">
-                <span className="panel-title">Reference Data</span>
-              </div>
-              <div className="settings-list">
-                {itemReferenceEntries.map(([key, value]) => (
-                  <div className="setting-row" key={key}>
-                    <span className="setting-key">{key}</span>
-                    <span className="setting-val">{value}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -4330,7 +5013,11 @@ function MerchandiseInventoryPage({ navigate }) {
                   <th key={column.key}>
                     <button type="button" className="table-sort-button" onClick={() => toggleInventorySort(column.key)}>
                       {column.header}
-                      {sortKey === column.key && <span aria-hidden="true">{sortDirection === 'asc' ? '↑' : '↓'}</span>}
+                      {sortKey === column.key && (
+                        sortDirection === 'asc'
+                          ? <ChevronUp className="table-sort-icon" size={13} strokeWidth={2.4} aria-hidden="true" />
+                          : <ChevronDown className="table-sort-icon" size={13} strokeWidth={2.4} aria-hidden="true" />
+                      )}
                     </button>
                   </th>
                 ))}
@@ -9157,7 +9844,6 @@ function RouteProductsPage({ navigate }) {
     <ProductsPage
       navigate={navigate}
       jobId={searchParams.get('jobId') || ''}
-      queue={searchParams.get('queue') || ''}
     />
   );
 }

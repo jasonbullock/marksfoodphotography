@@ -1021,7 +1021,7 @@ class FrontendRoutingTests(unittest.TestCase):
     def test_migrated_pages_use_alias_api_calls(self):
         self.assertIn("api.listShipments()", self.source)
         self.assertIn("api.listProducts()", self.source)
-        self.assertIn("api.getProduct(itemId)", self.source)
+        self.assertIn("api.deleteProduct(item.id)", self.source)
         self.assertIn("api.listMerchandise()", self.source)
         self.assertIn("api.listMerchandiseReviewEntries()", self.source)
         self.assertIn("api.searchMerchandiseReviewProducts", self.source)

@@ -1,5 +1,11 @@
 # Product Decisions
 
+## 2026-08-05 - Products Page Is An Editable Reference Grid
+
+Products remain Expected Product reference records, not operational workflow records. The Products page may behave like a spreadsheet for imported/reference facts: sortable columns, per-column filtering, Excel export, and inline editing for Product text fields. Linked context such as Client and Job should be displayed for scanning but remain linked-record context rather than free-text editable cells.
+
+Product grid display preferences such as hidden columns and adjusted column widths are user-interface preferences and should be stored per browser user rather than added to Airtable. Deleting a Product from the grid is a destructive reference-data action and must require a warning/confirmation.
+
 ## 2026-08-05 - Activation Creation Method Removed
 
 Activation creation source is not operational project data. The Airtable `Activations` field `Creation Method` was removed from active schema expectations and app code. Activations keep only the facts needed to define and move photo work: client, type, status, project/package details, due/urgency, Walnut scope, paths, SKU details, deliverables, linked Merchandise, and notes.

@@ -2813,6 +2813,23 @@ def update_item(record_id):
     return jsonify(_shape_item(data, clients_by_id=_clients_by_id(), issues_by_item_id=_issues_by_item_id()))
 
 
+@api.delete("/items/<record_id>")
+@api.delete("/products/<record_id>")
+@api.delete("/skus/<record_id>")
+def delete_item(record_id):
+    try:
+        previous = airtable.get_record(C.PRODUCTS_TABLE, record_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    if not _client_ids_permitted(previous.get("fields", {}).get(C.F_ITEM_CLIENT, [])):
+        return _forbidden()
+    try:
+        airtable.delete_record(C.PRODUCTS_TABLE, record_id)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"deleted": True, "id": record_id})
+
+
 def _clients_by_id():
     data = airtable.list_records(C.CLIENTS_TABLE, by_field_id=False)
     return {record["id"]: _shape_client(record) for record in _permitted_client_records(data.get("records", []))}
@@ -2872,17 +2889,16 @@ def _apply_item_fields(fields, body):
         "artworkReceived": C.F_ITEM_ARTWORK_RECEIVED,
     }
     for key, field in mapping.items():
-        if key in body and body[key] not in (None, ""):
+        if key in body and body[key] is not None:
             fields[field] = body[key]
-    if "itemJobNumber" in body and body["itemJobNumber"] not in (None, ""):
+    if "itemJobNumber" in body and body["itemJobNumber"] is not None:
         fields[C.F_ITEM_JOB_NUMBER] = _normalize_item_job_number(body.get("itemJobNumber"))
-    if "description" in body and body["description"] not in (None, ""):
+    if "description" in body and body["description"] is not None:
         fields[C.F_ITEM_DESCRIPTION] = _normalize_description(body.get("description"))
-    if "masterOrVariant" in body and body["masterOrVariant"] not in (None, ""):
+    if "masterOrVariant" in body and body["masterOrVariant"] is not None:
         normalized = _normalize_master_or_variant(body.get("masterOrVariant"))
-        if normalized:
-            fields[C.F_ITEM_MASTER_VARIANT] = normalized
-    if "pickupJobNumber" in body and body["pickupJobNumber"] not in (None, ""):
+        fields[C.F_ITEM_MASTER_VARIANT] = normalized
+    if "pickupJobNumber" in body and body["pickupJobNumber"] is not None:
         fields[C.F_ITEM_PICKUP_JOB_NUMBER] = _normalize_item_job_number(body.get("pickupJobNumber"))
     if "referenceData" in body:
         fields[C.F_ITEM_REFERENCE_DATA] = _reference_data_json(body.get("referenceData"))

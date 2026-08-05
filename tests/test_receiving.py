@@ -565,6 +565,23 @@ class ReceivingTests(unittest.TestCase):
         self.assertIn(C.RECEIPT_ENTRIES_TABLE, called_tables)
         self.assertIn(C.ITEMS_TABLE, called_tables)
 
+    @patch("routes.airtable.delete_record")
+    @patch("routes.airtable.get_record")
+    def test_delete_product_deletes_product_reference(self, get_record, delete_record):
+        get_record.return_value = {
+            "id": "recProduct",
+            "fields": {
+                C.F_ITEM_NAME: "Imported Product",
+                C.F_ITEM_CLIENT: ["recClient"],
+            },
+        }
+
+        response = self.app.delete("/api/products/recProduct")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["deleted"], True)
+        delete_record.assert_called_once_with(C.PRODUCTS_TABLE, "recProduct")
+
     @patch("routes.airtable.list_records")
     def test_thr3d_outgoing_queue_filters_ready_unreleased_merchandise(self, list_records):
         def merchandise_record(record_id, fields):
