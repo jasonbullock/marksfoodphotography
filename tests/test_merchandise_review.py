@@ -370,6 +370,7 @@ class MerchandiseReviewTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_ITEM], [])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Waiting on Information")
         self.assertNotIn("[Waiting for Product Data]", fields[C.F_RECEIPT_ENTRY_NOTES])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")

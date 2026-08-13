@@ -66,7 +66,7 @@ class ReleaseToProductionTests(unittest.TestCase):
     def test_readiness_evaluation_requires_each_baseline_field(self):
         ready = _evaluate_required_to_shoot_from_fields(self.entry()["fields"], self.product()["fields"])
         self.assertTrue(ready["ready"])
-        self.assertEqual(ready["summary"], "7 of 7 Complete")
+        self.assertEqual(ready["summary"], "6 of 6 Complete")
 
         missing_verification = _evaluate_required_to_shoot_from_fields({
             **self.entry()["fields"],
@@ -81,7 +81,7 @@ class ReleaseToProductionTests(unittest.TestCase):
         }, {})
         self.assertIn("Product Linked", missing_product["missing"])
         self.assertIn("Product Name", missing_product["missing"])
-        self.assertIn("Identifier", missing_product["missing"])
+        self.assertIn("Primary Match Key", missing_product["missing"])
 
         missing_decisions = _evaluate_required_to_shoot_from_fields({
             **self.entry()["fields"],
@@ -94,10 +94,11 @@ class ReleaseToProductionTests(unittest.TestCase):
         })["fields"])
         self.assertIn("Artwork", missing_artwork["missing"])
 
-        missing_activation = _evaluate_required_to_shoot_from_fields(self.entry()["fields"], self.product({
+        without_reference_data = _evaluate_required_to_shoot_from_fields(self.entry()["fields"], self.product({
             C.F_ITEM_REFERENCE_DATA: "",
         })["fields"])
-        self.assertIn("Activation Information", missing_activation["missing"])
+        self.assertTrue(without_reference_data["ready"])
+        self.assertNotIn("Activation Information", without_reference_data["missing"])
 
         thr3d_ready = _evaluate_required_to_shoot_from_fields({
             **self.entry()["fields"],
@@ -172,7 +173,7 @@ class ReleaseToProductionTests(unittest.TestCase):
         payload = response.get_json()
         self.assertIn("Product Linked", payload["missing"])
         self.assertIn("Product Name", payload["missing"])
-        self.assertIn("Identifier", payload["missing"])
+        self.assertIn("Primary Match Key", payload["missing"])
         update_record.assert_not_called()
 
     @patch("routes._clients_by_id", return_value={})
@@ -252,7 +253,7 @@ class VerifyMerchandiseTests(unittest.TestCase):
         response = self.app.post("/api/merchandise/recMerch/verify")
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Package Name", response.get_json()["error"])
+        self.assertIn("Product Name on Package", response.get_json()["error"])
         update_record.assert_not_called()
 
     @patch("routes._clients_by_id", return_value={})

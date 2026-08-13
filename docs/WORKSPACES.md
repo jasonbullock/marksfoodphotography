@@ -12,6 +12,7 @@ Primary navigation should conceptually represent departments and major operation
 
 - Dashboard
 - Import
+- Products
 - Shipments
 - Planning
 - Production
@@ -21,6 +22,53 @@ Primary navigation should conceptually represent departments and major operation
 - Settings
 
 The implemented navigation may expose only active workspaces for the current phase. Do not add placeholder navigation entries solely because a future workspace has been architected.
+
+## Products
+
+Business Question:
+
+> What expected products are complete, missing, blocked, or ready for work?
+
+Purpose:
+
+Products is the primary PM product-data workspace and expected-work view.
+
+Products are expected work and product-data aggregation records. They describe what Walnut expects to prepare, what Match Keys and Client References belong to that item, what Naming / Path Tokens are needed, and what production outcomes may be required.
+
+Products should feel Excel-like where PMs need dense editing, but it should add operational value that a spreadsheet cannot provide. PMs should be able to:
+
+- upload Excel files
+- paste rows copied from a spreadsheet
+- map source columns to Product fields
+- save and reuse client-specific mappings
+- preview imports before committing
+- validate required fields, duplicate Match Keys, malformed references, and unsupported values
+- correct data inline before or after commit
+- commit expected Product records without creating Jobs, Projects, Production Requests, or administrative containers
+
+Products should behave like an operational reference grid, import workbench, and readiness surface. It should help users see:
+
+- expected products with received merchandise
+- expected products still missing merchandise
+- products with incomplete imported facts
+- products blocked by artwork, activation, quantity, or mismatch issues
+- products ready to create or advance Ecomm, Packaging, or THR3D work
+- products grouped or filtered by client-specific production needs
+
+Products should not store raw physical check-in facts. Storage location, condition, shipment photos, quantity received, damage, and observed arrival notes belong to Shipments/Received Merch. Products should show those facts through relationships, not duplicate them.
+
+Unmatched merchandise is an exception to the product-led path. It should be visible as an exception needing match or manual minimum facts, not treated as the normal center of the application.
+
+Products should not become one massive universal Product table. The Product workspace should distinguish stable Product fields from client-specific reference data and derived readiness summaries. Topco is the complex starting client, but the model must support clients with simpler field needs, different naming conventions, pickup imagery, different output needs, and different handoff references.
+
+Product fields should be understood in these categories:
+
+- Core Product fields: stable cross-client facts used to describe expected work.
+- Match Keys: values used to match Received Merch to Expected Product.
+- Client References: references used for naming conventions, folder paths, reporting, Creative Force, and client systems.
+- Naming / Path Tokens: structured tokens used to generate filenames, folders, upload paths, or production labels.
+- Import-only extra data / client-specific reference data: source facts retained without promoting every client column to the universal grid.
+- Derived readiness/work status: calculated from related Received Merch, Activations, workstream cards, THR3D shipping items, artwork, and client requirements.
 
 ## Shipments
 
@@ -34,7 +82,7 @@ Manage physical merchandise movement.
 
 Shipments records the physical truth of merchandise entering and leaving the studio. It captures shipments, merchandise observations, quantity, condition, storage, photos, notes, and observed identifiers.
 
-Shipments should not decide the full production path. Its job is to make physical movement trustworthy and visible.
+Shipments should check merchandise in against expected Products when possible. It should not decide the full production path. Its job is to make physical movement trustworthy and visible.
 
 Shipment-level photos are physical evidence owned by the Shipment. Use them for box labels, delivery context, damage, carton or pallet context, and other images that apply to the shipment as a whole. Store originals in R2 and keep only metadata on the Shipment; do not duplicate shipment photo metadata onto individual Merchandise records.
 
@@ -111,11 +159,11 @@ Merchandise `Intake Status` is the persisted intake state. Its active values are
 
 The public checklist language is `Required to Shoot`, not `Readiness`.
 
-Planning is the PM preparation perspective. It is where Project Management determines what a piece of merchandise is, what the client requires, what kind of production is needed, and whether anything blocks Production from accepting the work.
+Planning is the PM preparation perspective. It is where Project Management resolves product/work readiness: whether the expected Product has usable merchandise, whether client-required facts are complete, what kind of production or shipment is needed, and whether anything blocks Production from accepting the work.
 
 The Planning board should feel like high-quality operations software: dense, responsive, clear, and calm. Cards should quickly show what the merchandise is, the client, quantity, deliverables, Required to Shoot progress, age, comments, and unread signals without changing the underlying Planning state model.
 
-Active Planning state should be derived from Received Merch, Expected Product when matched, and child work created from intake assignment. Planning should not require PMs to create Work Orders, choose Workflow Templates, maintain Workflow Stages, or manage Work Order Types before merchandise can move toward readiness.
+Active Planning state should be derived from Expected Product, linked Received Merch, and child work created for Ecomm/Packaging or THR3D movement. Planning should not require PMs to create Work Orders, choose Workflow Templates, maintain Workflow Stages, or manage Work Order Types before work can move toward readiness.
 
 Legacy workflow tables and records are not part of the active Planning workspace. Product-level Workstream routing is obsolete. The current workstream-card concept means child Ecomm or Packaging work created from Received Merch after `Confirm & Assign`, not the removed workflow-engine architecture.
 
@@ -134,13 +182,13 @@ Planning includes:
 - replacement requests
 - release to production
 
-Planning should collapse "confirm identity", "match Expected Product when possible", "capture manual product info when needed", and "assign workstreams/shipping" into one continuous New Merch experience. Users should not experience database maintenance as the work.
+Planning should collapse "confirm identity", "match Expected Product when possible", "capture manual product info for unmatched exceptions", and "assign workstreams/shipping" into one continuous exception-resolution experience. Users should not experience database maintenance as the work.
 
 Manual product information captured when no Expected Product exists belongs on Received Merch or child workstream cards. It should not create or update Product records.
 
 Planning image review should show item photos first and dynamically inherited Shipment photos last. Shipment-level photos should be labeled `Shipment Photo` so PMs understand that the photo is shared shipment context rather than item-specific evidence.
 
-The primary PM experience is New Merch intake:
+New Merch intake remains the PM path for exceptions and unclear arrivals:
 
 1. Confirm Received Merch identity
 2. Match Expected Product when possible

@@ -48,3 +48,7 @@ def field_by_name(table, name):
 
 def create_field(table_id, field):
     return meta_request("POST", f"/tables/{table_id}/fields", field)
+
+
+def create_table(table):
+    return meta_request("POST", "/tables", table)

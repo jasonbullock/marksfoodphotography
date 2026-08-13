@@ -6,11 +6,38 @@ It does not define Airtable schema, API routes, implementation classes, or UI co
 
 ## Core Concept
 
-Merchandise is the center of the operational model.
+Marks Photo is product-led and merchandise-verified.
 
-Marks Photo exists because physical merchandise arrives, creates uncertainty, and must be transformed into production-ready work.
+Expected Product data is the normal operating spine. It describes what the client expects Walnut to prepare for production. Physical merchandise verifies whether those expected products can actually move forward.
 
-The application presents different perspectives of the same merchandise. Shipments, Inventory, Planning, Production, and PhotoTrack should not duplicate merchandise. They should reveal different operational truths about it.
+Marks Photo exists because expected products and physical merchandise rarely line up perfectly without inspection. The application should reveal what products are expected, what merchandise has arrived against them, what exceptions exist, and what work is ready for production.
+
+The application presents different perspectives of the same expected product and physical merchandise relationship. Products, Shipments, Inventory, Planning, Production, and PhotoTrack should not duplicate facts. They should reveal different operational truths about the same readiness problem.
+
+## Product / Expected Product
+
+Product is Expected Product: descriptive, client, production, and reporting information aggregated from client product-data sources.
+
+Products are expected work records and the normal operating spine of Marks Photo. PMs may create and maintain them through Excel upload, copy/paste rows, client-specific column mappings, preview/validation, inline editing, and commit flows.
+
+Product is the normal operating record. It says what work is expected. Received Merch proves whether physical samples have arrived, whether they are usable, and whether quantity/condition/storage creates any blocker.
+
+Product should not carry raw physical facts such as storage location, condition, shipment photos, or check-in notes. Those facts belong to Received Merch, Shipments, Issues, History, Creative Force, PhotoTrack, or reporting integrations.
+
+If Expected Product information already exists, Marks Photo should reuse it. If it does not exist, Marks Photo should treat the received merchandise as an exception and collect only the minimum missing information required to move work forward. Manual exception facts should not pollute imported Product truth unless a later approved import/reconciliation process promotes them.
+
+Products should not be modeled as one massive universal table that permanently promotes every client spreadsheet column to a first-class Product field. Product data has categories:
+
+- Core Product fields: durable, cross-client facts such as product name/description, client, brand, category, size, pack, or other stable descriptive data.
+- Match Keys: fields used to match Received Merch to Expected Product, such as UPC, GTIN, TCIN, SKU, item number, or client-specific equivalents.
+- Client References: values used to connect the product to client systems, reporting, jobs, campaigns, activations, Creative Force, or other handoff contexts.
+- Naming / Path Tokens: structured values used to generate filenames, folder paths, upload locations, or production labels.
+- Import-only extra data / client-specific reference data: source columns retained for traceability or specialized client operations without forcing all clients into the same schema.
+- Derived readiness/work status: calculated summaries from related Received Merch, Activations, workstream cards, THR3D shipping items, artwork, and client requirements.
+
+Avoid vague `Identifier` language in product design. Say `Match Keys` when a field is used to match physical merchandise to expected products. Say `Client References` when a field exists for client/reporting/handoff systems. Say `Naming / Path Tokens` when a field is used to compose filenames, folder paths, or upload locations.
+
+Topco is the complex starting client because it has activation-driven readiness, path conventions, SKU details, and multiple photo work needs. The model must also support clients with fewer fields, pickup imagery, different naming conventions, different output requirements, and different Creative Force/reporting references.
 
 ## Merchandise
 
@@ -18,7 +45,7 @@ Merchandise is the physical sample or physical goods moving through Walnut Studi
 
 Merchandise can be known or unknown, complete or incomplete, ready or blocked, stored or in motion. It may have product information, client requirements, photos, notes, storage information, and production intent associated with it.
 
-Merchandise is not the same as Product. Merchandise is the physical thing in the studio. Product is supporting information about what that thing is.
+Merchandise is not the same as Product. Product is the expected item and primary operating record; Merchandise is physical evidence/inventory attached to that Product when matched.
 
 Merchandise Status describes the physical state of the sample only:
 
@@ -34,17 +61,17 @@ Product information being linked, imported, or confirmed is not a Merchandise St
 
 Received Merch is the physical lot created from a Shipment.
 
-It is the parent record for what arrived: quantity, photos, observed identifiers, storage, condition, notes, and physical status. A Received Merch record may represent an unsplit lot before PM intake assigns production intent.
+It records what arrived: quantity, photos, observed identifiers, storage, condition, notes, and physical status. Normally it is checked in against an Expected Product. If it cannot be matched, it becomes an unmatched merchandise exception.
 
 ### New Merch
 
-New Merch is the focused Planning intake list for unsplit Received Merch.
+New Merch is the exception-focused Planning intake list for received merchandise that still needs identity, match, or routing decisions.
 
-PMs use New Merch to confirm identity, match an Expected Product when possible, capture manual product information when no Expected Product exists, and assign the required production/shipping paths. New Merch is not a long-running production board.
+PMs use New Merch to resolve unmatched or unclear arrivals, confirm identity, match an Expected Product when possible, capture minimum manual product information when no Expected Product exists, and assign the required production/shipping paths. New Merch is not the default operating list for all expected work.
 
 ### Workstream Card
 
-A Workstream Card is child work created from Received Merch after `Confirm & Assign`.
+A Workstream Card is child work created for an expected product/work need once enough product and merchandise facts exist.
 
 Active workstream card types are Ecomm and Packaging. Ecomm and Packaging must be separate cards because they have different dependencies and handoff requirements. Workstream cards link back to their parent Received Merch and to Expected Product when matched.
 
@@ -52,7 +79,7 @@ This is not the legacy Workstreams/Work Orders architecture. Workstream cards ar
 
 ### THR3D Shipping Item
 
-A THR3D Shipping Item is outbound physical movement work created from Received Merch when THR3D is selected.
+A THR3D Shipping Item is outbound physical movement work created when the expected product/work need requires THR3D and physical samples must leave Walnut.
 
 It is not a production card. It needs quantity-to-ship and outbound shipment tracking, and belongs under the Shipments physical-movement perspective.
 
@@ -100,18 +127,6 @@ Required to Shoot is calculated from underlying Merchandise, Product, Deliverabl
 
 In Planning UI, Required to Shoot may be summarized with compact checklist indicators, but those indicators must remain derived from the same source facts.
 
-## Product / Expected Product
-
-Product is Expected Product: imported descriptive and reporting information from the master spreadsheet.
-
-Product information may include name, identifier, brand, size, category, reporting references, artwork expectations, activation references, or other client-required facts.
-
-Product supports readiness. It does not replace Merchandise as the operational center.
-
-Product must not carry operational workflow, physical storage, receipt, photo, issue, export, or production-status fields in active code. Those facts belong to Merchandise, Shipments, Issues, History, Creative Force, PhotoTrack, or reporting integrations.
-
-If Expected Product information already exists, Marks Photo should reuse it. If it does not exist, Marks Photo should collect only the minimum missing information required to make the Received Merch production-ready. That manual information may live on Received Merch or child workstream cards, but it should not create or update Product records.
-
 ## Shipment
 
 Shipment is the inbound logistics context for merchandise.
@@ -140,7 +155,7 @@ For THR3D Merchandise, the shipping need is intentionally minimal: quantity-to-s
 
 Client defines operational expectations.
 
-Client requirements answer what must be true before merchandise can be released to production. Different clients may require different identifiers, artwork, activation information, deliverabless, or reporting references.
+Client requirements answer what must be true before merchandise can be released to production. Different clients may require different Match Keys, Client References, artwork, activation information, deliverables, or reporting references.
 
 Configuration should exist only when multiple clients genuinely require different behavior.
 
@@ -186,11 +201,11 @@ Marks Photo prepares merchandise for production and may display production conte
 
 ## Concept Relationships
 
+Expected Product data defines what work is expected.
+
 Shipment brings Merchandise into the studio.
 
-Merchandise is received, stored, identified, evaluated, resolved, and released.
-
-Product describes what the Merchandise is and carries supporting readiness and reporting facts.
+Merchandise is checked in, stored, identified, evaluated, resolved, and attached to Expected Product when possible.
 
 Client defines what information and conditions are required.
 
@@ -198,14 +213,15 @@ Job provides production or reporting grouping when needed.
 
 deliverables describes the kind of production work required.
 
-Ready for Photo determines whether Merchandise can bridge from Planning into Production.
+Ready for Photo determines whether an expected product/work unit can bridge from Planning into Production.
 
 Production executes the released work.
 
 ## Perspective Model
 
-The same Merchandise appears differently depending on the workspace:
+The same Product/Merch relationship appears differently depending on the workspace:
 
+- Products perspective: expected work, missing merch, blockers, and readiness
 - Shipments perspective: physical movement into or out of the studio
 - Inventory perspective: physical presence and storage
 - Planning perspective: decisions, blockers, and Required to Shoot

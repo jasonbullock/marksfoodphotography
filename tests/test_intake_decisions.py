@@ -49,9 +49,10 @@ class IntakeDecisionTests(unittest.TestCase):
         }
 
     @patch("routes._clients_by_id", return_value={})
+    @patch("routes._populate_creative_force_feed_for_ready_cards")
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
-    def test_valid_intake_decisions_save_and_serialize(self, get_record, update_record, _clients):
+    def test_valid_intake_decisions_save_and_serialize(self, get_record, update_record, _populate_feed, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
             C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging", "Ecomm"],
@@ -66,6 +67,29 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging", "Ecomm"])
         payload = response.get_json()
         self.assertEqual(payload["deliverables"], ["Packaging", "Ecomm"])
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_intake_decisions_can_update_observed_merchandise_identity(self, get_record, update_record, _clients):
+        get_record.side_effect = [self.entry(), self.receipt()]
+        update_record.return_value = self.entry({
+            C.F_RECEIPT_ENTRY_NAME: "Applesauce Cups Cinnamon 4oz 6pk",
+            C.F_RECEIPT_ENTRY_SKU_ID: "36800143210",
+        })
+
+        response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
+            "productName": "Applesauce Cups Cinnamon 4oz 6pk",
+            "skuId": "36800143210",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        fields = update_record.call_args.args[2]
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_NAME], "Applesauce Cups Cinnamon 4oz 6pk")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_SKU_ID], "36800143210")
+        payload = response.get_json()
+        self.assertEqual(payload["productName"], "Applesauce Cups Cinnamon 4oz 6pk")
+        self.assertEqual(payload["skuId"], "36800143210")
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
@@ -371,7 +395,8 @@ class IntakeDecisionTests(unittest.TestCase):
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
-    def test_update_workstream_card_status_updates_child_record_only(self, get_record, update_record):
+    @patch("routes._populate_creative_force_feed_for_ready_cards")
+    def test_update_workstream_card_status_updates_child_record_only(self, populate_feed, get_record, update_record):
         workstream_card = {
             "id": "recCard",
             "fields": {
@@ -396,9 +421,13 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(update_record.call_args.args[0], C.WORKSTREAM_CARDS_TABLE)
         self.assertEqual(update_record.call_args.args[1], "recCard")
-        self.assertEqual(update_record.call_args.args[2], {C.F_WORKSTREAM_CARD_STATUS: "Ready for Photo"})
+        self.assertEqual(update_record.call_args.args[2], {
+            C.F_WORKSTREAM_CARD_STATUS: "Ready for Photo",
+            C.F_WORKSTREAM_CARD_TYPE: "Packaging",
+        })
         self.assertTrue(update_record.call_args.kwargs["typecast"])
         self.assertEqual(response.get_json()["record"]["status"], "Ready for Photo")
+        populate_feed.assert_called_once_with([update_record.return_value])
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
@@ -425,7 +454,10 @@ class IntakeDecisionTests(unittest.TestCase):
         response = self.app.patch("/api/workstream-cards/recCard", json={"status": "In Production"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(update_record.call_args.args[2], {C.F_WORKSTREAM_CARD_STATUS: "In Production"})
+        self.assertEqual(update_record.call_args.args[2], {
+            C.F_WORKSTREAM_CARD_STATUS: "In Production",
+            C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
+        })
         self.assertEqual(response.get_json()["record"]["status"], "In Production")
 
     def test_update_workstream_card_status_rejects_unknown_status(self):

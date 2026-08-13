@@ -25,6 +25,7 @@ class Config:
     R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "")
     R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "")
     R2_PUBLIC_BASE_URL = os.getenv("R2_PUBLIC_BASE_URL", "")
+    CREATIVE_FORCE_WEBHOOK_SECRET = os.getenv("CREATIVE_FORCE_WEBHOOK_SECRET", "")
     RECEIVING_PHOTO_STORAGE = os.getenv("RECEIVING_PHOTO_STORAGE", "r2")
     RECEIVING_PHOTO_MAX_BYTES = int(os.getenv("RECEIVING_PHOTO_MAX_BYTES", str(12 * 1024 * 1024)) or str(12 * 1024 * 1024))
     RECEIVING_PHOTO_LOCAL_DIR = str(BACKEND_DIR / "uploads" / "receiving")
@@ -42,6 +43,9 @@ class Config:
     )
     WORKSTREAM_CARDS_TABLE = os.getenv("AIRTABLE_WORKSTREAM_CARDS_TABLE", "Workstream Cards")
     THR3D_SHIPPING_ITEMS_TABLE = os.getenv("AIRTABLE_THR3D_SHIPPING_ITEMS_TABLE", "THR3D Shipping Items")
+    CREATIVE_FORCE_PRODUCT_FEED_TABLE = os.getenv(
+        "AIRTABLE_CREATIVE_FORCE_PRODUCT_FEED_TABLE", "Creative Force Product Feed"
+    )
 
     # Deprecated compatibility aliases. Use canonical constants in new backend
     # code. These stay for one migration cycle to protect older routes, tests,
@@ -128,6 +132,7 @@ class Config:
     F_WORKSTREAM_CARD_QUANTITY = "Quantity"
     F_WORKSTREAM_CARD_MANUAL_PRODUCT_INFO = "Manual Product Info"
     F_WORKSTREAM_CARD_NOTES = "Notes"
+    F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC = "Creative Force Sync"
     WORKSTREAM_TYPE_OPTIONS = ["Ecomm", "Packaging"]
     WORKSTREAM_CARD_STATUS_OPTIONS = ["New", "Planning", "Waiting", "Ready for Photo", "In Production"]
 
@@ -153,6 +158,8 @@ class Config:
     F_CLIENT_REQUIRED_TO_SHOOT = "Required to Shoot"
     F_CLIENT_ARTWORK_REQUIREMENT = "Artwork Requirement"
     F_CLIENT_MERCHANDISE_REQUIRED = "Merchandise Required"
+    F_CLIENT_PRODUCT_IMPORT_PROFILES = "Product Import Profiles"
+    F_CLIENT_PHOTO_PRODUCTION_REQUIREMENTS = "Photo Production Requirements"
 
     # Field names - Activations
     F_ACTIVATION_NAME = "Name"
@@ -188,10 +195,26 @@ class Config:
     F_ITEM_NAME = "Product Name"
     F_ITEM_CLIENT = "Client"
     F_ITEM_JOB = "Job"
-    F_ITEM_IDENTIFIER = "Identifier"
+    # Compatibility alias: Product matching now lives in the real UPC field.
+    F_ITEM_IDENTIFIER = "UPC"
     F_ITEM_IDENTIFIER_TYPE = "Identifier Type"
-    F_ITEM_PRODUCT = "Product or File Name"
-    F_ITEM_JOB_NUMBER = "Product Job Number"
+    F_ITEM_CVID = "CVID"
+    F_ITEM_UPC = "UPC"
+    F_ITEM_BRAND_PREFIX = "Brand Prefix"
+    F_ITEM_REQUEST_TYPE = "Request Type"
+    F_ITEM_PROJECT_STATUS = "Project Status"
+    F_ITEM_WKFT_JOB_NUMBER = "WKFT Job Number"
+    F_ITEM_MBOX_NUMBER = "Mbox Number"
+    F_ITEM_PRODUCT_TYPE = "Product Type"
+    F_ITEM_PRODUCT_DESCRIPTION = "Product Description"
+    F_ITEM_PREPRO_OVERLAYS = "Link to Prepro/Overlays"
+    F_ITEM_ECOMM_PHOTO_NOTES = "Ecomm Photo Notes"
+    F_ITEM_PATH_TO_ART = "Path to Art"
+    # Compatibility alias: the retired Product or File Name field now maps to Product Name.
+    F_ITEM_PRODUCT = F_ITEM_NAME
+    # The live Products table uses WKFT Job Number. Keep the API's
+    # itemJobNumber name for compatibility with existing callers.
+    F_ITEM_JOB_NUMBER = "WKFT Job Number"
     F_ITEM_DESCRIPTION = "Description"
     F_ITEM_MASTER_VARIANT = "Master or Variant"
     F_ITEM_PICKUP_JOB_NUMBER = "Pickup Job Number"
@@ -212,6 +235,27 @@ class Config:
     F_ITEM_EXPORTED = "Exported"
     F_ITEM_EXPORTED_ON = "Exported On"
     F_ITEM_EXPORT_ERROR = "Export Error"
+
+    # Field names - Creative Force Product Feed
+    F_CF_FEED_PRODUCT = "Product"
+    F_CF_FEED_CLIENT = "Client"
+    F_CF_FEED_PRODUCT_CODE = "Product Code"
+    F_CF_FEED_CATEGORY = "Category"
+    F_CF_FEED_PRODUCTION_TYPE = "Production Type"
+    F_CF_FEED_SOURCE_KEY = "Source Key"
+
+    CREATIVE_FORCE_FEED_PRODUCT_FIELDS = {
+        "productName": "Product Name",
+        "upc": "UPC / Product ID",
+        "cvid": "CVID",
+        "jobNumber": "Job Number",
+        "brandPrefix": "Brand Prefix",
+        "fileNameDescription": "File Name Description",
+        "productDescription": "Product Description",
+        "productType": "Product Type",
+        "ecommPhotoNotes": "Ecomm Photo Notes",
+        "pathToArt": "Valid Artwork Path",
+    }
 
     # Field names — Issues
     F_ISSUE_NAME = "Issue"

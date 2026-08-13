@@ -39,6 +39,9 @@ const F = {
   SKU_CLIENT: 'Client',
   SKU_JOB: 'Job',
   SKU_IDENTIFIER: 'Identifier',
+  SKU_UPC: 'UPC',
+  SKU_CVID: 'CVID',
+  SKU_BRAND_PREFIX: 'Brand Prefix',
   SKU_IDENTIFIER_TYPE: 'Identifier Type',
   SKU_PRODUCT: 'Product or File Name',
   SKU_ITEM_JOB_NUMBER: 'Product Job Number',
@@ -122,7 +125,11 @@ function shapeClient(r) {
     id: r.id,
     name: f[F.CLIENT_NAME] ?? '',
     codeType: f[F.CLIENT_IDENTIFIER_TYPE] ?? '',
-    identifierLabel: f['Identifier Label'] ?? 'Identifier',
+    identifierLabel: f['Identifier Label'] ?? 'Primary Match Key',
+    primaryMatchKeyLabel: f['Identifier Label'] ?? 'Primary Match Key',
+    upc: f['UPC'] ?? f['Identifier'] ?? '',
+    cvid: f['CVID'] ?? '',
+    brandPrefix: f['Brand Prefix'] ?? '',
     requiredToShoot: f['Required to Shoot'] ?? ['Identifier'],
     artworkRequirement: f['Artwork Requirement'] ?? 'Optional',
     merchandiseRequired: f['Merchandise Required'] ?? true,
@@ -173,6 +180,7 @@ function shapeSku(r) {
     productId: f[F.SKU_IDENTIFIER] ?? '',
     gtinUpc: f[F.SKU_IDENTIFIER] ?? '',
     identifier: f[F.SKU_IDENTIFIER] ?? '',
+    primaryMatchKey: f[F.SKU_IDENTIFIER] ?? '',
     codeType,
     product: f[F.SKU_PRODUCT] ?? '',
     itemJobNumber: f[F.SKU_ITEM_JOB_NUMBER] ?? '',
@@ -188,18 +196,12 @@ function shapeSku(r) {
   };
 }
 
-function validateItemIdentifier(identifier, codeType, label = 'Identifier') {
-  if (codeType === 'UPC-12' && !/^\d{12}$/.test(identifier || '')) {
-    throw new Error(`${label} must be exactly 12 digits.`);
-  }
+function validateItemIdentifier(identifier, codeType, label = 'Primary Match Key') {
   if (codeType === 'GTIN-14' && !/^\d{14}$/.test(identifier || '')) {
     throw new Error(`${label} must be exactly 14 digits.`);
   }
   if (codeType === 'GTIN-13' && !/^\d{13}$/.test(identifier || '')) {
     throw new Error(`${label} must be exactly 13 digits.`);
-  }
-  if (codeType === 'GTIN-12' && !/^\d{12}$/.test(identifier || '')) {
-    throw new Error(`${label} must be exactly 12 digits.`);
   }
   if (codeType === 'GTIN-8' && !/^\d{8}$/.test(identifier || '')) {
     throw new Error(`${label} must be exactly 8 digits.`);
@@ -218,6 +220,8 @@ export const api = {
     if (options.all) params.set('all', '1');
     return backend('GET', `/clients${params.toString() ? `?${params.toString()}` : ''}`);
   },
+
+  updateClient: async (id, payload = {}) => backend('PATCH', `/clients/${id}`, payload),
 
   listActivations: async ({ clientId } = {}) => {
     const params = new URLSearchParams();
@@ -248,15 +252,15 @@ export const api = {
 
   getItem: (id) => backend('GET', `/items/${id}`),
 
-  createSku: async ({ clientId, jobId, productId, gtinUpc, id, codeType, identifierLabel, name, product, itemJobNumber, description, masterOrVariant, pickupJobNumber, brand, category, notes }) => {
-    const identifier = productId || id || gtinUpc;
-    validateItemIdentifier(identifier, codeType, identifierLabel);
-    return backend('POST', '/items', { clientId, jobId, productId: identifier, codeType, name, product, itemJobNumber, description, masterOrVariant, pickupJobNumber, brand, category, notes });
+  createSku: async ({ clientId, jobId, primaryMatchKey, productId, gtinUpc, id, codeType, identifierLabel, primaryMatchKeyLabel, name, product, itemJobNumber, description, masterOrVariant, pickupJobNumber, brand, category, notes }) => {
+    const identifier = primaryMatchKey || productId || id || gtinUpc;
+    validateItemIdentifier(identifier, codeType, primaryMatchKeyLabel || identifierLabel);
+    return backend('POST', '/items', { clientId, jobId, primaryMatchKey: identifier, productId: identifier, codeType, name, product, itemJobNumber, description, masterOrVariant, pickupJobNumber, brand, category, notes });
   },
 
   updateSku: async (id, patch) => {
-    if ('productId' in patch || 'gtinUpc' in patch || 'identifier' in patch) {
-      validateItemIdentifier(patch.productId || patch.identifier || patch.gtinUpc, patch.codeType, patch.identifierLabel);
+    if ('primaryMatchKey' in patch || 'productId' in patch || 'gtinUpc' in patch || 'identifier' in patch) {
+      validateItemIdentifier(patch.primaryMatchKey || patch.productId || patch.identifier || patch.gtinUpc, patch.codeType, patch.primaryMatchKeyLabel || patch.identifierLabel);
     }
     return backend('PATCH', `/items/${id}`, patch);
   },
@@ -275,7 +279,12 @@ api.listProducts = async (jobId) => {
   return backend('GET', `/products${params.toString() ? `?${params.toString()}` : ''}`);
 };
 api.getProduct = (id) => backend('GET', `/products/${id}`);
-api.updateProduct = api.updateSku;
+api.updateProduct = async (id, patch) => {
+  if ('primaryMatchKey' in patch || 'productId' in patch || 'gtinUpc' in patch || 'identifier' in patch) {
+    validateItemIdentifier(patch.primaryMatchKey || patch.productId || patch.identifier || patch.gtinUpc, patch.codeType, patch.primaryMatchKeyLabel || patch.identifierLabel);
+  }
+  return backend('PATCH', `/products/${id}`, patch);
+};
 api.deleteProduct = (id) => backend('DELETE', `/products/${id}`);
 
 api.listReceipts = async ({ clientId, unassignedClient } = {}) => {
@@ -321,7 +330,12 @@ api.listMerchandise = async () => backend('GET', '/merchandise');
 api.listVerificationEntries = async () => backend('GET', '/verification/entries');
 api.listMerchandiseReviewEntries = async () => backend('GET', '/merchandise/review');
 api.listWorkstreamCards = async () => backend('GET', '/workstream-cards');
+api.createWorkstreamCard = async payload => backend('POST', '/workstream-cards', payload);
 api.updateWorkstreamCard = async (id, payload) => backend('PATCH', `/workstream-cards/${id}`, payload);
+api.deleteWorkstreamCard = async id => backend('DELETE', `/workstream-cards/${id}`);
+api.getCreativeForceHandoff = async (id) => backend('GET', `/workstream-cards/${id}/creative-force-handoff`);
+api.linkCreativeForceWorkUnit = async (id, payload) => backend('PATCH', `/workstream-cards/${id}/creative-force-link`, payload);
+api.previewCreativeForceProductFeed = async () => backend('GET', '/integrations/creative-force/product-feed/preview');
 api.listThr3dShippingItems = async () => backend('GET', '/thr3d-shipping-items');
 api.shipThr3dShippingItem = async (id, payload) => backend('POST', `/thr3d-shipping-items/${id}/ship`, payload);
 api.searchVerificationItems = async ({ q, clientId, includeItemId } = {}) => {
@@ -331,11 +345,12 @@ api.searchVerificationItems = async ({ q, clientId, includeItemId } = {}) => {
   if (includeItemId) params.set('includeItemId', includeItemId);
   return backend('GET', `/verification/items${params.toString() ? `?${params.toString()}` : ''}`);
 };
-api.searchMerchandiseReviewProducts = async ({ q, clientId, includeItemId } = {}) => {
+api.searchMerchandiseReviewProducts = async ({ q, clientId, includeItemId, limit } = {}) => {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (clientId) params.set('clientId', clientId);
   if (includeItemId) params.set('includeItemId', includeItemId);
+  if (limit) params.set('limit', String(limit));
   return backend('GET', `/merchandise/products${params.toString() ? `?${params.toString()}` : ''}`);
 };
 api.matchVerificationEntry = async (entryId, itemId) => backend('POST', `/verification/entries/${entryId}/match`, { itemId });
@@ -396,10 +411,11 @@ api.intakeListClients = async () => {
 
 api.intakeMappingTargets = async () => backend('GET', '/intake/mapping-targets');
 
-api.previewSpreadsheet = async ({ clientId, file }) => {
+api.previewSpreadsheet = async ({ clientId, file, headerRow = '' }) => {
   const form = new FormData();
   form.append('clientId', clientId);
   form.append('file', file);
+  if (headerRow) form.append('headerRow', headerRow);
   try {
     return await backend('POST', '/intake/preview', form);
   } catch (e) {

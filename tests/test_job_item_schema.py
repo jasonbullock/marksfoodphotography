@@ -17,12 +17,34 @@ from routes import (  # noqa: E402
     _normalize_description,
     _normalize_item_job_number,
     _normalize_master_or_variant,
+    _normalize_product_request_type,
+    _shape_receipt_entry,
     _shape_item,
     _shape_job,
 )
 
 
 class JobItemSchemaTests(unittest.TestCase):
+    def test_update_item_surfaces_airtable_errors(self):
+        routes_source = (Path(__file__).resolve().parents[1] / "backend" / "routes.py").read_text()
+        update_item_source = routes_source.split("def update_item(record_id):", 1)[1].split("@api.delete", 1)[0]
+
+        self.assertIn("except requests.HTTPError as error:", update_item_source)
+        self.assertIn("return airtable_err(error)", update_item_source)
+
+    def test_update_item_typecasts_product_select_fields(self):
+        routes_source = (Path(__file__).resolve().parents[1] / "backend" / "routes.py").read_text()
+        update_item_source = routes_source.split("def update_item(record_id):", 1)[1].split("@api.delete", 1)[0]
+
+        self.assertIn("PRODUCT_TYPECAST_FIELDS", routes_source)
+        self.assertIn("typecast=any(field in PRODUCT_TYPECAST_FIELDS and fields[field] is not None for field in fields)", update_item_source)
+
+    def test_update_item_exposes_products_patch_alias(self):
+        routes_source = (Path(__file__).resolve().parents[1] / "backend" / "routes.py").read_text()
+        update_item_source = routes_source.split("def update_item(record_id):", 1)[0].split("@api.delete", 1)[-1]
+
+        self.assertIn('@api.patch("/products/<record_id>")', update_item_source)
+
     def test_legacy_work_order_config_is_not_exposed(self):
         legacy_attrs = [
             "WORK_ORDERS_TABLE",
@@ -72,6 +94,7 @@ class JobItemSchemaTests(unittest.TestCase):
             "id": "recItem",
             "fields": {
                 C.Config.F_ITEM_NAME: "Milk",
+                C.Config.F_ITEM_IDENTIFIER: "012345678901",
                 C.Config.F_ITEM_JOB_NUMBER: "00-ABC-123",
                 C.Config.F_ITEM_DESCRIPTION: "Whole milk gallon",
                 C.Config.F_ITEM_MASTER_VARIANT: "Variant",
@@ -80,6 +103,9 @@ class JobItemSchemaTests(unittest.TestCase):
         })
 
         self.assertEqual(shaped["itemJobNumber"], "00-ABC-123")
+        self.assertEqual(shaped["primaryMatchKey"], "012345678901")
+        self.assertEqual(shaped["identifier"], "012345678901")
+        self.assertEqual(shaped["primaryMatchKeyLabel"], "Primary Match Key")
         self.assertEqual(shaped["description"], "Whole milk gallon")
         self.assertNotIn("workstream", shaped)
         self.assertNotIn("output", shaped)
@@ -100,6 +126,18 @@ class JobItemSchemaTests(unittest.TestCase):
         self.assertEqual(fields[C.Config.F_ITEM_MASTER_VARIANT], "Variant")
         self.assertEqual(fields[C.Config.F_ITEM_PICKUP_JOB_NUMBER], "OLD-001")
 
+    def test_blank_product_select_edits_do_not_write_fields(self):
+        fields = {}
+        _apply_item_fields(fields, {
+            "requestType": "",
+            "productType": "   ",
+            "masterOrVariant": "",
+        })
+
+        self.assertNotIn(C.Config.F_ITEM_REQUEST_TYPE, fields)
+        self.assertNotIn(C.Config.F_ITEM_PRODUCT_TYPE, fields)
+        self.assertNotIn(C.Config.F_ITEM_MASTER_VARIANT, fields)
+
     def test_item_fields_from_import_row_persist_new_fields(self):
         fields = _item_fields_from_row("recClient", "recJob", {
             "itemName": "Milk",
@@ -116,6 +154,30 @@ class JobItemSchemaTests(unittest.TestCase):
         self.assertEqual(fields[C.Config.F_ITEM_DESCRIPTION], "Organic whole milk")
         self.assertEqual(fields[C.Config.F_ITEM_MASTER_VARIANT], "Master")
         self.assertEqual(fields[C.Config.F_ITEM_PICKUP_JOB_NUMBER], "PICK-123")
+
+    def test_product_type_normalizes_known_tracker_typo(self):
+        fields = _item_fields_from_row("recClient", "", {
+            "itemName": "Toothpaste",
+            "productType": '"Refridgeration Req"',
+        })
+
+        self.assertEqual(fields[C.Config.F_ITEM_PRODUCT_TYPE], "Refridgeration Req")
+
+    def test_request_type_normalizes_tracker_choices(self):
+        self.assertEqual(_normalize_product_request_type("Ecomm only"), "Ecomm only")
+        self.assertEqual(_normalize_product_request_type("Pack only"), "Pack only")
+        self.assertEqual(_normalize_product_request_type("Thr3d only"), "Thr3d only")
+        self.assertEqual(_normalize_product_request_type("Pack & Thr3d"), "Pack & Thr3d")
+        self.assertEqual(_normalize_product_request_type("Ecomm & Pack"), "Ecomm & Pack")
+        self.assertEqual(_normalize_product_request_type("Packaging and ThreeD"), "Pack & Thr3d")
+
+    def test_item_fields_from_import_row_persist_request_type_choice(self):
+        fields = _item_fields_from_row("recClient", "", {
+            "itemName": "Toothpaste",
+            "requestType": '"pack and thr3d"',
+        })
+
+        self.assertEqual(fields[C.Config.F_ITEM_REQUEST_TYPE], "Pack & Thr3d")
 
     def test_mapping_treats_spreadsheet_job_number_as_item_job_number(self):
         mapping = _mapping_from_ui_mapping({
@@ -245,11 +307,41 @@ class JobItemSchemaTests(unittest.TestCase):
         self.assertGreater(_item_match_score({"itemJobNumber": "PRJ-260701"}, "prj-260701"), 0)
         self.assertGreater(_item_match_score({"description": "Organic honey cereal"}, "honey"), 0)
 
+    def test_item_search_prefers_identifier_prefix_over_contains(self):
+        prefix_score = _item_match_score({"identifier": "36800088719", "name": "Applesauce Cups Original"}, "368")
+        contains_score = _item_match_score({"identifier": "036800030077", "name": "PAWS Strawberry Toy"}, "368")
+
+        self.assertGreater(prefix_score, contains_score)
+
+    def test_receipt_entry_shape_uses_linked_product_for_matched_product_name(self):
+        product = {
+            "id": "recProduct",
+            "fields": {
+                C.Config.F_ITEM_NAME: "Applesauce Cups Original 4oz 6pk",
+                C.Config.F_ITEM_IDENTIFIER: "36800088719",
+            },
+        }
+        shaped = _shape_receipt_entry({
+            "id": "recMerch",
+            "fields": {
+                C.Config.F_RECEIPT_ENTRY_NAME: "applesauce",
+                C.Config.F_RECEIPT_ENTRY_SKU_ID: "36800088719",
+                C.Config.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
+            },
+        }, products_by_id={"recProduct": product})
+
+        self.assertEqual(shaped["productName"], "applesauce")
+        self.assertEqual(shaped["matchedProduct"]["name"], "Applesauce Cups Original 4oz 6pk")
+        self.assertEqual(shaped["matchedProduct"]["identifier"], "36800088719")
+
     def test_normalizers_do_not_coerce_values(self):
         self.assertEqual(_normalize_item_job_number("  000-AB-12  "), "000-AB-12")
         self.assertEqual(_normalize_description("  A\rB\r\nC  "), "A\nB\nC")
         self.assertEqual(_normalize_master_or_variant("m"), "Master")
         self.assertEqual(_normalize_master_or_variant("Variant"), "Variant")
+
+    def test_product_photo_job_number_uses_live_wkft_field(self):
+        self.assertEqual(C.Config.F_ITEM_JOB_NUMBER, C.Config.F_ITEM_WKFT_JOB_NUMBER)
 
 
 if __name__ == "__main__":

@@ -2,9 +2,9 @@
 
 Marks Photo is an Operations Readiness Platform.
 
-Its mission is to transform incoming merchandise into production-ready work.
+Its mission is to transform expected product data and incoming merchandise into production-ready work.
 
-Marks Photo exists to remove uncertainty before production begins. It helps Walnut Studio understand what arrived, what is physically present, what must be decided, and what is ready to release into production.
+Marks Photo exists to remove uncertainty before production begins. It helps Walnut Studio understand what products are expected, what physical merchandise has arrived against those products, what exceptions must be resolved, and what work is ready to hand off to production.
 
 ## What Marks Photo Is Not
 
@@ -21,7 +21,7 @@ Workflow, planning, production systems, and reporting systems may connect to Mar
 
 The core operating question is:
 
-> What must be true before this merchandise can enter production?
+> What must be true before this expected product can enter production?
 
 Marks Photo should make the answer visible, actionable, and reliable.
 
@@ -29,9 +29,11 @@ It should not ask users to maintain records for their own sake. It should not as
 
 ## Operational Lifecycle
 
-Marks Photo sits in the operational handoff between merchandise arrival and production execution.
+Marks Photo sits in the operational handoff between expected product data, merchandise arrival, and production execution.
 
 ```text
+Expected Products
+↓
 Shipment
 ↓
 Shipments
@@ -61,7 +63,7 @@ A Shipment represents the inbound package, delivery, or transfer that brings mer
 
 Ownership: merchandise team.
 
-Shipments captures physical movement. It records what physically arrived, including observed identifiers, quantity, condition, storage location, photos, and notes, and it will also support outbound movement such as THR3D shipments. Shipments does not decide production intent and is not a workflow engine. It creates trustworthy operational evidence for merchandise entering and leaving the studio.
+Shipments captures physical movement. It records what physically arrived, including observed identifiers, quantity, condition, storage location, photos, and notes, and it will also support outbound movement such as THR3D shipments. Shipments checks merchandise in against expected Product data when possible, but it does not decide production intent and is not a workflow engine. It creates trustworthy operational evidence for merchandise entering and leaving the studio.
 
 Shipment photos are shipment-owned evidence for boxes, labels, delivery context, and damage. Originals belong in R2 with metadata on the Shipment, and downstream workspaces should display them through the Shipment relationship rather than copying them onto Merchandise.
 
@@ -77,13 +79,25 @@ Inventory answers what the studio physically has. It is a shelf and storage pers
 
 Ownership: Project Management and operations readiness.
 
-Planning is where uncertainty is resolved before production. It identifies the Received Merch, matches Expected Product when available, captures manual product information when no Expected Product exists, assigns the Ecomm/Packaging workstreams or THR3D shipping item, records blockers or exceptions, and establishes whether each child work item is ready for handoff.
+Planning is where uncertainty is resolved before production. It starts from expected Product data when available, verifies whether usable merchandise has arrived, captures exceptions when merchandise cannot be matched, assigns the Ecomm/Packaging work units or THR3D shipping item, records blockers, and establishes whether each work item is ready for handoff.
 
-Planning is the PM preparation perspective. Its New Merch intake list is where unsplit Received Merch is confirmed and assigned. After `Confirm & Assign`, separate child work exists for Ecomm and Packaging because they have different dependencies; THR3D remains a shipping item owned by Shipments. The implementation must not revive the legacy workflow-engine tables or Product-level workstream routing.
+Planning is the PM preparation perspective. Product data is the normal operating spine; unmatched Received Merch is an exception lane. After readiness/work assignment, separate child work exists for Ecomm and Packaging because they have different dependencies; THR3D remains a shipping item owned by Shipments. The implementation must not revive the legacy workflow-engine tables.
 
 The PM-facing Planning experience should guide Merchandise Verification step by step. The interface should show `Required to Shoot` and the next business outcome rather than asking PMs to manage a generic readiness gate.
 
 Planning should feel like polished operations software: fast to scan, calm to use, and clear about age, comments, deliverables, and what is still required to shoot.
+
+### Products
+
+Ownership: Project Management and product data readiness.
+
+Products is the main PM product-data workspace. It is where PMs import, paste, edit, map, validate, and maintain expected product records before and during merchandise verification.
+
+Products should feel familiar to PMs who live in spreadsheets: dense rows, inline editing, copy/paste-friendly flows, Excel upload, preview/validation, saved client mappings, and commit. It should go beyond Excel by showing merch matching, readiness, client-aware views, and created/related work units.
+
+Products should not become one massive universal table. Stable Product fields, Match Keys, Client References, Naming / Path Tokens, import-only client-specific reference data, and derived readiness/work summaries should be treated as different categories of information.
+
+Topco is the complex starting client, but the Product workspace must support clients with fewer fields, pickup imagery, different naming conventions, different output needs, and different handoff references.
 
 Queue is separate from Merchandise Status. Queue organizes PM work; Merchandise Status describes the physical or operational state of the sample.
 
@@ -119,15 +133,16 @@ PhotoTrack answers whether production succeeded and where produced assets stand 
 
 ## Long-Term Direction
 
-Marks Photo should be organized around merchandise readiness, not around database tables or workflow mechanics.
+Marks Photo should be organized around product-led readiness verified by physical merchandise, not around database tables or workflow mechanics.
 
 The prior workflow-table experiment is not part of the product direction. Legacy Workstreams tables, Work Orders, Workstream Assignments, Workflow Templates, Workflow Stages, Work Order Types, Product-level Workstream routing, Product-level production/storage state, and Merchandise Resolution should not be required to receive, plan, release, or ship merchandise. Current workstream cards are scoped Ecomm or Packaging child work, not that legacy workflow engine.
 
-Products are Expected Product records imported from the master spreadsheet. They are not an operations workspace. They carry durable reference and reporting facts only; manual intake facts, physical facts, workstream state, and outbound shipping facts belong to Received Merch, Workstream Cards, Shipments, Issues, History, Creative Force, PhotoTrack, or reporting integrations.
+Products are Expected Product records maintained from client product-data sources. They are the normal operating records for expected work. Product data says what should exist and what production outcomes may be needed; Received Merch verifies whether usable physical samples are present. Physical facts, check-in evidence, storage, condition, and outbound shipping facts still belong to Received Merch, Shipments, Issues, History, Creative Force, PhotoTrack, or reporting integrations.
 
-The application presents different perspectives of the same merchandise:
+The application presents different perspectives of expected products and their supporting merchandise:
 
-- Shipments perspective: what is entering or leaving the studio?
+- Products perspective: what work is expected, missing, blocked, or ready?
+- Shipments perspective: what physical merchandise is entering or leaving the studio?
 - Inventory perspective: what do we physically have?
 - Planning perspective: what must be decided before production can accept the work?
 - Production perspective: how will we execute?

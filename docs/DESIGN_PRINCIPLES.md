@@ -46,19 +46,25 @@ If not:
 
 > What is missing?
 
-## 5. Merchandise Is The Center
+## 5. Product-Led, Merch-Verified
 
-Merchandise is the operational center of Marks Photo.
+Expected Product is the normal operating spine of Marks Photo.
 
-Products, Jobs, Clients, Shipments, deliverabless, and reporting references support the merchandise lifecycle. They should not displace merchandise as the thing the application is helping Walnut move toward production.
+Products describe what work the client expects Walnut to prepare. Merchandise verifies whether the physical samples needed for that expected work have arrived, where they are, what condition they are in, and whether they can support production.
 
-Products are imported Expected Product reference records. Do not put manual intake facts, physical movement, storage, condition, photos, issue state, export state, production state, or Planning routing on Products to make a view easier to build.
+The Product workspace should be a PM product-data workspace, not a passive imported table. Favor dense spreadsheet-like editing for product facts, but use Marks Photo to add validation, saved mappings, merch matching, readiness summaries, client-aware views, and work creation.
+
+Do not design Products as one massive universal table. Distinguish Core Product fields, Match Keys, Client References, Naming / Path Tokens, import-only/client-specific reference data, and derived readiness/work status.
+
+Do not put raw physical check-in facts, storage, condition, shipment photos, issue state, export state, or production execution state directly on Products to make a view easier to build. Those facts belong to Received Merch, Shipments, Issues, History, Creative Force, PhotoTrack, or reporting integrations and should be shown through relationships.
+
+Unmatched merchandise is an exception path. It should be resolved by matching to Expected Product when possible or by collecting the minimum manual facts needed to move work forward.
 
 ## 6. One Shared Ready For Photo Handoff
 
 There should be one clear Ready for Photo handoff queue.
 
-Different clients or deliverabless may require different checks, but the handoff should remain understandable: the merchandise is either ready for Production to accept or it is not.
+Different clients or deliverables may require different checks, but the handoff should remain understandable: the merchandise is either ready for Production to accept or it is not.
 
 Avoid fragmenting the handoff into many competing workflow events or duplicate records.
 
@@ -100,7 +106,7 @@ It owns product identification, client requirements, deliverables, blockers or e
 
 Planning should make uncertainty actionable.
 
-The primary PM Planning experience should guide New Merch intake rather than expose a database form. Use progressive steps when the PM must first confirm Received Merch, match Expected Product when possible, capture manual product information when needed, then assign Ecomm, Packaging, or THR3D.
+The primary PM Planning exception experience should guide New Merch intake rather than expose a database form. Use progressive steps when the PM must first confirm Received Merch, match Expected Product when possible, capture minimum manual exception facts when needed, then assign Ecomm, Packaging, or THR3D.
 
 Planning should feel polished through density, responsiveness, hierarchy, and clarity rather than through new architecture. Refine cards, drag feedback, empty columns, comments, Activity, aging badges, and focus states before adding new workflow concepts.
 

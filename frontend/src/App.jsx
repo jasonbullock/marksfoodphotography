@@ -10,9 +10,12 @@ import {
   ClipboardList,
   Download as DownloadIcon,
   Filter as FilterIcon,
+  GripVertical,
   Group as GroupIcon,
   Images,
   Kanban,
+  List as ListIcon,
+  LayoutGrid,
   Layers,
   PackageOpen,
   SquareKanban,
@@ -183,9 +186,9 @@ function valueForExport(value) {
   return String(value);
 }
 
-const DEFAULT_WALNUT_SCOPE_SUGGESTIONS = ['Full Set Renders - WALNUT (Photo)'];
+const DEFAULT_WALNUT_SCOPE_SUGGESTIONS = ['Full Set Renders'];
 const DEFAULT_STRUCTURE_SUGGESTIONS = ['Hang Tag / Label'];
-const DEFAULT_DUE_URGENCY_SUGGESTIONS = ['ASAP upon receipt'];
+const DEFAULT_DUE_URGENCY_SUGGESTIONS = [];
 
 function normalizeSuggestionText(value) {
   const text = String(value || '').trim();
@@ -561,6 +564,9 @@ function WorkspaceLayout({ queue, children, inspector, className = '' }) {
 }
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
+const APP_TIME_ZONE = 'America/Chicago';
+const RECENT_COMMENT_WINDOW_MS = 4 * 60 * 60 * 1000;
+
 function daysUntil(dateStr) {
   if (!dateStr) return null;
   const d = new Date(dateStr + 'T00:00:00');
@@ -572,7 +578,14 @@ function daysUntil(dateStr) {
 function fmtDate(dateStr) {
   if (!dateStr) return '—';
   const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: APP_TIME_ZONE });
+}
+
+function formatCentralDateTime(value, options = {}) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('en-US', { timeZone: APP_TIME_ZONE, ...options });
 }
 
 function DeadlineBadge({ date }) {
@@ -747,13 +760,23 @@ function queueForId(queueId) {
   return DASHBOARD_QUEUES.find(queue => queue.id === queueId);
 }
 
-function getIdentifierLabel({ client, clientId, record, clients = [], allClients = false } = {}) {
-  if (allClients) return 'Identifier';
+function getPrimaryMatchKeyLabel({ client, clientId, record, clients = [], allClients = false } = {}) {
+  if (allClients) return DOMAIN_TERMS.primaryMatchKey;
   const resolvedClient = client
     || (clientId ? clients.find(c => c.id === clientId) : null)
     || (record?.clientIds?.length === 1 ? clients.find(c => c.id === record.clientIds[0]) : null);
-  return resolvedClient?.identifierLabel || 'Identifier';
+  return resolvedClient?.primaryMatchKeyLabel || resolvedClient?.identifierLabel || DOMAIN_TERMS.primaryMatchKey;
 }
+
+function clientProductIdLabel(client = {}) {
+  const configured = String(client.primaryMatchKeyLabel || client.identifierLabel || '').trim();
+  if (configured && !/^primary match key$|^identifier$/i.test(configured)) return configured;
+  return String(client.codeType || '').toUpperCase() === 'UPC-12' || String(client.name || '').toLowerCase() === 'topco'
+    ? 'UPC'
+    : 'Product ID';
+}
+
+const getIdentifierLabel = getPrimaryMatchKeyLabel;
 
 function referenceDataEntries(item) {
   const data = item?.referenceData;
@@ -896,6 +919,26 @@ function Dashboard({ navigate }) {
       }).join(' / '),
     }))
     .sort((a, b) => (b.daysAgo ?? -1) - (a.daysAgo ?? -1));
+  const newlyReceivedMerch = receiptList
+    .flatMap(receipt => (receipt.entries ?? [])
+      .filter(entry => entry.intakeStatus !== 'Complete' && entry.newMerchStatus !== 'Workflows Created')
+      .map(entry => {
+        const receivedAt = entry.dateReceived || entry.received || receipt.receivedDate || receipt.received || '';
+        const client = clientMap[entry.clientIds?.[0] || receipt.clientIds?.[0]];
+        return {
+          ...entry,
+          shipmentId: receipt.id,
+          receivedAt,
+          clientName: client?.name || 'Unknown client',
+          title: receivingEntryLabel(entry),
+          identifier: receivingEntrySku(entry),
+          daysAgo: receivedAt ? Math.max(0, Math.floor((today - new Date(receivedAt)) / 86400000)) : null,
+          photoRecord: recordPhotoUrl(entry) ? entry : receipt,
+          matched: (entry.itemIds || []).length > 0 || Boolean(entry.linkedItem?.id),
+        };
+      }))
+    .sort((a, b) => new Date(b.receivedAt || 0) - new Date(a.receivedAt || 0))
+    .slice(0, 6);
 
   if (skus.loading) return <div className="empty-state">Loading dashboard…</div>;
   if (skus.error)   return <div className="error-state">{skus.error}</div>;
@@ -949,6 +992,35 @@ function Dashboard({ navigate }) {
           <div className="dash-blocker-sub">Waiting for required artwork files</div>
         </div>
       </div>
+
+      {!receipts.loading && newlyReceivedMerch.length > 0 && (
+        <div className="dash-card">
+          <div className="dash-section-title-row">
+            <span>Newly Received Merch</span>
+            <button type="button" className="dash-section-link" onClick={() => navigate('planning')}>Open Planning</button>
+          </div>
+          <div className="dash-new-merch-grid">
+            {newlyReceivedMerch.map(entry => {
+              const thumb = recordPhotoUrl(entry.photoRecord);
+              return (
+                <button type="button" className="dash-new-merch-card" key={entry.id || `${entry.shipmentId}-${entry.title}`} onClick={() => navigate('planning')}>
+                  <span className="dash-new-merch-thumb">
+                    {thumb ? <img src={thumb} alt="" /> : <span />}
+                    <em>New</em>
+                  </span>
+                  <span className="dash-new-merch-copy">
+                    <small>{entry.clientName}</small>
+                    <strong>{entry.title}</strong>
+                    {entry.identifier && <span>{DOMAIN_TERMS.merchandiseIdentifier} {entry.identifier}</span>}
+                    <b className={entry.matched ? 'is-matched' : 'is-unmatched'}>{entry.matched ? 'Matched' : 'Unmatched'}</b>
+                  </span>
+                  <span className="dash-new-merch-age">{entry.daysAgo !== null ? `${entry.daysAgo}d` : 'New'}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Ready for Production */}
       {readyToShoot > 0 && (
@@ -1154,13 +1226,289 @@ function itemMatchIdentifier(item) {
   return value ? `${itemMatchIdentifierLabel(item)}: ${value}` : '';
 }
 
+function itemMatchMethod(item) {
+  const value = itemMatchIdentifierValue(item);
+  const label = String(item?.primaryMatchKeyLabel || item?.identifierLabel || item?.codeType || '').toLowerCase();
+  if (label.includes('upc') || /^\d{8,14}$/.test(String(value || ''))) return 'UPC';
+  return 'Product ID';
+}
+
+function itemMatchedByText(item) {
+  const value = itemMatchIdentifierValue(item);
+  if (item?.matchBasis === 'both-upc') return value ? `Matches typed name + UPC prefix: ${value}` : 'Matches typed name + UPC prefix';
+  if (item?.matchBasis === 'both-product-id') return value ? `Matches typed name + Product ID prefix: ${value}` : 'Matches typed name + Product ID prefix';
+  if (item?.matchBasis === 'name') return 'Matched by product name';
+  if (item?.matchBasis === 'product-id') return value ? `Matched by Product ID: ${value}` : 'Matched by Product ID';
+  if (item?.matchBasis === 'upc') return value ? `Matched by UPC: ${value}` : 'Matched by UPC';
+  return value ? `Matched by ${itemMatchMethod(item)}: ${value}` : '';
+}
+
+function itemExpectedIdentifierText(item) {
+  if (item?.matchBasis !== 'name') return '';
+  const value = itemMatchIdentifierValue(item);
+  if (!value) return 'No UPC / ID on Product';
+  return `Product ${itemMatchMethod(item)}: ${value}`;
+}
+
+function itemProductIdentifierText(item) {
+  const value = itemMatchIdentifierValue(item);
+  if (!value) return 'No UPC / ID on Product';
+  return `Product ${itemMatchMethod(item)}: ${value}`;
+}
+
+function compactMatchValue(value) {
+  return String(value || '').replace(/[^a-z0-9]+/gi, '').toLowerCase();
+}
+
+function matchValuesConflict(observedValue, productValue) {
+  const observed = compactMatchValue(observedValue);
+  const product = compactMatchValue(productValue);
+  if (!observed || !product || observed === product) return false;
+  return true;
+}
+
+function itemMatchConfidenceBadge(item, identifierQuery = '') {
+  if (item?.matchBasis === 'both-upc') return 'Possible';
+  if (item?.matchBasis === 'both-product-id') return 'Possible';
+  if (!['upc', 'product-id'].includes(item?.matchBasis)) return '';
+  const expected = compactMatchValue(itemMatchIdentifierValue(item));
+  const observed = compactMatchValue(identifierQuery);
+  if (expected && observed && expected === observed) return 'Exact';
+  return item.matchBasis === 'upc' ? 'UPC prefix' : 'ID prefix';
+}
+
+function itemHasExactIdentifierMatch(item, identifierQuery = '') {
+  const expected = compactMatchValue(itemMatchIdentifierValue(item));
+  const observed = compactMatchValue(identifierQuery);
+  return Boolean(expected && observed && expected === observed);
+}
+
+function itemIdentifierBasis(item, prefix = '') {
+  const method = itemMatchMethod(item) === 'UPC' ? 'upc' : 'product-id';
+  return prefix ? `${prefix}-${method}` : method;
+}
+
+function combineIdentifierAndNameMatches(identifierRecords = [], nameRecords = [], identifierQuery = '') {
+  const nameIds = new Set(nameRecords.map(item => item.id));
+  const exactIdentifierMatches = identifierRecords.filter(item => itemHasExactIdentifierMatch(item, identifierQuery));
+  if (exactIdentifierMatches.length > 0) {
+    return exactIdentifierMatches.map(item => ({ ...item, matchBasis: itemIdentifierBasis(item) }));
+  }
+  return identifierRecords
+    .filter(item => nameIds.has(item.id))
+    .map(item => ({ ...item, matchBasis: itemIdentifierBasis(item, 'both') }));
+}
+
+function ProductMatchCard({
+  item,
+  status = 'matched',
+  title,
+  meta,
+  observedName = '',
+  observedIdentifier = '',
+  useWhenBlank = false,
+  onChange,
+  onUseProductName,
+  onUseProductIdentifier,
+  changeDisabled = false,
+  actionDisabled = false,
+  nameWarningText,
+  identifierWarningText,
+}) {
+  if (status === 'unmatched') {
+    return (
+      <div className="receiving-match-selected is-unmatched">
+        <div className="receiving-match-selected-main">
+          <span className="receiving-match-selected-copy">
+            <strong>{title || 'No Clear Match'}</strong>
+            {meta && <small>{meta}</small>}
+          </span>
+          {onChange && <button type="button" onClick={onChange} disabled={changeDisabled}>Change</button>}
+        </div>
+      </div>
+    );
+  }
+
+  const productTitle = itemMatchTitle(item);
+  const productIdentifier = itemMatchIdentifierValue(item);
+  const nameDiffers = matchValuesConflict(observedName, productTitle);
+  const identifierDiffers = matchValuesConflict(observedIdentifier, productIdentifier);
+  const canUseProductName = Boolean(onUseProductName && productTitle && (nameDiffers || (useWhenBlank && !String(observedName || '').trim())));
+  const canUseProductIdentifier = Boolean(onUseProductIdentifier && productIdentifier && (identifierDiffers || (useWhenBlank && !String(observedIdentifier || '').trim())));
+  const showWarnings = nameDiffers || identifierDiffers || canUseProductName || canUseProductIdentifier;
+
+  return (
+    <div className="receiving-match-selected">
+      <div className="receiving-match-selected-main">
+        <span className="receiving-match-selected-copy">
+          <span className="receiving-match-eyebrow">Matched Product</span>
+          <strong>
+            {productTitle}
+            <button
+              type="button"
+              className="recv-copy-name-btn"
+              title="Copy product name"
+              onClick={event => { event.stopPropagation(); navigator.clipboard.writeText(productTitle); }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </button>
+          </strong>
+          <small className="receiving-match-meta">
+            {productIdentifier && (
+              <span className="receiving-match-identifier-copy">
+                {itemProductIdentifierText(item)}
+                <button
+                  type="button"
+                  className="recv-copy-name-btn"
+                  title={`Copy Product ${itemMatchMethod(item)}`}
+                  aria-label={`Copy Product ${itemMatchMethod(item)}`}
+                  onClick={event => { event.stopPropagation(); navigator.clipboard.writeText(productIdentifier); }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                </button>
+              </span>
+            )}
+            {[item?.brand, item?.parentJobNumber ? `Job ${item.parentJobNumber}` : ''].filter(Boolean).map(value => (
+              <span key={value}>{value}</span>
+            ))}
+          </small>
+        </span>
+        {onChange && <button type="button" onClick={onChange} disabled={changeDisabled}>Change</button>}
+      </div>
+      {showWarnings && (
+        <div className="receiving-match-warnings">
+          {(canUseProductIdentifier || canUseProductName) && (
+            <span className="receiving-match-correction-actions">
+              {canUseProductName && (
+                <button type="button" className="receiving-match-use-identifier" onClick={onUseProductName} disabled={actionDisabled}>
+                  Use Product Name
+                </button>
+              )}
+              {canUseProductIdentifier && (
+                <button type="button" className="receiving-match-use-identifier" onClick={onUseProductIdentifier} disabled={actionDisabled}>
+                  Use Product {itemMatchMethod(item)}
+                </button>
+              )}
+            </span>
+          )}
+          {nameDiffers && <small className="receiving-match-warning">{nameWarningText || 'Package name differs from the linked Product name.'}</small>}
+          {identifierDiffers && <small className="receiving-match-warning">{identifierWarningText || `Package UPC / ID differs from the linked Product ${itemMatchMethod(item)}.`}</small>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PhotoProductionChecklist({ production = {} }) {
+  const workstreams = ['Packaging', 'Ecomm'].filter(type => production[type]);
+  const entriesFor = status => {
+    const entries = [
+      ...(status?.productData?.checks || []),
+      ...(status?.creativeForce?.checks || []),
+    ];
+    const seen = new Set();
+    return entries.filter(check => {
+      const identity = check.key === 'productCode' ? 'productCode' : check.key;
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    });
+  };
+  if (!workstreams.length) return null;
+  return (
+    <div className="photo-production-checklist" aria-label="Photo production data checklist">
+      {workstreams.map(type => {
+        const checks = entriesFor(production[type] || {});
+        return (
+          <section key={type}>
+            <h4>{type}</h4>
+            <ul>
+              {checks.map(check => (
+                <li key={`${type}-${check.key}`} className={check.present ? 'is-present' : 'is-missing'}>
+                  <span aria-hidden="true">{check.present ? '✓' : '○'}</span>
+                  {check.label}
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReceivingMatchSuggestions({
+  title,
+  matches = [],
+  identifierQuery = '',
+  nameOnlyMatchSuggestions = false,
+  combinedPartialMatchSuggestions = false,
+  combinedMatchSearch = false,
+  matchLoading = false,
+  onNoClearMatch,
+  onSelect,
+  disabled = false,
+}) {
+  return (
+    <div className="receiving-match-panel">
+      <div className="receiving-match-panel-head">
+        <span>{title}</span>
+        {onNoClearMatch && (
+          <button type="button" className="receiving-match-secondary-action" onClick={onNoClearMatch} disabled={disabled}>
+            No clear match
+          </button>
+        )}
+      </div>
+      {nameOnlyMatchSuggestions && (
+        <div className="receiving-match-helper">Enter or scan UPC / ID to confirm the exact Product.</div>
+      )}
+      {combinedPartialMatchSuggestions && (
+        <div className="receiving-match-helper">These match the typed name and UPC / ID prefix. Select the correct Product, then use Product values only when they should replace the observed fields.</div>
+      )}
+      {!matchLoading && combinedMatchSearch && matches.length === 0 && (
+        <div className="receiving-match-helper">Check the package name and UPC / ID. Clear one field to search by the other.</div>
+      )}
+      {matches.length > 0 ? (
+        <div className="receiving-match-list">
+          {matches.slice(0, 5).map(item => {
+            const confidenceBadge = itemMatchConfidenceBadge(item, identifierQuery);
+            return (
+              <button
+                type="button"
+                className={`receiving-match-option ${confidenceBadge ? 'has-confidence' : ''}`}
+                key={item.id}
+                onClick={() => onSelect?.(item)}
+                disabled={disabled}
+              >
+                <span>
+                  <strong>{itemMatchTitle(item)}</strong>
+                  <small>{[itemMatchedByText(item), itemExpectedIdentifierText(item), item.brand, item.parentJobNumber ? `Job ${item.parentJobNumber}` : ''].filter(Boolean).join(' · ')}</small>
+                </span>
+                {confidenceBadge && <em>{confidenceBadge}</em>}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        !matchLoading && <p className="merch-compare-empty">No matching Products found. Check the package name and UPC / ID, or mark this as no clear match.</p>
+      )}
+    </div>
+  );
+}
+
 function itemMatchIdentifierLabel(item) {
-  const label = item?.identifierLabel || item?.codeType || 'Identifier';
+  const label = item?.primaryMatchKeyLabel || item?.identifierLabel || item?.codeType || DOMAIN_TERMS.primaryMatchKey;
   return label;
 }
 
 function itemMatchIdentifierValue(item) {
-  return item?.identifier || item?.productId || item?.gtinUpc || '';
+  return item?.primaryMatchKey || item?.identifier || item?.productId || item?.gtinUpc || '';
 }
 
 function receiptEntryHasUnsavedValues(entry, photos = []) {
@@ -1245,6 +1593,7 @@ function QuickReceivingCapture({ locationList }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const productNameRef = useRef(null);
+  const skuIdRef = useRef(null);
   const cameraInputRef = useRef(null);
   const libraryInputRef = useRef(null);
   const barcodeSupported = typeof window !== 'undefined' && 'BarcodeDetector' in window;
@@ -1459,12 +1808,16 @@ function QuickReceivingCapture({ locationList }) {
         </div>
 
         <div className="mobile-field">
-          <label>Package Name</label>
+          <label>{DOMAIN_TERMS.packageName}</label>
+          <input ref={productNameRef} value={entry.productName} onChange={event => setEntry('productName', event.target.value)} placeholder="Name printed on package" />
+        </div>
+
+        <div className="mobile-field">
+          <label>{DOMAIN_TERMS.merchandiseIdentifier}</label>
           <div className="mobile-identifier-row">
-            <input ref={productNameRef} value={entry.productName} onChange={event => setEntry('productName', event.target.value)} placeholder="Name printed on package" />
+            <input ref={skuIdRef} value={entry.skuId} onChange={event => setEntry('skuId', event.target.value)} placeholder="Scan or enter UPC / ID" />
             {barcodeSupported && <button type="button" className="btn btn-alt">Scan</button>}
           </div>
-          <input value={entry.skuId} onChange={event => setEntry('skuId', event.target.value)} placeholder="Barcode or ID Number (optional)" />
         </div>
 
         <div className="mobile-field">
@@ -1560,6 +1913,7 @@ function ShipmentsPage() {
   const [itemMatches, setItemMatches] = useState([]);
   const [matchLoading, setMatchLoading] = useState(false);
   const [matchChoice, setMatchChoice] = useState({ status: 'none', item: null });
+  const [editingMatchedEntryIdentity, setEditingMatchedEntryIdentity] = useState(false);
   const [prevMatchedItemId, setPrevMatchedItemId] = useState('');
   const [search, setSearch] = useState('');
   const [clientFilter, setClientFilter] = useState('');
@@ -1574,6 +1928,7 @@ function ShipmentsPage() {
   const shipmentLibraryInputRef = useRef(null);
   const shipmentPhotoPreviewsRef = useRef([]);
   const productNameRef = useRef(null);
+  const skuIdRef = useRef(null);
 
   const clientList = (clients.data?.records ?? []).filter(c => c.active !== false);
   const locationList = (locations.data?.records ?? []).filter(l => l.active !== false);
@@ -1598,15 +1953,37 @@ function ShipmentsPage() {
 
   const activeClientId = receipt?.clientIds?.[0] || session.clientId || '';
   const jobList = jobsResource.data?.records ?? [];
-  const matchQuery = [entry.skuId, entry.productName].map(v => String(v || '').trim()).filter(Boolean).join(' ');
+  const matchIdentifierQuery = String(entry.skuId || '').trim();
+  const matchNameQuery = String(entry.productName || '').trim();
+  const matchIdentifierReady = matchIdentifierQuery.replace(/[^a-z0-9]+/gi, '').length >= 3;
+  const matchNameReady = matchNameQuery.replace(/[^a-z0-9]+/gi, '').length >= 3;
+  const matchChoiceProductTitle = matchChoice.status === 'matched' && matchChoice.item ? itemMatchTitle(matchChoice.item) : '';
+  const matchChoiceProductIdentifier = matchChoice.status === 'matched' && matchChoice.item ? itemMatchIdentifierValue(matchChoice.item) : '';
+  const matchedEntryIdentityIsClean = Boolean(
+    matchChoice.status === 'matched'
+    && matchChoice.item
+    && matchNameQuery
+    && matchIdentifierQuery
+    && !matchValuesConflict(matchNameQuery, matchChoiceProductTitle)
+    && !matchValuesConflict(matchIdentifierQuery, matchChoiceProductIdentifier)
+  );
+  const showEntryIdentityFields = !matchedEntryIdentityIsClean || editingMatchedEntryIdentity;
   const showMatchSuggestions = matchChoice.status !== 'matched'
     && matchChoice.status !== 'needs'
-    && matchQuery.replace(/[^a-z0-9]+/gi, '').length >= 3;
+    && (matchIdentifierReady || matchNameReady);
+  const nameOnlyMatchSuggestions = itemMatches.length > 0 && itemMatches.every(item => item.matchBasis === 'name');
+  const combinedPartialMatchSuggestions = itemMatches.length > 0 && itemMatches.every(item => String(item.matchBasis || '').startsWith('both-'));
+  const combinedMatchSearch = matchIdentifierReady && matchNameReady;
+  const matchSuggestionsTitle = matchLoading
+    ? 'Searching products…'
+    : itemMatches.length
+      ? (nameOnlyMatchSuggestions || combinedPartialMatchSuggestions) ? 'Possible products' : 'Suggested products'
+      : combinedMatchSearch ? 'No product matches both fields' : 'No matches found';
   const entryCount = savedEntries.length;
   const shipmentPhotos = recordPhotos(receipt);
   const headerReceived = receipt?.received || session.received;
   const headerReceivedLabel = headerReceived
-    ? new Date(headerReceived).toLocaleString([], { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' })
+    ? formatCentralDateTime(headerReceived, { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit' })
     : '';
 
   useEffect(() => {
@@ -1614,6 +1991,10 @@ function ShipmentsPage() {
     const t = window.setTimeout(() => setToast(''), 1200);
     return () => window.clearTimeout(t);
   }, [toast]);
+
+  useEffect(() => {
+    if (matchChoice.status !== 'matched') setEditingMatchedEntryIdentity(false);
+  }, [matchChoice.status, matchChoice.item?.id]);
 
   useEffect(() => {
     shipmentPhotoPreviewsRef.current = shipmentPhotoPreviews;
@@ -1633,8 +2014,23 @@ function ShipmentsPage() {
     setMatchLoading(true);
     const t = window.setTimeout(async () => {
       try {
-        const data = await api.searchMerchandiseReviewProducts({ q: matchQuery, clientId: activeClientId, includeItemId: prevMatchedItemId });
-        if (active) setItemMatches(data.records ?? []);
+        let records = [];
+        if (matchIdentifierReady && matchNameReady) {
+          const [identifierData, nameData] = await Promise.all([
+            api.searchMerchandiseReviewProducts({ q: matchIdentifierQuery, clientId: activeClientId, includeItemId: prevMatchedItemId, limit: 50 }),
+            api.searchMerchandiseReviewProducts({ q: matchNameQuery, clientId: activeClientId, includeItemId: prevMatchedItemId, limit: 50 }),
+          ]);
+          records = combineIdentifierAndNameMatches(identifierData.records ?? [], nameData.records ?? [], matchIdentifierQuery);
+        } else if (matchIdentifierReady) {
+          const data = await api.searchMerchandiseReviewProducts({ q: matchIdentifierQuery, clientId: activeClientId, includeItemId: prevMatchedItemId });
+          records = (data.records ?? []).map(item => ({ ...item, matchBasis: itemIdentifierBasis(item) }));
+        }
+        if (records.length === 0 && matchNameReady && !matchIdentifierReady) {
+          const data = await api.searchMerchandiseReviewProducts({ q: matchNameQuery, clientId: activeClientId, includeItemId: prevMatchedItemId });
+          records = (data.records ?? []).map(item => ({ ...item, matchBasis: 'name' }));
+        }
+        const selectedProductId = matchChoice.status === 'matched' ? matchChoice.item?.id : '';
+        if (active) setItemMatches(records.filter(item => item.id !== selectedProductId));
       } catch {
         if (active) setItemMatches([]);
       } finally {
@@ -1642,7 +2038,7 @@ function ShipmentsPage() {
       }
     }, 220);
     return () => { active = false; window.clearTimeout(t); };
-  }, [showMatchSuggestions, matchQuery, activeClientId, prevMatchedItemId]);
+  }, [showMatchSuggestions, matchIdentifierReady, matchIdentifierQuery, matchNameReady, matchNameQuery, activeClientId, prevMatchedItemId, matchChoice.status, matchChoice.item?.id]);
 
   function setSessionField(field, value) {
     setSession(prev => ({ ...prev, [field]: value }));
@@ -1671,6 +2067,9 @@ function ShipmentsPage() {
     setEntryState(prev => ({ ...prev, [field]: value }));
     if ((field === 'productName' || field === 'skuId') && matchChoice.status === 'needs') {
       setMatchChoice({ status: 'none', item: null });
+    }
+    if ((field === 'productName' || field === 'skuId') && matchChoice.status === 'matched') {
+      setEditingMatchedEntryIdentity(true);
     }
   }
 
@@ -1787,7 +2186,7 @@ function ShipmentsPage() {
   async function saveNext() {
     setError('');
     if (!receipt) {
-      setError('Create the shipment before adding merchandise.');
+      setError('Add shipment photos in Shipment Details before saving merchandise.');
       return;
     }
     if (entryPhotos.length === 0) {
@@ -1795,7 +2194,7 @@ function ShipmentsPage() {
       return;
     }
     if (!entry.productName.trim()) {
-      setError('Package Name is required.');
+      setError('Product Name on Package is required.');
       productNameRef.current?.focus();
       return;
     }
@@ -1991,12 +2390,20 @@ function ShipmentsPage() {
     const isMatched = (saved.itemIds || []).length > 0;
     const needsMatch = effectiveStatus === 'Needs Match' || saved.noClearMatch;
     if (isMatched && (saved.itemIds || []).length > 0) {
+      const matchedProduct = saved.matchedProduct || saved.linkedProduct || {};
       setMatchChoice({
         status: 'matched',
         item: {
-          id: saved.itemIds[0],
-          name: saved.productName || saved.name || 'Matched Product',
-          identifier: receivingEntrySku(saved),
+          id: matchedProduct.id || saved.itemIds[0],
+          name: matchedProduct.name || matchedProduct.product || saved.productName || saved.name || 'Matched Product',
+          product: matchedProduct.product || '',
+          identifier: matchedProduct.identifier || matchedProduct.primaryMatchKey || matchedProduct.productId || matchedProduct.gtinUpc || receivingEntrySku(saved),
+          primaryMatchKey: matchedProduct.primaryMatchKey || matchedProduct.identifier || matchedProduct.productId || matchedProduct.gtinUpc || receivingEntrySku(saved),
+          productId: matchedProduct.productId || matchedProduct.identifier || matchedProduct.primaryMatchKey || matchedProduct.gtinUpc || receivingEntrySku(saved),
+          gtinUpc: matchedProduct.gtinUpc || matchedProduct.identifier || matchedProduct.primaryMatchKey || matchedProduct.productId || receivingEntrySku(saved),
+          identifierLabel: matchedProduct.identifierLabel || matchedProduct.primaryMatchKeyLabel || '',
+          primaryMatchKeyLabel: matchedProduct.primaryMatchKeyLabel || matchedProduct.identifierLabel || '',
+          codeType: matchedProduct.codeType || '',
         },
       });
     } else if (needsMatch) {
@@ -2169,7 +2576,7 @@ function ShipmentsPage() {
                   <button type="button" className="recv-camera-btn" onClick={() => shipmentCameraInputRef.current?.click()} disabled={shipmentPhotoUploading || saving === 'shipment'}><Camera size={17} strokeWidth={2} aria-hidden="true" />Take Photo</button>
                   <button type="button" className="recv-library-btn" onClick={() => shipmentLibraryInputRef.current?.click()} disabled={shipmentPhotoUploading || saving === 'shipment'}><Images size={17} strokeWidth={2} aria-hidden="true" />Library</button>
                 </div>
-                {!receipt && <small className="recv-field-hint">Adding shipment photos saves this shipment and unlocks merchandise entry.</small>}
+                {!receipt && <small className="recv-field-hint">Adding shipment photos saves this shipment.</small>}
                 {shipmentPhotoUploading && <div className="receiving-upload-progress" role="status"><span />Uploading...</div>}
                 {shipmentPhotoError && <div className="recv-field-error">{shipmentPhotoError}</div>}
                 {(shipmentPhotos.length > 0 || shipmentPhotoPreviews.length > 0) && (
@@ -2255,6 +2662,10 @@ function ShipmentsPage() {
                       </div>
                     )}
                     <div className="recv-photo-row">
+                      <div className="recv-required-row">
+                        <span>Merchandise Photos</span>
+                        <strong className={entryPhotos.length > 0 ? 'is-complete' : ''}>{entryPhotos.length > 0 ? 'Added' : 'Required'}</strong>
+                      </div>
                       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" multiple hidden onChange={e => { addEntryPhotos(e.target.files); e.target.value = ''; }} />
                       <input ref={libraryInputRef} type="file" accept="image/*" multiple hidden onChange={e => { addEntryPhotos(e.target.files); e.target.value = ''; }} />
                       {entryPhotos.length > 0 && (
@@ -2273,82 +2684,76 @@ function ShipmentsPage() {
                       </div>
                       {showUploadProgress && <div className="receiving-upload-progress" role="status"><span />Uploading...</div>}
                     </div>
-                    <div className="recv-field recv-field-product">
-                      <label>Package Name</label>
-                      <input ref={productNameRef} value={entry.productName} onChange={e => { setEntry('productName', e.target.value); if (error) setError(''); }} placeholder="Name printed on package" autoComplete="off" />
-                    </div>
-                    <div className="recv-field">
-                      <label>{DOMAIN_TERMS.merchandiseIdentifier}</label>
-                      <input value={entry.skuId} onChange={e => setEntry('skuId', e.target.value)} placeholder="Optional" autoComplete="off" />
-                    </div>
+                    {showEntryIdentityFields && (
+                      <>
+                        <div className="recv-field recv-field-product">
+                          <label>{DOMAIN_TERMS.packageName}</label>
+                          <input ref={productNameRef} value={entry.productName} onChange={e => { setEntry('productName', e.target.value); if (error) setError(''); }} placeholder="Name printed on package" autoComplete="off" />
+                        </div>
+                        <div className="recv-field">
+                          <label>{DOMAIN_TERMS.merchandiseIdentifier}</label>
+                          <input ref={skuIdRef} value={entry.skuId} onChange={e => setEntry('skuId', e.target.value)} placeholder="Scan or enter UPC / ID" autoComplete="off" />
+                        </div>
+                      </>
+                    )}
                     <div className="receiving-match-field">
                       {matchChoice.status === 'matched' && matchChoice.item ? (
-                        <div className="receiving-match-selected">
-                          <span>
-                            <strong>
-                              {itemMatchTitle(matchChoice.item)}
-                              <button
-                                type="button"
-                                className="recv-copy-name-btn"
-                                title="Copy product name"
-                                onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(itemMatchTitle(matchChoice.item)); }}
-                              >
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                                </svg>
-                              </button>
-                            </strong>
-                            <small className="receiving-match-meta">
-                              {itemMatchIdentifierValue(matchChoice.item) && (
-                                <span className="receiving-match-identifier-copy">
-                                  {itemMatchIdentifierLabel(matchChoice.item)}: {itemMatchIdentifierValue(matchChoice.item)}
-                                  <button
-                                    type="button"
-                                    className="recv-copy-name-btn"
-                                    title="Copy identifier"
-                                    aria-label="Copy matched identifier"
-                                    onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(itemMatchIdentifierValue(matchChoice.item)); }}
-                                  >
-                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                                    </svg>
-                                  </button>
-                                </span>
-                              )}
-                              {[matchChoice.item.brand, matchChoice.item.parentJobNumber ? `Job ${matchChoice.item.parentJobNumber}` : ''].filter(Boolean).map(value => (
-                                <span key={value}>{value}</span>
-                              ))}
-                            </small>
-                          </span>
-                          <button type="button" onClick={() => { setPrevMatchedItemId(matchChoice.item?.id || ''); setMatchChoice({ status: 'none', item: null }); }}>Change</button>
-                        </div>
-                      ) : matchChoice.status === 'needs' ? (
-                        <div className="receiving-match-selected is-unmatched">
-                          <span><strong>No Clear Match</strong><small>Will go to Merchandise Review.</small></span>
-                          <button type="button" onClick={() => setMatchChoice({ status: 'none', item: null })}>Change</button>
-                        </div>
-                      ) : showMatchSuggestions ? (
-                        <div className="receiving-match-panel">
-                          <div className="receiving-match-panel-head">
-                            <span>{matchLoading ? 'Searching products…' : itemMatches.length ? 'Suggested products' : 'No matches found'}</span>
-                            <button type="button" onClick={() => setMatchChoice({ status: 'needs', item: null })}>No clear match</button>
-                          </div>
-                          {itemMatches.length > 0 && (
-                            <div className="receiving-match-list">
-                              {itemMatches.slice(0, 5).map((item, i) => (
-                                <button type="button" className={`receiving-match-option ${i === 0 ? 'is-best' : ''}`} key={item.id} onClick={() => setMatchChoice({ status: 'matched', item })}>
-                                  <span>
-                                    <strong>{itemMatchTitle(item)}</strong>
-                                    <small>{[itemMatchIdentifier(item), item.brand, item.parentJobNumber ? `Job ${item.parentJobNumber}` : ''].filter(Boolean).join(' · ')}</small>
-                                  </span>
-                                  {i === 0 && <em>Best</em>}
-                                </button>
-                              ))}
-                            </div>
+                        <>
+                          <ProductMatchCard
+                            item={matchChoice.item}
+                            observedName={entry.productName}
+                            observedIdentifier={entry.skuId}
+	                            useWhenBlank
+	                            onChange={() => {
+	                              setPrevMatchedItemId(matchChoice.item?.id || '');
+	                              setMatchChoice({ status: 'none', item: null });
+	                              setEditingMatchedEntryIdentity(false);
+	                            }}
+                            onUseProductIdentifier={() => setEntry('skuId', itemMatchIdentifierValue(matchChoice.item))}
+                            onUseProductName={() => setEntry('productName', itemMatchTitle(matchChoice.item))}
+                            nameWarningText={`Observed ${DOMAIN_TERMS.packageName} differs from the Product name.`}
+                            identifierWarningText={`Observed ${DOMAIN_TERMS.merchandiseIdentifier} differs from the Product ${itemMatchMethod(matchChoice.item)}.`}
+                          />
+                          {showMatchSuggestions && (
+	                            <ReceivingMatchSuggestions
+	                              title={matchSuggestionsTitle}
+	                              matches={itemMatches}
+                              identifierQuery={matchIdentifierQuery}
+                              nameOnlyMatchSuggestions={nameOnlyMatchSuggestions}
+                              combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
+                              combinedMatchSearch={combinedMatchSearch}
+                              matchLoading={matchLoading}
+                              onNoClearMatch={() => setMatchChoice({ status: 'needs', item: null })}
+	                              onSelect={item => {
+	                                setMatchChoice({ status: 'matched', item });
+	                                setEditingMatchedEntryIdentity(false);
+	                                setPrevMatchedItemId('');
+	                              }}
+                            />
                           )}
-                        </div>
+                        </>
+                      ) : matchChoice.status === 'needs' ? (
+                        <ProductMatchCard
+                          status="unmatched"
+                          title="No Clear Match"
+                          meta="Will go to Merchandise Review."
+                          onChange={() => setMatchChoice({ status: 'none', item: null })}
+                        />
+	                      ) : showMatchSuggestions ? (
+	                        <ReceivingMatchSuggestions
+	                          title={matchSuggestionsTitle}
+	                          matches={itemMatches}
+                          identifierQuery={matchIdentifierQuery}
+                          nameOnlyMatchSuggestions={nameOnlyMatchSuggestions}
+                          combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
+                          combinedMatchSearch={combinedMatchSearch}
+                          matchLoading={matchLoading}
+                          onNoClearMatch={() => setMatchChoice({ status: 'needs', item: null })}
+	                          onSelect={item => {
+	                            setMatchChoice({ status: 'matched', item });
+	                            setPrevMatchedItemId('');
+	                          }}
+                        />
                       ) : null}
                     </div>
                     <div className="recv-row">
@@ -2390,7 +2795,7 @@ function ShipmentsPage() {
                       </div>
                     </details>
                     {error && <div className="recv-field-error">{error}</div>}
-                    <button type="button" className="recv-save-btn" onClick={saveNext} disabled={!receipt || Boolean(saving) || entryPhotos.length === 0}>
+                    <button type="button" className="recv-save-btn" onClick={saveNext} disabled={Boolean(saving) || entryPhotos.length === 0}>
                       {saving === 'entry' ? 'Saving…' : editingEntryId ? 'Update merchandise' : 'Save & next →'}
                     </button>
                   </div>{/* end recv-form-content */}
@@ -2552,7 +2957,6 @@ function ShipmentsPage() {
                 <span>Tracking</span>
                 <span>Received</span>
                 <span>Items</span>
-                <span>Status</span>
                 <span></span>
               </div>
               {allReceipts.loading ? (
@@ -2564,8 +2968,6 @@ function ShipmentsPage() {
                   .map(r => {
                     const clientName = (r.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown';
                     const entries = r.entries || [];
-                    const productInfoCount = entries.filter(e => (e.itemIds || []).length > 0).length;
-                    const pendingCount = entries.length - productInfoCount;
                     const canDelete = entries.length === 0;
                     return (
                       <div key={r.id} className="recv-all-item">
@@ -2574,12 +2976,7 @@ function ShipmentsPage() {
                           <span className="recv-all-item-meta">{r.carrier || 'Unknown carrier'}</span>
                           <span className="recv-all-item-meta">{r.tracking || '-'}</span>
                           <span className="recv-all-item-meta">{formatInventoryDate(r.received) || '-'}</span>
-                          <span className="recv-session-badge">{entries.length} item{entries.length === 1 ? '' : 's'}</span>
-                          <span className="recv-all-status-stack">
-                            {productInfoCount > 0 && <span className="recv-sidebar-badge is-ok">{productInfoCount} with product info</span>}
-                            {pendingCount > 0 && <span className="recv-sidebar-badge is-warn">{pendingCount} missing product info</span>}
-                            {!productInfoCount && !pendingCount && <span className="recv-sidebar-badge">Empty</span>}
-                          </span>
+                          <span className="recv-session-badge recv-all-items-badge">{entries.length} item{entries.length === 1 ? '' : 's'}</span>
                         </button>
                         <span className="recv-all-row-actions">
                           <button type="button" className="recv-all-item-edit" onClick={() => openReceiptForEdit(r.id)}>Edit</button>
@@ -2636,7 +3033,7 @@ function ShipmentsPage() {
                 if (sameDay(d, today)) return { day: 'Today', num: d.getDate(), isToday: true };
                 const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
                 if (sameDay(d, yesterday)) return { day: 'Yesterday', num: d.getDate(), isToday: false };
-                return { day: d.toLocaleDateString([], { weekday: 'short' }), num: d.getDate(), isToday: false };
+                return { day: d.toLocaleDateString('en-US', { weekday: 'short', timeZone: APP_TIME_ZONE }), num: d.getDate(), isToday: false };
               }
               // When searching, fall back to day-grouped list instead of columns
               if (isSearching) {
@@ -2651,7 +3048,7 @@ function ShipmentsPage() {
                   <div className="recv-search-results">
                     {Object.entries(grouped).map(([dateStr, receipts]) => (
                       <div key={dateStr} className="recv-search-day">
-                        <div className="recv-search-day-label">{dateStr === 'Unknown' ? 'Unknown date' : new Date(dateStr).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</div>
+                        <div className="recv-search-day-label">{dateStr === 'Unknown' ? 'Unknown date' : new Date(dateStr).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: APP_TIME_ZONE })}</div>
                         {receipts.map(r => {
                           const clientName = (r.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown';
                           const entries = r.entries || [];
@@ -2885,7 +3282,13 @@ function NewJobPage({ navigate }) {
 }
 
 // ── Products page ─────────────────────────────────────────────────────────────
-const DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS = ['client', 'name', 'identifier', 'product', 'itemJobNumber', 'brand', 'job'];
+const DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS = [
+  'client', 'name', 'upc', 'productionSummary', 'cvid', 'brandPrefix', 'requestType', 'projectStatus',
+  'wkftJobNumber', 'mboxNumber', 'productType', 'productDescription',
+  'preproOverlays', 'ecommPhotoNotes', 'pathToArt', 'job',
+];
+const PRODUCT_REQUEST_TYPE_OPTIONS = ['Ecomm only', 'Pack only', 'Thr3d only', 'Pack & Thr3d', 'Ecomm & Pack'];
+const PRODUCT_TYPE_OPTIONS = ['Shelf Stable', 'Fresh/Perishable', 'Refrigeration Req', 'Freezer Req', 'Non-Food'];
 const PRODUCT_GRID_ROW_HEIGHTS = ['small', 'medium', 'tall'];
 
 function normalizedProductColumnOrder(order) {
@@ -2949,7 +3352,7 @@ function ProductsPage({ navigate, jobId: initJobId }) {
   const clientList = clients.data?.records ?? [];
   const selectedJob = jobList.find(job => job.id === jobFilter);
   const scopedClientId = selectedJob?.clientIds?.length === 1 ? selectedJob.clientIds[0] : '';
-  const identifierLabel = getIdentifierLabel({ clientId: scopedClientId, clients: clientList, allClients: !scopedClientId });
+  const primaryMatchKeyLabel = getPrimaryMatchKeyLabel({ clientId: scopedClientId, clients: clientList, allClients: !scopedClientId });
   const userPreferenceKey = `marks:products-grid:${auth?.user?.id || auth?.id || auth?.email || 'local'}`;
   const [itemList, setItemList] = useState([]);
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
@@ -2964,6 +3367,7 @@ function ProductsPage({ navigate, jobId: initJobId }) {
   const [gridError, setGridError] = useState('');
   const [columnPrefs, setColumnPrefs] = useState(() => loadProductGridPreferences(userPreferenceKey));
   const [draggingColumnId, setDraggingColumnId] = useState('');
+  const [columnDropTarget, setColumnDropTarget] = useState(null);
   const [fillDrag, setFillDrag] = useState(null);
   const [fillTargetItemId, setFillTargetItemId] = useState('');
   const resizeRef = useRef(null);
@@ -2976,7 +3380,10 @@ function ProductsPage({ navigate, jobId: initJobId }) {
   }, [initJobId]);
 
   useEffect(() => {
-    if (items.data?.records) setItemList(items.data.records);
+    if (items.data?.records) {
+      setItemList(items.data.records);
+      setGridError('');
+    }
   }, [items.data]);
 
   useEffect(() => {
@@ -3051,10 +3458,19 @@ function ProductsPage({ navigate, jobId: initJobId }) {
   const productGridColumns = [
     { id: 'client', header: 'Client', value: item => clientNames(item), editable: false, locked: true, defaultWidth: 150, filterType: 'select' },
     { id: 'name', header: 'Product', key: 'name', editable: true, defaultWidth: 260 },
-    { id: 'identifier', header: identifierLabel, key: 'identifier', patchKey: 'productId', editable: true, monospace: true, defaultWidth: 180 },
-    { id: 'product', header: 'Product or File Name', key: 'product', editable: true, defaultWidth: 260 },
-    { id: 'itemJobNumber', header: DOMAIN_TERMS.productJobNumber, key: 'itemJobNumber', editable: true, defaultWidth: 190 },
-    { id: 'brand', header: 'Brand', key: 'brand', editable: true, defaultWidth: 150 },
+    { id: 'upc', header: 'UPC', key: 'primaryMatchKey', patchKey: 'primaryMatchKey', editable: true, monospace: true, defaultWidth: 170 },
+    { id: 'productionSummary', header: 'Production', value: item => item.productionSummary?.status || 'Not Calculated', editable: false, defaultWidth: 180, filterType: 'select' },
+    { id: 'cvid', header: 'CVID', key: 'cvid', patchKey: 'cvid', editable: true, monospace: true, defaultWidth: 150 },
+    { id: 'brandPrefix', header: 'Brand Prefix', key: 'brandPrefix', patchKey: 'brandPrefix', editable: true, defaultWidth: 150 },
+    { id: 'requestType', header: 'Request Type', key: 'requestType', editable: true, options: PRODUCT_REQUEST_TYPE_OPTIONS, defaultWidth: 170, filterType: 'select' },
+    { id: 'projectStatus', header: 'Project Status', key: 'projectStatus', editable: false, defaultWidth: 170, filterType: 'select' },
+    { id: 'wkftJobNumber', header: 'WKFT Job Number', key: 'wkftJobNumber', patchKey: 'wkftJobNumber', editable: true, defaultWidth: 180 },
+    { id: 'mboxNumber', header: 'Mbox Number', key: 'mboxNumber', patchKey: 'mboxNumber', editable: true, defaultWidth: 160 },
+    { id: 'productType', header: 'Product Type', key: 'productType', patchKey: 'productType', editable: true, options: PRODUCT_TYPE_OPTIONS, defaultWidth: 170, filterType: 'select' },
+    { id: 'productDescription', header: 'Product Description', key: 'productDescription', patchKey: 'productDescription', editable: true, defaultWidth: 260 },
+    { id: 'preproOverlays', header: 'Link to Prepro/Overlays', key: 'preproOverlays', patchKey: 'preproOverlays', editable: true, defaultWidth: 240 },
+    { id: 'ecommPhotoNotes', header: 'Ecomm Photo Notes', key: 'ecommPhotoNotes', patchKey: 'ecommPhotoNotes', editable: true, defaultWidth: 240 },
+    { id: 'pathToArt', header: 'Path to Art', key: 'pathToArt', patchKey: 'pathToArt', editable: true, defaultWidth: 240 },
     { id: 'job', header: 'Job', value: item => jobNames(item), editable: false, defaultWidth: 320, filterType: 'select' },
   ];
   const visibleColumnIds = columnPrefs.visibleColumnIds || DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS;
@@ -3197,7 +3613,7 @@ function ProductsPage({ navigate, jobId: initJobId }) {
     });
   }
 
-  function moveProductColumnBefore(sourceColumnId, targetColumnId) {
+  function moveProductColumn(sourceColumnId, targetColumnId, placement = 'before') {
     if (!sourceColumnId || !targetColumnId || sourceColumnId === targetColumnId) return;
     setColumnPrefs(current => {
       const order = normalizedProductColumnOrder(current.columnOrder);
@@ -3206,9 +3622,49 @@ function ProductsPage({ navigate, jobId: initJobId }) {
       if (fromIndex < 0 || toIndex < 0) return current;
       const nextOrder = [...order];
       const [moved] = nextOrder.splice(fromIndex, 1);
-      nextOrder.splice(toIndex, 0, moved);
+      const targetIndex = nextOrder.indexOf(targetColumnId);
+      nextOrder.splice(placement === 'after' ? targetIndex + 1 : targetIndex, 0, moved);
       return { ...current, columnOrder: nextOrder };
     });
+  }
+
+  function productColumnDropPlacement(event, axis = 'x') {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const midpoint = axis === 'y' ? rect.top + rect.height / 2 : rect.left + rect.width / 2;
+    const pointer = axis === 'y' ? event.clientY : event.clientX;
+    return pointer > midpoint ? 'after' : 'before';
+  }
+
+  function startProductColumnDrag(event, column) {
+    if (resizeRef.current) return;
+    setDraggingColumnId(column.id);
+    setColumnDropTarget(null);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', column.id);
+    event.dataTransfer.setData('application/x-product-column', column.id);
+  }
+
+  function dragOverProductColumn(event, column, axis = 'x') {
+    const sourceColumnId = event.dataTransfer.getData('application/x-product-column') || draggingColumnId;
+    if (!sourceColumnId || sourceColumnId === column.id) return;
+    event.preventDefault();
+    const placement = productColumnDropPlacement(event, axis);
+    setColumnDropTarget({ columnId: column.id, placement });
+    event.dataTransfer.dropEffect = 'move';
+  }
+
+  function dropProductColumn(event, column, axis = 'x') {
+    const sourceColumnId = event.dataTransfer.getData('application/x-product-column') || event.dataTransfer.getData('text/plain') || draggingColumnId;
+    if (!sourceColumnId || sourceColumnId === column.id) return;
+    event.preventDefault();
+    moveProductColumn(sourceColumnId, column.id, productColumnDropPlacement(event, axis));
+    setDraggingColumnId('');
+    setColumnDropTarget(null);
+  }
+
+  function endProductColumnDrag() {
+    setDraggingColumnId('');
+    setColumnDropTarget(null);
   }
 
   function startColumnResize(event, column) {
@@ -3245,7 +3701,7 @@ function ProductsPage({ navigate, jobId: initJobId }) {
       const data = await api.updateProduct(item.id, {
         [patchKey]: nextValue,
         codeType: item.codeType,
-        identifierLabel,
+        primaryMatchKeyLabel,
       });
       const updated = data.record || data;
       setItemList(current => current.map(row => row.id === item.id ? updated : row));
@@ -3284,7 +3740,7 @@ function ProductsPage({ navigate, jobId: initJobId }) {
         const data = await api.updateProduct(item.id, {
           [patchKey]: nextValue,
           codeType: item.codeType,
-          identifierLabel,
+          primaryMatchKeyLabel,
         });
         const updated = data.record || data;
         setItemList(current => current.map(row => row.id === item.id ? updated : row));
@@ -3488,24 +3944,18 @@ function ProductsPage({ navigate, jobId: initJobId }) {
                 <div className="products-columns-list">
                   {orderedProductGridColumns.map(column => (
                     <div
-                      className={`products-column-option${draggingColumnId === column.id ? ' is-dragging' : ''}`}
+                      className={[
+                        'products-column-option',
+                        draggingColumnId === column.id ? 'is-dragging' : '',
+                        columnDropTarget?.columnId === column.id ? `is-drop-${columnDropTarget.placement}` : '',
+                      ].filter(Boolean).join(' ')}
                       key={column.id}
                       draggable
-                      onDragStart={event => {
-                        setDraggingColumnId(column.id);
-                        event.dataTransfer.effectAllowed = 'move';
-                        event.dataTransfer.setData('text/plain', column.id);
-                      }}
-                      onDragOver={event => {
-                        event.preventDefault();
-                        event.dataTransfer.dropEffect = 'move';
-                      }}
-                      onDrop={event => {
-                        event.preventDefault();
-                        moveProductColumnBefore(event.dataTransfer.getData('text/plain') || draggingColumnId, column.id);
-                        setDraggingColumnId('');
-                      }}
-                      onDragEnd={() => setDraggingColumnId('')}
+                      onDragStart={event => startProductColumnDrag(event, column)}
+                      onDragOver={event => dragOverProductColumn(event, column, 'y')}
+                      onDragLeave={() => setColumnDropTarget(current => current?.columnId === column.id ? null : current)}
+                      onDrop={event => dropProductColumn(event, column, 'y')}
+                      onDragEnd={endProductColumnDrag}
                     >
                       <label>
                         <input
@@ -3516,7 +3966,7 @@ function ProductsPage({ navigate, jobId: initJobId }) {
                         />
                         <span>{column.header}</span>
                       </label>
-                      <span className="products-column-drag-handle" aria-hidden="true">::</span>
+                      <GripVertical className="products-column-drag-handle" size={15} strokeWidth={2.4} aria-hidden="true" />
                     </div>
                   ))}
                 </div>
@@ -3603,10 +4053,25 @@ function ProductsPage({ navigate, jobId: initJobId }) {
           <thead>
             <tr>
               {visibleProductGridColumns.map(column => (
-                <th key={column.id}>
+                <th
+                  className={[
+                    'products-grid-header-cell',
+                    draggingColumnId === column.id ? 'is-dragging' : '',
+                    columnDropTarget?.columnId === column.id ? `is-drop-${columnDropTarget.placement}` : '',
+                  ].filter(Boolean).join(' ')}
+                  key={column.id}
+                  draggable
+                  onDragStart={event => startProductColumnDrag(event, column)}
+                  onDragOver={event => dragOverProductColumn(event, column)}
+                  onDragLeave={() => setColumnDropTarget(current => current?.columnId === column.id ? null : current)}
+                  onDrop={event => dropProductColumn(event, column)}
+                  onDragEnd={endProductColumnDrag}
+                  title={`Drag ${column.header} to reorder`}
+                >
                   <button
                     type="button"
                     className="table-sort-button"
+                    draggable={false}
                     onClick={() => toggleProductSort(column.id)}
                     aria-label={`Sort by ${column.header}`}
                   >
@@ -3620,6 +4085,8 @@ function ProductsPage({ navigate, jobId: initJobId }) {
                   <span
                     className="products-column-resizer"
                     onMouseDown={event => startColumnResize(event, column)}
+                    draggable={false}
+                    onDragStart={event => event.preventDefault()}
                     role="separator"
                     aria-label={`Resize ${column.header}`}
                   />
@@ -3655,40 +4122,55 @@ function ProductsPage({ navigate, jobId: initJobId }) {
                       return (
                         <td key={column.id}>
                           <div className={`products-grid-cell-editor${isProductFillSelected(item, column) ? ' is-fill-target' : ''}`}>
-                            <input
-                              className={`products-grid-cell-input${column.monospace ? ' is-code' : ''}`}
-                              value={value}
-                              disabled={savingCell === key}
-                              draggable
-                              onDragStart={event => startProductFillDrag(event, item, column, value)}
-                              onDragEnter={() => enterProductFillTarget(item, column)}
-                              onDragOver={event => overProductFillTarget(event, item, column)}
-                              onDrop={event => dropProductFill(event, item, column)}
-                              onDragEnd={endProductFillDrag}
-                              onClick={event => event.stopPropagation()}
-                              onFocus={event => event.target.select()}
-                              onChange={event => setEditDrafts(current => ({ ...current, [key]: event.target.value }))}
-                              onBlur={event => {
-                                if (event.currentTarget.dataset.cancelEdit === 'true') {
-                                  event.currentTarget.dataset.cancelEdit = '';
-                                  return;
-                                }
-                                saveProductCell(item, column, event.target.value);
-                              }}
-                              onKeyDown={event => {
-                                if (event.key === 'Enter') event.currentTarget.blur();
-                                if (event.key === 'Escape') {
-                                  event.currentTarget.dataset.cancelEdit = 'true';
-                                  setEditDrafts(current => {
-                                    const copy = { ...current };
-                                    delete copy[key];
-                                    return copy;
-                                  });
-                                  event.currentTarget.blur();
-                                }
-                              }}
-                              aria-label={`${column.header} for ${item.name || item.id}`}
-                            />
+                            {column.options ? (
+                              <select
+                                className="products-grid-cell-input"
+                                value={value}
+                                disabled={savingCell === key}
+                                onClick={event => event.stopPropagation()}
+                                onChange={event => setEditDrafts(current => ({ ...current, [key]: event.target.value }))}
+                                onBlur={event => saveProductCell(item, column, event.target.value)}
+                                aria-label={`${column.header} for ${item.name || item.id}`}
+                              >
+                                <option value="" disabled>—</option>
+                                {column.options.map(option => <option value={option} key={option}>{option}</option>)}
+                              </select>
+                            ) : (
+                              <input
+                                className={`products-grid-cell-input${column.monospace ? ' is-code' : ''}`}
+                                value={value}
+                                disabled={savingCell === key}
+                                draggable
+                                onDragStart={event => startProductFillDrag(event, item, column, value)}
+                                onDragEnter={() => enterProductFillTarget(item, column)}
+                                onDragOver={event => overProductFillTarget(event, item, column)}
+                                onDrop={event => dropProductFill(event, item, column)}
+                                onDragEnd={endProductFillDrag}
+                                onClick={event => event.stopPropagation()}
+                                onFocus={event => event.target.select()}
+                                onChange={event => setEditDrafts(current => ({ ...current, [key]: event.target.value }))}
+                                onBlur={event => {
+                                  if (event.currentTarget.dataset.cancelEdit === 'true') {
+                                    event.currentTarget.dataset.cancelEdit = '';
+                                    return;
+                                  }
+                                  saveProductCell(item, column, event.target.value);
+                                }}
+                                onKeyDown={event => {
+                                  if (event.key === 'Enter') event.currentTarget.blur();
+                                  if (event.key === 'Escape') {
+                                    event.currentTarget.dataset.cancelEdit = 'true';
+                                    setEditDrafts(current => {
+                                      const copy = { ...current };
+                                      delete copy[key];
+                                      return copy;
+                                    });
+                                    event.currentTarget.blur();
+                                  }
+                                }}
+                                aria-label={`${column.header} for ${item.name || item.id}`}
+                              />
+                            )}
                             <span
                               className="products-grid-fill-handle"
                               draggable
@@ -3723,7 +4205,7 @@ function ProductsPage({ navigate, jobId: initJobId }) {
 }
 
 // ── Add Product form ─────────────────────────────────────────────────────────
-function AddSkuForm({ jobId, onSaved, onCancel, identifierLabel = 'Identifier' }) {
+function AddSkuForm({ jobId, onSaved, onCancel, identifierLabel = DOMAIN_TERMS.primaryMatchKey }) {
   const [form, setForm] = useState({
     productId: '', product: '', itemJobNumber: '', description: '', brand: '',
     category: '', masterOrVariant: '', pickupJobNumber: '', notes: '',
@@ -3806,6 +4288,476 @@ function AddSkuForm({ jobId, onSaved, onCancel, identifierLabel = 'Identifier' }
 }
 
 // ── Settings page ─────────────────────────────────────────────────────────────
+function ClientImportProfilesModal({ client, onClose, onSaved }) {
+  const profileNames = Object.keys(client?.productImportProfiles?.profiles || {});
+  const [selectedName, setSelectedName] = useState(client?.productImportProfiles?.defaultProfile || profileNames[0] || '');
+  const [profiles, setProfiles] = useState(() => ({ ...(client?.productImportProfiles?.profiles || {}) }));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const selectedProfile = profiles[selectedName] || { sourceHeaders: {}, targetMapping: {}, referenceDataTargets: {}, requiredTargets: [] };
+  const sourceHeaders = Object.keys(selectedProfile.sourceHeaders || {}).length
+    ? Object.keys(selectedProfile.sourceHeaders || {})
+    : [...new Set([
+      ...Object.values(selectedProfile.targetMapping || {}),
+      ...Object.keys(selectedProfile.referenceDataTargets || {}),
+    ])].filter(Boolean);
+  const targetOptions = ['Ignore', ...Object.keys(INTAKE_FALLBACK_TARGET_DESCRIPTIONS).filter(target => !['Identifier', 'Reference Data', 'Brand', 'Product or File Name', 'Product/File Name', 'Description', 'Product Job Number', 'Master or Variant', 'Pickup Job Number', 'Notes'].includes(target))]
+    .filter((target, index, list) => list.indexOf(target) === index);
+
+  function currentTarget(source) {
+    const mappedTarget = Object.entries(selectedProfile.targetMapping || {}).find(([, value]) => value === source)?.[0];
+    if (mappedTarget) return mappedTarget;
+    if (selectedProfile.referenceDataTargets?.[source]) return 'Ignore';
+    return 'Ignore';
+  }
+
+  function updateSourceTarget(source, target) {
+    setProfiles(current => {
+      const nextProfile = { ...current[selectedName] };
+      const targetMapping = { ...(nextProfile.targetMapping || {}) };
+      const referenceDataTargets = { ...(nextProfile.referenceDataTargets || {}) };
+      Object.entries(targetMapping).forEach(([mappedTarget, mappedSource]) => {
+        if (mappedSource === source || mappedTarget === target) delete targetMapping[mappedTarget];
+      });
+      delete referenceDataTargets[source];
+      if (target === 'Reference Data') referenceDataTargets[source] = 'Reference Data';
+      else if (target !== 'Ignore') targetMapping[target] = source;
+      return { ...current, [selectedName]: { ...nextProfile, targetMapping, referenceDataTargets } };
+    });
+  }
+
+  async function save() {
+    if (!selectedName) return;
+    setSaving(true); setError('');
+    try {
+      const data = await api.updateClient(client.id, {
+        productImportProfiles: {
+          defaultProfile: selectedName,
+          profiles,
+        },
+      });
+      onSaved(data.client);
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Could not save the mapping.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteMapping() {
+    if (!selectedName) return;
+    if (!window.confirm(`Delete the “${selectedName}” product import mapping for ${client.name}?`)) return;
+    setSaving(true); setError('');
+    try {
+      const profilesToSave = { ...profiles };
+      delete profilesToSave[selectedName];
+      const remainingNames = Object.keys(profilesToSave);
+      const currentDefault = client.productImportProfiles?.defaultProfile;
+      const defaultProfile = currentDefault === selectedName ? (remainingNames[0] || '') : currentDefault;
+      const data = await api.updateClient(client.id, {
+        productImportProfiles: {
+          defaultProfile,
+          profiles: profilesToSave,
+        },
+      });
+      onSaved(data.client);
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Could not delete the mapping.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return createPortal(
+    <div className="modal-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="modal client-import-editor" role="dialog" aria-modal="true" aria-labelledby="client-import-editor-title">
+        <div className="modal-header">
+          <div>
+            <div className="modal-title" id="client-import-editor-title">Edit Product Import Mapping</div>
+            <div className="modal-subtitle">{client.name}</div>
+          </div>
+          <button className="modal-close" type="button" onClick={onClose} aria-label="Close">×</button>
+        </div>
+        {profileNames.length === 0 ? <div className="empty-state">No saved mappings for this Client.</div> : (
+          <>
+            <div className="client-import-editor-controls">
+              <label>
+                Mapping
+                <select value={selectedName} onChange={event => setSelectedName(event.target.value)}>
+                  {profileNames.map(name => <option value={name} key={name}>{name}</option>)}
+                </select>
+              </label>
+              <label className="client-import-default-check">
+                <input type="checkbox" checked={client.productImportProfiles?.defaultProfile === selectedName} readOnly />
+                Default mapping
+              </label>
+              <button className="btn btn-ghost client-import-delete" type="button" onClick={deleteMapping} disabled={saving} title={`Delete ${selectedName}`} aria-label={`Delete ${selectedName}`}>
+                <Trash2 size={16} />
+                Delete
+              </button>
+            </div>
+            <div className="client-import-editor-table">
+              <div className="client-import-editor-head"><span>Source column</span><span>Destination field</span></div>
+              {sourceHeaders.map(source => (
+                <div className="client-import-editor-row" key={source}>
+                  <strong>{source}</strong>
+                  <select value={currentTarget(source)} onChange={event => updateSourceTarget(source, event.target.value)}>
+                    {targetOptions.map(target => <option value={target} key={target}>{target === 'Ignore' ? 'Do not import' : mappingTargetLabel(target, client.primaryMatchKeyLabel)}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        {error && <div className="error-state">{error}</div>}
+        <div className="form-actions">
+          <button className="btn btn-primary" type="button" onClick={save} disabled={saving || !selectedName}>{saving ? 'Saving…' : 'Save mapping'}</button>
+          <button className="btn btn-ghost" type="button" onClick={onClose}>Cancel</button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+const PHOTO_PRODUCTION_FIELD_LABELS = {
+  productName: 'Product Name',
+  upc: 'UPC / Product ID',
+  cvid: 'CVID',
+  jobNumber: 'Job Number',
+  brandPrefix: 'Brand Prefix',
+  fileNameDescription: 'File Name Description',
+  productDescription: 'Product Description',
+  productType: 'Product Type',
+  ecommPhotoNotes: 'Ecomm Photo Notes',
+  pathToArt: 'Valid Artwork Path',
+};
+const PHOTO_PRODUCTION_FIELD_OPTIONS = {
+  Packaging: ['productName', 'upc', 'jobNumber', 'brandPrefix', 'fileNameDescription', 'productDescription', 'productType', 'pathToArt'],
+  Ecomm: ['productName', 'upc', 'cvid', 'jobNumber', 'productDescription', 'productType', 'ecommPhotoNotes', 'pathToArt'],
+};
+const PHOTO_PRODUCTION_CF_PRODUCT_CODE_OPTIONS = ['productName', 'upc', 'cvid', 'jobNumber', 'brandPrefix', 'fileNameDescription', 'productDescription', 'productType'];
+const PHOTO_PRODUCTION_FILENAME_OPTIONS = ['productName', 'upc', 'cvid', 'jobNumber', 'brandPrefix', 'fileNameDescription', 'productDescription', 'productType', 'view'];
+const PHOTO_PRODUCTION_CF_CATEGORY_OPTIONS = [
+  { value: 'clientName', label: 'Client Name' },
+  { value: 'productName', label: 'Product Name' },
+  { value: 'brandPrefix', label: 'Brand Prefix' },
+  { value: 'productType', label: 'Product Type' },
+  { value: 'custom', label: 'Custom value' },
+];
+const TOPCO_PHOTO_PRODUCTION_DEFAULTS = {
+  version: 1,
+  workstreams: {
+    Packaging: {
+      requiredProductFields: ['productName', 'upc', 'jobNumber', 'brandPrefix', 'fileNameDescription'],
+      naming: { template: '{jobNumber}_{brandPrefix}_{fileNameDescription}', tokens: ['jobNumber', 'brandPrefix', 'fileNameDescription'], views: [] },
+      creativeForce: { productCodeField: '', categoryField: 'clientName', categoryValue: '' },
+    },
+    Ecomm: {
+      requiredProductFields: ['productName', 'upc', 'cvid', 'pathToArt'],
+      naming: { template: '{cvid}_{view}', tokens: ['cvid', 'view'], views: ['front', 'back', 'left', 'right', 'top', 'bottom', 'frontelevated', 'leftelevated', 'rightelevated'] },
+      creativeForce: { productCodeField: '', categoryField: 'clientName', categoryValue: '' },
+    },
+  },
+};
+
+function fallbackPhotoProductionStatus(type, item = {}) {
+  const clientRequirements = item.clientPhotoProductionRequirements || item.client?.photoProductionRequirements || item.record?.clientPhotoProductionRequirements;
+  const clientConfig = clientRequirements?.workstreams?.[type];
+  const clientName = String(typeof item.client === 'string' ? item.client : item.client?.name || item.record?.clientName || '').trim().toLowerCase();
+  const config = clientConfig || (clientName === 'topco' ? TOPCO_PHOTO_PRODUCTION_DEFAULTS.workstreams[type] : null);
+  if (!config) return null;
+  const product = item.record?.linkedItem || {};
+  const checks = (config.requiredProductFields || []).map(key => ({
+    key,
+    label: PHOTO_PRODUCTION_FIELD_LABELS[key] || key,
+    present: Boolean(String(photoProductionProductValue(product, key) || '').trim()),
+  }));
+  return {
+    workstreamType: type,
+    productData: {
+      checks,
+      missing: checks.filter(check => !check.present).map(check => check.label),
+      ready: checks.every(check => check.present),
+    },
+    fileNaming: {
+      template: config.naming?.template || '',
+      checks: [],
+      missing: [],
+      ready: true,
+    },
+    creativeForce: {
+      checks: [],
+      missing: [],
+      ready: true,
+    },
+  };
+}
+
+function photoProductionStatusForItem(item = {}) {
+  const record = item.record || {};
+  const type = item.workstreamType || record.workstreamType || item.deliverableRoute;
+  if (!['Packaging', 'Ecomm'].includes(type)) return item.photoProduction || record.photoProduction || null;
+  const existing = item.photoProduction || record.photoProduction;
+  const status = existing?.workstreamType ? existing : existing?.[type];
+  const hasChecks = (status?.productData?.checks || []).length > 0
+    || (status?.creativeForce?.checks || []).length > 0;
+  const resolved = fallbackPhotoProductionStatus(type, item) || (hasChecks ? status : existing) || null;
+  return resolved;
+}
+
+function evaluatedPhotoProductionStatusForType(item = {}, type) {
+  if (!['Packaging', 'Ecomm'].includes(type)) return null;
+  const currentType = item.workstreamType || item.record?.workstreamType || item.deliverableRoute;
+  const status = fallbackPhotoProductionStatus(type, item)
+    || (type === currentType ? photoProductionStatusForItem(item) : item.record?.photoProduction?.[type] || item.photoProduction?.[type]);
+  if (!status) return null;
+
+  const checks = photoProductionChecks({ [type]: status }, item).map(check => ({
+    ...check,
+    present: photoProductionValuePresent(
+      check.key,
+      photoProductionProductValue(item.record?.linkedItem || {}, check.key),
+    ),
+  }));
+  return {
+    ...status,
+    productData: {
+      ...(status.productData || {}),
+      checks,
+      missing: checks.filter(check => !check.present).map(check => check.label),
+      ready: checks.every(check => check.present),
+    },
+  };
+}
+
+function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
+  const configured = client?.photoProductionRequirements;
+  const initial = configured?.workstreams && Object.keys(configured.workstreams).length > 0
+    ? configured
+    : String(client?.name || '').trim().toLowerCase() === 'topco'
+      ? TOPCO_PHOTO_PRODUCTION_DEFAULTS
+      : { version: 1, workstreams: {} };
+  const [requirements, setRequirements] = useState(() => ({ version: 1, workstreams: { ...(initial.workstreams || {}) } }));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  function configFor(type) {
+    return requirements.workstreams?.[type] || { requiredProductFields: [], naming: { template: '', tokens: [], views: [] } };
+  }
+
+  function updateType(type, updater) {
+    setRequirements(current => {
+      const currentConfig = configFor(type);
+      return { ...current, workstreams: { ...(current.workstreams || {}), [type]: updater(currentConfig) } };
+    });
+  }
+
+  function toggleProductField(type, key) {
+    updateType(type, config => {
+      const fields = config.requiredProductFields || [];
+      return { ...config, requiredProductFields: fields.includes(key) ? fields.filter(value => value !== key) : [...fields, key] };
+    });
+  }
+
+  function updateCreativeForce(type, updates) {
+    updateType(type, config => ({
+      ...config,
+      creativeForce: { ...(config.creativeForce || {}), ...updates },
+    }));
+  }
+
+  function addFilenameField(type, key) {
+    if (!key) return;
+    updateType(type, config => {
+      const naming = config.naming || {};
+      const tokens = naming.tokens || [];
+      if (tokens.includes(key)) return config;
+      const separator = naming.separator ?? '_';
+      const nextTokens = [...tokens, key];
+      return { ...config, naming: { ...naming, tokens: nextTokens, separator, template: nextTokens.map(value => `{${value}}`).join(separator) } };
+    });
+  }
+
+  function removeFilenameField(type, key) {
+    updateType(type, config => {
+      const naming = config.naming || {};
+      const tokens = (naming.tokens || []).filter(value => value !== key);
+      const separator = naming.separator ?? '_';
+      return { ...config, naming: { ...naming, tokens, separator, template: tokens.map(value => `{${value}}`).join(separator) } };
+    });
+  }
+
+  function updateFilenameSeparator(type, separator) {
+    updateType(type, config => {
+      const naming = config.naming || {};
+      const tokens = naming.tokens || [];
+      return { ...config, naming: { ...naming, separator, template: tokens.map(value => `{${value}}`).join(separator) } };
+    });
+  }
+
+  function toggleView(type, view) {
+    updateType(type, config => {
+      const naming = config.naming || {};
+      const views = naming.views || [];
+      return { ...config, naming: { ...naming, views: views.includes(view) ? views.filter(value => value !== view) : [...views, view] } };
+    });
+  }
+
+  async function save() {
+    setSaving(true); setError('');
+    try {
+      const data = await api.updateClient(client.id, { photoProductionRequirements: requirements });
+      onSaved(data.client);
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Could not save photo production requirements.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return createPortal(
+    <div className="modal-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="modal client-photo-requirements-editor" role="dialog" aria-modal="true" aria-labelledby="client-photo-requirements-title">
+        <div className="modal-header">
+          <div>
+            <div className="modal-title" id="client-photo-requirements-title">Photo Production Requirements</div>
+            <div className="modal-subtitle">{client.name} · Choose what must be present before each workstream is handed to Ready for Photo / Creative Force.</div>
+          </div>
+          <button className="modal-close" type="button" onClick={onClose} aria-label="Close">×</button>
+        </div>
+        <div className="client-photo-requirements-grid">
+          {['Packaging', 'Ecomm'].map(type => {
+            const config = configFor(type);
+            return (
+              <section className="client-photo-requirement-column" key={type}>
+                <h3>{type}</h3>
+                <span className="client-photo-requirement-label">Required Product data</span>
+                <div className="client-photo-requirement-options">
+                  {PHOTO_PRODUCTION_FIELD_OPTIONS[type].map(key => (
+                    <label key={key}>
+                      <input type="checkbox" checked={(config.requiredProductFields || []).includes(key)} onChange={() => toggleProductField(type, key)} />
+                      {PHOTO_PRODUCTION_FIELD_LABELS[key]}
+                    </label>
+                  ))}
+                </div>
+                <span className="client-photo-requirement-label">Creative Force handoff</span>
+                <div className="client-photo-cf-handoff">
+                  <label className="client-photo-template-field client-photo-cf-field">
+                    <span>Creative Force Product Code</span>
+                    <select value={config.creativeForce?.productCodeField || ''} onChange={event => updateCreativeForce(type, { productCodeField: event.target.value })}>
+                      <option value="">Choose a Product field</option>
+                      {PHOTO_PRODUCTION_CF_PRODUCT_CODE_OPTIONS.map(key => <option value={key} key={key}>{PHOTO_PRODUCTION_FIELD_LABELS[key]}</option>)}
+                    </select>
+                  </label>
+                  <label className="client-photo-template-field client-photo-cf-field">
+                    <span>Creative Force Category</span>
+                    <select value={config.creativeForce?.categoryField || 'clientName'} onChange={event => updateCreativeForce(type, { categoryField: event.target.value, categoryValue: '' })}>
+                      {PHOTO_PRODUCTION_CF_CATEGORY_OPTIONS.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                  {config.creativeForce?.categoryField === 'custom' && <label className="client-photo-template-field client-photo-cf-field">
+                    <span>Custom Category value</span>
+                    <input value={config.creativeForce?.categoryValue || ''} onChange={event => updateCreativeForce(type, { categoryValue: event.target.value })} placeholder="e.g. Grocery" />
+                  </label>}
+                </div>
+                <span className="client-photo-requirement-label">Filename recipe</span>
+                <div className="client-photo-filename-builder">
+                  <div className="client-photo-filename-builder-controls">
+                    <select defaultValue="" onChange={event => { addFilenameField(type, event.target.value); event.target.value = ''; }} aria-label={`Add ${type} filename field`}>
+                      <option value="">Add Product field...</option>
+                      {PHOTO_PRODUCTION_FILENAME_OPTIONS.filter(key => !(config.naming?.tokens || []).includes(key) && (key !== 'view' || type === 'Ecomm')).map(key => (
+                        <option value={key} key={key}>{PHOTO_PRODUCTION_FIELD_LABELS[key] || 'View'}</option>
+                      ))}
+                    </select>
+                    <select value={config.naming?.separator ?? '_'} onChange={event => updateFilenameSeparator(type, event.target.value)} aria-label={`${type} filename separator`}>
+                      <option value="_">_ underscore</option>
+                      <option value="-">- dash</option>
+                      <option value=".">. period</option>
+                      <option value=" ">space</option>
+                      <option value="">none</option>
+                    </select>
+                  </div>
+                  <div className="client-photo-filename-recipe">
+                    {(config.naming?.tokens || []).length === 0 ? <span className="client-photo-naming-empty">Add fields in the order Creative Force should use.</span> : (config.naming.tokens || []).map((key, index) => (
+                      <span className="client-photo-filename-token" key={`${key}-${index}`}>
+                        {PHOTO_PRODUCTION_FIELD_LABELS[key] || 'View'}
+                        <button type="button" onClick={() => removeFilenameField(type, key)} aria-label={`Remove ${PHOTO_PRODUCTION_FIELD_LABELS[key] || key}`}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                  <code className="client-photo-template-preview">{(config.naming?.tokens || []).map(value => `{${value}}`).join(config.naming?.separator ?? '_') || 'Filename preview will appear here'}</code>
+                </div>
+                {type === 'Ecomm' && <>
+                    <span className="client-photo-requirement-label">Views included in handoff</span>
+                  <div className="client-photo-view-options">
+                    {['front', 'back', 'left', 'right', 'top', 'bottom', 'frontelevated', 'leftelevated', 'rightelevated'].map(view => (
+                      <label key={view}><input type="checkbox" checked={(config.naming?.views || []).includes(view)} onChange={() => toggleView(type, view)} />{view}</label>
+                    ))}
+                  </div>
+                </>}
+              </section>
+            );
+          })}
+        </div>
+        {error && <div className="error-state">{error}</div>}
+        <div className="client-photo-requirements-footer">
+          <span>These checks appear on the workstream card as Product data and Creative Force handoff validation.</span>
+          <div className="form-actions">
+          <button className="btn btn-primary" type="button" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save requirements'}</button>
+          <button className="btn btn-ghost" type="button" onClick={onClose}>Cancel</button>
+          </div>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function CreativeForceAdminSection() {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const feed = useResource(() => api.previewCreativeForceProductFeed(), [refreshKey]);
+  const preview = feed.data || {};
+  const counts = preview.counts || {};
+  const rows = preview.rows || [];
+
+  return (
+    <div className="page-stack">
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <span className="panel-title">Creative Force handoff</span>
+            <p className="panel-subtitle">Review client-configured Product requirements and the work that can be sent to Creative Force.</p>
+          </div>
+          <button className="btn btn-ghost" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={feed.loading}>Refresh</button>
+        </div>
+        {feed.loading && <div className="empty-state">Loading handoff preview…</div>}
+        {feed.error && <div className="error-state">{feed.error}</div>}
+        {!feed.loading && !feed.error && <>
+          <div className="settings-list">
+            <div className="setting-row"><span className="setting-key">Airtable feed table</span><span className="setting-val">{preview.table || 'Creative Force Product Feed'} {preview.tableProvisioned ? <span className="badge badge-green">Provisioned</span> : <span className="badge badge-amber">Not provisioned</span>}</span></div>
+            <div className="setting-row"><span className="setting-key">Rows ready for handoff</span><span className="setting-val">{counts.ready || 0} workstream{counts.ready === 1 ? '' : 's'}</span></div>
+            <div className="setting-row"><span className="setting-key">Existing feed rows</span><span className="setting-val">{counts.existing || 0}</span></div>
+          </div>
+          <div className="form-hint">Rows are populated automatically when an Ecomm or Packaging card moves to Ready for Photo.</div>
+          <div className="table-wrap requirements-table">
+            <table>
+              <thead><tr><th>Product</th><th>Workstream</th><th>Product Code</th><th>Category</th></tr></thead>
+              <tbody>
+                {rows.length === 0 && <tr><td colSpan="4" className="empty-state">No handoff rows are ready.</td></tr>}
+                {rows.map(row => <tr key={row.sourceKey}><td>{row.fields?.Product || '—'}<small>{row.fields?.Client || ''}</small></td><td>{row.workstreamType || '—'}</td><td>{row.fields?.['Product Code'] || '—'}</td><td>{row.fields?.Category || '—'}</td></tr>)}
+              </tbody>
+            </table>
+          </div>
+        </>}
+      </div>
+    </div>
+  );
+}
+
 function SettingsPage({ cards = null } = {}) {
   const { data, loading, error } = useResource(() => api.settings());
   const clients = useResource(() => api.listClients({ all: true }));
@@ -3818,6 +4770,8 @@ function SettingsPage({ cards = null } = {}) {
   const [clearSummary, setClearSummary] = useState(null);
   const [clearError, setClearError] = useState('');
   const [collapsedSections, setCollapsedSections] = useState({});
+  const [editingImportClient, setEditingImportClient] = useState(null);
+  const [editingPhotoRequirementsClient, setEditingPhotoRequirementsClient] = useState(null);
   const hasCard = id => !cards || cards.includes(id);
   const sectionOpen = key => !collapsedSections[key];
   const toggleSection = key => setCollapsedSections(sections => ({ ...sections, [key]: !sections[key] }));
@@ -3835,11 +4789,9 @@ function SettingsPage({ cards = null } = {}) {
   }
   const clientRequirementsExportColumns = [
     { header: 'Client', key: 'name' },
-    { header: 'Identifier Type', value: client => client.codeType || client.identifierLabel || '' },
-    { header: 'Required to Shoot', value: client => (client.requiredToShoot ?? []).join(', ') || 'Identifier' },
-    { header: 'Artwork', value: client => client.artworkRequirement || 'Optional' },
-    { header: 'Merchandise', value: client => client.merchandiseRequired === false ? 'Not required' : 'Required' },
-    { header: 'Readiness Mode', value: client => client.readinessProfile?.label || 'Standard' },
+    { header: 'Product ID', value: client => clientProductIdLabel(client) },
+    { header: 'Product Imports', value: client => Object.keys(client.productImportProfiles?.profiles || {}).length ? `${Object.keys(client.productImportProfiles.profiles).length} saved` : 'Not configured' },
+    { header: 'Photo Requirements', value: client => ['Packaging', 'Ecomm'].map(type => client.photoProductionRequirements?.workstreams?.[type] ? `${type}: configured` : `${type}: not configured`).join('; ') },
   ];
 
   function ClientReadinessProfile({ profile }) {
@@ -3907,9 +4859,12 @@ function SettingsPage({ cards = null } = {}) {
   async function clearCoreTables() {
     const merchandiseTable = s?.tables?.merchandise || s?.tables?.receiptEntries || 'Merchandise';
     const shipmentsTable = s?.tables?.shipments || s?.tables?.receipts || 'Shipments';
-    const productsTable = s?.tables?.products || s?.tables?.items || 'Products';
-    const typed = window.prompt(`This will delete all rows from ${technicalTableLabel(merchandiseTable)}, ${technicalTableLabel(shipmentsTable)}, ${technicalTableLabel(productsTable)}, History, Jobs, and Imports. Type DELETE to continue.`);
-    if (typed !== 'DELETE') return;
+    const workstreamCardsTable = s?.tables?.workstreamCards || 'Workstream Cards';
+    const thr3dShippingItemsTable = s?.tables?.thr3dShippingItems || 'THR3D Shipping Items';
+    const activationsTable = s?.tables?.activations || 'Activations';
+    const commentsTable = s?.tables?.comments || 'Comments';
+    const typed = window.prompt(`This will delete testing/workflow rows from ${technicalTableLabel(merchandiseTable)}, ${technicalTableLabel(shipmentsTable)}, ${technicalTableLabel(workstreamCardsTable)}, ${technicalTableLabel(thr3dShippingItemsTable)}, ${technicalTableLabel(activationsTable)}, Issues, ${technicalTableLabel(commentsTable)}, History, Jobs, and Imports. Products, Clients, Users, and Locations will be kept. Type DELETE TEST DATA to continue.`);
+    if (typed !== 'DELETE TEST DATA') return;
     setClearing(true);
     setClearError('');
     setClearSummary(null);
@@ -3990,55 +4945,44 @@ function SettingsPage({ cards = null } = {}) {
             <thead>
               <tr>
                 <th>Client</th>
-                <th>Identifier Type</th>
-                <th>Required to Shoot</th>
-                <th>Artwork</th>
-                <th>Merchandise</th>
-                <th>Readiness</th>
+                <th>Product ID</th>
+                <th>Product Imports</th>
+                <th>Photo Production</th>
               </tr>
             </thead>
             <tbody>
-              {clients.loading && <tr><td colSpan="6" className="empty-state">Loading clients…</td></tr>}
+              {clients.loading && <tr><td colSpan="4" className="empty-state">Loading clients…</td></tr>}
               {!clients.loading && clientList.map(client => (
                 <Fragment key={client.id}>
                   <tr>
                     <td>
                       <div className="requirements-client">
                         <span>{client.name}</span>
-                        <small>{client.identifierLabel || 'Identifier'}</small>
+                        <small>{clientProductIdLabel(client)}</small>
                       </div>
                     </td>
-                    <td><span className="requirements-code">{client.codeType || '—'}</span></td>
+                    <td><span className="requirements-code">{clientProductIdLabel(client)}</span></td>
                     <td>
-                      <div className="requirements-chips">
-                        {((client.requiredToShoot ?? []).length ? client.requiredToShoot : ['Identifier']).map(field => (
-                          <span className="requirements-chip" key={field}>{field}</span>
-                        ))}
+                      <div className="client-import-profiles">
+                        {Object.keys(client.productImportProfiles?.profiles || {}).length > 0 ? (
+                          <>
+                            <span className="badge badge-blue">{Object.keys(client.productImportProfiles.profiles).length} saved</span>
+                            <small>Default: {client.productImportProfiles.defaultProfile || 'None'}</small>
+                          </>
+                        ) : <span className="badge badge-neutral">None saved</span>}
+                        {Object.keys(client.productImportProfiles?.profiles || {}).length > 0 && <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEditingImportClient(client)}>Edit mapping</button>}
                       </div>
                     </td>
                     <td>
-                      <span className={`badge ${client.artworkRequirement === 'Required' ? 'badge-amber' : 'badge-neutral'}`}>
-                        {client.artworkRequirement || 'Optional'}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`badge ${client.merchandiseRequired === false ? 'badge-neutral' : 'badge-blue'}`}>
-                        {client.merchandiseRequired === false ? 'Not required' : 'Required'}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`badge ${client.readinessProfile ? 'badge-blue' : 'badge-neutral'}`}>
-                        {client.readinessProfile?.label || 'Standard'}
-                      </span>
+                      <div className="client-import-profiles">
+                        {['Packaging', 'Ecomm'].map(type => {
+                          const config = client.photoProductionRequirements?.workstreams?.[type];
+                          return <small key={type}><strong>{type}:</strong> {(config?.requiredProductFields || []).map(field => PHOTO_PRODUCTION_FIELD_LABELS[field] || field).join(', ') || 'Not configured'}</small>;
+                        })}
+                        <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEditingPhotoRequirementsClient(client)}>Edit requirements</button>
+                      </div>
                     </td>
                   </tr>
-                  {client.readinessProfile && (
-                    <tr className="client-readiness-row">
-                      <td colSpan="6">
-                        <ClientReadinessProfile profile={client.readinessProfile} />
-                      </td>
-                    </tr>
-                  )}
                 </Fragment>
               ))}
             </tbody>
@@ -4058,10 +5002,10 @@ function SettingsPage({ cards = null } = {}) {
               </button>
             </div>
             <div className="setting-row setting-row-danger">
-              <span className="setting-key">Clear Core Tables</span>
-              <span className="setting-val">Delete all rows from {technicalTableLabel(s.tables?.merchandise || s.tables?.receiptEntries || 'Merchandise')}, {technicalTableLabel(s.tables?.shipments || s.tables?.receipts || 'Shipments')}, {technicalTableLabel(s.tables?.products || s.tables?.items || 'Products')}, History, Jobs, and Imports.</span>
+              <span className="setting-key">Reset Test Data</span>
+              <span className="setting-val">Delete workflow/testing rows from {technicalTableLabel(s.tables?.merchandise || s.tables?.receiptEntries || 'Merchandise')}, {technicalTableLabel(s.tables?.shipments || s.tables?.receipts || 'Shipments')}, Workstream Cards, THR3D Shipping Items, Activations, Issues, Comments, History, Jobs, Imports, and referenced uploaded photos. Products are kept.</span>
               <button className="btn btn-danger" type="button" onClick={clearCoreTables} disabled={clearing}>
-                {clearing ? 'Deleting…' : 'Delete Rows'}
+                {clearing ? 'Deleting…' : 'Reset Test Data'}
               </button>
             </div>
           </div>
@@ -4090,6 +5034,23 @@ function SettingsPage({ cards = null } = {}) {
           </>}
         </div>
       )}
+      {editingImportClient && (
+        <ClientImportProfilesModal
+          client={editingImportClient}
+          onClose={() => setEditingImportClient(null)}
+          onSaved={updatedClient => setEditingImportClient(updatedClient)}
+        />
+      )}
+      {editingPhotoRequirementsClient && (
+        <ClientPhotoProductionRequirementsModal
+          client={editingPhotoRequirementsClient}
+          onClose={() => setEditingPhotoRequirementsClient(null)}
+          onSaved={updated => {
+            clients.reload({ quiet: true });
+            setEditingPhotoRequirementsClient(updated);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -4098,6 +5059,18 @@ function SettingsPage({ cards = null } = {}) {
 const INTAKE_TARGET_LABELS = {
   'Product Name': getFieldLabel('Product Name', 'product'),
   Identifier: getFieldLabel('Identifier', 'product'),
+  UPC: 'UPC',
+  CVID: 'CVID',
+  'Brand Prefix': 'Brand Prefix',
+  'Request Type': 'Request Type',
+  'Project Status': 'Project Status',
+  'WKFT Job Number': 'WKFT Job Number',
+  'Mbox Number': 'Mbox Number',
+  'Product Type': 'Product Type',
+  'Product Description': 'Product Description',
+  'Link to Prepro/Overlays': 'Link to Prepro/Overlays',
+  'Ecomm Photo Notes': 'Ecomm Photo Notes',
+  'Path to Art': 'Path to Art',
   'Product or File Name': getFieldLabel('Product or File Name', 'product'),
   'Product/File Name': getFieldLabel('Product/File Name', 'product'),
   Description: getFieldLabel('Description', 'product'),
@@ -4114,7 +5087,19 @@ const INTAKE_TARGET_LABELS = {
 
 const INTAKE_FALLBACK_TARGET_DESCRIPTIONS = {
   'Product Name': 'Optional product display name in the app.',
-  Identifier: 'Client product identifier.',
+  Identifier: 'Primary value used to match received merchandise to this expected Product.',
+  UPC: 'UPC match key stored separately from the internal Product record ID.',
+  CVID: 'Client product reference used alongside the UPC when provided.',
+  'Brand Prefix': 'Client naming prefix for this product.',
+  'Request Type': 'Requested production route for this Product.',
+  'Project Status': 'Client project status for this Product.',
+  'WKFT Job Number': 'Client or production job reference.',
+  'Mbox Number': 'Client merchandise box reference.',
+  'Product Type': 'Product structure or storage category.',
+  'Product Description': 'Client-provided product description.',
+  'Link to Prepro/Overlays': 'Link to preproduction or overlay materials.',
+  'Ecomm Photo Notes': 'Notes for Ecomm photography.',
+  'Path to Art': 'Path or reference to product artwork.',
   'Product or File Name': 'Product or file name.',
   Description: 'Longer source product description.',
   'Product Job Number': 'Row-level job or project number for the product.',
@@ -4128,15 +5113,16 @@ const INTAKE_FALLBACK_TARGET_DESCRIPTIONS = {
   'Reference Data': 'Preserve source values as product reference JSON.',
 };
 
-const INTAKE_REQUIRED_TARGETS = ['Identifier'];
+const INTAKE_REQUIRED_TARGETS = [];
 const KNOWN_INTAKE_MAPPINGS = {
+  topco: { 'Product Name': 'Product Name', CVID: 'CVID', UPC: 'Identifier', 'Brand Prefix': 'Brand Prefix', 'Product Type': 'Product Type' },
   kroger: { 'Job #': 'Product Job Number', Description: 'Description', UPC: 'Identifier', Brand: 'Brand', 'Product Received': 'Product Name', Notes: 'Notes' },
   unfi: { 'Project Number': 'Product Job Number', Description: 'Description', UPC: 'Identifier', Notes: 'Notes' },
   smithfield: { 'Job #': 'Product Job Number', 'GAR #': 'Identifier', Brand: 'Brand', 'Product Description': 'Description', Notes: 'Notes' },
 };
 const INTAKE_TARGET_FIELDS = {
   'Job Name': 'jobName', 'Parent Job Number': 'parentJobNumber', 'Due Date': 'due',
-  'Product Name': 'itemName', Identifier: 'id', 'Product or File Name': 'product', 'Product/File Name': 'product', Description: 'description', 'Product Job Number': 'itemJobNumber', 'Master or Variant': 'masterOrVariant', 'Pickup Job Number': 'pickupJobNumber', Brand: 'brand', Notes: 'notes',
+  'Product Name': 'itemName', Identifier: 'id', UPC: 'id', CVID: 'cvid', 'Brand Prefix': 'brandPrefix', 'Request Type': 'requestType', 'Project Status': 'projectStatus', 'WKFT Job Number': 'wkftJobNumber', 'Mbox Number': 'mboxNumber', 'Product Type': 'productType', 'Product Description': 'productDescription', 'Link to Prepro/Overlays': 'preproOverlays', 'Ecomm Photo Notes': 'ecommPhotoNotes', 'Path to Art': 'pathToArt', 'Product or File Name': 'product', 'Product/File Name': 'product', Description: 'description', 'Product Job Number': 'itemJobNumber', 'Master or Variant': 'masterOrVariant', 'Pickup Job Number': 'pickupJobNumber', Brand: 'brand', Notes: 'notes',
 };
 const INTAKE_WIZARD_STEPS = [
   { id: 'upload', label: 'Upload' },
@@ -4146,13 +5132,13 @@ const INTAKE_WIZARD_STEPS = [
   { id: 'summary', label: 'Summary' },
 ];
 
-function mappingTargetLabel(target, identifierLabel = 'Identifier') {
-  if (target === 'Identifier') return identifierLabel || 'Identifier';
+function mappingTargetLabel(target, identifierLabel = DOMAIN_TERMS.primaryMatchKey) {
+  if (target === 'Identifier') return 'UPC';
   return INTAKE_TARGET_LABELS[target] || target || '';
 }
-function mappingTargetTechnicalLabel(target, identifierLabel = 'Identifier') {
+function mappingTargetTechnicalLabel(target, identifierLabel = DOMAIN_TERMS.primaryMatchKey) {
   if (!target || target === 'Ignore') return '';
-  if (target === 'Identifier') return labelWithFieldMeaning(target, identifierLabel || 'Identifier');
+  if (target === 'Identifier') return 'UPC match key used to match Received Merch to expected Products.';
   return labelWithFieldMeaning(target, mappingTargetLabel(target, identifierLabel));
 }
 function labelWithFieldMeaning(fieldName, label) {
@@ -4179,6 +5165,8 @@ function buildInitialColumnMapping(headers, clientName) {
   }
   [
     ['Identifier', ['upc', 'gtin', 'gar', 'itemnumber', 'sku']],
+    ['CVID', ['cvid']],
+    ['Brand Prefix', ['brandprefix', 'brandcode']],
     ['Product or File Name', ['productfilename', 'productname']],
     ['Description', ['description', 'productdescription', 'productreceived', 'itemdescription']],
     ['Product Job Number', ['jobnumber', 'jobid', 'job', 'projectnumber', 'project']],
@@ -4199,6 +5187,44 @@ function targetMappingFromSourceMapping(sourceMapping) {
     return targets;
   }, {});
 }
+function productImportProfileState(profile, headers) {
+  const clientName = arguments[2] || '';
+  const availableHeaders = new Set(headers || []);
+  const targetMapping = Object.entries(profile?.targetMapping || {}).reduce((next, [target, source]) => {
+    if (source && availableHeaders.has(source)) next[target] = source;
+    return next;
+  }, {});
+  const referenceSources = Object.entries(profile?.referenceDataTargets || {})
+    .filter(([source, target]) => availableHeaders.has(source) && target && target !== 'Ignore')
+    .map(([source]) => source);
+  const sourceMapping = (headers || []).reduce((next, header) => {
+    const mappedTarget = Object.entries(targetMapping).find(([, source]) => source === header)?.[0];
+    next[header] = mappedTarget || (referenceSources.includes(header) ? 'Reference Data' : 'Ignore');
+    return next;
+  }, {});
+  if (clientName.trim().toLowerCase() === 'topco' && availableHeaders.has('Product Type') && !targetMapping['Product Type']) {
+    targetMapping['Product Type'] = 'Product Type';
+    sourceMapping['Product Type'] = 'Product Type';
+  }
+  return { sourceMapping, targetMapping };
+}
+function defaultImportProfileName(profileStore) {
+  const profiles = profileStore?.profiles || {};
+  const configured = profileStore?.defaultProfile || '';
+  return profiles[configured] ? configured : Object.keys(profiles)[0] || '';
+}
+function productImportProfilePayload(name, headers, sourceMapping, targetMapping, requiredTargets) {
+  return {
+    sourceHeaders: Object.fromEntries((headers || []).map(header => [header, header])),
+    targetMapping: { ...(targetMapping || {}) },
+    referenceDataTargets: Object.fromEntries(
+      Object.entries(sourceMapping || {})
+        .filter(([, target]) => target === 'Reference Data')
+        .map(([source]) => [source, 'Reference Data']),
+    ),
+    requiredTargets: [...(requiredTargets || [])],
+  };
+}
 function requiredMappingGaps(targetMapping) {
   const mapped = new Set(Object.entries(targetMapping || {}).filter(([, source]) => source).map(([target]) => target));
   return INTAKE_REQUIRED_TARGETS.filter(target => !mapped.has(target));
@@ -4207,6 +5233,7 @@ function mappingForApi(sourceMapping, targetMapping, importSettings = {}) {
   return {
     ...sourceMapping,
     __targetMapping: targetMapping,
+    ...(importSettings.mode === 'none' ? { __noJob: true } : {}),
     ...(importSettings.mode === 'existing' ? {
       __existingJobId: importSettings.existingJobId,
       __existingJobName: importSettings.existingJobName || '',
@@ -4239,13 +5266,16 @@ function IntakePage({ navigate }) {
   const clients = useResource(() => api.intakeListClients());
   const mappingTargets = useResource(() => api.intakeMappingTargets());
   const clientList = clients.data?.records ?? [];
+  const [clientOverrides, setClientOverrides] = useState({});
   const [clientId, setClientId] = useState('');
   const intakeJobs = useResource(() => clientId ? api.listJobs(clientId) : Promise.resolve({ records: [] }), [clientId]);
   const intakeJobList = intakeJobs.data?.records ?? [];
-  const selectedClient = clientList.find(client => client.id === clientId);
-  const identifierLabel = getIdentifierLabel({ client: selectedClient });
+  const selectedClientBase = clientList.find(client => client.id === clientId);
+  const selectedClient = selectedClientBase ? { ...selectedClientBase, ...(clientOverrides[clientId] || {}) } : null;
+  const identifierLabel = getPrimaryMatchKeyLabel({ client: selectedClient });
   const [step, setStep] = useState('upload');
   const [file, setFile] = useState(null);
+  const [headerRow, setHeaderRow] = useState('');
   const [preview, setPreview] = useState(null);
   const [review, setReview] = useState(null);
   const [editableRows, setEditableRows] = useState([]);
@@ -4259,6 +5289,9 @@ function IntakePage({ navigate }) {
   const [notice, setNotice] = useState('');
   const [showImportSettings, setShowImportSettings] = useState(false);
   const [importSettings, setImportSettings] = useState({ mode: '', existingJobId: '', existingJobName: '', groupField: '', singleJobName: '' });
+  const [profileName, setProfileName] = useState('');
+  const [activeProfileName, setActiveProfileName] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const targetDescriptions = { ...INTAKE_FALLBACK_TARGET_DESCRIPTIONS, ...Object.fromEntries((mappingTargets.data?.targets ?? []).map(item => [item.target, item.description])) };
   const headers = preview?.columnHeaders ?? [];
@@ -4271,7 +5304,8 @@ function IntakePage({ navigate }) {
 
   function resetIntake() {
     setStep('upload'); setFile(null); setPreview(null); setReview(null); setEditableRows([]); setSummary(null); setImportId('');
-    setColumnMapping({}); setTargetMapping({}); setError(''); setNotice(''); setShowImportSettings(false); setImportSettings({ mode: '', existingJobId: '', existingJobName: '', groupField: '', singleJobName: '' });
+    setColumnMapping({}); setTargetMapping({}); setError(''); setNotice(''); setHeaderRow(''); setShowImportSettings(false); setImportSettings({ mode: '', existingJobId: '', existingJobName: '', groupField: '', singleJobName: '' });
+    setProfileName(''); setActiveProfileName(''); setSavingProfile(false);
   }
   async function parseFile(nextFile) {
     setError(''); setNotice(''); setReview(null); setSummary(null);
@@ -4282,8 +5316,20 @@ function IntakePage({ navigate }) {
       const mapping = buildInitialColumnMapping(data.columnHeaders || [], selectedClient?.name || '');
       setPreview({ ...data, fileSize: nextFile.size, clientName: selectedClient?.name || '' });
       setColumnMapping(mapping); setTargetMapping(targetMappingFromSourceMapping(mapping)); setImportId(data.importId || ''); setStep('upload');
+      // Keep the control on Automatic; preview.headerRow records the row detection chose.
+      setHeaderRow('');
       setImportSettings({ mode: '', existingJobId: '', existingJobName: '', groupField: '', singleJobName: '' });
       setShowImportSettings(true);
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  }
+  async function changeHeaderRow(value) {
+    setHeaderRow(value); setError(''); setNotice(''); setBusy(true);
+    try {
+      const data = await api.previewSpreadsheet({ clientId, file, headerRow: value === 'auto' ? '' : value });
+      const mapping = buildInitialColumnMapping(data.columnHeaders || [], selectedClient?.name || '');
+      setPreview(current => ({ ...current, ...data, fileSize: file?.size, clientName: selectedClient?.name || '' }));
+      setColumnMapping(mapping); setTargetMapping(targetMappingFromSourceMapping(mapping)); setImportId(data.importId || importId);
+      setReview(null); setEditableRows([]); setSummary(null);
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
   function updateTargetColumn(target, source) {
@@ -4314,10 +5360,8 @@ function IntakePage({ navigate }) {
   function validateEditedIdentifier(value) {
     const text = String(value || '').trim();
     const codeType = selectedClient?.codeType || review?.codeType || '';
-    if (codeType === 'UPC-12' && !(text.match(/^\d{12}$/))) return `${identifierLabel} must be exactly 12 digits.`;
     if (codeType === 'GTIN-14' && !(text.match(/^\d{14}$/))) return `${identifierLabel} must be exactly 14 digits.`;
     if (codeType === 'GTIN-13' && !(text.match(/^\d{13}$/))) return `${identifierLabel} must be exactly 13 digits.`;
-    if (codeType === 'GTIN-12' && !(text.match(/^\d{12}$/))) return `${identifierLabel} must be exactly 12 digits.`;
     if (codeType === 'GTIN-8' && !(text.match(/^\d{8}$/))) return `${identifierLabel} must be exactly 8 digits.`;
     if (codeType === 'Numeric' && !(text.match(/^\d+$/))) return `${identifierLabel} must contain digits only.`;
     return '';
@@ -4329,10 +5373,8 @@ function IntakePage({ navigate }) {
       const identifier = String(row.id || '').trim();
       const errors = [];
       const warnings = [];
-      if (!String(row.extId || row.existingJobId || '').trim()) errors.push('Missing Job');
-      if (!identifier) {
-        errors.push(`Missing ${identifierLabel}`);
-      } else {
+      if (importSettings.mode !== 'none' && !String(row.extId || row.existingJobId || '').trim()) errors.push('Missing Job');
+      if (identifier) {
         const identifierError = validateEditedIdentifier(identifier);
         if (identifierError) errors.push(identifierError);
         if (seen[identifier]) warnings.push(`Duplicate ${identifierLabel} also appears on row ${seen[identifier]}`);
@@ -4355,6 +5397,11 @@ function IntakePage({ navigate }) {
     setError(''); setNotice(''); setImporting(true);
     try {
       const data = await api.executeSpreadsheetRows({ clientId, fileName: preview?.fileName || file?.name || 'Import', rows: editableRows, importId });
+      try {
+        await persistImportProfile(profileName.trim() || selectedClient?.name || 'Default');
+      } catch (profileError) {
+        setNotice(`Import complete, but the mapping could not be saved: ${profileError.message}`);
+      }
       setSummary(data.summary || {}); setReview(data); setStep('summary');
     } catch (err) { setError(err.message); } finally { setImporting(false); }
   }
@@ -4365,15 +5412,17 @@ function IntakePage({ navigate }) {
     if (!fields.length) return <span className="intake-readonly-cell">{preview?.rows?.[(row.rowNumber || 2) - 2]?.[columnIndex] || '—'}</span>;
     const field = fields[0];
     if (field === 'output') return <select value={row.output || ''} onChange={event => updateEditableRow(row.rowNumber, 'output', event.target.value)}><option>Photo Only</option><option>Render Only</option><option>Photo + Render</option></select>;
+    if (field === 'requestType') return <select value={row.requestType || ''} onChange={event => updateEditableRow(row.rowNumber, 'requestType', event.target.value)}><option value="">—</option>{PRODUCT_REQUEST_TYPE_OPTIONS.map(option => <option value={option} key={option}>{option}</option>)}</select>;
+    if (field === 'productType') return <select value={row.productType || ''} onChange={event => updateEditableRow(row.rowNumber, 'productType', event.target.value)}><option value="">—</option>{PRODUCT_TYPE_OPTIONS.map(option => <option value={option} key={option}>{option}</option>)}</select>;
     return <input value={row[field] || ''} onChange={event => updateEditableRow(row.rowNumber, field, event.target.value)} />;
   }
 
   const visibleRows = (preview?.previewRows ?? []).slice(0, 10);
   const clientRequiredFields = selectedClient?.requiredToShoot?.length ? selectedClient.requiredToShoot : ['Identifier'];
   const normalizedClientRequiredFields = clientRequiredFields.map(field => field === 'ID' ? 'Identifier' : ['Product Name', 'Product/File Name'].includes(field) ? 'Product or File Name' : field);
-  const photographyTargets = ['Identifier', ...normalizedClientRequiredFields.filter(field => ['Product or File Name', 'Brand'].includes(field))].filter((target, index, list) => list.indexOf(target) === index);
-  const photographyRequiredTargets = new Set(['Identifier', ...normalizedClientRequiredFields]);
-  const itemMappingTargets = ['Product Name', ...photographyTargets, ...(photographyTargets.includes('Brand') ? [] : ['Brand']), 'Product or File Name', 'Description', 'Product Job Number', 'Master or Variant', 'Pickup Job Number', 'Notes', 'Reference Data']
+  const photographyTargets = [...normalizedClientRequiredFields.filter(field => ['Product or File Name', 'Brand'].includes(field))].filter((target, index, list) => list.indexOf(target) === index);
+  const photographyRequiredTargets = new Set(normalizedClientRequiredFields.filter(field => !['Identifier', 'UPC'].includes(field)));
+  const itemMappingTargets = ['Product Name', ...photographyTargets.filter(target => target !== 'Identifier'), 'UPC', 'CVID', 'Brand Prefix', 'Request Type', 'Project Status', 'WKFT Job Number', 'Mbox Number', 'Product Type', 'Product Description', 'Link to Prepro/Overlays', 'Ecomm Photo Notes', 'Path to Art']
     .filter((target, index, list) => list.indexOf(target) === index);
   const itemMappingTargetSet = new Set(itemMappingTargets);
   const referenceColumns = headers.filter(header => !new Set(Object.values(targetMapping).filter(Boolean)).has(header));
@@ -4406,16 +5455,93 @@ function IntakePage({ navigate }) {
       ? Boolean(importSettings.groupField)
     : importSettings.mode === 'single'
       ? Boolean(importSettings.singleJobName.trim())
-      : false;
+      : importSettings.mode === 'none';
   const importSettingsReady = Boolean(clientId) && importModeReady;
 
   function chooseImportClient(nextClientId) {
     setClientId(nextClientId);
     const nextClient = clientList.find(client => client.id === nextClientId);
-    const mapping = buildInitialColumnMapping(headers, nextClient?.name || '');
-    setColumnMapping(mapping);
-    setTargetMapping(targetMappingFromSourceMapping(mapping));
+    const profileStore = nextClient?.productImportProfiles || {};
+    const defaultProfileName = defaultImportProfileName(profileStore);
+    const defaultProfile = profileStore.profiles?.[defaultProfileName];
+    if (defaultProfile && headers.length) {
+      const saved = productImportProfileState(defaultProfile, headers, nextClient?.name || '');
+      if (Object.keys(saved.targetMapping).length) {
+        setColumnMapping(saved.sourceMapping);
+        setTargetMapping(saved.targetMapping);
+        setActiveProfileName(defaultProfileName);
+        setProfileName(defaultProfileName);
+        setNotice(`Loaded saved mapping: ${defaultProfileName}.`);
+      } else {
+        const mapping = buildInitialColumnMapping(headers, nextClient?.name || '');
+        setColumnMapping(mapping);
+        setTargetMapping(targetMappingFromSourceMapping(mapping));
+        setActiveProfileName('');
+        setProfileName('');
+      }
+    } else {
+      const mapping = buildInitialColumnMapping(headers, nextClient?.name || '');
+      setColumnMapping(mapping);
+      setTargetMapping(targetMappingFromSourceMapping(mapping));
+      setActiveProfileName('');
+      setProfileName('');
+    }
     setImportSettings({ mode: '', existingJobId: '', existingJobName: '', groupField: '', singleJobName: '' });
+  }
+
+  function applyImportProfile(name) {
+    const profile = selectedClient?.productImportProfiles?.profiles?.[name];
+    if (!profile) return;
+    const saved = productImportProfileState(profile, headers, selectedClient?.name || '');
+    setColumnMapping(saved.sourceMapping);
+    setTargetMapping(saved.targetMapping);
+    setActiveProfileName(name);
+    setProfileName(name);
+    setReview(null); setEditableRows([]); setSummary(null);
+    setNotice(`Loaded saved mapping: ${name}. Review the source columns before validating.`);
+  }
+
+  useEffect(() => {
+    if (step !== 'map' || activeProfileName || !selectedClient || !headers.length) return;
+    const profileStore = selectedClient.productImportProfiles || {};
+    const defaultProfileName = defaultImportProfileName(profileStore);
+    const defaultProfile = profileStore.profiles?.[defaultProfileName];
+    if (!defaultProfile) return;
+    const saved = productImportProfileState(defaultProfile, headers, selectedClient.name || '');
+    if (!Object.keys(saved.targetMapping).length) return;
+    setColumnMapping(saved.sourceMapping);
+    setTargetMapping(saved.targetMapping);
+    setActiveProfileName(defaultProfileName);
+    setProfileName(defaultProfileName);
+  }, [step, activeProfileName, selectedClient?.id, headers.join('|')]);
+
+  async function persistImportProfile(name) {
+    if (!name || !clientId) return null;
+    const existing = selectedClient?.productImportProfiles || { defaultProfile: '', profiles: {} };
+    const profiles = { ...(existing.profiles || {}) };
+    profiles[name] = productImportProfilePayload(name, headers, columnMapping, targetMapping, mandatoryTargets);
+    const data = await api.updateClient(clientId, {
+      productImportProfiles: { defaultProfile: name, profiles },
+    });
+    const updatedClient = data.client;
+    if (updatedClient) setClientOverrides(current => ({ ...current, [clientId]: updatedClient }));
+    setActiveProfileName(name);
+    setProfileName(name);
+    return updatedClient;
+  }
+
+  async function saveImportProfile() {
+    const name = profileName.trim();
+    if (!name || !clientId) return;
+    setSavingProfile(true); setError(''); setNotice('');
+    try {
+      await persistImportProfile(name);
+      setNotice(`Saved “${name}” as the default mapping for ${selectedClient?.name || 'this Client'}.`);
+    } catch (err) {
+      setError(err.message || 'Could not save the import mapping.');
+    } finally {
+      setSavingProfile(false);
+    }
   }
 
   function chooseImportMode(mode) {
@@ -4524,6 +5650,14 @@ function IntakePage({ navigate }) {
                   {clientList.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
                 </select>
               </div>
+              <div className="intake-settings-field">
+                <label htmlFor="intake-header-row">Header row <span>Optional</span></label>
+                <select id="intake-header-row" value={headerRow || 'auto'} onChange={event => changeHeaderRow(event.target.value)} disabled={busy}>
+                  <option value="auto">Automatic</option>
+                  {Array.from({ length: Math.min(20, preview?.rawRowCount || 20) }, (_, index) => <option value={String(index + 1)} key={index}>Row {index + 1}</option>)}
+                </select>
+                <small>Choose the spreadsheet row containing the column names.</small>
+              </div>
               <label className={`intake-choice-row ${importSettings.mode === 'existing' ? 'is-selected' : ''}`}>
                 <input type="radio" name="import-mode" checked={importSettings.mode === 'existing'} onChange={() => chooseImportMode('existing')} />
                 <span>
@@ -4578,6 +5712,13 @@ function IntakePage({ navigate }) {
                   />
                 </span>
               </label>
+              <label className={`intake-choice-row ${importSettings.mode === 'none' ? 'is-selected' : ''}`}>
+                <input type="radio" name="import-mode" checked={importSettings.mode === 'none'} onChange={() => chooseImportMode('none')} />
+                <span>
+                  <strong>Import Products Only</strong>
+                  <small>Create Products without creating or linking them to a Job.</small>
+                </span>
+              </label>
             </div>
             <div className="form-actions intake-settings-actions">
               <button className="btn" type="button" onClick={resetIntake}>Cancel</button>
@@ -4586,7 +5727,7 @@ function IntakePage({ navigate }) {
           </div>
         </div>
       )}
-      {step === 'preview' && preview && <div className="intake-card intake-preview-card"><div className="intake-preview-head"><div><div className="intake-preview-title">{preview.fileName}</div><div className="intake-preview-sub">{selectedClient?.name || preview.clientName || preview.clientId}</div></div></div><div className="intake-summary-grid"><div className="intake-summary-item"><span>Sheets</span><strong>{preview.sheetNames?.length || 1}</strong></div><div className="intake-summary-item"><span>Rows</span><strong>{preview.rowCount}</strong></div><div className="intake-summary-item"><span>Columns</span><strong>{preview.columnHeaders?.length ?? 0}</strong></div><div className="intake-summary-item"><span>Size</span><strong>{preview.fileSize ? `${(preview.fileSize / 1024).toFixed(1)} KB` : '—'}</strong></div></div><div className="table-wrap intake-preview-table"><table><thead><tr>{headers.map((header, index) => <MappingHeader target={sourceColumnMappings[header]} key={`${header}-${index}`}>{header || '(blank)'}</MappingHeader>)}</tr></thead><tbody>{visibleRows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, columnIndex) => <td key={columnIndex}>{row[columnIndex] || '—'}</td>)}</tr>)}</tbody></table></div><div className="form-actions"><button className="btn" type="button" onClick={resetIntake} disabled={busy}>Cancel</button><button className="btn btn-alt" type="button" onClick={() => setStep('map')} disabled={busy}>Map Columns</button><button className="btn btn-primary" type="button" onClick={reviewActiveMapping} disabled={busy}>{busy ? 'Validating...' : 'Validate'}</button></div></div>}
+      {step === 'preview' && preview && <div className="intake-card intake-preview-card"><div className="intake-preview-head"><div><div className="intake-preview-title">{preview.fileName}</div><div className="intake-preview-sub">{selectedClient?.name || preview.clientName || preview.clientId}</div></div></div><div className="intake-preview-header-row"><div><strong>Header row</strong><span>Choose the spreadsheet row containing the column names.</span></div><select value={headerRow || 'auto'} onChange={event => changeHeaderRow(event.target.value)} disabled={busy} aria-label="Choose spreadsheet header row"><option value="auto">Automatic</option>{Array.from({ length: Math.min(20, preview?.rawRowCount || 20) }, (_, index) => <option value={String(index + 1)} key={index}>Row {index + 1}</option>)}</select><small>Currently using row {preview.headerRow || '—'}</small></div><div className="intake-summary-grid"><div className="intake-summary-item"><span>Sheets</span><strong>{preview.sheetNames?.length || 1}</strong></div><div className="intake-summary-item"><span>Rows</span><strong>{preview.rowCount}</strong></div><div className="intake-summary-item"><span>Columns</span><strong>{preview.columnHeaders?.length ?? 0}</strong></div><div className="intake-summary-item"><span>Size</span><strong>{preview.fileSize ? `${(preview.fileSize / 1024).toFixed(1)} KB` : '—'}</strong></div></div><div className="table-wrap intake-preview-table"><table><thead><tr>{headers.map((header, index) => <MappingHeader target={sourceColumnMappings[header]} key={`${header}-${index}`}>{header || '(blank)'}</MappingHeader>)}</tr></thead><tbody>{visibleRows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, columnIndex) => <td key={columnIndex}>{row[columnIndex] || '—'}</td>)}</tr>)}</tbody></table></div><div className="form-actions"><button className="btn" type="button" onClick={resetIntake} disabled={busy}>Cancel</button><button className="btn btn-alt" type="button" onClick={() => setStep('map')} disabled={busy}>Map Columns</button><button className="btn btn-primary" type="button" onClick={reviewActiveMapping} disabled={busy}>{busy ? 'Validating...' : 'Validate'}</button></div></div>}
       {step === 'map' && preview && (
         <div className="intake-modal-backdrop">
           <div className="intake-mapping-modal" role="dialog" aria-modal="true" aria-labelledby="intake-mapping-title">
@@ -4603,6 +5744,30 @@ function IntakePage({ navigate }) {
                 ))}
               </div>
             </div>
+            <div className="intake-profile-bar">
+              <div className="intake-profile-copy">
+                <strong>Saved mapping</strong>
+                <span>Reuse this client’s spreadsheet setup on future imports.</span>
+              </div>
+              <select
+                value={activeProfileName}
+                onChange={event => applyImportProfile(event.target.value)}
+                aria-label="Load saved product import mapping"
+                disabled={!Object.keys(selectedClient?.productImportProfiles?.profiles || {}).length}
+              >
+                <option value="">Load saved mapping...</option>
+                {Object.keys(selectedClient?.productImportProfiles?.profiles || {}).map(name => <option value={name} key={name}>{name}</option>)}
+              </select>
+              <input
+                value={profileName}
+                onChange={event => setProfileName(event.target.value)}
+                aria-label="Saved mapping name"
+                placeholder="Mapping name"
+              />
+              <button className="btn btn-alt" type="button" onClick={saveImportProfile} disabled={savingProfile || !profileName.trim()}>
+                {savingProfile ? 'Saving...' : 'Save mapping'}
+              </button>
+            </div>
             <div className="intake-mapping-table">
               <div className="intake-mapping-table-head">
                 <span>Source column</span>
@@ -4611,7 +5776,8 @@ function IntakePage({ navigate }) {
               <div className="intake-mapping-rows">
                 {headers.map((header, index) => {
                   const mappedTarget = Object.entries(targetMapping).find(([target, source]) => itemMappingTargetSet.has(target) && source === header)?.[0];
-                  const value = mappedTarget || (columnMapping[header] === 'Reference Data' ? 'Reference Data' : 'Ignore');
+                  const visibleMappedTarget = mappedTarget === 'Identifier' ? 'UPC' : mappedTarget;
+                  const value = visibleMappedTarget || 'Ignore';
                   const samples = sourceSamples(header);
                   const mapped = value && value !== 'Ignore';
                   return (
@@ -4672,7 +5838,7 @@ function ImportHistoryPage({ importId }) {
 
   function formatDateTime(value) {
     if (!value) return '—';
-    return new Date(value).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    return formatCentralDateTime(value, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   }
   const importExportColumns = [
     { header: 'Date', value: record => formatDateTime(record.started) },
@@ -4776,9 +5942,7 @@ const AGE_FILTERS = [
 
 function formatInventoryDate(value) {
   if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return formatCentralDateTime(value, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace('—', '-');
 }
 
 function uniqueInventoryOptions(records, getter) {
@@ -4987,7 +6151,7 @@ function MerchandiseInventoryPage({ navigate }) {
               <div className="merchandise-inventory-title-row">
                 <h2>{record.packageName || 'Unnamed Merchandise'}</h2>
               </div>
-              <p className="merchandise-inventory-identifier">{record.barcodeOrIdNumber || 'No barcode or ID number'}</p>
+              <p className="merchandise-inventory-identifier">{record.barcodeOrIdNumber || 'No UPC / ID'}</p>
               <div className="merchandise-inventory-divider" />
               <div className="merchandise-inventory-meta-row">
                 <span><span className="merchandise-inventory-meta-label">Client:</span> {record.client || '-'}</span>
@@ -5365,7 +6529,7 @@ function MerchandiseReviewPage() {
                   <RecordThumbnail record={record} className="merch-review-queue-thumb" />
                   <span className="merch-review-queue-text">
                     <strong>{record.productName || (record.isUnidentified ? 'Unidentified Merchandise' : 'Unnamed Merchandise')}</strong>
-                    <small>{identifier || 'No barcode or ID number'}</small>
+                    <small>{identifier || 'No UPC / ID'}</small>
                     <em>{client?.name || 'Unknown client'} - {record.timeHere || 'Unknown age'}</em>
                     <em>{locationName || 'No storage location'}</em>
                   </span>
@@ -5424,7 +6588,7 @@ function MerchandiseReviewPage() {
               {unidentified && (
                 <div className="merch-review-note is-warning">
                   <strong>Unidentified Merchandise</strong>
-                  <span>No useful Package Name or Barcode or ID Number was captured. Use photos and Shipment context to match later or raise an issue.</span>
+                  <span>No useful Product Name on Package or UPC / ID was captured. Use photos and Shipment context to match later or raise an issue.</span>
                 </div>
               )}
 
@@ -5456,7 +6620,7 @@ function MerchandiseReviewPage() {
                     <div className="merch-review-product-summary">
                       <h3>{linkedProduct.product || linkedProduct.name || 'Untitled Product'}</h3>
                       <dl>
-                        <div><dt>Product Code</dt><dd>{linkedProduct.identifier || linkedProduct.productId || linkedProduct.gtinUpc || '-'}</dd></div>
+                        <div><dt>UPC / ID</dt><dd>{linkedProduct.primaryMatchKey || linkedProduct.identifier || linkedProduct.productId || linkedProduct.gtinUpc || '-'}</dd></div>
                         <div><dt>Job Number</dt><dd>{linkedProduct.itemJobNumber || linkedProduct.pickupJobNumber || '-'}</dd></div>
                         <div><dt>Brand</dt><dd>{linkedProduct.brand || '-'}</dd></div>
                         <div><dt>Description</dt><dd>{linkedProduct.description || '-'}</dd></div>
@@ -5501,7 +6665,7 @@ function MerchandiseReviewPage() {
                           <RecordThumbnail record={product} className="merch-review-product-thumb" />
                           <span>
                             <strong>{product.product || product.name || product.identifier || 'Untitled Product'}</strong>
-                            <small>{product.identifier || 'No product code'} - {product.itemJobNumber || 'No job number'}</small>
+                            <small>{product.primaryMatchKey || product.identifier || 'No primary match key'} - {product.itemJobNumber || 'No job number'}</small>
                             <small>{product.brand || 'No brand'}</small>
                           </span>
                           <em>{matching === product.id ? 'Matching...' : isCurrent ? 'Current' : hasLinkedProduct ? 'Change' : 'Match'}</em>
@@ -5592,19 +6756,30 @@ const MERCH_REVIEW_V2_STORAGE_KEY = 'marks:work-board-board';
 const MERCH_REVIEW_V2_ARTWORK_KEY = 'marks:work-board-artwork-overrides';
 const MERCH_REVIEW_V2_DECISIONS_KEY = 'marks:planning-board-deliverable-decisions';
 const MERCH_REVIEW_V2_LEGACY_DECISIONS_KEY = 'marks:work-board-production-decisions';
-const PM_QUEUE_STORAGE_KEY = 'marks:planning-board-queues';
 const PM_ACTIVITY_STORAGE_KEY = 'marks:planning-board-activity';
 const PM_COMMENT_READ_STORAGE_KEY = 'marks:planning-board-comment-reads';
 const PM_LOCAL_QUEUE_IDS = {
-  planning: QUEUE_IDS.waitingActivation,
+  needsProductWork: QUEUE_IDS.waitingActivation,
 };
 const PM_QUEUE_COLUMNS = [
-  { id: QUEUE_IDS.newReview, label: 'New', description: 'New merchandise for PM pickup.' },
-  { id: PM_LOCAL_QUEUE_IDS.planning, label: 'Planning', description: 'Active PM planning work.' },
-  { id: QUEUE_IDS.waitingInformation, label: 'Waiting', description: 'Waiting on answers, files, or decisions.' },
+  { id: QUEUE_IDS.newReview, label: 'New Merch', description: 'Brand-new received merchandise ready for PM review.' },
+  { id: PM_LOCAL_QUEUE_IDS.needsProductWork, label: 'Needs Product / Work', description: 'Reviewed merchandise that still needs a Product match or workstream/deliverable decision.' },
+  { id: QUEUE_IDS.waitingInformation, label: 'Awaiting Info', description: 'Matched work waiting on required product or photo details.' },
   { id: QUEUE_IDS.readyProduction, label: 'Ready for Photo', description: 'Shared handoff queue for Production.' },
 ];
 const PLANNING_QUEUE_LABELS = Object.fromEntries(PM_QUEUE_COLUMNS.map(column => [column.id, column.label]));
+
+function commentTimestampMs(comment = {}) {
+  const timestamp = new Date(comment.createdAt || comment.created || comment.updatedAt || '').getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function hasRecentPlanningComment(comments = [], nowMs = Date.now()) {
+  return comments.some(comment => {
+    const timestamp = commentTimestampMs(comment);
+    return timestamp > 0 && nowMs - timestamp <= RECENT_COMMENT_WINDOW_MS;
+  });
+}
 
 function loadJsonMap(key) {
   try {
@@ -5637,7 +6812,7 @@ function normalizeDeliverableRouteSelection(decision = {}, fallbackDeliverableRo
 }
 
 function intakeRequestedQueueForRecord(record) {
-  if (record?.newMerchStatus === 'Workflows Created') return QUEUE_IDS.waitingActivation;
+  if (record?.newMerchStatus === 'Workflows Created') return QUEUE_IDS.waitingInformation;
   const deliverables = deliverablesForRecord(record);
   if (deliverables.length === 1 && deliverables[0] === 'Thr3d') return QUEUE_IDS.sendThr3d;
   if (record?.intakeStatus === 'Waiting on Information') return QUEUE_IDS.waitingInformation;
@@ -5733,6 +6908,55 @@ function deliverablesForRecord(record = {}) {
   return [];
 }
 
+const PRODUCT_REQUEST_TYPE_DELIVERABLE_MAP = {
+  'ecomm only': ['Ecomm'],
+  ecomm: ['Ecomm'],
+  ecommerce: ['Ecomm'],
+  'ecommerce only': ['Ecomm'],
+  'pack only': ['Packaging'],
+  pack: ['Packaging'],
+  packaging: ['Packaging'],
+  'packaging only': ['Packaging'],
+  'thr3d only': ['Thr3d'],
+  thr3d: ['Thr3d'],
+  threed: ['Thr3d'],
+  'threed only': ['Thr3d'],
+  '3d': ['Thr3d'],
+  '3d only': ['Thr3d'],
+  'pack thr3d': ['Packaging', 'Thr3d'],
+  'pack and thr3d': ['Packaging', 'Thr3d'],
+  'packaging thr3d': ['Packaging', 'Thr3d'],
+  'packaging and thr3d': ['Packaging', 'Thr3d'],
+  'packaging threed': ['Packaging', 'Thr3d'],
+  'packaging and threed': ['Packaging', 'Thr3d'],
+  'packaging 3d': ['Packaging', 'Thr3d'],
+  'packaging and 3d': ['Packaging', 'Thr3d'],
+  'thr3d pack': ['Packaging', 'Thr3d'],
+  'thr3d and pack': ['Packaging', 'Thr3d'],
+  'ecomm pack': ['Ecomm', 'Packaging'],
+  'ecomm and pack': ['Ecomm', 'Packaging'],
+  'ecommerce pack': ['Ecomm', 'Packaging'],
+  'ecommerce and pack': ['Ecomm', 'Packaging'],
+  'pack ecomm': ['Ecomm', 'Packaging'],
+  'pack and ecomm': ['Ecomm', 'Packaging'],
+};
+
+function productRequestTypeDeliverables(requestType) {
+  const normalized = stripSurroundingQuotes(requestType).toLowerCase();
+  const key = normalized.replace(/[^a-z0-9]+/g, ' ').trim();
+  return normalizeDeliverableList(PRODUCT_REQUEST_TYPE_DELIVERABLE_MAP[key] || []);
+}
+
+function suggestedDeliverablesForRecord(record = {}) {
+  if (deliverablesForRecord(record).length) return [];
+  return productRequestTypeDeliverables(record.linkedItem?.requestType);
+}
+
+function initialReviewDeliverables(record = {}) {
+  const committed = deliverablesForRecord(record);
+  return committed.length ? committed : suggestedDeliverablesForRecord(record);
+}
+
 function isThr3dOnlyDeliverables(deliverables = []) {
   const normalized = normalizeDeliverableList(deliverables);
   return normalized.length === 1 && normalized[0] === 'Thr3d';
@@ -5746,8 +6970,8 @@ function requirementLabelForUser(requirement = {}) {
   const label = requirementBlockerLabel(requirement);
   return {
     'Product Information': 'Product not identified',
-    'Required Identifier': 'Package ID / Barcode / SKU',
-    'Merchandise Verified': 'Verify merchandise',
+    'Required Identifier': 'UPC / ID',
+    'Merchandise Verified': 'Product match',
     'Activation Information': 'Missing campaign or activation information',
   }[label] || label;
 }
@@ -5759,12 +6983,11 @@ function wizardStateForItem(item, draftDeliverables) {
   const requirements = deliverableListsEqual(deliverables, record.deliverables)
     ? item?.requiredToShoot || []
     : evaluateMerchandiseReviewRequirements({ ...record, deliverables });
-  const blockers = visibleRequirementBlockers(requirements);
+  const actionableRequirements = requirements.filter(requirement => requirementBlockerLabel(requirement) !== 'Merchandise Verified');
+  const blockers = visibleRequirementBlockers(actionableRequirements);
   const productLinked = Boolean(product.id || record.itemIds?.length);
-  const merchandiseVerified = Boolean(record.merchandiseVerified) && record.reviewState !== 'Issue' && record.merchStatus !== 'Issue';
   const missingLabels = blockers.map(requirementLabelForUser);
   return {
-    merchandiseVerified,
     productLinked,
     deliverables,
     blockers,
@@ -5807,6 +7030,26 @@ function workstreamAssignmentsForDeliverables(deliverables = [], quantity = 1, a
   };
 }
 
+function assignmentPrimaryActionLabel(assignment = {}) {
+  const workstreams = Array.isArray(assignment.workstreams) ? assignment.workstreams : [];
+  const hasThr3d = Boolean(assignment.thr3d);
+  const sortedWorkstreams = [...workstreams].sort((a, b) => {
+    const order = { Packaging: 0, Ecomm: 1 };
+    return (order[a.type] ?? 10) - (order[b.type] ?? 10);
+  });
+  const workstreamNames = sortedWorkstreams.map(workstream => workstream.type);
+  const workstreamLabel = workstreamNames.length === 1
+    ? `${workstreamNames[0]} Workstream`
+    : workstreamNames.length === 2
+      ? `${workstreamNames[0]} and ${workstreamNames[1]} Workstreams`
+      : 'Workstreams';
+  if (workstreams.length > 0 && hasThr3d) return `Create ${workstreamLabel} + Ship to Thr3d`;
+  if (workstreams.length > 1) return `Create ${workstreamLabel}`;
+  if (workstreams.length === 1) return `Create ${workstreams[0].type} Workstream`;
+  if (hasThr3d) return 'Ship to Thr3d';
+  return 'Mark Merch Reviewed';
+}
+
 function enforceExclusiveGs1Deliverables(values = [], changedOption = '') {
   const normalized = normalizeDeliverableList(values);
   if (!normalized.includes('Ecomm') || !normalized.includes('Thr3d')) return normalized;
@@ -5816,9 +7059,25 @@ function enforceExclusiveGs1Deliverables(values = [], changedOption = '') {
 
 function queueIdForWorkstreamStatus(status) {
   const value = String(status || '').trim().toLowerCase();
-  if (value === 'waiting') return QUEUE_IDS.waitingInformation;
   if (value === 'ready for photo') return QUEUE_IDS.readyProduction;
-  return QUEUE_IDS.waitingActivation;
+  return QUEUE_IDS.waitingInformation;
+}
+
+function queueIdForPlanningStatus(status) {
+  switch (String(status || '').trim().toLowerCase()) {
+    case 'new': return QUEUE_IDS.newReview;
+    case 'needs-product-work': return PM_LOCAL_QUEUE_IDS.needsProductWork;
+    case 'ready-for-photo': return QUEUE_IDS.readyProduction;
+    case 'awaiting-info':
+    default: return QUEUE_IDS.waitingInformation;
+  }
+}
+
+function planningStatusFromLegacyQueue(queueId) {
+  if (queueId === QUEUE_IDS.newReview) return 'new';
+  if (queueId === PM_LOCAL_QUEUE_IDS.needsProductWork) return 'needs-product-work';
+  if (queueId === QUEUE_IDS.readyProduction) return 'ready-for-photo';
+  return 'awaiting-info';
 }
 
 function workstreamStatusForQueueId(queueId) {
@@ -5835,28 +7094,40 @@ function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = 
   const baseAssignment = evaluateMerchandiseReviewAssignment(
     { ...record, deliverables: [type] },
     {
-      requestedQueueId: QUEUE_IDS.waitingActivation,
+      requestedQueueId: QUEUE_IDS.waitingInformation,
       reviewState: record.reviewState || 'Needs Review',
       client,
       planningBoard: planningBoardForClient(record.clientIds?.[0]),
     },
   );
   const baseCard = buildPlanningCard(record, { assignment: baseAssignment, client, location });
-  const columnId = queueIdForWorkstreamStatus(card.status);
+  const columnId = card.planningStatus
+    ? queueIdForPlanningStatus(card.planningStatus)
+    : queueIdForWorkstreamStatus(card.status);
+  const productionStatus = fallbackPhotoProductionStatus(type, {
+    client,
+    clientPhotoProductionRequirements: client?.photoProductionRequirements,
+    record: { ...record, linkedItem: card.expectedProduct || record.linkedItem || {} },
+  }) || card.photoProduction || null;
+  const requiredToShoot = [...(baseCard.requiredToShoot || [])];
   return {
     ...baseCard,
+    requiredToShoot,
     id: card.id,
     merchandiseId: record.id,
     workstreamCardId: card.id,
     subjectType: 'workstream-card',
-    title: `${type}: ${record.productName || record.description || card.name || 'Received Merch'}`,
+    title: record.productName || record.description || card.name || 'Received Merch',
     columnId,
-    queueLabel: PLANNING_QUEUE_LABELS[columnId] || 'Planning',
+    queueLabel: PLANNING_QUEUE_LABELS[columnId] || 'Awaiting Info',
     deliverables: [type],
+    deliverableRouteId: DELIVERABLE_ROUTE_MAP[type],
     deliverableRoute: type,
     workstreamType: type,
     workstreamStatus: card.status || 'New',
     workstreamQuantity: card.quantity || 0,
+    clientPhotoProductionRequirements: client?.photoProductionRequirements || null,
+    photoProduction: productionStatus,
     commentCount: 0,
     unreadComments: 0,
     quantity: card.quantity || record.quantity || 1,
@@ -5867,6 +7138,7 @@ function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = 
       workstreamType: type,
       workstreamStatus: card.status || 'New',
       workstreamQuantity: card.quantity || 0,
+      photoProduction: productionStatus,
     },
   };
 }
@@ -5879,18 +7151,25 @@ function deliverableToneClass(value) {
   }[normalizeDeliverableValue(value)] || 'is-neutral';
 }
 
-function DeliverableBadges({ values = [] }) {
+function DeliverableBadges({ values = [], overlay = false }) {
   const deliverables = normalizeDeliverableList(values);
   if (!deliverables.length) return null;
   return (
-    <div className="deliverable-badge-row" aria-label="Deliverables">
+    <div className={`deliverable-badge-row ${overlay ? 'is-overlay' : ''}`} aria-label="Deliverables">
       {deliverables.map(deliverable => (
         <span className={`deliverable-badge ${deliverableToneClass(deliverable)}`} key={deliverable}>
+          {deliverable === 'Packaging' && <PackageOpen size={12} strokeWidth={2.2} aria-hidden="true" />}
+          {deliverable === 'Ecomm' && <Camera size={12} strokeWidth={2.2} aria-hidden="true" />}
           {deliverable}
         </span>
       ))}
     </div>
   );
+}
+
+function deliverableSummaryLabel(values = []) {
+  const deliverables = normalizeDeliverableList(values);
+  return deliverables.join(' + ');
 }
 
 function RequiredToShootIndicators({ items }) {
@@ -5954,25 +7233,219 @@ function RequiredToShootPreview({ item, ready }) {
   );
 }
 
-function activationStateForPlanningCard(item) {
-  if (!item?.activationDriven) return null;
-  if (item.columnId === QUEUE_IDS.readyProduction) {
-    return item.activation?.id
-      ? { label: 'Activation Ready', tone: 'ready' }
-      : { label: 'Needs Activation', tone: 'waiting' };
-  }
-  if (item.columnId === QUEUE_IDS.waitingInformation || item.columnId === QUEUE_IDS.waitingActivation) {
-    return { label: 'Needs Activation', tone: 'waiting' };
-  }
-  return { label: 'Needs Activation', tone: 'needed' };
+function awaitingInfoChecklistForItem(item = {}) {
+  const deliverables = normalizeDeliverableList(item.deliverables || item.record?.deliverables);
+  const photoStatuses = deliverables
+    .filter(value => value === 'Packaging' || value === 'Ecomm')
+    .map(value => evaluatedPhotoProductionStatusForType(item, value))
+    .filter(Boolean);
+  const photoDataReady = photoStatuses.length > 0 && photoStatuses.every(status => status.productData?.ready ?? status.ready);
+  return [
+    { label: 'Photo Data', tone: photoDataReady ? 'matched' : 'needed', mark: photoDataReady ? 'check' : 'none' },
+  ];
 }
 
 function ageBucketForItem(item) {
   const days = Number(item.record?.daysInHouse ?? item.record?.daysHere ?? item.record?.ageDays ?? 0);
-  const label = item.timeHere || (days ? `${days}d` : '—');
+  const hoursMatch = String(item.timeHere || '').match(/(\d+)\s*(?:hour|hr|h)/i);
+  const dayMatch = String(item.timeHere || '').match(/(\d+)\s*(?:day|d)/i);
+  const label = days >= 1
+    ? `${days} ${days === 1 ? 'day' : 'days'}`
+    : dayMatch
+      ? `${dayMatch[1]} ${Number(dayMatch[1]) === 1 ? 'day' : 'days'}`
+      : hoursMatch
+        ? `${hoursMatch[1]}h`
+        : 'New';
   if (days >= 14 || /\b(1[4-9]|[2-9][0-9])d\b/i.test(label)) return { label, tone: 'old' };
   if (days >= 7 || /\b([7-9]|1[0-3])d\b/i.test(label)) return { label, tone: 'aging' };
   return { label, tone: 'fresh' };
+}
+
+function CommentCountChip({ count = 0, unread = 0, recent = false, className = '', title = '', ariaLabel = '' }) {
+  return (
+    <span
+      className={`kanban-comment-signal ${recent ? 'has-recent' : ''} ${unread > 0 ? 'has-unread' : ''} ${className}`.trim()}
+      aria-label={ariaLabel || `${count || 0} comments${unread > 0 ? `, ${unread} new` : ''}${recent ? ', recent activity' : ''}`}
+      title={title || undefined}
+    >
+      {unread > 0 && <span className="kanban-unread-dot" aria-hidden="true" />}
+      <span aria-hidden="true">💬</span>
+      {count || 0}
+    </span>
+  );
+}
+
+function productLinkedForPlanningItem(item = {}) {
+  const record = item.record || {};
+  return Boolean(record.linkedItem?.id || record.itemIds?.length);
+}
+
+function productWorkChecklistForItem(item = {}) {
+  const record = item.record || {};
+  const deliverables = normalizeDeliverableList(item.deliverables || record.deliverables);
+  return [
+    productLinkedForPlanningItem(item)
+      ? { label: 'Matched', tone: 'matched', mark: 'check' }
+      : { label: 'Product missing', tone: 'needed', mark: 'none' },
+    deliverables.length
+      ? { label: `Deliverables: ${deliverableSummaryLabel(deliverables)}`, tone: 'matched', mark: 'check' }
+      : { label: 'Deliverables missing', tone: 'needed', mark: 'none' },
+  ];
+}
+
+function PhotoProductionValidationSummary({ production, compact = false }) {
+  const entries = production?.workstreamType
+    ? [[production.workstreamType, production]]
+    : Object.entries(production || {});
+  if (!entries.length) return null;
+  return (
+    <div className={`kanban-card-photo-validation ${compact ? 'is-compact' : ''}`} aria-label="Photo production validation">
+      {entries.map(([type, status]) => (
+        <span key={type}>
+          <strong>{type}</strong>
+          <em className={status.productData?.ready ? 'is-ready' : 'is-missing'}>Product {status.productData?.ready ? 'ready' : `${status.productData?.missing?.length || 0} missing`}</em>
+          {status.creativeForce?.checks?.length > 0 && <em className={status.creativeForce.ready ? 'is-ready' : 'is-missing'}>CF {status.creativeForce.ready ? 'ready' : `${status.creativeForce.missing?.length || 0} missing`}</em>}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+const PHOTO_PRODUCTION_EDITABLE_FIELDS = {
+  productName: { label: 'Product Name', patch: 'name' },
+  upc: { label: 'UPC / Product ID', patch: 'primaryMatchKey' },
+  cvid: { label: 'CVID', patch: 'cvid' },
+  jobNumber: { label: 'Job Number', patch: 'itemJobNumber' },
+  brandPrefix: { label: 'Brand Prefix', patch: 'brandPrefix' },
+  fileNameDescription: { label: 'File Name Description', patch: 'fileNameDescription' },
+  productDescription: { label: 'Product Description', patch: 'productDescription' },
+  productType: { label: 'Product Type', patch: 'productType' },
+  ecommPhotoNotes: { label: 'Ecomm Photo Notes', patch: 'ecommPhotoNotes' },
+  pathToArt: { label: 'Valid Artwork Path', patch: 'pathToArt' },
+};
+
+function normalizedIdentityValue(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function matchedIdentityFieldSatisfied(item = {}, field) {
+  const record = item.record || {};
+  const product = record.linkedItem || {};
+  if (!product.id) return false;
+  if (field === 'productName') {
+    return Boolean(record.productName && (product.name || product.product))
+      && normalizedIdentityValue(record.productName) === normalizedIdentityValue(product.name || product.product);
+  }
+  if (field === 'upc') {
+    const observed = normalizedIdentityValue(record.skuId);
+    const linked = normalizedIdentityValue(product.upc || product.primaryMatchKey || product.identifier);
+    return Boolean(observed && linked) && observed === linked;
+  }
+  return false;
+}
+
+function photoProductionChecks(production = {}, item = {}) {
+  const entries = production?.workstreamType
+    ? [[production.workstreamType, production]]
+    : Object.entries(production || {});
+  const seen = new Set();
+  return entries.flatMap(([, status]) => [
+    ...(status.productData?.checks || []),
+  ]).filter(check => {
+    if (['productName', 'upc'].includes(check.key) && matchedIdentityFieldSatisfied(item, check.key)) return false;
+    const identity = check.key === 'productCode' ? 'productCode' : check.key;
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+
+function photoProductionProductValue(product = {}, field) {
+  if (field === 'productName') return product.name || product.product || '';
+  if (field === 'upc') return product.upc || product.primaryMatchKey || product.identifier || '';
+  if (field === 'jobNumber') return product.itemJobNumber || product.wkftJobNumber || product.pickupJobNumber || '';
+  if (field === 'fileNameDescription') return referenceDataValue(product, ['File Name Description', 'fileNameDescription']);
+  return product[field] || '';
+}
+
+function photoProductionValuePresent(field, value) {
+  const text = String(value || '').trim();
+  return Boolean(text);
+}
+
+function PhotoProductionFieldsEditor({ item, production, onRefresh, onDraftChange }) {
+  const product = item?.record?.linkedItem || {};
+  const entries = production?.workstreamType
+    ? [[production.workstreamType, production]]
+    : Object.entries(production || {});
+  const fields = [...new Set([
+    ...photoProductionChecks(production, item).map(check => check.key),
+    ...entries.map(([, status]) => status.creativeForce?.productCodeField),
+  ].filter(field => PHOTO_PRODUCTION_EDITABLE_FIELDS[field]))];
+  const [draft, setDraft] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState('');
+
+  useEffect(() => {
+    const nextDraft = Object.fromEntries(fields.map(field => [field, photoProductionProductValue(product, field)]));
+    setDraft(nextDraft);
+    onDraftChange?.(nextDraft);
+    setFeedback('');
+  }, [item?.id, product.id, fields.join('|')]);
+
+  if (!entries.length || !fields.length) return null;
+  if (!product.id) return <div className="photo-production-editor-note">Link an Expected Product to edit these fields.</div>;
+
+  async function save() {
+    setSaving(true);
+    setFeedback('');
+    try {
+      const patch = {};
+      fields.forEach(field => {
+        patch[PHOTO_PRODUCTION_EDITABLE_FIELDS[field].patch] = String(draft[field] || '').trim();
+      });
+      await api.updateProduct(product.id, patch);
+      await onRefresh?.();
+      setFeedback('Product data saved.');
+    } catch (error) {
+      setFeedback(error.message || 'Could not save Product data.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+    return (
+    <div className="photo-production-fields-editor">
+      <div className="photo-production-fields-editor-header">
+      </div>
+      <div className="photo-production-fields-grid">
+        {fields.map(field => {
+          const definition = PHOTO_PRODUCTION_EDITABLE_FIELDS[field];
+          const present = photoProductionValuePresent(field, draft[field]);
+          return (
+            <label key={field}>
+              <span className={`photo-production-field-label ${present ? 'is-present' : 'is-missing'}`}>
+                <b aria-hidden="true">{present ? '✓' : '×'}</b>
+                {definition.label}
+              </span>
+              <input
+                value={draft[field] ?? ''}
+                onChange={event => {
+                  const value = event.target.value;
+                  setDraft(current => ({ ...current, [field]: value }));
+                  onDraftChange?.({ [field]: value });
+                }}
+              />
+            </label>
+          );
+        })}
+      </div>
+      <div className="photo-production-fields-editor-actions">
+        <button type="button" className="btn btn-secondary btn-sm" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save product data'}</button>
+      </div>
+      {feedback && <span className={feedback.includes('saved') ? 'is-success' : 'is-error'}>{feedback}</span>}
+    </div>
+  );
 }
 
 function KanbanCardComponent({ item, selected, onSelect, disabled = false, showNewCardClient = true }) {
@@ -5993,21 +7466,27 @@ function KanbanCardComponent({ item, selected, onSelect, disabled = false, showN
       : notStarted
         ? 'Not started'
         : `${blockers.length} still needed`;
+  const isWorkstreamCard = item.subjectType === 'workstream-card';
   const quantity = item.record?.quantity || 1;
+  const displayQuantity = isWorkstreamCard
+    ? (item.workstreamQuantity || item.record?.workstreamQuantity || quantity)
+    : quantity;
   const identifier = item.identifier || item.record?.skuId || item.record?.linkedItem?.identifier || '';
   const storage = item.location || item.record?.locationName || '';
+  const photoCount = recordPhotos(item.record).length;
   const deliverables = normalizeDeliverableList(item.deliverables || item.record?.deliverables);
   const hasDeliverables = deliverables.length > 0;
-  const showClient = showNewCardClient;
-  const showQuantity = !isNewQueue || Number(quantity) > 1;
-  const showMeta = showClient || showQuantity;
+  const photoProduction = item.photoProduction || item.record?.photoProduction;
+  const clientLabel = item.client || 'Unknown client';
   const showStorage = false && !isNewQueue && storage;
-  const showFooter = !isNewQueue || item.commentCount > 0 || item.unreadComments > 0;
-  const activationState = activationStateForPlanningCard(item);
-  const showRequiredPreview = !isNewQueue && !activationState;
-  const showRequiredIndicators = !isNewQueue && !activationState;
-  const showStatusChip = !isNewQueue && !activationState;
-  const isWorkstreamCard = item.subjectType === 'workstream-card';
+  const showFooter = item.commentCount > 0 || item.unreadComments > 0;
+  const showProductWorkChecklist = isNewQueue || item.columnId === PM_LOCAL_QUEUE_IDS.needsProductWork;
+  const productWorkChecklist = showProductWorkChecklist ? productWorkChecklistForItem(item) : [];
+  const awaitingInfoChecklist = !showProductWorkChecklist
+    && [QUEUE_IDS.waitingInformation, QUEUE_IDS.waitingActivation].includes(item.columnId)
+    ? awaitingInfoChecklistForItem(item)
+    : [];
+  const showStatusChip = !isNewQueue;
   return (
     <button
       type="button"
@@ -6023,40 +7502,30 @@ function KanbanCardComponent({ item, selected, onSelect, disabled = false, showN
         event.dataTransfer.effectAllowed = 'move';
       }}
       disabled={disabled}
-      aria-label={`Open ${item.title}${flagged ? ' (flagged)' : ''}`}
+      aria-label={`${isNewQueue ? 'Review merch' : 'Open'} ${item.title}${flagged ? ' (flagged)' : ''}`}
     >
       <div className="kanban-card-media">
-        <RecordThumbnail record={item.record} />
+        <RecordThumbnail record={item.record} count={1} />
+        {isNewQueue && photoCount > 1 && <span className="kanban-photo-count" aria-label={`${photoCount} images`}>+{photoCount - 1}</span>}
+        <span className={`kanban-age-badge is-overlay is-${age.tone} ${age.label === 'New' ? 'is-new-arrival' : ''}`} aria-label={`Age ${age.label}`}>{age.label}</span>
+        {hasDeliverables && <DeliverableBadges values={deliverables} overlay />}
         {flagged && <span className="kanban-card-flag" aria-label="Flagged for an issue">⚑ Flagged</span>}
-        {showRequiredIndicators && <RequiredToShootIndicators items={item.requiredToShoot} />}
       </div>
       <div className="kanban-card-body">
-        {isNewQueue && (
-          <div className="kanban-card-arrival-row">
-            <span className={`kanban-age-badge is-primary is-${age.tone}`} aria-label={`Time here ${age.label}`}>{age.label} here</span>
-          </div>
-        )}
-        {isWorkstreamCard && (
-          <div className="kanban-card-workstream-row">
-            <span>Workstream Card</span>
-            <strong>{item.workstreamStatus || item.record?.workstreamStatus || 'New'}</strong>
-          </div>
-        )}
+        <span className="kanban-card-client-eyebrow">{clientLabel}</span>
         <h3>{item.title}</h3>
-        {showMeta && (
-          <p className="kanban-card-meta">
-            {showClient && <span>{item.client || 'Unknown client'}</span>}
-            {showQuantity && <span>Qty {quantity}</span>}
-          </p>
-        )}
+        <div className="kanban-card-identity-row" aria-label="Merchandise identity">
+          <span className="kanban-card-upc">
+            <b>{DOMAIN_TERMS.merchandiseIdentifier}</b>
+            {identifier || '—'}
+          </span>
+          <span>
+            <b>Qty</b>
+            {displayQuantity}
+          </span>
+        </div>
         {(identifier || showStorage) && (
           <div className="kanban-card-details" aria-label="Merchandise details">
-            {identifier && (
-              <span>
-                <b>ID</b>
-                {identifier}
-              </span>
-            )}
             {showStorage && (
               <span>
                 <b>Storage</b>
@@ -6065,24 +7534,26 @@ function KanbanCardComponent({ item, selected, onSelect, disabled = false, showN
             )}
           </div>
         )}
-        {hasDeliverables ? <DeliverableBadges values={deliverables} /> : (!isNewQueue && item.deliverableRoute && <strong className="kanban-card-deliverables">{item.deliverableRoute}</strong>)}
-        {isWorkstreamCard && (
-          <div className="kanban-card-workstream-meta">
-            <span>{item.workstreamType || item.record?.workstreamType} work</span>
-            <span>Assigned Qty {item.workstreamQuantity || item.record?.workstreamQuantity || quantity}</span>
+        {showProductWorkChecklist ? (
+          <div className="kanban-criteria-list" aria-label="Review criteria">
+            {productWorkChecklist.map(check => (
+              <span className={`kanban-criterion is-${check.tone} has-${check.mark}`} key={check.label}>{check.label}</span>
+            ))}
+          </div>
+        ) : (!hasDeliverables && item.deliverableRoute && <strong className="kanban-card-deliverables">{item.deliverableRoute}</strong>)}
+        {awaitingInfoChecklist.length > 0 && (
+          <div className="kanban-criteria-list" aria-label="Awaiting information criteria">
+            {awaitingInfoChecklist.map(check => (
+              <span className={`kanban-criterion is-${check.tone} has-${check.mark}`} key={check.label}>{check.label}</span>
+            ))}
           </div>
         )}
-        {activationState && <span className={`kanban-activation-chip is-${activationState.tone}`}>{activationState.label}</span>}
-        {showRequiredPreview && <RequiredToShootPreview item={item} ready={ready} />}
+        {!isWorkstreamCard && hasDeliverables && photoProduction && <PhotoProductionValidationSummary production={photoProduction} compact />}
         {showFooter && <div className="kanban-card-footer">
           {showStatusChip && <span className={`kanban-status-chip is-${status}`}>{statusLabel}</span>}
           <span className="kanban-card-signals">
             {!isNewQueue && <span className={`kanban-age-badge is-${age.tone}`} aria-label={`Age ${age.label}`}>{age.label}</span>}
-            <span className={`kanban-comment-signal ${item.unreadComments > 0 ? 'has-unread' : ''}`} aria-label={`${item.commentCount || 0} comments${item.unreadComments > 0 ? `, ${item.unreadComments} new` : ''}`}>
-              {item.unreadComments > 0 && <span className="kanban-unread-dot" aria-hidden="true" />}
-              <span aria-hidden="true">💬</span>
-              {item.commentCount || 0}
-            </span>
+            <CommentCountChip count={item.commentCount} unread={item.unreadComments} recent={item.recentComment} />
           </span>
         </div>}
       </div>
@@ -6121,36 +7592,36 @@ function PlanningActivationListModal({ activations = [], loading = false, onClos
   const editableActivations = activations.filter(activationEditableForPhoto);
   return createPortal(
     <div className="activation-modal-backdrop" role="presentation" onClick={onClose}>
-      <section className="activation-list-modal" role="dialog" aria-modal="true" aria-label="Edit Activations" onClick={event => event.stopPropagation()}>
+      <section className="activation-list-modal" role="dialog" aria-modal="true" aria-label="Edit Photo Releases" onClick={event => event.stopPropagation()}>
         <header className="activation-modal-header">
           <div>
             <span className="nr-eyebrow">Topco</span>
-            <h2>Edit Activations</h2>
+            <h2>Edit Photo Releases</h2>
           </div>
-          <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close Activations">
+          <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close photo releases">
             <Icon.Close />
           </button>
         </header>
         <div className="activation-list-body">
           {loading ? (
-            <div className="planning-activation-empty">Loading Activations...</div>
+            <div className="planning-activation-empty">Loading photo releases...</div>
           ) : editableActivations.length ? (
             editableActivations.map(activation => (
               <button type="button" className="activation-list-row" onClick={() => onEdit?.(activation)} key={activation.id}>
                 <span>
-                  <strong>{activation.name || 'Untitled Activation'}</strong>
+                  <strong>{activation.name || 'Untitled photo release'}</strong>
                   <small>{activation.dueUrgency || activation.status || 'Draft'}</small>
                 </span>
                 <em>{activationSummary(activation)}</em>
               </button>
             ))
           ) : (
-            <div className="planning-activation-empty">No pending photo Activations to edit.</div>
+            <div className="planning-activation-empty">No pending photo releases to edit.</div>
           )}
         </div>
         <footer className="activation-modal-footer">
           <button type="button" className="btn" onClick={onClose}>Close</button>
-          <button type="button" className="btn btn-primary" onClick={onAdd}>Add Activation</button>
+          <button type="button" className="btn btn-primary" onClick={onAdd}>New photo release</button>
         </footer>
       </section>
     </div>,
@@ -6162,84 +7633,12 @@ function activationEditableForPhoto(activation = {}) {
   return !['Released', 'Cancelled', 'Complete'].includes(String(activation.status || '').trim());
 }
 
-function activationAvailableForPlanningItem(activation = {}, item = {}) {
-  if (!activationEditableForPhoto(activation)) return false;
-  const activationClientIds = activation.clientIds || [];
-  const itemClientIds = item.record?.clientIds || [];
-  if (!activationClientIds.length || !itemClientIds.length) return true;
-  return activationClientIds.some(clientId => itemClientIds.includes(clientId));
-}
-
-function activationRowFromPlanningItem(item = {}) {
-  const record = item.record || {};
-  return {
-    merchandiseId: item.merchandiseId || item.id || '',
-    description: record.description || record.productName || item.title || '',
-    upc: record.skuId || item.identifier || '',
-    cvid: '',
-    structure: '',
-  };
-}
-
-function activationWithPlanningItem(activation, item) {
-  const row = activationRowFromPlanningItem(item);
-  const existingRows = Array.isArray(activation?.skuDetails) ? activation.skuDetails : [];
-  const hasRow = existingRows.some(existing => existing?.merchandiseId === row.merchandiseId);
-  return {
-    ...(activation || {}),
-    clientIds: activation?.clientIds?.length ? activation.clientIds : item.record?.clientIds || [],
-    deliverables: normalizeDeliverableList(activation?.deliverables || item.deliverables || ['Ecomm'])
-      .filter(value => ACTIVATION_DELIVERABLE_OPTIONS.includes(value)),
-    skuDetails: hasRow ? existingRows : [...existingRows, row],
-    linkedMerchandiseIds: [
-      ...new Set([
-        ...(activation?.linkedMerchandiseIds || activation?.matchedMerchandiseIds || []),
-        row.merchandiseId,
-      ].filter(Boolean)),
-    ],
-  };
-}
-
-function NewReviewActivationPanel({ item, activations = [], onNewActivation, onAddToActivation }) {
-  const editableActivations = activations.filter(activation => activationAvailableForPlanningItem(activation, item));
-  const [activationId, setActivationId] = useState('');
-
-  useEffect(() => {
-    setActivationId('');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.id, editableActivations.map(activation => activation.id).join('|')]);
-
-  const selectedActivation = editableActivations.find(activation => activation.id === activationId);
-  return (
-    <div className="new-review-activation-panel">
-      <p className="review-step-lead">Link this merchandise to a pending photo Activation, or start a new Activation with this item already included.</p>
-      <div className="new-review-activation-actions">
-        <label>
-          Pending Activation
-          <select className="form-input" value={activationId} onChange={event => setActivationId(event.target.value)}>
-            <option value="">Choose Activation...</option>
-            {editableActivations.map(activation => (
-              <option value={activation.id} key={activation.id}>{activation.name || 'Untitled Activation'}</option>
-            ))}
-          </select>
-        </label>
-        <button type="button" className="btn btn-blue-outline" onClick={() => selectedActivation && onAddToActivation?.(selectedActivation, item)} disabled={!selectedActivation}>
-          Add to Activation
-        </button>
-        <button type="button" className="btn btn-primary" onClick={() => onNewActivation?.(item)}>
-          New Activation
-        </button>
-      </div>
-      {selectedActivation && <small>{activationSummary(selectedActivation)}</small>}
-    </div>
-  );
-}
-
 function KanbanColumn({ column, items, selectedId, onSelect, onMove, disabled = false, showNewCardClient = true }) {
   const [dragState, setDragState] = useState('');
   const title = column.label || column.displayName || column.title || column.name;
   const missingArtwork = items.filter(item => requiredToShootSummary(item).missing.some(label => /artwork/i.test(label))).length;
   const withComments = items.filter(item => item.commentCount > 0).length;
+  const withRecentComments = items.filter(item => item.recentComment).length;
   return (
     <section
       className={`kanban-column ${dragState ? `is-${dragState}` : ''}`}
@@ -6265,9 +7664,16 @@ function KanbanColumn({ column, items, selectedId, onSelect, onMove, disabled = 
         <div className="kanban-column-title-row">
           <h2>{title}</h2>
           <div className="kanban-column-summary">
-            <span className="kanban-column-count">{items.length}</span>
             {missingArtwork > 0 && <span>{missingArtwork} missing artwork</span>}
-            {withComments > 0 && <span>{withComments} with comments</span>}
+            {withComments > 0 && (
+              <CommentCountChip
+                count={withComments}
+                recent={withRecentComments > 0}
+                className="is-column"
+                ariaLabel={`${withComments} cards with comments${withRecentComments > 0 ? `, ${withRecentComments} recent` : ''}`}
+                title={`${withComments} cards with comments${withRecentComments > 0 ? `, ${withRecentComments} recent` : ''}`}
+              />
+            )}
           </div>
         </div>
       </header>
@@ -6296,6 +7702,52 @@ function KanbanBoard({ columns, itemsByColumn, selectedId, onSelect, onMove, dis
           showNewCardClient={showNewCardClient}
         />
       ))}
+    </div>
+  );
+}
+
+function PlanningListView({ columns, itemsByColumn, selectedId, onSelect, disabled = false, showNewCardClient = true }) {
+  return (
+    <div className={`planning-list-view ${disabled ? 'is-frozen' : ''}`} aria-label="Planning list">
+      {columns.map(column => {
+        const items = itemsByColumn[column.id] || [];
+        return (
+          <section className="planning-list-section" key={column.id} aria-labelledby={`planning-list-${column.id}`}>
+            <header className="planning-list-section-header">
+              <div>
+                <h2 id={`planning-list-${column.id}`}>{column.label}</h2>
+                <span>{column.description}</span>
+              </div>
+              <strong>{items.length}</strong>
+            </header>
+            {items.length ? (
+              <div className="planning-list-rows">
+                {items.map(item => {
+                  const age = ageBucketForItem(item);
+                  return (
+                    <button
+                      type="button"
+                      className={`planning-list-row ${selectedId === item.id ? 'is-selected' : ''}`}
+                      key={item.id}
+                      onClick={() => !disabled && onSelect?.(item.id)}
+                      disabled={disabled}
+                    >
+                      <span className="planning-list-main">
+                        <strong>{item.title || 'Received Merchandise'}</strong>
+                        <span>{showNewCardClient && (item.client || item.record?.client)}{item.identifier ? ` · ${item.identifier}` : ''}</span>
+                      </span>
+                      <DeliverableBadges values={item.deliverables || item.record?.deliverables || []} />
+                      <span className="planning-list-age">{age.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="planning-list-empty">No cards in this queue.</div>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -6356,11 +7808,11 @@ function requiredToShootForItem(item = {}) {
     completeCount: 0,
     totalCount: 4,
     summary: '0 of 4 Complete',
-    missing: ['Product Linked', 'Product Name', 'Identifier', 'Deliverables'],
+    missing: ['Product Linked', 'Product Name', DOMAIN_TERMS.primaryMatchKey, 'Deliverables'],
     requirements: [
       { key: 'product-linked', label: 'Product Linked', ready: false, missing: 'Link a Product.' },
       { key: 'product-name', label: 'Product Name', ready: false, missing: 'Add Product Name.' },
-      { key: 'identifier', label: 'Identifier', ready: false, missing: 'Add the Product Identifier.' },
+      { key: 'identifier', label: DOMAIN_TERMS.primaryMatchKey, ready: false, missing: 'Add the Product Primary Match Key.' },
       { key: 'deliverables', label: 'Deliverables', ready: false, missing: 'Select at least one Deliverable.' },
     ],
   };
@@ -6412,7 +7864,7 @@ function ReleaseToProductionAction({ item, onRelease, busy }) {
   );
 }
 
-function PlanningWorkspaceSection({ section, item, photos, activePhotoUrl, photoIndex, setPhotoIndex, override }) {
+function PlanningWorkspaceSection({ section, item, photos, activePhotoUrl, photoIndex, setPhotoIndex, override, onRefresh }) {
   const record = item.record || {};
   const product = record.linkedItem || {};
   const blockers = item.requiredToShoot.filter(requirement => requirement.visible !== false && !requirement.satisfied);
@@ -6445,9 +7897,12 @@ function PlanningWorkspaceSection({ section, item, photos, activePhotoUrl, photo
       {section === WORKSPACE_SECTIONS.merchandiseSummary && (
         <>
           <div className="planning-fact-grid">
-            {item.subjectType === 'workstream-card' && <PlanningFact label="Card Type" value={`${item.workstreamType || record.workstreamType || 'Workstream'} Workstream`} />}
+            {item.subjectType === 'workstream-card' && <PlanningFact label="Work Type" value={item.workstreamType || record.workstreamType || 'Photo'} />}
             {item.subjectType === 'workstream-card' && <PlanningFact label="Assigned Qty" value={item.workstreamQuantity || record.workstreamQuantity || item.quantity} />}
             {item.subjectType === 'workstream-card' && <PlanningFact label="Workstream Status" value={item.workstreamStatus || record.workstreamStatus || 'New'} />}
+            {item.subjectType === 'workstream-card' && <PlanningFact label="Product Data" value={item.photoProduction?.productData?.ready ? 'Ready' : item.photoProduction?.productData?.missing?.join(', ') || 'Not configured'} />}
+            {item.subjectType === 'workstream-card' && <PlanningFact label="Filename" value={item.photoProduction?.fileNaming?.ready ? item.photoProduction.fileNaming.template || 'Ready' : item.photoProduction?.fileNaming?.missing?.join(', ') || 'Not configured'} />}
+            {item.subjectType === 'workstream-card' && item.photoProduction?.creativeForce?.checks?.length > 0 && <PlanningFact label="Creative Force" value={item.photoProduction.creativeForce.ready ? `Product Code + ${item.photoProduction.creativeForce.categoryField === 'clientName' ? 'Client Name' : 'Category'}` : item.photoProduction.creativeForce.missing?.join(', ') || 'Not configured'} />}
             <PlanningFact label={DOMAIN_TERMS.packageName} value={record.productName} />
             <PlanningFact label="Client" value={item.client} />
             <PlanningFact label="Queue" value={item.planningCard.currentQueueName} />
@@ -6455,13 +7910,17 @@ function PlanningWorkspaceSection({ section, item, photos, activePhotoUrl, photo
             <PlanningFact label="Time Here" value={item.timeHere} />
             <PlanningFact label="Storage" value={item.location} />
           </div>
+          {item.subjectType !== 'workstream-card' && record.deliverables?.length > 0 && record.photoProduction && <PhotoProductionValidationSummary production={record.photoProduction} />}
+          {(record.deliverables?.some(value => value === 'Packaging' || value === 'Ecomm') || item.photoProduction?.workstreamType || item.workstreamType) && photoProductionStatusForItem(item) && (
+            <PhotoProductionFieldsEditor item={item} production={photoProductionStatusForItem(item)} onRefresh={onRefresh} />
+          )}
         </>
       )}
       {[WORKSPACE_SECTIONS.productIdentification, WORKSPACE_SECTIONS.productIdentificationSummary, WORKSPACE_SECTIONS.productSummary].includes(section) && (
         product?.id || record.itemIds?.length ? (
           <div className="planning-fact-grid">
             <PlanningFact label="Product" value={product.product || product.name} />
-            <PlanningFact label="Identifier" value={product.identifier || product.productId || product.gtinUpc} />
+            <PlanningFact label={DOMAIN_TERMS.primaryMatchKey} value={product.primaryMatchKey || product.identifier || product.productId || product.gtinUpc} />
             <PlanningFact label="Brand" value={product.brand} />
             <PlanningFact label="Job Number" value={product.itemJobNumber || product.pickupJobNumber} />
             <PlanningFact label="Required To Shoot" value={product.requiredToShoot?.ready ? 'Ready' : product.requiredToShoot?.missing?.join(', ') || 'Pending'} />
@@ -6568,6 +8027,7 @@ function referenceDataValue(product = {}, labels = []) {
 function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveContinue, onRelease, releaseBusy, onRefresh, feedback, photos, photoIndex, setPhotoIndex, nextItem }) {
   const record = item.record || {};
   const product = record.linkedItem || {};
+  const photoProduction = photoProductionStatusForItem(item);
   const activePhotoUrl = receivingPhotoUrl(photos[photoIndex] || photos[0]);
   const blockers = item.requiredToShoot.filter(requirement => requirement.visible !== false && !requirement.satisfied);
   const [productQuery, setProductQuery] = useState(product.identifier || record.skuId || record.productName || '');
@@ -6648,7 +8108,7 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
           ...productDraft,
           clientId: record.clientIds?.[0],
           codeType: product.codeType || record.codeType,
-          identifierLabel: product.identifierLabel || 'Identifier',
+          primaryMatchKeyLabel: product.primaryMatchKeyLabel || product.identifierLabel || DOMAIN_TERMS.primaryMatchKey,
         });
         await api.matchMerchandiseReviewEntry(item.merchandiseId, created.id);
         setLocalFeedback('Incomplete Product created and linked.');
@@ -6756,7 +8216,7 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
             <div className="waiting-product-search">
               <label>
                 Search Product
-                <input value={productQuery} onChange={event => setProductQuery(event.target.value)} placeholder="Search by product, brand, or identifier" />
+                <input value={productQuery} onChange={event => setProductQuery(event.target.value)} placeholder="Search by product, brand, or match key" />
               </label>
               {searchingProducts && <span>Searching...</span>}
               {productMatches.length > 0 && (
@@ -6765,7 +8225,7 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
                   {productMatches.slice(0, 5).map(match => (
                     <button type="button" onClick={() => linkProduct(match.id)} disabled={productSaving} key={match.id}>
                       <strong>{match.product || match.name || 'Unnamed Product'}</strong>
-                      <span>{[match.identifier, match.brand].filter(Boolean).join(' • ') || 'No identifier'}</span>
+                      <span>{[match.primaryMatchKey || match.identifier, match.brand].filter(Boolean).join(' • ') || 'No primary match key'}</span>
                     </button>
                   ))}
                 </div>
@@ -6774,7 +8234,7 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
             <div className="waiting-product-fields">
               <label>Product Name<input value={productDraft.name} onChange={event => updateProductDraft('name', event.target.value)} /></label>
               <label>Product/File Name<input value={productDraft.product} onChange={event => updateProductDraft('product', event.target.value)} /></label>
-              <label>Identifier<input value={productDraft.productId} onChange={event => updateProductDraft('productId', event.target.value)} /></label>
+              <label>Primary Match Key<input value={productDraft.productId} onChange={event => updateProductDraft('productId', event.target.value)} /></label>
               <label>Brand<input value={productDraft.brand} onChange={event => updateProductDraft('brand', event.target.value)} /></label>
               <label>Description<textarea value={productDraft.description} onChange={event => updateProductDraft('description', event.target.value)} rows={2} /></label>
               <label>Product Job Number<input value={productDraft.itemJobNumber} onChange={event => updateProductDraft('itemJobNumber', event.target.value)} /></label>
@@ -6814,6 +8274,13 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
               <PlanningFact label="Deliverables" value={item.deliverableRoute || item.planningCard.planningName} />
               <PlanningFact label="Queue" value={item.planningCard.currentQueueName} />
             </div>
+            {photoProduction && (
+              <PhotoProductionFieldsEditor
+                item={item}
+                production={photoProduction}
+                onRefresh={onRefresh}
+              />
+            )}
           </section>
 
           <section className="planning-workspace-section">
@@ -6948,6 +8415,7 @@ function PlanningWorkspaceDrawer({ item, onClose, onMove, onSave, onSaveContinue
               photoIndex={photoIndex}
               setPhotoIndex={setPhotoIndex}
               override={override}
+              onRefresh={onRefresh}
               key={section}
             />
           ))}
@@ -7035,41 +8503,70 @@ function DeliverablesSelector({ values = [], onChange, disabled = false, options
 
 function NewReviewProductIdentification({ item, product, onRefresh }) {
   const record = item.record || {};
-  const [query, setQuery] = useState(product.identifier || record.skuId || record.productName || '');
+  const [matchNameQuery, setMatchNameQuery] = useState(record.productName || record.description || '');
+  const [matchIdentifierQuery, setMatchIdentifierQuery] = useState(record.skuId || record.observedIdentifier || product.identifier || product.primaryMatchKey || '');
   const [matches, setMatches] = useState([]);
   const [draft, setDraft] = useState(() => productInformationFields(product, record));
   const [busy, setBusy] = useState(false);
+  const [matchLoading, setMatchLoading] = useState(false);
   const [notice, setNotice] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [noClearMatch, setNoClearMatch] = useState(false);
+  const [editingLinkedProductIdentity, setEditingLinkedProductIdentity] = useState(false);
+  const [replacementProductId, setReplacementProductId] = useState('');
 
   useEffect(() => {
-    setQuery(product.identifier || record.skuId || record.productName || '');
+    setMatchNameQuery(record.productName || record.description || '');
+    setMatchIdentifierQuery(record.skuId || record.observedIdentifier || product.identifier || product.primaryMatchKey || '');
     setDraft(productInformationFields(product, record));
     setMatches([]);
     setNotice('');
-  }, [item.id, product.id]);
+    setNoClearMatch(Boolean(record.noClearMatch || record.reviewState === 'Waiting for Product Data'));
+    setEditingLinkedProductIdentity(false);
+    setReplacementProductId('');
+  }, [item.id, product.id, record.productName, record.description, record.skuId, record.observedIdentifier, record.noClearMatch, record.reviewState]);
 
   useEffect(() => {
     let active = true;
-    const cleaned = query.trim();
-    if (cleaned.length < 3) {
+    const identifierQuery = String(matchIdentifierQuery || '').trim();
+    const nameQuery = String(matchNameQuery || '').trim();
+    const identifierReady = compactMatchValue(identifierQuery).length >= 3;
+    const nameReady = compactMatchValue(nameQuery).length >= 3;
+    if (!identifierReady && !nameReady) {
       setMatches([]);
+      setMatchLoading(false);
       return () => { active = false; };
     }
-    setBusy(true);
-    api.searchMerchandiseReviewProducts({
-      q: cleaned,
-      clientId: record.clientIds?.[0],
-      includeItemId: record.itemIds?.[0],
-    }).then(data => {
-      if (active) setMatches(data.records ?? []);
-    }).catch(error => {
-      if (active) setNotice(error.message || 'Could not search Products.');
-    }).finally(() => {
-      if (active) setBusy(false);
-    });
-    return () => { active = false; };
-  }, [query, item.id]);
+    setMatchLoading(true);
+    const t = window.setTimeout(async () => {
+      try {
+        let records = [];
+        if (identifierReady && nameReady) {
+          const [identifierData, nameData] = await Promise.all([
+            api.searchMerchandiseReviewProducts({ q: identifierQuery, clientId: record.clientIds?.[0], includeItemId: record.itemIds?.[0], limit: 50 }),
+            api.searchMerchandiseReviewProducts({ q: nameQuery, clientId: record.clientIds?.[0], includeItemId: record.itemIds?.[0], limit: 50 }),
+          ]);
+          records = combineIdentifierAndNameMatches(identifierData.records ?? [], nameData.records ?? [], identifierQuery);
+        } else if (identifierReady) {
+          const data = await api.searchMerchandiseReviewProducts({ q: identifierQuery, clientId: record.clientIds?.[0], includeItemId: record.itemIds?.[0] });
+          records = (data.records ?? []).map(match => ({ ...match, matchBasis: itemIdentifierBasis(match) }));
+        }
+        if (records.length === 0 && nameReady && !identifierReady) {
+          const data = await api.searchMerchandiseReviewProducts({ q: nameQuery, clientId: record.clientIds?.[0], includeItemId: record.itemIds?.[0] });
+          records = (data.records ?? []).map(match => ({ ...match, matchBasis: 'name' }));
+        }
+        if (active) setMatches(records);
+      } catch (error) {
+        if (active) {
+          setMatches([]);
+          setNotice(error.message || 'Could not search Products.');
+        }
+      } finally {
+        if (active) setMatchLoading(false);
+      }
+    }, 220);
+    return () => { active = false; window.clearTimeout(t); };
+  }, [matchIdentifierQuery, matchNameQuery, item.id, record.clientIds, record.itemIds]);
 
   function setField(field, value) {
     setDraft(current => ({ ...current, [field]: value }));
@@ -7079,11 +8576,37 @@ function NewReviewProductIdentification({ item, product, onRefresh }) {
     setBusy(true);
     setNotice('');
     try {
+      const identityUpdates = {};
+      const nextName = String(matchNameQuery || '').trim();
+      const nextIdentifier = String(matchIdentifierQuery || '').trim();
+      const savedName = String(record.productName || record.description || '').trim();
+      const savedIdentifier = String(record.skuId || record.observedIdentifier || '').trim();
+      if (nextName && nextName !== savedName) identityUpdates.productName = nextName;
+      if (nextIdentifier !== savedIdentifier) identityUpdates.skuId = nextIdentifier;
+      if (Object.keys(identityUpdates).length > 0) {
+        await api.updateMerchandiseIntakeDecisions(item.merchandiseId, identityUpdates);
+      }
       await api.matchMerchandiseReviewEntry(item.merchandiseId, productId);
+      setEditingLinkedProductIdentity(false);
+      setReplacementProductId('');
       await onRefresh?.();
-      setNotice('Product linked.');
     } catch (error) {
       setNotice(error.message || 'Could not link Product.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function markNoClearMatch() {
+    setBusy(true);
+    setNotice('');
+    try {
+      await api.markMerchandiseWaitingForProductData(item.merchandiseId, { note: 'No clear Product match from Planning.' });
+      setNoClearMatch(true);
+      setReplacementProductId('');
+      await onRefresh?.();
+    } catch (error) {
+      setNotice(error.message || 'Could not mark this as no clear match.');
     } finally {
       setBusy(false);
     }
@@ -7105,7 +8628,7 @@ function NewReviewProductIdentification({ item, product, onRefresh }) {
           ...draft,
           clientId: record.clientIds?.[0],
           codeType: product.codeType || record.codeType,
-          identifierLabel: product.identifierLabel || 'Identifier',
+          primaryMatchKeyLabel: product.primaryMatchKeyLabel || product.identifierLabel || DOMAIN_TERMS.primaryMatchKey,
         });
         await api.matchMerchandiseReviewEntry(item.merchandiseId, created.id);
         setNotice('Incomplete Product created and linked.');
@@ -7118,86 +8641,141 @@ function NewReviewProductIdentification({ item, product, onRefresh }) {
     }
   }
 
-  async function unlinkProduct() {
+  async function useProductMerchValue(field, value) {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return;
     setBusy(true);
     setNotice('');
     try {
-      await api.removeMerchandiseReviewMatch(item.merchandiseId);
+      await api.updateMerchandiseIntakeDecisions(item.merchandiseId, { [field]: trimmed });
+      if (field === 'productName') setMatchNameQuery(trimmed);
+      if (field === 'skuId') setMatchIdentifierQuery(trimmed);
       await onRefresh?.();
     } catch (error) {
-      setNotice(error.message || 'Could not unlink Product.');
+      setNotice(error.message || 'Could not update merchandise.');
     } finally {
       setBusy(false);
     }
   }
 
   const linked = Boolean(product.id);
-  const compareRows = linked ? productMatchRows(record, product) : [];
-  const warnings = compareRows.filter(row => row.status === 'warn');
-  const cleanedQuery = query.trim();
+  const choosingReplacementProduct = Boolean(replacementProductId);
+  const showLinkedProductCard = linked && !choosingReplacementProduct;
+  const observedName = String(matchNameQuery || '').trim();
+  const observedIdentifier = String(matchIdentifierQuery || '').trim();
+  const productTitle = itemMatchTitle(product);
+  const productIdentifier = itemMatchIdentifierValue(product);
+  const linkedNameDiffers = linked && matchValuesConflict(observedName, productTitle);
+  const linkedIdentifierDiffers = linked && matchValuesConflict(observedIdentifier, productIdentifier);
+  const linkedIdentityIsClean = Boolean(
+    linked
+    && observedName
+    && observedIdentifier
+    && !linkedNameDiffers
+    && !linkedIdentifierDiffers
+  );
+  const showProductIdentityFields = !showLinkedProductCard || !linkedIdentityIsClean || editingLinkedProductIdentity;
+  const matchIdentifierReady = compactMatchValue(matchIdentifierQuery).length >= 3;
+  const matchNameReady = compactMatchValue(matchNameQuery).length >= 3;
+  const showMatchSuggestions = (!showLinkedProductCard || editingLinkedProductIdentity) && (matchIdentifierReady || matchNameReady);
+  const nameOnlyMatchSuggestions = matches.length > 0 && matches.every(match => match.matchBasis === 'name');
+  const combinedPartialMatchSuggestions = matches.length > 0 && matches.every(match => String(match.matchBasis || '').startsWith('both-'));
+  const combinedMatchSearch = matchIdentifierReady && matchNameReady;
+  const matchSuggestionsTitle = matchLoading
+    ? 'Searching products…'
+    : matches.length
+      ? (nameOnlyMatchSuggestions || combinedPartialMatchSuggestions) ? 'Possible products' : 'Suggested products'
+      : combinedMatchSearch ? 'No product matches both fields' : 'No matches found';
+  const showIncompleteProductCreation = false;
 
   return (
     <div className="new-review-product-id">
-      {!linked && <p className="review-step-lead">Match this item to a Product record so downstream work knows what it is. Can’t find it? Create an incomplete one.</p>}
-
-      {linked ? (
-        <div className="merch-compare">
-          <div className="merch-compare-grid" role="table" aria-label="Merch versus product record">
-            <span className="mc-h" role="columnheader">Field</span>
-            <span className="mc-h" role="columnheader">Merch observed</span>
-            <span className="mc-h" role="columnheader">Product record</span>
-            <span className="mc-h" aria-hidden="true"></span>
-            {compareRows.map(row => (
-              <Fragment key={row.label}>
-                <span className="mc-label">{row.label}</span>
-                <span className="mc-val">{row.merch || '—'}</span>
-                <span className="mc-val">{row.prod || '—'}</span>
-                <span className={`mc-mark is-${row.status}`} title={row.status}>{row.status === 'match' ? '✓' : row.status === 'warn' ? '⚠' : '·'}</span>
-              </Fragment>
-            ))}
+      {showProductIdentityFields && (
+        <div className="new-review-product-search-fields">
+          <div className="recv-field recv-field-product">
+            <label>{DOMAIN_TERMS.packageName}</label>
+            <input value={matchNameQuery} onChange={event => { setMatchNameQuery(event.target.value); if (linked) setEditingLinkedProductIdentity(true); }} placeholder="Name printed on package" autoComplete="off" />
           </div>
-          {warnings.length > 0 && (
-            <p className="merch-compare-warn">⚠ {warnings.map(row => row.label).join(', ')} differ{warnings.length === 1 ? 's' : ''} between the merch and the linked Product. Confirm this is the right match.</p>
-          )}
-          <div className="merch-compare-foot">
-            <button type="button" className="btn btn-sm" onClick={unlinkProduct} disabled={busy}>Unlink</button>
+          <div className="recv-field">
+            <label>{DOMAIN_TERMS.merchandiseIdentifier}</label>
+            <input value={matchIdentifierQuery} onChange={event => { setMatchIdentifierQuery(event.target.value); if (linked) setEditingLinkedProductIdentity(true); }} placeholder="Scan or enter UPC / ID" autoComplete="off" />
           </div>
         </div>
+      )}
+      {showLinkedProductCard ? (
+        <>
+          <ProductMatchCard
+            item={product}
+            observedName={observedName}
+            observedIdentifier={observedIdentifier}
+            onChange={() => {
+              setReplacementProductId(product.id || '');
+              setEditingLinkedProductIdentity(false);
+              setNoClearMatch(false);
+            }}
+            onUseProductIdentifier={() => useProductMerchValue('skuId', productIdentifier)}
+            onUseProductName={() => useProductMerchValue('productName', productTitle)}
+            changeDisabled={busy}
+            actionDisabled={busy}
+            nameWarningText="Package name differs from the linked Product name."
+            identifierWarningText={`Package UPC / ID differs from the linked Product ${itemMatchMethod(product)}.`}
+          />
+          {showMatchSuggestions && (
+              <ReceivingMatchSuggestions
+                title={matchSuggestionsTitle}
+                matches={matches}
+              identifierQuery={matchIdentifierQuery}
+              nameOnlyMatchSuggestions={nameOnlyMatchSuggestions}
+              combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
+              combinedMatchSearch={combinedMatchSearch}
+              matchLoading={matchLoading}
+                onSelect={match => linkProduct(match.id)}
+              disabled={busy}
+            />
+          )}
+        </>
+      ) : noClearMatch ? (
+        <ProductMatchCard
+          status="unmatched"
+          title="No Clear Match"
+          meta="Waiting for Product data."
+          onChange={() => setNoClearMatch(false)}
+          changeDisabled={busy}
+        />
       ) : (
         <>
-          <label>
-            Match to a Product record
-            <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search by barcode, product, or brand" />
-          </label>
-          {cleanedQuery.length >= 3 && (
-            matches.length > 0 ? (
-              <div className="waiting-product-results">
-                <strong>{matches.length} match{matches.length > 1 ? 'es' : ''} for “{cleanedQuery}”</strong>
-                {matches.slice(0, 4).map(match => (
-                  <button type="button" onClick={() => linkProduct(match.id)} disabled={busy} key={match.id}>
-                    <strong>{match.product || match.name || 'Unnamed Product'}</strong>
-                    <span>{[match.identifier, match.brand].filter(Boolean).join(' • ') || 'No identifier'}</span>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              !busy && <p className="merch-compare-empty">No Products match “{cleanedQuery}”. Create one below.</p>
-            )
+          {showMatchSuggestions && (
+              <ReceivingMatchSuggestions
+                title={matchSuggestionsTitle}
+                matches={matches}
+              identifierQuery={matchIdentifierQuery}
+              nameOnlyMatchSuggestions={nameOnlyMatchSuggestions}
+              combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
+              combinedMatchSearch={combinedMatchSearch}
+              matchLoading={matchLoading}
+              onNoClearMatch={markNoClearMatch}
+              onSelect={match => linkProduct(match.id)}
+              disabled={busy}
+            />
           )}
-          <div className="merch-create-alt">
-            <button type="button" className="merch-link-btn" onClick={() => setCreateOpen(open => !open)}>
-              {createOpen ? 'Hide' : 'Can’t find it? Create an incomplete Product'}
-            </button>
-          </div>
-          {createOpen && (
+          {showIncompleteProductCreation && (
             <>
-              <div className="waiting-product-fields">
-                <label>Product Name<input value={draft.name} onChange={event => setField('name', event.target.value)} /></label>
-                <label>Product/File Name<input value={draft.product} onChange={event => setField('product', event.target.value)} /></label>
-                <label>Identifier<input value={draft.productId} onChange={event => setField('productId', event.target.value)} /></label>
-                <label>Brand<input value={draft.brand} onChange={event => setField('brand', event.target.value)} /></label>
+              <div className="merch-create-alt">
+                <button type="button" className="merch-link-btn" onClick={() => setCreateOpen(open => !open)}>
+                  {createOpen ? 'Hide' : 'Can’t find it? Create an incomplete Product'}
+                </button>
               </div>
-              <button type="button" className="btn btn-secondary" onClick={saveProduct} disabled={busy}>Create &amp; Link Incomplete Product</button>
+              {createOpen && (
+                <>
+                  <div className="waiting-product-fields">
+                    <label>Product Name<input value={draft.name} onChange={event => setField('name', event.target.value)} /></label>
+                    <label>Product/File Name<input value={draft.product} onChange={event => setField('product', event.target.value)} /></label>
+                    <label>Primary Match Key<input value={draft.productId} onChange={event => setField('productId', event.target.value)} /></label>
+                    <label>Brand<input value={draft.brand} onChange={event => setField('brand', event.target.value)} /></label>
+                  </div>
+                  <button type="button" className="btn btn-secondary" onClick={saveProduct} disabled={busy}>Create &amp; Link Incomplete Product</button>
+                </>
+              )}
             </>
           )}
         </>
@@ -7211,7 +8789,7 @@ function productMatchRows(record, product) {
   const alnum = value => String(value || '').replace(/[^0-9a-z]/gi, '').toLowerCase();
   const norm = value => String(value || '').trim().toLowerCase();
   const rows = [
-    { label: 'Barcode', merch: record.skuId || record.observedIdentifier || '', prod: product.identifier || product.productId || product.gtinUpc || '', compare: alnum },
+    { label: DOMAIN_TERMS.primaryMatchKey, merch: record.skuId || record.observedIdentifier || '', prod: product.primaryMatchKey || product.identifier || product.productId || product.gtinUpc || '', compare: alnum },
     { label: 'Name', merch: record.productName || record.description || '', prod: product.product || product.name || '', compare: norm },
     { label: 'Brand', merch: record.brand || '', prod: product.brand || '', compare: norm },
   ];
@@ -7222,52 +8800,6 @@ function productMatchRows(record, product) {
     if (merchKey && prodKey) status = merchKey === prodKey ? 'match' : 'warn';
     return { label: row.label, merch: row.merch, prod: row.prod, status };
   });
-}
-
-function RequiredToShootStrip({ item, state }) {
-  const flagged = item.record?.reviewState === 'Issue' || item.record?.merchStatus === 'Issue' || Boolean(item.record?.blockingIssues?.length);
-  const requiredDone = state.deliverables.length > 0 && (state.thr3dOnly || state.blockers.length === 0);
-  const requirements = [
-    {
-      label: 'Verify merchandise',
-      complete: state.merchandiseVerified && !flagged,
-      issue: flagged,
-    },
-    {
-      label: 'Identify product',
-      complete: state.productLinked,
-    },
-    {
-      label: 'Choose deliverables',
-      complete: state.deliverables.length > 0,
-    },
-    {
-      label: 'Complete required information',
-      complete: state.deliverables.length > 0 && requiredDone,
-    },
-  ];
-  const remaining = requirements.filter(requirement => !requirement.complete && !requirement.issue).length;
-  const hasIssue = requirements.some(requirement => requirement.issue);
-  const summary = hasIssue
-    ? 'Resolve the flagged issue to continue'
-    : remaining === 0
-      ? 'Everything checks out - ready to finish'
-      : `${remaining} still needed`;
-  return (
-    <div className="new-review-required-to-shoot">
-      <div className={`required-to-shoot-summary ${hasIssue ? 'is-issue' : remaining === 0 ? 'is-ready' : ''}`}>
-        {summary}
-      </div>
-      <ol className="new-review-required-to-shoot-strip" aria-label="Required to Shoot">
-        {requirements.map(requirement => (
-          <li className={requirement.issue ? 'is-issue' : requirement.complete ? 'is-done' : 'is-todo'} key={requirement.label}>
-            <span className="required-to-shoot-mark" aria-hidden="true" />
-            <span className="required-to-shoot-text"><strong>{requirement.label}</strong></span>
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
 }
 
 function CommentComposer({ onSubmit, saving }) {
@@ -7308,24 +8840,23 @@ function ConversationPanel({ comments = [], onAddComment, saving, error }) {
     <section className="review-step is-open conversation-panel">
       <header className="review-step-head">
         <span className="review-step-num review-step-num-plain">·</span>
-        <h3>Conversation</h3>
-        {comments.length > 0 && <span className="conversation-count">{comments.length}</span>}
+        <h3>Comments</h3>
+        <CommentCountChip count={comments.length} className="is-support" />
       </header>
       <div className="conversation-list" ref={listRef}>
         {comments.length === 0 && <p className="conversation-empty">No comments yet.</p>}
         {comments.map(comment => (
           <article className="conversation-comment" key={comment.id}>
-            <span className="conversation-avatar" aria-hidden="true">{commentAuthorInitials(comment)}</span>
-            <div className="conversation-bubble">
-              <header>
-                <span className="conversation-author-line">
-                  <strong>{commentAuthorName(comment)}</strong>
-                  {comment.author?.role && <em>{comment.author.role}</em>}
-                </span>
-                <span>{formatInventoryDate(comment.createdAt)}</span>
-              </header>
-              <p>{comment.body}</p>
-            </div>
+                <span className="conversation-avatar" aria-hidden="true">{commentAuthorInitials(comment)}</span>
+                <div className="conversation-bubble">
+                  <header>
+                    <strong className="conversation-author-name">{commentAuthorName(comment)}</strong>
+                    <span className="conversation-meta-line">
+                      <time>{formatInventoryDate(comment.createdAt)}</time>
+                    </span>
+                  </header>
+                  <p>{comment.body}</p>
+                </div>
           </article>
         ))}
       </div>
@@ -7335,12 +8866,12 @@ function ConversationPanel({ comments = [], onAddComment, saving, error }) {
   );
 }
 
-function ActivityPanel({ events = [] }) {
+function HistoryPanel({ events = [] }) {
   return (
     <section className="review-step is-open activity-panel">
-      <header className="review-step-head"><span className="review-step-num review-step-num-plain">·</span><h3>Activity</h3></header>
+      <header className="review-step-head"><span className="review-step-num review-step-num-plain">·</span><h3>History</h3></header>
       <div className="activity-list">
-        {events.length === 0 && <p className="conversation-empty">No activity yet.</p>}
+        {events.length === 0 && <p className="conversation-empty">No history yet.</p>}
         {events.map(event => (
           <div className="activity-event" key={event.id}>
             <span>{event.actor || 'System'}</span>
@@ -7350,6 +8881,22 @@ function ActivityPanel({ events = [] }) {
         ))}
       </div>
     </section>
+  );
+}
+
+function NewReviewSupportPanel({ comments = [], onAddComment, commentSaving, commentError, activity = [] }) {
+  return (
+    <aside className="new-review-support-panel" aria-label="Comments and history">
+      <div className="new-review-support-body">
+        <ConversationPanel
+          comments={comments}
+          onAddComment={onAddComment}
+          saving={commentSaving}
+          error={commentError}
+        />
+        <HistoryPanel events={activity} />
+      </div>
+    </aside>
   );
 }
 
@@ -7377,152 +8924,6 @@ function ReviewStep({ n, title, done, flagged, statusText, statusTone, summary, 
       </header>
       {collapsed ? <div className="review-step-summary">{summary}</div> : <div className="review-step-body">{children}</div>}
     </section>
-  );
-}
-
-const MERCH_FLAG_REASONS = ['Wrong item', 'Damaged', 'Missing barcode', 'Quantity mismatch', 'Duplicate', 'Other'];
-
-function MerchandiseVerifyPanel({ item, onRefresh, onFeedback }) {
-  const record = item.record || {};
-  const flagged = record.reviewState === 'Issue' || record.merchStatus === 'Issue' || Boolean(record.blockingIssues?.length);
-  const verified = Boolean(record.merchandiseVerified) && !flagged;
-  const [draft, setDraft] = useState(() => ({
-    packageName: record.productName || record.description || '',
-    identifier: record.skuId || record.observedIdentifier || '',
-  }));
-  const [busy, setBusy] = useState('');
-  const [notice, setNotice] = useState('');
-  const [flagOpen, setFlagOpen] = useState(false);
-  const [flagReason, setFlagReason] = useState(MERCH_FLAG_REASONS[0]);
-  const [flagNote, setFlagNote] = useState('');
-
-  useEffect(() => {
-    setDraft({
-      packageName: record.productName || record.description || '',
-      identifier: record.skuId || record.observedIdentifier || '',
-    });
-    setNotice('');
-    setFlagOpen(false);
-    setFlagNote('');
-  }, [item.id]);
-
-  async function confirmMerchandise() {
-    setBusy('confirm');
-    setNotice('');
-    try {
-      await api.verifyMerchandise(item.merchandiseId, { packageName: draft.packageName, identifier: draft.identifier });
-      await onRefresh?.();
-      onFeedback?.('Merchandise verified.');
-    } catch (error) {
-      setNotice(error.message || 'Could not verify merchandise.');
-    } finally {
-      setBusy('');
-    }
-  }
-
-  async function undoVerification() {
-    setBusy('undo');
-    setNotice('');
-    try {
-      await api.unverifyMerchandise(item.merchandiseId);
-      await onRefresh?.();
-    } catch (error) {
-      setNotice(error.message || 'Could not undo verification.');
-    } finally {
-      setBusy('');
-    }
-  }
-
-  async function submitFlag() {
-    setBusy('flag');
-    setNotice('');
-    try {
-      await api.createMerchandiseReviewIssue(item.merchandiseId, {
-        type: flagReason,
-        description: `${flagReason}${flagNote ? ` — ${flagNote}` : ''}`,
-        notes: flagNote,
-      });
-      await onRefresh?.();
-      onFeedback?.(`Flagged: ${flagReason}.`);
-      setFlagOpen(false);
-    } catch (error) {
-      setNotice(error.message || 'Could not flag merchandise.');
-    } finally {
-      setBusy('');
-    }
-  }
-
-  return (
-    <>
-      <p className="review-step-lead">Confirm the item in the photos matches what we recorded — correct the name or barcode if needed, then confirm. Flag it if something's wrong.</p>
-      <div className="merch-verify-fields">
-        <label>Package Name
-          <input value={draft.packageName} onChange={event => setDraft(d => ({ ...d, packageName: event.target.value }))} disabled={verified} />
-        </label>
-        <label>Barcode / SKU
-          <input value={draft.identifier} onChange={event => setDraft(d => ({ ...d, identifier: event.target.value }))} disabled={verified} />
-        </label>
-      </div>
-      <p className="review-context">
-        <span>{record.receipt?.name || '—'}</span>
-        <span>Qty {record.quantity || 1}</span>
-        {record.condition && <span>{record.condition}</span>}
-        {item.timeHere && <span>Here {item.timeHere}</span>}
-      </p>
-
-      {verified ? (
-        <div className="merch-verify-actions">
-          <span className="merch-verify-stamp">✓ Verified{record.merchandiseVerifiedAt ? ` · ${formatInventoryDate(record.merchandiseVerifiedAt)}` : ''}</span>
-          <button type="button" className="btn btn-sm" onClick={undoVerification} disabled={busy === 'undo'}>{busy === 'undo' ? 'Undoing…' : 'Undo'}</button>
-        </div>
-      ) : flagged ? (
-        <div className="merch-verify-actions">
-          <span className="merch-verify-stamp is-flag">⚑ Flagged — resolve the issue, then re-verify.</span>
-          <button type="button" className="btn btn-green btn-sm" onClick={confirmMerchandise} disabled={busy === 'confirm'}>{busy === 'confirm' ? 'Verifying…' : 'Re-verify'}</button>
-        </div>
-      ) : (
-        <div className="merch-verify-actions">
-          <button type="button" className="btn btn-green" onClick={confirmMerchandise} disabled={busy === 'confirm'}>{busy === 'confirm' ? 'Verifying…' : '✓ Confirm Merchandise'}</button>
-          <button type="button" className="btn btn-flag" onClick={() => setFlagOpen(open => !open)} disabled={busy === 'flag'}>⚑ Flag Issue</button>
-        </div>
-      )}
-
-      {flagOpen && !verified && !flagged && (
-        <div className="merch-flag-form">
-          <label>Reason
-            <select value={flagReason} onChange={event => setFlagReason(event.target.value)}>
-              {MERCH_FLAG_REASONS.map(reason => <option value={reason} key={reason}>{reason}</option>)}
-            </select>
-          </label>
-          <input placeholder="Add detail (optional)" value={flagNote} onChange={event => setFlagNote(event.target.value)} />
-          <button type="button" className="btn btn-danger btn-sm" onClick={submitFlag} disabled={busy === 'flag'}>{busy === 'flag' ? 'Flagging…' : 'Flag'}</button>
-        </div>
-      )}
-      {notice && <span className="new-review-inline-status">{notice}</span>}
-    </>
-  );
-}
-
-function NewReviewRequiredInformation({ item, state }) {
-  if (state.thr3dOnly) {
-    return <p className="review-step-lead">Thr3d-only merchandise needs no photo production info. Once it is verified, it belongs in the Thr3d shipping path.</p>;
-  }
-  const requirements = (item.requiredToShoot || state.blockers || []).filter(requirement => requirement.visible !== false);
-  if (state.deliverables.length === 0) {
-    return <p className="review-step-lead">Choose deliverables above to see what production needs.</p>;
-  }
-  return (
-    <ul className="required-to-shoot-list">
-      {requirements.map(requirement => (
-        <li key={requirement.key} className={requirement.satisfied ? 'is-ready' : 'is-missing'}>
-          <span className="req-mark" aria-hidden="true" />
-          <div className="req-text">
-            <strong>{requirementLabelForUser(requirement)}</strong>
-            {!requirement.satisfied && <em>{requirement.detail || requirement.missing}</em>}
-          </div>
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -7619,41 +9020,108 @@ function ImageLightbox({ photos, index, setIndex, onClose }) {
   );
 }
 
-function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, previousItem, nextItem, onSelectItem, onRefresh, photos, photoIndex, setPhotoIndex, comments, commentSaving, commentError, activity, onAddComment, onMarkCommentsRead, activations = [], onNewActivation, onAddToActivation }) {
+function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyForPhoto, onRemove, workstreamPhotoCardCount = 1, workstreamTypes = [], onClose, previousItem, nextItem, onSelectItem, onRefresh, photos, photoIndex, setPhotoIndex, comments, commentSaving, commentError, activity, onAddComment, onMarkCommentsRead }) {
+  const isWorkstreamCard = item.subjectType === 'workstream-card';
+  const isNewQueue = item.columnId === QUEUE_IDS.newReview;
   const [zoom, setZoom] = useState(1);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [intakeDraft, setIntakeDraft] = useState(() => ({
-    deliverables: deliverablesForRecord(item.record),
+    deliverables: initialReviewDeliverables(item.record),
     allocation: { thr3d: defaultThr3dAllocation(item.record?.quantity) },
   }));
   const [intakeFeedback, setIntakeFeedback] = useState('');
   const [finishState, setFinishState] = useState({ status: 'idle', message: '' });
+  const [photoDraftValues, setPhotoDraftValues] = useState({});
   const product = item.record?.linkedItem || {};
+  const committedDeliverables = deliverablesForRecord(item.record);
+  const productRequestTypeSuggestion = suggestedDeliverablesForRecord(item.record);
+  const showProductRequestTypeSuggestion = Boolean(product.requestType && productRequestTypeSuggestion.length && !committedDeliverables.length);
   const activePhoto = photos[photoIndex] || photos[0];
   const activePhotoUrl = receivingPhotoUrl(activePhoto);
   const wizardState = wizardStateForItem(item, intakeDraft.deliverables);
   const finishBusy = finishState.status === 'loading';
   const totalQuantity = Math.max(1, Number.parseInt(item.record?.quantity, 10) || 1);
-  const showQuantityAllocation = wizardState.deliverables.includes('Packaging') && wizardState.deliverables.includes('Thr3d') && totalQuantity > 1;
+  const splitDeliverablesSelected = wizardState.deliverables.includes('Packaging') && wizardState.deliverables.includes('Thr3d');
+  const splitNeedsMultipleUnits = splitDeliverablesSelected && totalQuantity <= 1;
+  const showQuantityAllocation = splitDeliverablesSelected && totalQuantity > 1;
   const assignmentPreview = workstreamAssignmentsForDeliverables(wizardState.deliverables, totalQuantity, intakeDraft.allocation);
+  const currentWorkstreamType = item.workstreamType || item.record?.workstreamType || item.deliverableRoute || '';
+  const selectedPhotoProduction = isWorkstreamCard
+    ? Object.fromEntries(
+        wizardState.deliverables
+          .filter(type => type === 'Packaging' || type === 'Ecomm')
+          .map(type => {
+            const status = type === currentWorkstreamType ? photoProductionStatusForItem(item) : fallbackPhotoProductionStatus(type, item);
+            return [type, status];
+          })
+          .filter(([, status]) => status)
+      )
+    : Object.fromEntries(
+        wizardState.deliverables
+          .filter(type => type === 'Packaging' || type === 'Ecomm')
+          .map(type => {
+            const status = item.record?.photoProduction?.[type];
+            const hasChecks = (status?.productData?.checks || []).length > 0
+              || (status?.creativeForce?.checks || []).length > 0;
+            return [type, hasChecks ? status : fallbackPhotoProductionStatus(type, item)];
+          })
+          .filter(([, status]) => status)
+      );
+  const currentWorkstreamStatus = selectedPhotoProduction?.[currentWorkstreamType]
+    || selectedPhotoProduction?.[normalizeDeliverableValue(currentWorkstreamType)]
+    || null;
+  const photoProductionChecksForSelection = photoProductionChecks(selectedPhotoProduction, item).map(check => (
+    {
+      ...check,
+      present: photoProductionValuePresent(
+        check.key,
+        Object.prototype.hasOwnProperty.call(photoDraftValues, check.key)
+          ? photoDraftValues[check.key]
+          : photoProductionProductValue(product, check.key),
+      ),
+    }
+  ));
+  const photoProductionReady = photoProductionChecksForSelection.every(check => check.present);
+  const photoProductionMissingCount = photoProductionChecksForSelection.filter(check => !check.present).length;
   const packagingAllocation = assignmentPreview.workstreams.find(workstream => workstream.type === 'Packaging')?.quantity || 0;
   const thr3dAllocation = assignmentPreview.thr3d?.quantity || defaultThr3dAllocation(totalQuantity);
-  const assignmentLabels = [
-    ...assignmentPreview.workstreams.map(workstream => `${workstream.type}: ${workstream.quantity}`),
-    ...(assignmentPreview.thr3d ? [`THR3D: ${assignmentPreview.thr3d.quantity}`] : []),
-  ];
-  const routeDestination = assignmentLabels.length ? assignmentLabels.join(' / ') : 'Choose work';
-  const finishBlocked = wizardState.thr3dOnly
-    ? wizardState.blockers.length > 0
-    : !wizardState.merchandiseVerified || wizardState.deliverables.length === 0;
-  const finishDisabled = finishBusy || finishBlocked || wizardState.deliverables.length === 0;
-  const finishLabel = wizardState.deliverables.length === 0
-      ? 'Choose deliverables'
-      : wizardState.thr3dOnly && !finishBlocked
-        ? 'Confirm & Assign'
-      : !wizardState.thr3dOnly && !wizardState.merchandiseVerified
-        ? 'Verify to continue'
-      : 'Confirm & Assign';
+  const allocatedQuantity = splitDeliverablesSelected ? packagingAllocation + thr3dAllocation : totalQuantity;
+  const reviewOnlyCommit = wizardState.productLinked && wizardState.deliverables.length === 0;
+  const selectedWorkstreamType = intakeDraft.deliverables.find(type => type === 'Packaging' || type === 'Ecomm') || '';
+  const selectedPhotoTypes = intakeDraft.deliverables.filter(type => type === 'Packaging' || type === 'Ecomm');
+  const alternateWorkstreamType = currentWorkstreamType === 'Packaging' ? 'Ecomm' : 'Packaging';
+  const workstreamTypeChangeAllowed = !isWorkstreamCard || workstreamPhotoCardCount < 2;
+  const workstreamAction = isWorkstreamCard && workstreamTypeChangeAllowed
+    ? selectedPhotoTypes.includes(alternateWorkstreamType) && selectedPhotoTypes.includes(currentWorkstreamType)
+      ? 'add'
+      : selectedWorkstreamType && selectedWorkstreamType !== currentWorkstreamType
+        ? 'switch'
+        : ''
+    : '';
+  const workstreamActionType = workstreamAction ? (workstreamAction === 'add' ? alternateWorkstreamType : selectedWorkstreamType) : '';
+  const workstreamTypeChanged = workstreamAction === 'switch';
+  const canReadyForPhoto = Boolean(
+    wizardState.productLinked
+      && wizardState.deliverables.some(type => type === 'Packaging' || type === 'Ecomm')
+      && photoProductionReady
+      && !splitNeedsMultipleUnits
+  );
+  const finishBlocked = isWorkstreamCard
+    ? !canReadyForPhoto
+    : !wizardState.productLinked || splitNeedsMultipleUnits;
+  const finishDisabled = finishBusy || finishBlocked;
+  const finishLabel = isWorkstreamCard
+    ? 'Ready for Photo'
+    : reviewOnlyCommit || finishBlocked ? 'Mark Merch Reviewed' : assignmentPrimaryActionLabel(assignmentPreview);
+  const workstreamFooterMessage = isWorkstreamCard
+    ? workstreamPhotoCardCount >= 2
+      ? <><span>This merchandise already has Ecomm and Packaging workstreams.</span><br /><span>You cannot add or change one here; remove this card only to end this workstream.</span></>
+      : <><span>Adding the other deliverable creates a second workstream.</span><br /><span>Removing the current deliverable switches this card in place.</span><br /><span>When Product data is complete, choose Ready for Photo to send this item or group it with other ready items.</span></>
+    : <><span>Selecting Ecomm and Packaging creates two workstreams.</span><br /><span>Thr3d does not create a workstream; it creates a shipping record.</span><br /><span>Selecting one creates one workstream; the assignment can be changed later.</span></>;
+
+  useEffect(() => {
+    setPhotoDraftValues({});
+  }, [item.id, wizardState.deliverables.join('|')]);
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -7678,13 +9146,13 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
 
   useEffect(() => {
     setIntakeDraft({
-      deliverables: deliverablesForRecord(item.record),
+      deliverables: initialReviewDeliverables(item.record),
       allocation: { thr3d: defaultThr3dAllocation(item.record?.quantity) },
     });
     setIntakeFeedback('');
     setFinishState({ status: 'idle', message: '' });
     onMarkCommentsRead?.(item.merchandiseId);
-  }, [item.id]);
+  }, [item.id, product.id, product.requestType]);
 
   function stageDeliverables(value) {
     const cleanValue = normalizeDeliverableList(value);
@@ -7692,7 +9160,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
       const nextDraft = { ...draft, deliverables: cleanValue };
       return nextDraft;
     });
-    setIntakeFeedback('Draft only. Nothing changes until Confirm & Assign.');
+    setIntakeFeedback('');
   }
 
   function stageThr3dAllocation(value) {
@@ -7702,37 +9170,49 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
       ...draft,
       allocation: { ...(draft.allocation || {}), thr3d },
     }));
-    setIntakeFeedback('Draft only. Nothing changes until Confirm & Assign.');
+    setIntakeFeedback('');
   }
 
   async function finishCurrentVerification() {
     if (finishBusy) return;
+    if (isWorkstreamCard) {
+      setFinishState({ status: 'loading', message: 'Opening photo release...' });
+      try {
+        const result = await onReadyForPhoto?.(item);
+        if (result?.ok === false) {
+          setFinishState({ status: 'error', message: result.message || 'Could not move this card.' });
+          return;
+        }
+        setFinishState({ status: 'success', message: result?.message || 'Photo release opened.' });
+      } catch (error) {
+        setFinishState({ status: 'error', message: error.message || 'Could not move this card.' });
+      }
+      return;
+    }
     const latestState = wizardStateForItem(item, intakeDraft.deliverables);
+    latestState.reviewOnly = latestState.productLinked && latestState.deliverables.length === 0;
     latestState.assignment = workstreamAssignmentsForDeliverables(latestState.deliverables, totalQuantity, intakeDraft.allocation);
-    const willShipToThr3d = latestState.thr3dOnly && (latestState.blockers || []).length === 0;
+    const willShipToThr3d = latestState.thr3dOnly;
     if (willShipToThr3d && !window.confirm(THR3D_SHIP_CONFIRMATION_MESSAGE)) {
       setFinishState({ status: 'idle', message: 'Thr3d shipment cancelled.' });
       return;
     }
-    setFinishState({ status: 'loading', message: 'Creating work...' });
+    setFinishState({ status: 'loading', message: latestState.reviewOnly ? 'Marking merchandise reviewed...' : 'Creating work...' });
     try {
       const result = await onFinish?.(item, latestState);
       if (result?.ok === false) {
         setFinishState({ status: 'error', message: result.message || 'Could not assign work. Try again.' });
         return;
       }
-      setFinishState({ status: 'success', message: result?.message || 'Work created.' });
+      setFinishState({ status: 'success', message: result?.message || (latestState.reviewOnly ? 'Merchandise reviewed.' : 'Work created.') });
     } catch (error) {
       setFinishState({ status: 'error', message: error.message || 'Could not assign work. Try again.' });
     }
   }
 
   const stepFlagged = item.record?.reviewState === 'Issue' || item.record?.merchStatus === 'Issue' || Boolean(item.record?.blockingIssues?.length);
-  const identifyWarnings = product.id ? productMatchRows(item.record || {}, product).filter(row => row.status === 'warn').length : 0;
-  const verifyDone = wizardState.merchandiseVerified && !stepFlagged;
-  const identifyDone = wizardState.productLinked && identifyWarnings === 0;
+  const identifyDone = wizardState.productLinked;
   const deliverablesDone = wizardState.deliverables.length > 0;
-  const requiredDone = deliverablesDone && (wizardState.thr3dOnly || wizardState.blockers.length === 0);
 
   return (
     <div className="new-review-modal-backdrop" role="presentation" onClick={() => onClose(item)}>
@@ -7741,14 +9221,11 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
           <div className="new-review-modal-heading">
             <span className="nr-eyebrow">{item.client}</span>
             <h2>{item.title}</h2>
-            <span className="nr-queue-pill">Queue: {item.queueLabel || item.planningCard.currentQueueName}</span>
           </div>
           <button type="button" className="merchandise-detail-close" onClick={() => onClose(item)} aria-label="Close intake review">
             <Icon.Close />
           </button>
         </header>
-
-        <RequiredToShootStrip item={item} state={wizardState} />
 
         <div className="new-review-modal-body">
           <section className="new-review-image-pane" aria-label="Merchandise images">
@@ -7787,29 +9264,19 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
           <aside className="new-review-decision-pane" aria-label="Planning decision">
             <ReviewStep
               n={1}
-              title="Verify Merchandise"
-              done={verifyDone}
-              flagged={stepFlagged}
-              statusText={stepFlagged ? '⚑ Flagged' : verifyDone ? '✓ Verified' : 'Not verified'}
-              statusTone={stepFlagged ? 'flag' : verifyDone ? 'ok' : 'wait'}
-              summary={`${item.record?.productName || item.record?.description || 'Unnamed'} · ${item.record?.skuId || 'no barcode'}`}
-            >
-              <MerchandiseVerifyPanel item={item} onRefresh={onRefresh} onFeedback={setIntakeFeedback} />
-            </ReviewStep>
-
-            <ReviewStep
-              n={2}
-              title="Identify Product"
+              title="Match Product"
               done={identifyDone}
-              statusText={wizardState.productLinked ? (identifyWarnings ? `✓ Linked · ${identifyWarnings} warning${identifyWarnings > 1 ? 's' : ''}` : '✓ Linked') : 'Not linked'}
-              statusTone={wizardState.productLinked && !identifyWarnings ? 'ok' : 'wait'}
+              flagged={stepFlagged}
+              statusText={stepFlagged ? '⚑ Flagged' : wizardState.productLinked ? 'Matched' : 'Not matched'}
+              statusTone={stepFlagged ? 'flag' : wizardState.productLinked ? 'ok' : 'wait'}
               summary={product.product || product.name || product.identifier || '—'}
+              collapseWhenDone={false}
             >
               <NewReviewProductIdentification item={item} product={product} onRefresh={onRefresh} />
             </ReviewStep>
 
             <ReviewStep
-              n={3}
+              n={2}
               title="Deliverables"
               done={deliverablesDone}
               statusText={deliverablesDone ? `✓ ${wizardState.deliverables.length} chosen` : 'Choose at least one'}
@@ -7820,17 +9287,22 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
               <DeliverablesSelector
                 values={intakeDraft.deliverables}
                 onChange={stageDeliverables}
-                disabled={finishBusy}
+                disabled={finishBusy || (isWorkstreamCard && !workstreamTypeChangeAllowed)}
               />
+              {showProductRequestTypeSuggestion && (
+                <p className="deliverables-suggestion">
+                  Suggested from Product Request Type: <strong>{product.requestType}</strong> → {productRequestTypeSuggestion.join(', ')}
+                </p>
+              )}
               {showQuantityAllocation && (
                 <div className="quantity-allocation-panel">
                   <div className="quantity-allocation-head">
-                    <strong>Quantity Allocation</strong>
-                    <span>Total Qty {totalQuantity}</span>
+                    <strong>Split received quantity</strong>
+                    <span>Qty received {totalQuantity}</span>
                   </div>
                   <div className="quantity-allocation-grid">
                     <label>
-                      <span>THR3D</span>
+                      <span>THR3D ships</span>
                       <input
                         type="number"
                         min="1"
@@ -7842,10 +9314,19 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
                       />
                     </label>
                     <label>
-                      <span>Packaging</span>
+                      <span>Packaging keeps</span>
                       <input type="number" value={packagingAllocation} readOnly disabled />
                     </label>
                   </div>
+                  <p className="quantity-allocation-note">
+                    Assigned {allocatedQuantity} of {totalQuantity}. Packaging receives the remaining quantity.
+                  </p>
+                </div>
+              )}
+              {splitNeedsMultipleUnits && (
+                <div className="quantity-split-warning" role="alert">
+                  <strong>Received quantity cannot be split</strong>
+                  <span>Qty received is {totalQuantity}. Update Qty received in Shipments, or choose one deliverable for this item.</span>
                 </div>
               )}
               {wizardState.thr3dOnly && (
@@ -7857,54 +9338,68 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
               {intakeFeedback && <span className="new-review-inline-status">{intakeFeedback}</span>}
             </ReviewStep>
 
-            <ReviewStep
-              n={4}
-              title="Required to Shoot"
-              done={requiredDone}
-              statusText={requiredDone ? '✓ Complete' : `${wizardState.blockers.length} still needed`}
-              statusTone={requiredDone ? 'ok' : 'wait'}
-              summary="All required info complete"
-            >
-              <NewReviewRequiredInformation item={item} state={wizardState} />
-            </ReviewStep>
-
-            {item.activationDriven && (
-              <section className="review-step is-open">
-                <header className="review-step-head">
-                  <span className="review-step-num review-step-num-plain">·</span>
-                  <h3>Activation</h3>
-                </header>
-                <div className="review-step-body">
-                  <NewReviewActivationPanel
-                    item={item}
-                    activations={activations}
-                    onNewActivation={onNewActivation}
-                    onAddToActivation={onAddToActivation}
-                  />
-                </div>
-              </section>
+            {Object.keys(selectedPhotoProduction).length > 0 && (
+              <ReviewStep
+                n={3}
+                title="Product data for photo"
+                done={photoProductionReady}
+                statusText={photoProductionReady ? '✓ Complete' : `${photoProductionMissingCount} missing`}
+                statusTone={photoProductionReady ? 'ok' : 'wait'}
+                summary={photoProductionReady ? 'All required Product data is present.' : `${photoProductionMissingCount} Product field${photoProductionMissingCount === 1 ? '' : 's'} still needed.`}
+                collapseWhenDone={false}
+              >
+                <PhotoProductionFieldsEditor
+                  item={item}
+                  production={selectedPhotoProduction}
+                  onRefresh={onRefresh}
+                  onDraftChange={draft => setPhotoDraftValues(current => ({ ...current, ...draft }))}
+                />
+              </ReviewStep>
             )}
 
-            <ConversationPanel
-              comments={comments}
-              onAddComment={body => onAddComment?.(item.merchandiseId, body)}
-              saving={commentSaving}
-              error={commentError}
-            />
-            <ActivityPanel events={activity} />
           </aside>
+          <NewReviewSupportPanel
+            comments={comments}
+            onAddComment={body => onAddComment?.(item.merchandiseId, body)}
+            commentSaving={commentSaving}
+            commentError={commentError}
+            activity={activity}
+          />
         </div>
 
         <footer className="new-review-modal-footer">
-          <button type="button" className="btn" onClick={() => previousItem && onSelectItem(previousItem.id)} disabled={!previousItem}>Previous Merchandise</button>
-          <div className="new-review-finish-summary">
-            <span>Will create <strong>{routeDestination}</strong></span>
-            {finishState.message && <strong className={`is-${finishState.status}`}>{finishState.message}</strong>}
+          <div className="new-review-footer-left">
+            {!isWorkstreamCard && isNewQueue && (
+              <>
+                <button type="button" className="btn" onClick={() => previousItem && onSelectItem(previousItem.id)} disabled={!previousItem}>
+                  <span aria-hidden="true">←</span>
+                  Previous Merchandise
+                </button>
+                <button type="button" className="btn" onClick={() => nextItem && onSelectItem(nextItem.id)} disabled={!nextItem}>
+                  Next Merchandise
+                  <span aria-hidden="true">→</span>
+                </button>
+              </>
+            )}
+            {isWorkstreamCard && onRemove && (
+              <button type="button" className="btn btn-danger-outline" onClick={() => onRemove(item)} disabled={finishBusy}>
+                Remove workstream
+              </button>
+            )}
           </div>
-          <button type="button" className="btn btn-primary" onClick={finishCurrentVerification} disabled={finishDisabled}>
-            {finishBusy ? 'Creating...' : finishLabel}
-          </button>
-          <button type="button" className="btn" onClick={() => nextItem && onSelectItem(nextItem.id)} disabled={!nextItem}>Next Merchandise</button>
+          <div className="new-review-footer-actions">
+            {finishState.message && (
+              <div className="new-review-finish-summary">
+                <strong className={`is-${finishState.status}`}>{finishState.message}</strong>
+              </div>
+            )}
+            {finishLabel && (
+              <button type="button" className="btn btn-primary" onClick={finishCurrentVerification} disabled={finishDisabled}>
+                {finishBusy ? (isWorkstreamCard ? 'Opening...' : 'Creating...') : finishLabel}
+              </button>
+            )}
+          </div>
+          <p className="new-review-footer-guidance">{workstreamFooterMessage}</p>
         </footer>
       </section>
       {lightboxOpen && activePhotoUrl && (
@@ -7914,7 +9409,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onClose, p
   );
 }
 
-function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [], initialClientId = '', initialActivation = null, onClose, onSaved }) {
+function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [], initialClientId = '', initialMerchandiseId = '', initialActivation = null, onClose, onSaved }) {
   const topcoClient = clients.find(client => (client.name || '').trim().toLowerCase() === 'topco');
   const defaultClientId = initialClientId || topcoClient?.id || clients[0]?.id || '';
   const emptyItem = () => ({
@@ -7941,14 +9436,15 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
       name: activation?.name || '',
       dueUrgency: activation?.dueUrgency || '',
       deliverables: normalizeDeliverableList(activation?.deliverables || ['Ecomm']).filter(value => ACTIVATION_DELIVERABLE_OPTIONS.includes(value)),
-      walnutScope: activation?.walnutScope || '',
+      walnutScope: activation?.walnutScope || DEFAULT_WALNUT_SCOPE_SUGGESTIONS[0],
       artworkPath: activation?.artworkPath || '',
       uploadLocation: activation?.uploadLocation || '',
       notes: activation?.notes || '',
-      skuRows: skuRows.length ? skuRows : [emptyItem()],
+      skuRows: skuRows.length ? skuRows : [{ ...emptyItem(), merchandiseId: initialMerchandiseId }],
     };
   };
   const [form, setForm] = useState(() => formFromActivation(initialActivation));
+  const [editingActivationId, setEditingActivationId] = useState(() => initialActivation?.id || '');
   const [saving, setSaving] = useState(false);
   const [saveAction, setSaveAction] = useState('');
   const [error, setError] = useState('');
@@ -7963,8 +9459,9 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
 
   useEffect(() => {
     setForm(formFromActivation(initialActivation));
+    setEditingActivationId(initialActivation?.id || '');
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialActivation?.id, defaultClientId]);
+  }, [initialActivation?.id, defaultClientId, initialMerchandiseId]);
 
   const selectedClient = clients.find(client => client.id === form.clientId) || topcoClient;
   const pathPrefixes = selectedClient?.readinessProfile?.pathPrefixes || {};
@@ -7985,12 +9482,64 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
   );
   const topcoMerchandiseOptions = merchandiseOptions
     .filter(item => !form.clientId || item.clientId === form.clientId)
+    .filter(item => {
+      const selectedDeliverables = normalizeDeliverableList(form.deliverables);
+      if (!selectedDeliverables.length) return true;
+      const itemDeliverables = normalizeDeliverableList(item.deliverables);
+      return selectedDeliverables.some(deliverable => itemDeliverables.includes(deliverable));
+    })
     .sort((a, b) => a.label.localeCompare(b.label));
+  useEffect(() => {
+    setForm(current => {
+      let changed = false;
+      const skuRows = current.skuRows.map(row => {
+        const selected = topcoMerchandiseOptions.find(item => item.id === row.merchandiseId);
+        if (!selected) return row;
+        const next = {
+          ...row,
+          description: row.description || selected.description || selected.productName || selected.title || '',
+          upc: row.upc || selected.upc || selected.identifier || '',
+          cvid: row.cvid || selected.cvid || '',
+        };
+        if (next.description !== row.description || next.upc !== row.upc || next.cvid !== row.cvid) changed = true;
+        return next;
+      });
+      return changed ? { ...current, skuRows } : current;
+    });
+  }, [topcoMerchandiseOptions]);
   const updateForm = (key, value) => setForm(current => ({ ...current, [key]: value }));
+  function useSavedActivation(activationId) {
+    const saved = (activationHistory.data?.records || []).find(record => record.id === activationId);
+    if (!saved) return;
+    const savedForm = formFromActivation(saved);
+    setEditingActivationId(saved.id);
+    setForm(current => ({
+      ...savedForm,
+      clientId: current.clientId,
+      skuRows: initialMerchandiseId
+        ? [{ ...emptyItem(), merchandiseId: initialMerchandiseId }]
+        : savedForm.skuRows,
+    }));
+  }
   const updateItem = (rowId, key, value) => setForm(current => ({
     ...current,
     skuRows: current.skuRows.map(row => row.id === rowId ? { ...row, [key]: value } : row),
   }));
+  const linkMerchandise = (rowId, merchandiseId) => {
+    const selected = topcoMerchandiseOptions.find(item => item.id === merchandiseId);
+    setForm(current => ({
+      ...current,
+      skuRows: current.skuRows.map(row => row.id === rowId
+        ? {
+            ...row,
+            merchandiseId,
+            description: selected?.description || selected?.productName || selected?.title || row.description,
+            upc: selected?.upc || selected?.identifier || row.upc,
+            cvid: selected?.cvid || row.cvid,
+          }
+        : row),
+    }));
+  };
   const addItem = () => setForm(current => ({ ...current, skuRows: [...current.skuRows, emptyItem()] }));
   const removeItem = rowId => setForm(current => ({
     ...current,
@@ -7998,13 +9547,12 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
   }));
   const itemRows = form.skuRows;
   const itemCount = itemRows.length;
+  const selectedMerchandiseIds = new Set(itemRows.map(row => row.merchandiseId).filter(Boolean));
   const fieldStatus = value => String(value || '').trim() ? 'is-present' : 'is-missing';
   const fieldText = (value, fallback) => String(value || '').trim() || fallback;
   const activationRequiredFields = [
     ['Name', form.name],
-    ['Due / Urgency', form.dueUrgency],
     ['Walnut Scope', form.walnutScope],
-    ['Artwork Path', form.artworkPath],
     ['Upload Location', form.uploadLocation],
   ];
   const activationMissing = activationRequiredFields.filter(([, value]) => !String(value || '').trim()).map(([label]) => label);
@@ -8013,10 +9561,9 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
     ['Description', row.description],
     ['UPC', row.upc],
     ['CVID', row.cvid],
-    ['Structure', row.structure],
   ];
   const itemMissingFields = row => itemRequiredFields(row).filter(([, value]) => !String(value || '').trim()).map(([label]) => label);
-  const modalTitle = initialActivation?.id ? 'Edit Activation' : 'Add Activation';
+  const modalTitle = initialActivation?.id ? 'Edit Photo Release' : 'Ready for Photo';
   const PreviewValue = ({ value, fallback, children }) => {
     const present = String(value || '').trim();
     return <span className={`activation-preview-token ${present ? 'is-present' : 'is-missing'}`}>{children || present || fallback}</span>;
@@ -8034,12 +9581,19 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
   }
 
   const buildActivationPayload = status => {
+    const seenMerchandiseIds = new Set();
     const skuDetails = form.skuRows
       .map(({ id, ...row }) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, String(value || '').trim()])))
-      .filter(row => Object.values(row).some(Boolean));
+      .filter(row => Object.values(row).some(Boolean))
+      .filter(row => {
+        if (!row.merchandiseId) return true;
+        if (seenMerchandiseIds.has(row.merchandiseId)) return false;
+        seenMerchandiseIds.add(row.merchandiseId);
+        return true;
+      });
     return {
       clientId: form.clientId,
-      name: form.name.trim() || 'Topco Activation',
+      name: form.name.trim() || 'Topco Photo Release',
       status,
       dueUrgency: form.dueUrgency,
       deliverables: form.deliverables,
@@ -8066,12 +9620,12 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
         ...(action === 'move' ? itemRows.flatMap((row, index) => itemMissingFields(row).map(field => `Item ${index + 1} ${field}`)) : []),
       ];
       if (localMissing.length) {
-        setError(`Complete before Move to Photo: ${localMissing.join(', ')}.`);
+        setError(`Complete before Ready for Photo: ${localMissing.join(', ')}.`);
         return;
       }
       const payload = buildActivationPayload(action === 'move' ? 'Active' : 'Draft');
-      const result = initialActivation?.id
-        ? await api.updateActivation(initialActivation.id, payload)
+      const result = editingActivationId
+        ? await api.updateActivation(editingActivationId, payload)
         : await api.createActivation(payload);
       if (action === 'move') {
         const moved = await api.moveActivationToPhoto(result.record.id);
@@ -8081,7 +9635,7 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
       }
     } catch (saveError) {
       const missing = Array.isArray(saveError.payload?.missing) ? ` Missing: ${saveError.payload.missing.join(', ')}` : '';
-      setError(`${saveError.message || 'Could not save Activation.'}${missing}`);
+      setError(`${saveError.message || 'Could not save photo release.'}${missing}`);
     } finally {
       setSaving(false);
       setSaveAction('');
@@ -8096,7 +9650,7 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
             <span className="nr-eyebrow">Topco</span>
             <h2>{modalTitle}</h2>
           </div>
-          <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close Activation">
+          <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close photo release">
             <Icon.Close />
           </button>
         </header>
@@ -8106,20 +9660,33 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
               <section className="activation-simple-section">
                 <div className="activation-section-heading">
                   <div>
-                    <span className="client-readiness-label">Activation</span>
+                    <span className="client-readiness-label">Photo release</span>
                     <p>One request package. These fields apply to every item below.</p>
                   </div>
                   <span className={`activation-completion-pill ${activationMissing.length ? 'is-missing' : 'is-complete'}`}>
                     {activationMissing.length ? `${activationMissing.length} missing` : 'Complete'}
                   </span>
                 </div>
+                {!initialActivation && (activationHistory.data?.records || []).length > 0 && (
+                  <label className="activation-saved-template-field">
+                    <span>Continue saved photo release</span>
+                    <select className="form-input" defaultValue="" onChange={event => useSavedActivation(event.target.value)}>
+                      <option value="">Choose a draft to continue...</option>
+                      {(activationHistory.data?.records || []).map(saved => (
+                        <option value={saved.id} key={saved.id}>
+                          {saved.name || 'Untitled photo release'}{normalizeDeliverableList(saved.deliverables).length ? ` · ${normalizeDeliverableList(saved.deliverables).join(' + ')}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <div className="activation-simple-grid">
                   <label><span>Name</span><input className="form-input" value={form.name} onChange={event => updateForm('name', event.target.value)} placeholder="Fresh Melons" /></label>
                   <SuggestiveTextInput
                     label="Due / Urgency"
                     value={form.dueUrgency}
                     onChange={value => updateForm('dueUrgency', value)}
-                    placeholder="ASAP upon receipt"
+                    placeholder="Optional"
                     suggestions={dueUrgencySuggestions}
                   />
                   <SuggestiveTextInput
@@ -8161,12 +9728,12 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
                     <span className="client-readiness-label">Items</span>
                     <p>Each row is one received item/SKU that must be linked and complete.</p>
                   </div>
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={addItem}>Add Item</button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={addItem}>Add ready item</button>
                 </div>
                 <div className="activation-sku-rows">
                   {itemRows.length === 0 && (
                     <div className="activation-empty-items">
-                      No items linked. Add an item before moving this Activation to Photo.
+                    No items linked. Add an item before sending this photo release.
                     </div>
                   )}
                   {itemRows.map((row, index) => (
@@ -8183,9 +9750,11 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
                       </div>
                       <label className="activation-merchandise-match-field">
                         <span>Link Merchandise</span>
-                        <select className="form-input" value={row.merchandiseId} onChange={event => updateItem(row.id, 'merchandiseId', event.target.value)}>
+                        <select className="form-input" value={row.merchandiseId} onChange={event => linkMerchandise(row.id, event.target.value)}>
                           <option value="">Choose received merchandise...</option>
-                          {topcoMerchandiseOptions.map(item => <option value={item.id} key={item.id}>{item.label}</option>)}
+                          {topcoMerchandiseOptions
+                            .filter(item => item.id === row.merchandiseId || !selectedMerchandiseIds.has(item.id))
+                            .map(item => <option value={item.id} key={item.id}>{item.label}</option>)}
                         </select>
                       </label>
                       <SuggestiveTextInput
@@ -8205,13 +9774,13 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
               </section>
             </div>
 
-            <aside className="activation-email-preview" aria-label="Activation email preview">
+            <aside className="activation-email-preview" aria-label="Photo release email preview">
               <div className="activation-email-preview-header">
                 <span className="client-readiness-label">Email Preview</span>
                 <span>Live</span>
               </div>
               <div className="activation-email-preview-body">
-                <p className="activation-email-subject"><strong>Subject:</strong> Topco eComm Activation - <PreviewValue value={form.name} fallback="Activation name" /></p>
+                <p className="activation-email-subject"><strong>Subject:</strong> Topco eComm Photo Request - <PreviewValue value={form.name} fallback="Photo request" /></p>
                 <p><strong>eComm image bundles are needed for the following projects:</strong></p>
                 <ul>
                   {itemRows.map((row, index) => (
@@ -8267,7 +9836,7 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
               {saving && saveAction === 'draft' ? 'Saving...' : 'Save Draft'}
             </button>
             <button type="button" className="btn btn-primary" onClick={() => saveActivationPackage('move')} disabled={saving || !form.clientId}>
-              {saving && saveAction === 'move' ? 'Moving...' : 'Move to Photo'}
+              {saving && saveAction === 'move' ? 'Sending...' : 'Ready for Photo'}
             </button>
           </footer>
         </form>
@@ -8288,7 +9857,6 @@ function MerchandiseReviewV2Page() {
   const defaultPlanningBoard = MERCHANDISE_PLANNING_BOARD;
   const planningQueues = PM_QUEUE_COLUMNS;
   const [artworkOverrides] = useState(() => loadJsonMap(MERCH_REVIEW_V2_ARTWORK_KEY));
-  const [queueOverrides, setQueueOverrides] = useState(() => loadJsonMap(PM_QUEUE_STORAGE_KEY));
   const [conversations, setConversations] = useState({});
   const [activityByMerchandise, setActivityByMerchandise] = useState(() => loadJsonMap(PM_ACTIVITY_STORAGE_KEY));
   const [commentReads, setCommentReads] = useState(() => loadJsonMap(PM_COMMENT_READ_STORAGE_KEY));
@@ -8310,9 +9878,11 @@ function MerchandiseReviewV2Page() {
   const [locationFilter, setLocationFilter] = useState('');
   const [ageFilter, setAgeFilter] = useState('');
   const [deliverableFilter, setDeliverableFilter] = useState('');
+  const [planningView, setPlanningView] = useState('kanban');
   const [activationModalOpen, setActivationModalOpen] = useState(false);
   const [activationListOpen, setActivationListOpen] = useState(false);
   const [selectedActivation, setSelectedActivation] = useState(null);
+  const [activationMerchandiseId, setActivationMerchandiseId] = useState('');
   const [localActivations, setLocalActivations] = useState([]);
 
   const merchandiseIdsKey = records.map(record => record.id).sort().join('|');
@@ -8391,15 +9961,11 @@ function MerchandiseReviewV2Page() {
     const comments = Array.isArray(conversations[record.id]) ? conversations[record.id] : [];
     const readThrough = commentReads[record.id] || '';
     const unreadComments = comments.filter(comment => comment.createdAt > readThrough).length;
-    const overriddenQueue = queueOverrides[record.id];
-    const baseColumnId = record.intakeStatus === 'Ready for Photo'
-      ? QUEUE_IDS.readyProduction
-      : overriddenQueue && PM_QUEUE_COLUMNS.some(column => column.id === overriddenQueue)
-        ? overriddenQueue
-        : card.columnId;
-    const columnId = activationDriven && activationLinksLoaded && !linkedActivation && baseColumnId === QUEUE_IDS.readyProduction
-      ? QUEUE_IDS.waitingActivation
-      : baseColumnId;
+    const recentComment = hasRecentPlanningComment(comments);
+    const baseColumnId = queueIdForPlanningStatus(
+      record.planningStatus || planningStatusFromLegacyQueue(intakeRequestedQueueForRecord(record)),
+    );
+    const columnId = baseColumnId;
     return {
       ...card,
       id: record.id,
@@ -8408,17 +9974,42 @@ function MerchandiseReviewV2Page() {
       queueLabel: planningQueues.find(column => column.id === columnId)?.label || card.currentQueueName,
       deliverableRouteId: deliverableRoutes[0] || card.primaryDeliverableRoute,
       selectedDeliverableRouteIds: selectedDeliverableRouteIdsByMerchandise[record.id],
+      photoProduction: record.photoProduction || null,
+      clientPhotoProductionRequirements: client?.photoProductionRequirements || null,
       isDraftPlanningCard: false,
       deliverables,
       activationDriven,
       activation: linkedActivation,
       commentCount: comments.length,
       unreadComments,
+      recentComment,
       deliverableRoute: deliverableLabels.join(', ') || selectedDeliverableRouteIdsByMerchandise[record.id].map(deliverableRouteLabel).filter(Boolean).join(', ') || card.deliverableRoute,
     };
   });
-  const workstreamItems = (workstreamCards.data?.records || []).map(card => buildWorkstreamPlanningItem(card, { clientMap, locationMap }));
+  const workstreamItems = (workstreamCards.data?.records || []).map(card => {
+    const item = buildWorkstreamPlanningItem(card, { clientMap, locationMap });
+    const client = clientMap[item.record?.clientIds?.[0]];
+    const activationDriven = topcoClientIds.has(item.record?.clientIds?.[0])
+      || (client?.name || '').trim().toLowerCase() === 'topco';
+    return {
+      ...item,
+      activationDriven,
+      activation: activationDriven ? (linkedActivationByMerchandiseId[item.merchandiseId] || null) : null,
+    };
+  });
   const boardItems = [...receivedMerchItems, ...workstreamItems];
+  const workstreamPhotoCardCounts = workstreamItems.reduce((counts, item) => {
+    const key = item.merchandiseId || item.record?.id;
+    if (key) counts[key] = (counts[key] || 0) + 1;
+    return counts;
+  }, {});
+  const workstreamTypesByMerchandise = workstreamItems.reduce((types, item) => {
+    const key = item.merchandiseId || item.record?.id;
+    if (key && item.workstreamType && !types[key]?.includes(item.workstreamType)) {
+      types[key] = [...(types[key] || []), item.workstreamType];
+    }
+    return types;
+  }, {});
   const clientOptions = [...new Set(activePlanningRecords.map(record => record.clientIds?.[0]).filter(Boolean))]
     .map(id => ({ id, name: clientMap[id]?.name || 'Unknown client' }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -8451,6 +10042,8 @@ function MerchandiseReviewV2Page() {
   const canCreateTopcoActivation = topcoClientIds.size > 0;
   const activationMerchandiseOptions = boardItems
     .filter(item => topcoClientIds.has(item.record?.clientIds?.[0]))
+    .filter(item => item.subjectType === 'workstream-card')
+    .filter(item => item.requiredToShoot?.ready || item.merchandiseId === activationMerchandiseId)
     .map(item => {
       const parts = [
         item.title,
@@ -8461,8 +10054,13 @@ function MerchandiseReviewV2Page() {
         id: item.merchandiseId,
         clientId: item.record?.clientIds?.[0] || '',
         title: item.title || '',
+        productName: item.record?.linkedItem?.name || item.record?.linkedItem?.product || '',
+        description: item.record?.linkedItem?.description || item.record?.description || '',
         identifier: item.identifier || '',
+        upc: item.record?.linkedItem?.upc || item.record?.linkedItem?.identifier || item.identifier || '',
+        cvid: item.record?.linkedItem?.cvid || '',
         brand: item.record?.linkedItem?.brand || '',
+        deliverables: normalizeDeliverableList(item.deliverables || item.record?.deliverables),
         label: parts.join(' · ') || item.merchandiseId,
       };
     });
@@ -8529,10 +10127,14 @@ function MerchandiseReviewV2Page() {
 
   async function moveItemToQueue(item, columnId) {
     const destination = planningQueues.find(column => column.id === columnId);
-    if (!destination || item.columnId === columnId) return;
+    if (!destination || item.columnId === columnId) return false;
+    if (item.subjectType === 'workstream-card' && columnId === PM_LOCAL_QUEUE_IDS.needsProductWork) {
+      setFeedback('Workstream cards stay in Awaiting Info until their product or photo data is complete. Group eligible cards from Planning to release them to Ready for Photo.');
+      return false;
+    }
     if (columnId === QUEUE_IDS.readyProduction) {
-      if (item.activationDriven && !item.activation?.id) {
-        setFeedback('Cannot move to Ready for Photo. Missing: linked Activation');
+      if (item.subjectType === 'workstream-card') {
+        setFeedback('Group eligible workstreams from Planning to release them to Ready for Photo.');
         return;
       }
       const blockers = visibleRequirementBlockers(item.requiredToShoot || []);
@@ -8544,27 +10146,32 @@ function MerchandiseReviewV2Page() {
     try {
       if (item.subjectType === 'workstream-card') {
         await api.updateWorkstreamCard(item.workstreamCardId, {
-          status: workstreamStatusForQueueId(columnId),
+          planningStatus: columnId === QUEUE_IDS.newReview
+            ? 'new'
+            : columnId === QUEUE_IDS.readyProduction
+              ? 'ready-for-photo'
+              : 'awaiting-info',
         });
-      } else if ([QUEUE_IDS.newReview, QUEUE_IDS.waitingInformation, QUEUE_IDS.sendThr3d, QUEUE_IDS.readyProduction].includes(columnId)) {
+      } else if ([QUEUE_IDS.newReview, PM_LOCAL_QUEUE_IDS.needsProductWork, QUEUE_IDS.waitingInformation, QUEUE_IDS.sendThr3d, QUEUE_IDS.readyProduction].includes(columnId)) {
         await api.updateMerchandiseIntakeState(item.merchandiseId, {
-          stage: columnId,
+          planningStatus: columnId === QUEUE_IDS.newReview
+            ? 'new'
+            : columnId === PM_LOCAL_QUEUE_IDS.needsProductWork
+              ? 'needs-product-work'
+              : columnId === QUEUE_IDS.readyProduction
+                ? 'ready-for-photo'
+                : 'awaiting-info',
           blockingRequirements: item.requiredToShoot.filter(requirement => requirement.visible !== false && !requirement.satisfied).map(requirementLabelForUser),
         });
       }
-      setQueueOverrides(current => {
-        const next = { ...current };
-        if ([PM_LOCAL_QUEUE_IDS.planning].includes(columnId)) next[item.merchandiseId] = columnId;
-        else delete next[item.merchandiseId];
-        saveJsonMap(PM_QUEUE_STORAGE_KEY, next);
-        return next;
-      });
       recordActivity(item.merchandiseId, `Moved to ${destination.label}.`, { actor: 'Planning', action: `Moved to ${destination.label}.` });
       await refreshV2WorkflowData();
       setSelectedId(item.id);
       setFeedback(`Moved ${item.title || 'merchandise'} to ${destination.label}.`);
+      return true;
     } catch (error) {
       setFeedback(error.message || 'Could not move Merchandise.');
+      return false;
     }
   }
 
@@ -8664,10 +10271,42 @@ function MerchandiseReviewV2Page() {
     if (finishSavingId) return { ok: false, message: 'Verification is already finishing.' };
     setFinishSavingId(item.merchandiseId);
     setFeedback('');
+    if (item.subjectType === 'workstream-card' && state.workstreamCard) {
+      try {
+        const nextType = state.workstreamType || item.workstreamType;
+        const typeChanged = state.workstreamTypeChanged && nextType && nextType !== item.workstreamType;
+        if (state.workstreamAction === 'add') {
+          await api.createWorkstreamCard({ merchandiseId: item.merchandiseId, workstreamType: state.workstreamActionType || nextType });
+          await refreshV2WorkflowData();
+          return { ok: true, message: `${state.workstreamActionType || nextType} workstream added.` };
+        }
+        if (typeChanged) {
+          await api.updateWorkstreamCard(item.workstreamCardId, { workstreamType: nextType, status: item.workstreamStatus || 'New' });
+          await refreshV2WorkflowData();
+          return { ok: true, message: `Workstream changed to ${nextType}.` };
+        }
+        return { ok: true, message: 'Workstream updated.' };
+      } finally {
+        setFinishSavingId('');
+      }
+    }
     const deliverables = normalizeDeliverableList(state.deliverables || item.deliverables);
     const assignment = state.assignment || workstreamAssignmentsForDeliverables(deliverables, item.record?.quantity);
     const expectedProductId = item.record?.linkedItem?.id || item.record?.itemIds?.[0] || '';
     try {
+      if (state.reviewOnly || deliverables.length === 0) {
+        const result = await api.updateMerchandiseIntakeState(item.merchandiseId, {
+          stage: QUEUE_IDS.waitingInformation,
+          deliverables: [],
+          expectedProductId,
+        });
+        await refreshV2WorkflowData();
+        setSelectedId('');
+        setWorkspaceOpen(false);
+        const message = 'Merchandise reviewed. Waiting for deliverables.';
+        setFeedback(message);
+        return { ok: true, message, record: result };
+      }
       const result = await api.confirmAssignMerchandise(item.merchandiseId, {
         expectedProductId,
         workstreams: assignment.workstreams,
@@ -8695,48 +10334,54 @@ function MerchandiseReviewV2Page() {
     }
   }
 
+  async function removeWorkstreamCard(item) {
+    const hasSibling = workstreamPhotoCardCounts[item.merchandiseId] > 1;
+    const consequence = hasSibling
+      ? 'The other workstream will remain active.'
+      : 'The merchandise will return to the merchandise review queue.';
+    if (!window.confirm(`Remove the ${item.workstreamType || item.deliverableRoute || 'photo'} workstream for “${item.title}”? ${consequence}`)) return;
+    try {
+      const result = await api.deleteWorkstreamCard(item.workstreamCardId);
+      setSelectedId('');
+      setWorkspaceOpen(false);
+      setFeedback(result.warning || (result.remainingDeliverables?.length
+        ? 'Workstream removed. The remaining workstream is still active.'
+        : 'Workstream removed. Merchandise returned to the merchandise review queue.'));
+      try {
+        await refreshV2WorkflowData();
+      } catch (refreshError) {
+        setFeedback(`Workstream removed, but the board could not refresh: ${refreshError.message || 'refresh it to see the updated queue.'}`);
+      }
+    } catch (error) {
+      setFeedback(error.message || 'Could not remove workstream.');
+    }
+  }
+
   async function closePlanningWorkspace(item = selectedItem) {
     void item;
     setWorkspaceOpen(false);
   }
 
-  function openActivationModal(activation = null) {
+  function openActivationModal(activation = null, merchandiseId = '') {
     setActivationListOpen(false);
     setSelectedActivation(activation);
+    setActivationMerchandiseId(merchandiseId);
     setActivationModalOpen(true);
   }
 
-  function newActivationFromPlanningItem(item) {
-    const row = activationRowFromPlanningItem(item);
-    const deliverables = normalizeDeliverableList(item.deliverables || ['Ecomm'])
-      .filter(value => ACTIVATION_DELIVERABLE_OPTIONS.includes(value));
-    return {
-      clientIds: item.record?.clientIds || [],
-      name: '',
-      dueUrgency: '',
-      deliverables: deliverables.length ? deliverables : ['Ecomm'],
-      walnutScope: '',
-      artworkPath: '',
-      uploadLocation: '',
-      notes: '',
-      skuDetails: [row],
-      linkedMerchandiseIds: row.merchandiseId ? [row.merchandiseId] : [],
-    };
-  }
-
-  function openNewActivationForItem(item) {
+  function openReadyForPhoto(item) {
+    const merchandiseId = item?.merchandiseId || item?.record?.id || '';
+    if (!merchandiseId) return { ok: false, message: 'This item is missing its Merchandise record.' };
+    setSelectedId('');
     setWorkspaceOpen(false);
-    openActivationModal(newActivationFromPlanningItem(item));
-  }
-
-  function openActivationWithItem(activation, item) {
-    setWorkspaceOpen(false);
-    openActivationModal(activationWithPlanningItem(activation, item));
+    openActivationModal(null, merchandiseId);
+    return { ok: true, message: 'Photo release opened.' };
   }
 
   function closeActivationModal() {
     setActivationModalOpen(false);
     setSelectedActivation(null);
+    setActivationMerchandiseId('');
   }
 
   async function handleActivationSaved(record, result = {}) {
@@ -8752,9 +10397,9 @@ function MerchandiseReviewV2Page() {
       await activations.reload({ quiet: true }).catch(() => {});
       await refreshV2WorkflowData();
     } else {
-      setFeedback(`Activation draft saved: ${record?.name || 'Untitled Activation'}.`);
+      setFeedback(`Photo release saved: ${record?.name || 'Untitled release'}.`);
       await activations.reload({ quiet: true }).catch(() => {
-        setFeedback(`Activation saved: ${record?.name || 'Untitled Activation'}. Refresh if it does not appear in the list.`);
+        setFeedback(`Photo release saved: ${record?.name || 'Untitled release'}. Refresh if it does not appear in the list.`);
       });
       await refreshV2WorkflowData();
     }
@@ -8770,32 +10415,64 @@ function MerchandiseReviewV2Page() {
         <div>
           {feedback && <span className="planning-board-feedback">{feedback}</span>}
         </div>
+        <div className="planning-board-view-controls" aria-label="Planning view controls">
+          <label className="planning-deliverable-filter">
+            <span>Deliverable</span>
+            <select value={deliverableFilter} onChange={event => setDeliverableFilter(event.target.value)} aria-label="Filter by deliverable">
+              <option value="">All deliverables</option>
+              {DELIVERABLE_ROUTES.filter(route => route.id !== 'thr3d').map(route => <option value={route.id} key={route.id}>{route.label}</option>)}
+            </select>
+          </label>
+          <div className="planning-view-toggle" role="group" aria-label="Planning view">
+            <button type="button" className={planningView === 'kanban' ? 'is-active' : ''} onClick={() => setPlanningView('kanban')} aria-label="Kanban view" title="Kanban view">
+              <LayoutGrid size={16} strokeWidth={2} />
+            </button>
+            <button type="button" className={planningView === 'list' ? 'is-active' : ''} onClick={() => setPlanningView('list')} aria-label="List view" title="List view">
+              <ListIcon size={16} strokeWidth={2} />
+            </button>
+          </div>
+        </div>
         {canCreateTopcoActivation && (
           <div className="planning-board-action-buttons">
             <button type="button" className="btn btn-blue-outline" onClick={() => setActivationListOpen(true)}>
-              Edit Activations
+              Edit Photo Releases
             </button>
             <button type="button" className="btn btn-primary" onClick={() => openActivationModal(null)}>
-              Add Activation
+              Group Ready Items
             </button>
           </div>
         )}
       </div>
-      <KanbanBoard
-        columns={planningQueues}
-        itemsByColumn={itemsByColumn}
-        selectedId={selectedId}
-        onSelect={openPlanningWorkspace}
-        onMove={moveBoardItem}
-        disabled={workspaceOpen}
-        showNewCardClient={showNewCardClient}
-      />
+      {planningView === 'list' ? (
+        <PlanningListView
+          columns={planningQueues}
+          itemsByColumn={itemsByColumn}
+          selectedId={selectedId}
+          onSelect={openPlanningWorkspace}
+          disabled={workspaceOpen}
+          showNewCardClient={showNewCardClient}
+        />
+      ) : (
+        <KanbanBoard
+          columns={planningQueues}
+          itemsByColumn={itemsByColumn}
+          selectedId={selectedId}
+          onSelect={openPlanningWorkspace}
+          onMove={moveBoardItem}
+          disabled={workspaceOpen}
+          showNewCardClient={showNewCardClient}
+        />
+      )}
       {workspaceOpen && selectedItem ? (
         <NewReviewModal
           item={selectedItem}
           decision={selectedDecision}
           onDecisionChange={updateSelectedDecision}
           onFinish={finishVerification}
+          onReadyForPhoto={openReadyForPhoto}
+          onRemove={selectedItem.subjectType === 'workstream-card' ? removeWorkstreamCard : undefined}
+          workstreamPhotoCardCount={workstreamPhotoCardCounts[selectedItem.merchandiseId] || 1}
+          workstreamTypes={workstreamTypesByMerchandise[selectedItem.merchandiseId] || []}
           onClose={closePlanningWorkspace}
           previousItem={previousSelectedItem}
           nextItem={nextSelectedItem}
@@ -8810,27 +10487,6 @@ function MerchandiseReviewV2Page() {
           activity={Array.isArray(activityByMerchandise[selectedItem.merchandiseId]) ? activityByMerchandise[selectedItem.merchandiseId] : []}
           onAddComment={addConversationComment}
           onMarkCommentsRead={markCommentsRead}
-          activations={activationRecords}
-          onNewActivation={openNewActivationForItem}
-          onAddToActivation={openActivationWithItem}
-        />
-      ) : selectedItem ? (
-        <PlanningWorkspaceDrawer
-          item={workspaceOpen ? selectedItem : null}
-          onClose={closePlanningWorkspace}
-          onMove={moveItemToQueue}
-          onSave={saveIntakeReadiness}
-          onSaveContinue={saveIntakeReadinessAndContinue}
-          onRelease={releaseIntakeItem}
-          releaseBusy={selectedItem ? releaseSavingId === selectedItem.merchandiseId : false}
-          onRefresh={refreshV2WorkflowData}
-          feedback={feedback}
-          override={selectedOverride}
-          photos={selectedPhotos}
-          photoIndex={photoIndex}
-          setPhotoIndex={setPhotoIndex}
-          nextItem={nextSelectedItem}
-          readonly={selectedWorkspaceMode === 'readonly'}
         />
       ) : null}
       {activationListOpen && (
@@ -8847,6 +10503,7 @@ function MerchandiseReviewV2Page() {
           clients={clients.data?.records || []}
           merchandiseOptions={activationMerchandiseOptions}
           initialClientId={clientFilter}
+          initialMerchandiseId={activationMerchandiseId}
           initialActivation={selectedActivation}
           onClose={closeActivationModal}
           onSaved={handleActivationSaved}
@@ -9022,6 +10679,7 @@ const ADMIN_CARD_OPTIONS = [
   { id: 'roles', label: 'Roles', icon: '🔐', description: 'Manage role permissions and admin access.' },
   { id: 'system', label: 'System', icon: '⚙️', description: 'Review Airtable connection and backend configuration.' },
   { id: 'clients', label: 'Clients', icon: '🏷️', description: 'Review client defaults, identifiers, and requirements.' },
+  { id: 'creative-force', label: 'Creative Force', icon: '↗', description: 'Review configured handoff requirements and feed eligibility.' },
   { id: 'developer', label: 'Developer Tools', icon: '🛠️', description: 'Run local utilities and maintenance tools.' },
 ];
 const DEFAULT_ADMIN_CARDS = {
@@ -9734,6 +11392,7 @@ function AdministrationPage() {
     if (!activeCard) return <div className="empty-state">No Administration sections assigned.</div>;
     if (activeCard.id === 'users') return <UsersSection />;
     if (activeCard.id === 'roles') return <RolesSection />;
+    if (activeCard.id === 'creative-force') return <CreativeForceAdminSection />;
     return <SettingsPage cards={[activeCard.id]} />;
   }
 

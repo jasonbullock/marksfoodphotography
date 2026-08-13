@@ -90,8 +90,8 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertNotIn("label: 'Merchandise Review V2'", nav_section)
         self.assertIn("merchandiseReview: 'Merchandise Review'", self.vocabulary)
         self.assertIn("products: 'Products'", self.vocabulary)
-        self.assertIn("packageName: 'Package Name'", self.vocabulary)
-        self.assertIn("merchandiseIdentifier: 'Barcode or ID Number'", self.vocabulary)
+        self.assertIn("packageName: 'Product Name on Package'", self.vocabulary)
+        self.assertIn("merchandiseIdentifier: 'UPC / ID'", self.vocabulary)
         self.assertNotRegex(self.source, r"label:\s*'Verification'")
         self.assertNotRegex(self.source, r"label:\s*'Items'")
 
@@ -210,6 +210,14 @@ class FrontendRoutingTests(unittest.TestCase):
             "buildPlanningCard",
             "MERCH_REVIEW_V2_DECISIONS_KEY",
             "PM_QUEUE_COLUMNS",
+            "label: 'New Merch'",
+            "label: 'Needs Product / Work'",
+            "label: 'Awaiting Info/Activation'",
+            "Mark Merch Reviewed",
+            "newReviewContextForItem",
+            "kanban-review-context",
+            "kanban-card-client-eyebrow",
+            "kanban-photo-count",
             "ConversationPanel",
             "ActivityPanel",
             "api.listMerchandiseReviewEntries()",
@@ -223,12 +231,32 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn(".kanban-board", self.styles)
         self.assertIn(".kanban-column", self.styles)
         self.assertIn(".kanban-card", self.styles)
+        self.assertNotIn(".kanban-card-action", self.styles)
         self.assertIn(".kanban-required-checks", self.styles)
         self.assertIn(".kanban-age-badge", self.styles)
         self.assertIn(".kanban-comment-signal", self.styles)
+        self.assertIn(".kanban-column-summary > span", self.styles)
+        self.assertIn(".kanban-comment-signal.has-recent", self.styles)
+        self.assertIn("background: rgba(255, 251, 235, 0.92);", self.styles)
+        self.assertIn("function CommentCountChip", self.source)
+        self.assertIn("<CommentCountChip count={item.commentCount} unread={item.unreadComments} recent={item.recentComment} />", self.source)
+        self.assertIn("<CommentCountChip", self.source)
+        self.assertIn("count={withComments}", self.source)
+        self.assertIn("className=\"is-column\"", self.source)
+        self.assertIn("<CommentCountChip count={comments.length} className=\"is-support\" />", self.source)
+        self.assertIn("const APP_TIME_ZONE = 'America/Chicago';", self.source)
+        self.assertIn("const RECENT_COMMENT_WINDOW_MS = 4 * 60 * 60 * 1000;", self.source)
+        self.assertIn("function hasRecentPlanningComment", self.source)
+        self.assertIn("const recentComment = hasRecentPlanningComment(comments);", self.source)
+        self.assertIn("recentComment,", self.source)
         self.assertIn(".conversation-avatar", self.styles)
         self.assertIn(".conversation-count", self.styles)
-        self.assertIn(".conversation-author-line", self.styles)
+        self.assertIn(".new-review-support-summary", self.styles)
+        self.assertIn(".kanban-comment-signal.is-support", self.styles)
+        self.assertIn(".conversation-author-name", self.styles)
+        self.assertIn(".conversation-meta-line", self.styles)
+        self.assertNotIn("function formatCommentRole", self.source)
+        self.assertNotIn("comment.author?.role", self.source)
         self.assertIn(".conversation-error", self.styles)
         self.assertIn(".activity-event time", self.styles)
         self.assertIn(".planning-workspace-drawer", self.styles)
@@ -248,7 +276,7 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("showNewCardClient", self.source)
         self.assertIn("const showStorage = false && !isNewQueue && storage;", self.source)
         self.assertIn("const showQuantity = !isNewQueue || Number(quantity) > 1;", self.source)
-        self.assertIn("const showFooter = !isNewQueue || item.commentCount > 0 || item.unreadComments > 0;", self.source)
+        self.assertIn("const showFooter = item.commentCount > 0 || item.unreadComments > 0;", self.source)
         self.assertNotIn("Needs PM review", self.source)
         self.assertNotIn("New Arrival", self.source)
         self.assertNotIn("Deliverables not set", self.source)
@@ -277,23 +305,26 @@ class FrontendRoutingTests(unittest.TestCase):
             "api.listMerchandiseComments(record.id)",
             "api.createMerchandiseComment(merchandiseId, body)",
             "comment.author?.displayName",
-            "comment.author?.role",
-            "item.commentCount || 0",
+            "count={item.commentCount}",
             "item.unreadComments > 0",
             "marks:planning-board-comment-reads",
         ]:
             self.assertIn(text, self.source)
+        self.assertNotIn("comment.author?.role", self.source)
         self.assertNotIn("PM_CONVERSATION_STORAGE_KEY", self.source)
         self.assertNotIn("authorName: pmCommentUserDisplayName", self.source)
         self.assertNotIn("'Team'", self.source)
 
-    def test_required_to_shoot_modal_rows_are_not_concatenated_or_raw_bullets(self):
-        self.assertIn('className="new-review-required-to-shoot"', self.source)
-        self.assertIn('className="new-review-required-to-shoot-strip"', self.source)
-        self.assertIn("Complete required information", self.source)
-        self.assertIn("`${remaining} still needed`", self.source)
-        self.assertIn('<span className="required-to-shoot-mark" aria-hidden="true" />', self.source)
-        self.assertIn('<span className="req-mark" aria-hidden="true" />', self.source)
+    def test_new_review_modal_hides_required_to_shoot_for_now(self):
+        modal_section = self.source.split("function NewReviewModal", 1)[1].split("function PlanningActivationPackageModal", 1)[0]
+        self.assertNotIn('className="new-review-required-to-shoot"', self.source)
+        self.assertNotIn('className="new-review-required-to-shoot-strip"', self.source)
+        self.assertNotIn("function RequiredToShootStrip", self.source)
+        self.assertNotIn("function NewReviewRequiredInformation", self.source)
+        self.assertNotIn('title="Required to Shoot"', modal_section)
+        self.assertNotIn("Complete required information", modal_section)
+        self.assertIn("!wizardState.productLinked || wizardState.deliverables.length === 0", modal_section)
+        self.assertIn("'Mark Merch Reviewed'", modal_section)
         self.assertNotIn("requiredToShoot-text", self.source)
         self.assertNotIn("new-review-requiredToShoot", self.source)
         self.assertNotIn("<small>{chip.hint}</small>", self.source)
@@ -308,10 +339,13 @@ class FrontendRoutingTests(unittest.TestCase):
             "<label>Shipment Photos</label>",
             "async function createShipment({ toast: showToast = true } = {})",
             "const activeReceipt = receipt || await createShipment({ toast: false });",
-            "Adding shipment photos saves this shipment and unlocks merchandise entry.",
+            "Adding shipment photos saves this shipment.",
             "Shipment needs photos",
             "Add shipment photos to save this shipment.",
-            "Create the shipment before adding merchandise.",
+            "Add shipment photos in Shipment Details before saving merchandise.",
+            "Merchandise Photos",
+            "entryPhotos.length > 0 ? 'Added' : 'Required'",
+            "className={entryPhotos.length > 0 ? 'is-complete' : ''}",
             "Shipment saved",
             "Changes to shipment details save when you leave each field.",
             "recv-autosave-card",
@@ -325,8 +359,24 @@ class FrontendRoutingTests(unittest.TestCase):
             "recordPhotos(receipt)",
             "shipment-photo-field",
             "shipment-photo-thumb",
+            'disabled={Boolean(saving) || entryPhotos.length === 0}',
+            ".recv-required-row",
         ]:
-            self.assertIn(text, self.source)
+            self.assertIn(text, self.source + self.styles)
+        for text in [
+            "const merchandiseEntryLocked = !receipt",
+            "recv-item-panel${merchandiseEntryLocked ? ' is-locked' : ''}",
+            "disabled={merchandiseEntryLocked}",
+            "Shipment details first",
+            "Adding shipment photos saves this shipment and unlocks merchandise entry.",
+            "disabled={!receipt || Boolean(saving) || entryPhotos.length === 0}",
+        ]:
+            self.assertNotIn(text, self.source)
+        for selector in [
+            ".recv-item-panel.is-locked .recv-form-content",
+            ".recv-locked-card",
+        ]:
+            self.assertNotIn(selector, self.styles)
         self.assertNotIn("📷 Take Photo", self.source)
         self.assertNotIn("🖼 Library", self.source)
         self.assertNotIn("Shipment will autosave", self.source)
@@ -501,22 +551,18 @@ class FrontendRoutingTests(unittest.TestCase):
             "workspaceOpen && selectedItem",
             "workspaceModeForQueue(selectedItem?.planningCard?.queue)",
             "NewReviewProductIdentification",
-            "NewReviewRequiredInformation",
-            "RequiredToShootStrip",
             "DeliverablesSelector",
             "INTAKE_DELIVERABLE_OPTIONS",
             "DELIVERABLE_ROUTE_MAP",
-            "Verify Merchandise",
-            "Identify Product",
+            "Match Product",
             "Linked Product",
             "Search Product",
             "Create Incomplete Product",
             "Deliverables",
             "deliverables",
             "api.updateMerchandiseIntakeDecisions",
-            "Required to Shoot",
-            "Package Name",
-            "Package ID / Barcode / SKU",
+            "Product Name on Package",
+            "UPC / ID",
             "Conversation",
             "Activity",
             "Add a comment",
@@ -530,21 +576,33 @@ class FrontendRoutingTests(unittest.TestCase):
             "api.matchMerchandiseReviewEntry",
         ]:
             self.assertIn(text, self.source)
+        self.assertNotIn("function MerchandiseVerifyPanel", self.source)
+        self.assertNotIn("Verify to continue", self.source)
         for text in [
-            ".new-review-product-id",
+            ".new-review-product-search-fields",
             ".new-review-inline-status",
             ".intake-deliverable-option",
             ".intake-deliverable-check",
             ".intake-deliverable-option.is-selected",
+            "background: var(--blue-bg);",
+            "color: var(--blue-text);",
             ".intake-deliverable-option:has(input:focus-visible)",
             ".intake-deliverable-option:has(input:disabled)",
             ".deliverables-inline-error",
             ".required-information-section",
             ".new-review-finish-summary",
+            ".new-review-support-panel",
+            ".new-review-support-body",
             ".conversation-panel",
             ".activity-panel",
+            ".new-review-footer-left",
+            ".new-review-footer-actions",
+            "grid-template-columns: minmax(360px, 430px) minmax(0, 1fr);",
         ]:
             self.assertIn(text, self.styles)
+        self.assertNotIn("--deliverable-selected-fill", self.styles)
+        self.assertNotIn("--deliverable-selected-text", self.styles)
+        self.assertNotIn("--deliverable-check", self.styles)
         deliverables_selector = self.source.split("function DeliverablesSelector", 1)[1].split("function NewReviewProductIdentification", 1)[0]
         for text in [
             'type="checkbox"',
@@ -558,6 +616,16 @@ class FrontendRoutingTests(unittest.TestCase):
         modal_section = self.source.split("function NewReviewModal", 1)[1].split("function PlanningActivationPackageModal", 1)[0]
         finish_handler = self.source.split("async function finishVerification", 1)[1].split("async function closePlanningWorkspace", 1)[0]
         self.assertNotIn("Save Deliverables", modal_section)
+        self.assertNotIn("Required to Shoot", modal_section)
+        self.assertNotIn("NewReviewRequiredInformation", modal_section)
+        self.assertNotIn("RequiredToShootStrip", modal_section)
+        self.assertNotIn("NewReviewActivationPanel", modal_section)
+        self.assertNotIn("Pending Activation", modal_section)
+        self.assertIn("NewReviewSupportPanel", modal_section)
+        self.assertIn("<aside className=\"new-review-support-panel\"", self.source)
+        self.assertIn("Notes & history", self.source)
+        self.assertNotIn("<details className=\"new-review-support-panel\"", modal_section)
+        self.assertNotIn("<summary>", modal_section)
         self.assertNotIn("Resolution", modal_section)
         self.assertNotIn("Observed Package Name", modal_section)
         self.assertNotIn("Observed Identifier", modal_section)
@@ -577,30 +645,49 @@ class FrontendRoutingTests(unittest.TestCase):
             "disabled={finishDisabled}",
             "is-${finishState.status}",
             "Confirm & Assign",
-            "Will create",
+            "Will create:",
+            "<b>{routeDestination}</b>",
+            "assignmentCreationSummary(assignmentPreview)",
             "Draft only. Nothing changes until Confirm & Assign.",
             "collapseWhenDone={false}",
             "window.confirm(THR3D_SHIP_CONFIRMATION_MESSAGE)",
             "thr3d-ship-warning",
             "quantity-allocation-panel",
-            "Quantity Allocation",
+            "Split received quantity",
+            "Qty received {totalQuantity}",
+            "Assigned {allocatedQuantity} of {totalQuantity}",
+            "quantity-split-warning",
+            "Received quantity cannot be split",
+            "splitNeedsMultipleUnits",
+            "Mark Merch Reviewed",
+            "assignmentPrimaryActionLabel(assignmentPreview)",
             "stageThr3dAllocation",
             "Packaging",
             "readOnly disabled",
+            "initialReviewDeliverables(item.record)",
+            "showProductRequestTypeSuggestion",
+            "Suggested from Product Request Type:",
         ]:
             self.assertIn(text, modal_section)
+        self.assertIn("Create ${workstreams[0].type} Workstream", self.source)
+        self.assertIn("Create THR3D Shipment", self.source)
+        self.assertIn("function needsProductWorkQueue", self.source)
+        self.assertIn("needsProductWorkQueue(record)", self.source)
+        self.assertIn("Workstream cards belong in Awaiting Info/Activation", self.source)
+        self.assertIn("const value = String(status || '').trim().toLowerCase();\n  if (value === 'ready for photo') return QUEUE_IDS.readyProduction;\n  return QUEUE_IDS.waitingInformation;", self.source)
+        self.assertIn("requestedQueueId: QUEUE_IDS.waitingInformation", self.source)
+        for text in [
+            "function assignmentCreationSummary",
+            "1 THR3D shipment",
+            "1 ${workstreams[0].type} workstream",
+            "${workstreams.length} workstreams",
+        ]:
+            self.assertIn(text, self.source)
         self.assertIn("This item will be removed from the Walnut work queue and be shipped to Thr3d.", self.source)
         self.assertNotIn("deliverablesAutosaveTimer", modal_section)
         self.assertNotIn("api.updateMerchandiseIntakeDecisions", modal_section)
         self.assertNotIn("Deliverables saved.", modal_section)
         self.assertNotIn("Saving...", modal_section)
-        required_info_section = self.source.split("function NewReviewRequiredInformation", 1)[1].split("function ImageLightbox", 1)[0]
-        self.assertIn("if (state.thr3dOnly)", required_info_section)
-        self.assertIn("(item.requiredToShoot || state.blockers || []).filter", required_info_section)
-        self.assertLess(
-            required_info_section.index("if (state.thr3dOnly)"),
-            required_info_section.index("(item.requiredToShoot || state.blockers || []).filter"),
-        )
         self.assertNotIn("'Ready for Thr3d'", modal_section)
         for text in [
             "state.assignment || workstreamAssignmentsForDeliverables(deliverables, item.record?.quantity)",
@@ -613,6 +700,19 @@ class FrontendRoutingTests(unittest.TestCase):
             "return { ok: false, message }",
         ]:
             self.assertIn(text, finish_handler)
+        for text in [
+            "const PRODUCT_REQUEST_TYPE_DELIVERABLE_MAP",
+            "'ecomm only': ['Ecomm']",
+            "'pack only': ['Packaging']",
+            "'thr3d only': ['Thr3d']",
+            "'pack thr3d': ['Packaging', 'Thr3d']",
+            "'ecomm pack': ['Ecomm', 'Packaging']",
+            "function productRequestTypeDeliverables(requestType)",
+            "function suggestedDeliverablesForRecord(record = {})",
+            "function initialReviewDeliverables(record = {})",
+        ]:
+            self.assertIn(text, self.source)
+        self.assertIn(".deliverables-suggestion", self.styles)
         for text in [
             "Ecomm",
             "Packaging",
@@ -796,6 +896,20 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("updateActivation: async (id, payload = {}) => backend('PATCH', `/activations/${id}`", api_source)
         self.assertIn("moveActivationToPhoto: async (id) => backend('POST', `/activations/${id}/move-to-photo`", api_source)
 
+    def test_product_import_profiles_use_client_mapping_api(self):
+        api_source = (ROOT / "frontend/src/api.js").read_text()
+        app_source = self.source
+        self.assertIn("updateClient: async (id, payload = {}) => backend('PATCH', `/clients/${id}`", api_source)
+        self.assertIn("function productImportProfileState(profile, headers)", app_source)
+        self.assertIn("function productImportProfilePayload(name, headers, sourceMapping, targetMapping, requiredTargets)", app_source)
+        self.assertIn("api.updateClient(clientId", app_source)
+        self.assertIn("await persistImportProfile(profileName.trim() || selectedClient?.name || 'Default')", app_source)
+        self.assertIn("Load saved mapping...", app_source)
+        self.assertIn("Save mapping", app_source)
+
+    def test_import_modal_backdrop_covers_full_viewport(self):
+        self.assertIn(".intake-modal-backdrop {\n  position: fixed;\n  inset: 0;", self.styles)
+
     def test_planning_exposes_activation_package_creation(self):
         for text in [
             "function PlanningActivationPackageModal",
@@ -831,18 +945,6 @@ class FrontendRoutingTests(unittest.TestCase):
             "activationListOpen",
             "activation-list-modal",
             "activation-list-row",
-            "function NewReviewActivationPanel",
-            "activationRowFromPlanningItem",
-            "activationWithPlanningItem",
-            "function activationAvailableForPlanningItem",
-            "if (!activationClientIds.length || !itemClientIds.length) return true;",
-            "const [activationId, setActivationId] = useState('');",
-            "Pending Activation",
-            "Add to Activation",
-            "New Activation",
-            "new-review-activation-panel",
-            "new-review-activation-actions",
-            "btn-blue-outline",
             "topcoClientIds",
             "const canCreateTopcoActivation = topcoClientIds.size > 0;",
             "planning-board-actions",
@@ -899,6 +1001,19 @@ class FrontendRoutingTests(unittest.TestCase):
             "Structure",
         ]:
             self.assertIn(text, self.source + self.styles)
+        modal_section = self.source.split("function NewReviewModal", 1)[1].split("function PlanningActivationPackageModal", 1)[0]
+        for text in [
+            "function NewReviewActivationPanel",
+            "activationRowFromPlanningItem",
+            "activationWithPlanningItem",
+            "function activationAvailableForPlanningItem",
+            "Pending Activation",
+            "Add to Activation",
+            "New Activation",
+            "new-review-activation-panel",
+            "new-review-activation-actions",
+        ]:
+            self.assertNotIn(text, self.source + self.styles if text.startswith("new-review") else modal_section)
 
     def test_topco_cards_use_activation_state_instead_of_required_preview(self):
         for text in [
@@ -947,8 +1062,8 @@ class FrontendRoutingTests(unittest.TestCase):
             "shipments: 'Shipments'",
             "merchandise: 'Merchandise'",
             "merchandiseReview: 'Merchandise Review'",
-            "packageName: 'Package Name'",
-            "merchandiseIdentifier: 'Barcode or ID Number'",
+            "packageName: 'Product Name on Package'",
+            "merchandiseIdentifier: 'UPC / ID'",
             "productJobNumber: 'Product Job Number'",
         ]:
             self.assertIn(term, self.vocabulary)
@@ -1008,9 +1123,123 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("'Product Job Number': 'itemJobNumber'", self.source)
         self.assertIn("getFieldLabel('Product Name', 'product')", self.source)
         self.assertIn("getFieldLabel('Product Job Number', 'product')", self.source)
+        self.assertIn("Primary Match Key", self.vocabulary)
+        self.assertIn("UPC match key used to match Received Merch to expected Products.", self.source)
+        self.assertNotIn("${DOMAIN_TERMS.primaryMatchKey}; Airtable field: Identifier", self.source)
+        self.assertIn("key: 'primaryMatchKey', patchKey: 'primaryMatchKey'", self.source)
         self.assertIn("Source column", self.source)
         self.assertIn("Destination field", self.source)
         self.assertIn("Airtable field:", self.source)
+
+    def test_product_request_type_uses_tracker_choices(self):
+        self.assertIn("const PRODUCT_REQUEST_TYPE_OPTIONS = ['Ecomm only', 'Pack only', 'Thr3d only', 'Pack & Thr3d', 'Ecomm & Pack']", self.source)
+        self.assertIn("options: PRODUCT_REQUEST_TYPE_OPTIONS", self.source)
+        self.assertIn("field === 'requestType'", self.source)
+        self.assertIn("PRODUCT_REQUEST_TYPE_OPTIONS.map(option => <option value={option} key={option}>{option}</option>)", self.source)
+
+    def test_product_grid_columns_are_draggable(self):
+        self.assertIn("function moveProductColumn(sourceColumnId, targetColumnId, placement = 'before')", self.source)
+        self.assertIn("function startProductColumnDrag(event, column)", self.source)
+        self.assertIn("function dragOverProductColumn(event, column, axis = 'x')", self.source)
+        self.assertIn("onDragStart={event => startProductColumnDrag(event, column)}", self.source)
+        self.assertIn("onDrop={event => dropProductColumn(event, column)}", self.source)
+        self.assertIn("onDrop={event => dropProductColumn(event, column, 'y')}", self.source)
+        self.assertIn(".products-grid-header-cell.is-drop-before::before", self.styles)
+        self.assertIn(".products-column-option.is-drop-after::after", self.styles)
+
+    def test_shipment_matching_searches_identifier_before_name(self):
+        self.assertIn("const matchIdentifierQuery = String(entry.skuId || '').trim()", self.source)
+        self.assertIn("const matchNameQuery = String(entry.productName || '').trim()", self.source)
+        self.assertIn("if (matchIdentifierReady && matchNameReady)", self.source)
+        self.assertIn("limit: 50", self.source)
+        self.assertIn("if (limit) params.set('limit', String(limit));", (ROOT / "frontend/src/api.js").read_text())
+        self.assertIn("combineIdentifierAndNameMatches(identifierData.records ?? [], nameData.records ?? [], matchIdentifierQuery)", self.source)
+        self.assertIn("if (records.length === 0 && matchNameReady && !matchIdentifierReady)", self.source)
+        self.assertIn("function combineIdentifierAndNameMatches(identifierRecords = [], nameRecords = [], identifierQuery = '')", self.source)
+        self.assertIn("matchBasis: itemIdentifierBasis(item, 'both')", self.source)
+        self.assertIn("No product matches both fields", self.source)
+        self.assertIn("Check the package name and UPC / ID. Clear one field to search by the other.", self.source)
+        self.assertIn("matchBasis: 'name'", self.source)
+        self.assertIn("Matches typed name + UPC prefix", self.source)
+        self.assertIn("Matched by product name", self.source)
+        self.assertIn("function itemExpectedIdentifierText(item)", self.source)
+        self.assertIn("function itemProductIdentifierText(item)", self.source)
+        self.assertIn("function matchValuesConflict(observedValue, productValue)", self.source)
+        self.assertIn("if (!observed || !product || observed === product) return false;", self.source)
+        self.assertIn("return true;", self.source)
+        self.assertIn("Product ${itemMatchMethod(item)}: ${value}", self.source)
+        self.assertIn("itemExpectedIdentifierText(item)", self.source)
+        self.assertIn("itemProductIdentifierText(matchChoice.item)", self.source)
+        self.assertIn("Matched Product", self.source)
+        self.assertIn("Qty received", self.source)
+        self.assertIn("Use Product {itemMatchMethod(matchChoice.item)}", self.source)
+        self.assertIn("Use Product Name", self.source)
+        self.assertIn("!String(entry.skuId || '').trim() || matchValuesConflict(entry.skuId, itemMatchIdentifierValue(matchChoice.item))", self.source)
+        self.assertIn("!String(entry.productName || '').trim() || matchValuesConflict(entry.productName, itemMatchTitle(matchChoice.item))", self.source)
+        self.assertIn("Observed {DOMAIN_TERMS.packageName} differs from the Product name.", self.source)
+        self.assertIn("matchValuesConflict(entry.productName, itemMatchTitle(matchChoice.item))", self.source)
+        self.assertIn("const matchedProduct = saved.matchedProduct || saved.linkedProduct || {}", self.source)
+        self.assertIn("name: matchedProduct.name || matchedProduct.product || saved.productName || saved.name || 'Matched Product'", self.source)
+        self.assertIn("identifier: matchedProduct.identifier || matchedProduct.primaryMatchKey || matchedProduct.productId || matchedProduct.gtinUpc || receivingEntrySku(saved)", self.source)
+        self.assertIn("Observed {DOMAIN_TERMS.merchandiseIdentifier} differs from the Product {itemMatchMethod(matchChoice.item)}.", self.source)
+        self.assertIn("matchValuesConflict(entry.skuId, itemMatchIdentifierValue(matchChoice.item))", self.source)
+        self.assertIn("function itemMatchConfidenceBadge(item, identifierQuery = '')", self.source)
+        self.assertIn("UPC prefix", self.source)
+        self.assertIn("const nameOnlyMatchSuggestions = itemMatches.length > 0 && itemMatches.every(item => item.matchBasis === 'name')", self.source)
+        self.assertIn("const combinedPartialMatchSuggestions = itemMatches.length > 0 && itemMatches.every(item => String(item.matchBasis || '').startsWith('both-'))", self.source)
+        self.assertIn("(nameOnlyMatchSuggestions || combinedPartialMatchSuggestions) ? 'Possible products' : 'Suggested products'", self.source)
+        self.assertIn("These match the typed name and UPC / ID prefix. Select the correct Product, then use Product values only when they should replace the observed fields.", self.source)
+        self.assertIn("Enter or scan UPC / ID to confirm the exact Product.", self.source)
+        self.assertIn("confidenceBadge && <em>{confidenceBadge}</em>", self.source)
+        self.assertIn("if (item?.matchBasis === 'both-upc') return 'Possible';", self.source)
+        self.assertIn(".receiving-match-eyebrow", self.styles)
+        self.assertIn(".receiving-match-use-identifier", self.styles)
+        self.assertIn(".receiving-match-warning", self.styles)
+        self.assertIn(".receiving-match-selected-main > button", self.styles)
+        self.assertIn(".receiving-match-correction-actions", self.styles)
+        self.assertNotIn("<em>Best</em>", self.source)
+
+    def test_planning_modal_product_search_uses_shipment_matching_model(self):
+        planning_product_step = self.source.split("function NewReviewProductIdentification", 1)[1].split("function CommentComposer", 1)[0]
+        self.assertIn("const [matchNameQuery, setMatchNameQuery]", planning_product_step)
+        self.assertIn("const [matchIdentifierQuery, setMatchIdentifierQuery]", planning_product_step)
+        self.assertIn("if (identifierReady && nameReady)", planning_product_step)
+        self.assertIn("combineIdentifierAndNameMatches(identifierData.records ?? [], nameData.records ?? [], identifierQuery)", planning_product_step)
+        self.assertIn("limit: 50", planning_product_step)
+        self.assertIn("records = (data.records ?? []).map(match => ({ ...match, matchBasis: itemIdentifierBasis(match) }))", planning_product_step)
+        self.assertIn("records = (data.records ?? []).map(match => ({ ...match, matchBasis: 'name' }))", planning_product_step)
+        self.assertIn("No product matches both fields", planning_product_step)
+        self.assertIn("These match the typed name and UPC / ID prefix. Select the correct Product, then use Product values only when they should replace the observed fields.", planning_product_step)
+        self.assertIn("Enter or scan UPC / ID to confirm the exact Product.", planning_product_step)
+        self.assertIn("itemMatchedByText(match)", planning_product_step)
+        self.assertIn("itemExpectedIdentifierText(match)", planning_product_step)
+        self.assertIn("itemMatchConfidenceBadge(match, matchIdentifierQuery)", planning_product_step)
+        self.assertIn("useProductMerchValue('skuId', productIdentifier)", planning_product_step)
+        self.assertIn("useProductMerchValue('productName', productTitle)", planning_product_step)
+        self.assertIn("placeholder=\"Name printed on package\"", planning_product_step)
+        self.assertIn("placeholder=\"Scan or enter UPC / ID\"", planning_product_step)
+        self.assertIn("className=\"recv-field recv-field-product\"", planning_product_step)
+        self.assertIn("className=\"recv-field\"", planning_product_step)
+        package_name_index = planning_product_step.index("<label>{DOMAIN_TERMS.packageName}</label>")
+        identifier_index = planning_product_step.index("<label>{DOMAIN_TERMS.merchandiseIdentifier}</label>", package_name_index)
+        suggestions_index = planning_product_step.index("className=\"receiving-match-panel\"")
+        self.assertLess(package_name_index, identifier_index)
+        self.assertLess(identifier_index, suggestions_index)
+        self.assertIn(".new-review-product-search-fields", self.styles)
+        self.assertIn(".recv-field-product input", self.styles)
+        self.assertIn(".receiving-match-panel", self.styles)
+        product_search_styles = self.styles.split(".new-review-product-search-fields", 1)[1].split("}", 1)[0]
+        self.assertNotIn("grid-template-columns", product_search_styles)
+
+    def test_shipment_capture_shows_name_before_identifier_but_matches_after_identifier(self):
+        receiving_form = self.source.split("function ShipmentsPage()", 1)[1].split("function ProductsPage", 1)[0]
+        package_name_index = receiving_form.index("<label>{DOMAIN_TERMS.packageName}</label>")
+        identifier_index = receiving_form.index("<label>{DOMAIN_TERMS.merchandiseIdentifier}</label>", package_name_index)
+        suggestions_index = receiving_form.index("className=\"receiving-match-field\"")
+        self.assertLess(package_name_index, identifier_index)
+        self.assertLess(identifier_index, suggestions_index)
+        self.assertIn("ref={skuIdRef}", receiving_form)
+        self.assertIn("setTimeout(() => productNameRef.current?.focus(), 0)", receiving_form)
 
     def test_technical_airtable_names_are_labeled_as_technical(self):
         self.assertIn("technicalTableLabel(s.tables?.products || s.tables?.skus || 'Products')", self.source)

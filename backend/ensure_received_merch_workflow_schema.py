@@ -90,6 +90,7 @@ def ensure_received_merch_workflow_schema(*, dry_run=False):
         number_field(Config.F_WORKSTREAM_CARD_QUANTITY),
         multiline_text_field(Config.F_WORKSTREAM_CARD_MANUAL_PRODUCT_INFO),
         multiline_text_field(Config.F_WORKSTREAM_CARD_NOTES),
+        multiline_text_field(Config.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC),
     ]
     thr3d_fields = [
         {"name": Config.F_THR3D_SHIPPING_ITEM_NAME, "type": "singleLineText"},

@@ -42,7 +42,8 @@ class RequiredToShootTests(unittest.TestCase):
         self.assertEqual(_validate_identifier_value("12345678", "GTIN-8", "GTIN"), "")
         self.assertEqual(_validate_identifier_value("00123", "Numeric", "Identifier"), "")
         self.assertEqual(_validate_identifier_value("GAR-5001", "Text", "GAR"), "")
-        self.assertIn("12 digits", _validate_identifier_value("123", "UPC-12", "UPC"))
+        self.assertEqual(_validate_identifier_value("123", "UPC-12", "UPC"), "")
+        self.assertEqual(_validate_identifier_value("NO UPC", "UPC-12", "UPC"), "")
 
     def test_leading_zero_is_preserved_and_valid(self):
         item = self.item(productId="012345678901", identifier="012345678901")
