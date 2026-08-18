@@ -36,12 +36,12 @@ class ProductProductionSummaryTests(unittest.TestCase):
     def test_explicit_waiting_status_is_not_treated_as_new_merch(self):
         self.assertEqual(
             _planning_status_for_fields({
-                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Awaiting Info",
+                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Needs More Information",
                 C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
                 C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm"],
                 C.F_RECEIPT_ENTRY_MERCH_VERIFIED: False,
             }),
-            "awaiting-info",
+            "needs-more-information",
         )
 
     def test_explicit_planning_status_is_authoritative(self):
@@ -65,12 +65,12 @@ class ProductProductionSummaryTests(unittest.TestCase):
         )
 
     def test_work_is_identified_and_ready_states_are_derived(self):
-        merchandise = [record(**{"Merch Status": "Received", "Planning Status": "Awaiting Info"})]
+        merchandise = [record(**{"Merch Status": "Received", "Planning Status": "Needs More Information"})]
         self.assertEqual(
             _derive_product_production_summary(merchandise=merchandise, workstreams=[], thr3d=[])["status"],
             "Waiting on Information",
         )
-        ready = [record(**{"Workstream Type": "Ecomm", "Status": "Ready for Photo"})]
+        ready = [record(**{"Workstream Type": "Ecomm", C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo"})]
         self.assertEqual(
             _derive_product_production_summary(
                 merchandise=[record(**{"Merch Status": "Received", "Planning Status": "Ready for Photo"})],
@@ -83,7 +83,7 @@ class ProductProductionSummaryTests(unittest.TestCase):
     def test_creative_force_status_is_reported_without_overwriting_planning_status(self):
         summary = _derive_product_production_summary(
             merchandise=[record(**{"Merch Status": "Received", "Planning Status": "Ready for Photo"})],
-            workstreams=[record(**{"Status": "Ready for Photo", "Creative Force Sync": '{"status": "In Production"}'})],
+            workstreams=[record(**{C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo", "Creative Force Sync": '{"status": "In Production"}'})],
             thr3d=[],
         )
         self.assertEqual(summary["status"], "In Production")
@@ -93,14 +93,14 @@ class ProductProductionSummaryTests(unittest.TestCase):
     def test_physical_issue_wins_over_production_summary(self):
         summary = _derive_product_production_summary(
             merchandise=[record(**{"Merch Status": "Issue", "Planning Status": "Ready for Photo"})],
-            workstreams=[record(**{"Status": "Ready for Photo"})],
+            workstreams=[record(**{C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo"})],
             thr3d=[],
         )
         self.assertEqual(summary["status"], "Issue")
 
     def test_feed_fields_are_flat_and_use_the_workstream_card_as_source_key(self):
         fields = _creative_force_feed_fields(
-            {"id": "recCard", "fields": {"Status": "Ready for Photo", "Creative Force Sync": ""}},
+            {"id": "recCard", "fields": {C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo", "Creative Force Sync": ""}},
             {
                 "ready": True,
                 "payload": {
@@ -152,7 +152,7 @@ class ProductProductionSummaryTests(unittest.TestCase):
             "id": "recReadyCard",
             "fields": {
                 "Workstream Type": "Ecomm",
-                "Status": "Ready for Photo",
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
             },
         }
         handoff.return_value = {

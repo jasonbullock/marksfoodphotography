@@ -141,7 +141,7 @@ class Config:
     F_RECEIPT_ENTRY_MERCH_VERIFIED_AT = "Merchandise Verified At"
     F_RECEIPT_ENTRY_MERCH_VERIFIED_BY = "Merchandise Verified By"
     INTAKE_STATUS_OPTIONS = ["Needs Review", "Waiting on Information", "Ready for Photo", "Complete"]
-    PLANNING_STATUS_OPTIONS = ["New", "Needs Product / Work", "Awaiting Info", "Ready for Photo"]
+    PLANNING_STATUS_OPTIONS = ["New", "Needs More Information", "Ready for Photo"]
     NEW_MERCH_STATUS_OPTIONS = ["Needs Review", "Workflows Created"]
     DELIVERABLE_OPTIONS = ["Packaging", "Ecomm", "Thr3d"]
 

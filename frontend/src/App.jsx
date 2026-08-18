@@ -7860,13 +7860,9 @@ const MERCH_REVIEW_V2_DECISIONS_KEY = 'marks:planning-board-deliverable-decision
 const MERCH_REVIEW_V2_LEGACY_DECISIONS_KEY = 'marks:work-board-production-decisions';
 const PM_ACTIVITY_STORAGE_KEY = 'marks:planning-board-activity';
 const PM_COMMENT_READ_STORAGE_KEY = 'marks:planning-board-comment-reads';
-const PM_LOCAL_QUEUE_IDS = {
-  needsProductWork: QUEUE_IDS.waitingActivation,
-};
 const PM_QUEUE_COLUMNS = [
   { id: QUEUE_IDS.newReview, label: 'New Merch', description: 'Brand-new received merchandise ready for PM review.' },
-  { id: PM_LOCAL_QUEUE_IDS.needsProductWork, label: 'Needs Product / Work', description: 'Reviewed merchandise that still needs a Product match or workstream/deliverable decision.' },
-  { id: QUEUE_IDS.waitingInformation, label: 'Awaiting Info', description: 'Matched work waiting on required product or photo details.' },
+  { id: QUEUE_IDS.waitingInformation, label: 'Needs More Information', description: 'Reviewed merchandise waiting on Product, work, or required details.' },
   { id: QUEUE_IDS.readyProduction, label: 'Ready for Photo', description: 'Shared handoff queue for Production.' },
 ];
 const PLANNING_QUEUE_LABELS = Object.fromEntries(PM_QUEUE_COLUMNS.map(column => [column.id, column.label]));
@@ -8169,18 +8165,20 @@ function enforceExclusiveGs1Deliverables(values = [], changedOption = '') {
 function queueIdForPlanningStatus(status) {
   switch (String(status || '').trim().toLowerCase()) {
     case 'new': return QUEUE_IDS.newReview;
-    case 'needs-product-work': return PM_LOCAL_QUEUE_IDS.needsProductWork;
-    case 'ready-for-photo': return QUEUE_IDS.readyProduction;
+    case 'needs-more-information':
+    case 'needs-product-work':
     case 'awaiting-info':
+      return QUEUE_IDS.waitingInformation;
+    case 'ready-for-photo': return QUEUE_IDS.readyProduction;
     default: return QUEUE_IDS.waitingInformation;
   }
 }
 
 function planningStatusFromLegacyQueue(queueId) {
   if (queueId === QUEUE_IDS.newReview) return 'new';
-  if (queueId === PM_LOCAL_QUEUE_IDS.needsProductWork) return 'needs-product-work';
+  if (queueId === QUEUE_IDS.waitingActivation) return 'needs-more-information';
   if (queueId === QUEUE_IDS.readyProduction) return 'ready-for-photo';
-  return 'awaiting-info';
+  return 'needs-more-information';
 }
 
 function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = {} } = {}) {
@@ -8198,7 +8196,7 @@ function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = 
     },
   );
   const baseCard = buildPlanningCard(record, { assignment: baseAssignment, client, location });
-  const planningStatus = card.planningStatus || 'awaiting-info';
+  const planningStatus = card.planningStatus || 'needs-more-information';
   const columnId = queueIdForPlanningStatus(planningStatus);
   const productionStatus = fallbackPhotoProductionStatus(type, {
     client,
@@ -8215,7 +8213,7 @@ function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = 
     subjectType: 'workstream-card',
     title: record.productName || record.description || card.name || 'Received Merch',
     columnId,
-    queueLabel: PLANNING_QUEUE_LABELS[columnId] || 'Awaiting Info',
+    queueLabel: PLANNING_QUEUE_LABELS[columnId] || 'Needs More Information',
     deliverables: [type],
     deliverableRouteId: DELIVERABLE_ROUTE_MAP[type],
     deliverableRoute: type,
@@ -8752,6 +8750,19 @@ function releaseCardIdentifierLine(item = {}, identifier = '', sectionId = '') {
   return [identifier || 'No UPC', releaseStatusTextForItem(item, sectionId)].filter(Boolean).join(' · ');
 }
 
+function ReleaseCardIdentifierLine({ item, identifier, sectionId }) {
+  if (sectionId !== 'needsReview') {
+    return <span>{releaseCardIdentifierLine(item, identifier, sectionId)}</span>;
+  }
+  const matched = productLinkedForPlanningItem(item);
+  return (
+    <span className="planning-release-identity-line">
+      <span>{identifier || 'No UPC'}</span>
+      <span className={matched ? 'is-matched' : ''}>{matched ? '✓ Matched' : 'Unmatched'}</span>
+    </span>
+  );
+}
+
 function releaseCardDeliverables(item = {}, sectionId = '') {
   if (sectionId === 'needsReview') return [];
   if (item.subjectType === 'workstream-card') {
@@ -8874,7 +8885,7 @@ function PlanningReleaseView({
                     const selectable = section.id === 'readyToRelease';
                     const checked = selectedReleaseSet.has(item.id);
                     const displayDeliverables = releaseCardDeliverables(item, section.id);
-                    const showAge = age.label === 'New' ? section.id === 'needsReview' : true;
+                    const showAge = Boolean(age.label);
                     return (
                       <div
                         className={`planning-release-card ${selectedId === item.id ? 'is-selected' : ''} ${selectable ? 'is-selectable' : ''}`}
@@ -8899,7 +8910,7 @@ function PlanningReleaseView({
                           </span>
                           <span className="planning-release-main">
                             <strong>{item.title || 'Received Merchandise'}</strong>
-                            <span>{releaseCardIdentifierLine(item, identifier, section.id)}</span>
+                            <ReleaseCardIdentifierLine item={item} identifier={identifier} sectionId={section.id} />
                           </span>
                           {(displayDeliverables.length || showAge) && (
                             <span className="planning-release-meta">
@@ -9682,7 +9693,7 @@ function DeliverablesSelector({ values = [], onChange, disabled = false, options
   );
 }
 
-function NewReviewProductIdentification({ item, product, onRefresh }) {
+function NewReviewProductIdentification({ item, product, onRefresh, deferNoClearMatch = false, noClearMatchDraft, onNoClearMatchDraftChange }) {
   const record = item.record || {};
   const [matchNameQuery, setMatchNameQuery] = useState(record.productName || record.description || '');
   const [matchIdentifierQuery, setMatchIdentifierQuery] = useState(record.skuId || record.observedIdentifier || product.identifier || product.primaryMatchKey || '');
@@ -9768,6 +9779,7 @@ function NewReviewProductIdentification({ item, product, onRefresh }) {
         await api.updateMerchandiseIntakeDecisions(item.merchandiseId, identityUpdates);
       }
       await api.matchMerchandiseReviewEntry(item.merchandiseId, productId);
+      onNoClearMatchDraftChange?.(false);
       setEditingLinkedProductIdentity(false);
       setReplacementProductId('');
       await onRefresh?.();
@@ -9779,6 +9791,13 @@ function NewReviewProductIdentification({ item, product, onRefresh }) {
   }
 
   async function markNoClearMatch() {
+    if (deferNoClearMatch) {
+      onNoClearMatchDraftChange?.(true);
+      setNoClearMatch(true);
+      setReplacementProductId('');
+      setNotice('');
+      return;
+    }
     setBusy(true);
     setNotice('');
     try {
@@ -9840,6 +9859,7 @@ function NewReviewProductIdentification({ item, product, onRefresh }) {
   }
 
   const linked = Boolean(product.id);
+  const effectiveNoClearMatch = deferNoClearMatch ? Boolean(noClearMatchDraft) : noClearMatch;
   const choosingReplacementProduct = Boolean(replacementProductId);
   const showLinkedProductCard = linked && !choosingReplacementProduct;
   const observedName = String(matchNameQuery || '').trim();
@@ -9915,12 +9935,15 @@ function NewReviewProductIdentification({ item, product, onRefresh }) {
             />
           )}
         </>
-      ) : noClearMatch ? (
+      ) : effectiveNoClearMatch ? (
         <ProductMatchCard
           status="unmatched"
           title="No Clear Match"
-          meta="Waiting for Product data."
-          onChange={() => setNoClearMatch(false)}
+          meta={deferNoClearMatch ? 'Will continue unmatched when accepted.' : 'Waiting for Product data.'}
+          onChange={() => {
+            setNoClearMatch(false);
+            onNoClearMatchDraftChange?.(false);
+          }}
           changeDisabled={busy}
         />
       ) : (
@@ -10204,10 +10227,11 @@ function ImageLightbox({ photos, index, setIndex, onClose }) {
 function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyForPhoto, onAddDeliverable, onRemove, workstreamPhotoCardCount = 1, workstreamTypes = [], onClose, previousItem, nextItem, onSelectItem, onRefresh, photos, photoIndex, setPhotoIndex, comments, commentSaving, commentError, activity, onAddComment, onMarkCommentsRead }) {
   const isWorkstreamCard = item.subjectType === 'workstream-card';
   const isNewQueue = item.columnId === QUEUE_IDS.newReview;
+  const isMerchAcceptanceReview = !isWorkstreamCard && isNewQueue;
   const [zoom, setZoom] = useState(1);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [intakeDraft, setIntakeDraft] = useState(() => ({
-    deliverables: initialReviewDeliverables(item.record),
+    deliverables: isMerchAcceptanceReview ? [] : initialReviewDeliverables(item.record),
     allocation: { thr3d: defaultThr3dAllocation(item.record?.quantity) },
   }));
   const [intakeFeedback, setIntakeFeedback] = useState('');
@@ -10219,6 +10243,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   const [issueDescription, setIssueDescription] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
   const [issueState, setIssueState] = useState({ status: 'idle', message: '' });
+  const [draftNoClearMatch, setDraftNoClearMatch] = useState(() => Boolean(item.record?.noClearMatch || item.record?.reviewState === 'Waiting for Product Data'));
   const product = item.record?.linkedItem || {};
   const committedDeliverables = deliverablesForRecord(item.record);
   const productRequestTypeSuggestion = suggestedDeliverablesForRecord(item.record);
@@ -10306,6 +10331,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     : stepFlagged || splitNeedsMultipleUnits;
 
   useEffect(() => {
+    if (isMerchAcceptanceReview) return;
     if (committedDeliverables.length) return;
     const suggested = initialReviewDeliverables(item.record);
     if (!suggested.length) return;
@@ -10314,9 +10340,9 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
         ? current
         : { ...current, deliverables: suggested }
     ));
-  }, [item.id, initialDeliverablesKey, committedDeliverables.length]);
+  }, [item.id, initialDeliverablesKey, committedDeliverables.length, isMerchAcceptanceReview]);
   const finishDisabled = finishBusy || finishBlocked;
-  const finishLabel = isWorkstreamCard ? 'Save Details' : 'Confirm Merch';
+  const finishLabel = isWorkstreamCard ? 'Save Details' : isMerchAcceptanceReview ? 'Accept merchandise' : 'Confirm Merch';
   const issueBusy = issueState.status === 'loading';
   const footerOutcomePreview = planningActionOutcomePreview({
     isWorkstreamCard,
@@ -10359,7 +10385,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
 
   useEffect(() => {
     setIntakeDraft({
-      deliverables: initialReviewDeliverables(item.record),
+      deliverables: isMerchAcceptanceReview ? [] : initialReviewDeliverables(item.record),
       allocation: { thr3d: defaultThr3dAllocation(item.record?.quantity) },
     });
     setIntakeFeedback('');
@@ -10369,8 +10395,9 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     setIssueDescription('');
     setIssueNotes('');
     setIssueState({ status: 'idle', message: '' });
+    setDraftNoClearMatch(Boolean(item.record?.noClearMatch || item.record?.reviewState === 'Waiting for Product Data'));
     onMarkCommentsRead?.(item.merchandiseId);
-  }, [item.id, product.id, product.requestType]);
+  }, [item.id, product.id, product.requestType, isMerchAcceptanceReview, item.record?.noClearMatch, item.record?.reviewState]);
 
   function stageDeliverables(value) {
     const cleanValue = normalizeDeliverableList(value);
@@ -10409,6 +10436,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     }
     const latestState = wizardStateForItem(item, intakeDraft.deliverables);
     latestState.reviewOnly = latestState.productLinked && latestState.deliverables.length === 0;
+    latestState.noClearMatch = Boolean(isMerchAcceptanceReview && draftNoClearMatch && !latestState.productLinked);
     latestState.assignment = workstreamAssignmentsForDeliverables(latestState.deliverables, totalQuantity, intakeDraft.allocation);
     const willShipToThr3d = latestState.thr3dOnly;
     if (willShipToThr3d && !window.confirm(THR3D_SHIP_CONFIRMATION_MESSAGE)) {
@@ -10449,9 +10477,11 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     }
   }
 
-  const identifyDone = wizardState.productLinked;
+  const identifyDone = isMerchAcceptanceReview ? false : wizardState.productLinked;
   const deliverablesDone = wizardState.deliverables.length > 0;
   const receivedDateLabel = formatInventoryDate(item.record?.dateReceived || item.record?.received);
+  const merchCheckStatusText = stepFlagged ? 'Issue' : wizardState.productLinked ? 'Matched' : 'Unmatched';
+  const merchCheckStatusTone = stepFlagged ? 'flag' : wizardState.productLinked ? 'ok' : 'wait';
 
   return (
     <div className="new-review-modal-backdrop" role="presentation" onClick={() => onClose(item)}>
@@ -10506,81 +10536,90 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
               title="Merch Check"
               done={identifyDone}
               flagged={stepFlagged}
-              statusText={stepFlagged ? '⚑ Issue' : wizardState.productLinked ? '' : 'Needs check'}
-              statusTone={stepFlagged ? 'flag' : wizardState.productLinked ? 'ok' : 'wait'}
+              statusText={merchCheckStatusText}
+              statusTone={merchCheckStatusTone}
               summary={stepFlagged ? 'Issue keeps this item out of release.' : product.product || product.name || product.identifier || 'Confirm the received item can continue.'}
               collapseWhenDone={false}
             >
               <p className="new-review-step-intro">
-                Confirm the physical item is acceptable to continue. Match the expected Product when it exists, or keep it unmatched and complete the needed information later.
+                Confirm the photos and package details. Match the Product when it is clear; otherwise continue unmatched.
               </p>
-              <NewReviewProductIdentification item={item} product={product} onRefresh={onRefresh} />
-            </ReviewStep>
-
-            <ReviewStep
-              n={2}
-              title="Deliverables"
-              done={deliverablesDone}
-              statusText={deliverablesDone ? '' : 'Choose at least one'}
-              statusTone={deliverablesDone ? 'ok' : 'wait'}
-              summary={wizardState.deliverables.join(', ') || '—'}
-              collapseWhenDone={false}
-            >
-              <DeliverablesSelector
-                values={intakeDraft.deliverables}
-                onChange={stageDeliverables}
-                disabled={finishBusy || (isWorkstreamCard && !workstreamTypeChangeAllowed)}
+              <NewReviewProductIdentification
+                item={item}
+                product={product}
+                onRefresh={onRefresh}
+                deferNoClearMatch={isMerchAcceptanceReview}
+                noClearMatchDraft={draftNoClearMatch}
+                onNoClearMatchDraftChange={setDraftNoClearMatch}
               />
-              {showProductRequestTypeSuggestion && (
-                <p className="deliverables-suggestion">
-                  Suggested from Product Request Type: <strong>{product.requestType}</strong> → {productRequestTypeSuggestion.join(', ')}
-                </p>
-              )}
-              {showQuantityAllocation && (
-                <div className="quantity-allocation-panel">
-                  <div className="quantity-allocation-head">
-                    <strong>Split received quantity</strong>
-                    <span>Qty received {totalQuantity}</span>
-                  </div>
-                  <div className="quantity-allocation-grid">
-                    <label>
-                      <span>THR3D ships</span>
-                      <input
-                        type="number"
-                        min="1"
-                        max={Math.max(1, totalQuantity - 1)}
-                        inputMode="numeric"
-                        value={thr3dAllocation}
-                        onChange={event => stageThr3dAllocation(event.target.value)}
-                        disabled={finishBusy}
-                      />
-                    </label>
-                    <label>
-                      <span>Packaging keeps</span>
-                      <input type="number" value={packagingAllocation} readOnly disabled />
-                    </label>
-                  </div>
-                  <p className="quantity-allocation-note">
-                    Assigned {allocatedQuantity} of {totalQuantity}. Packaging receives the remaining quantity.
-                  </p>
-                </div>
-              )}
-              {splitNeedsMultipleUnits && (
-                <div className="quantity-split-warning" role="alert">
-                  <strong>Received quantity cannot be split</strong>
-                  <span>Qty received is {totalQuantity}. Update Qty received in Shipments, or choose one deliverable for this item.</span>
-                </div>
-              )}
-              {wizardState.thr3dOnly && (
-                <div className="thr3d-ship-warning" role="alert">
-                  <strong>Thr3d shipping path</strong>
-                  <span>{THR3D_SHIP_CONFIRMATION_MESSAGE}</span>
-                </div>
-              )}
-              {intakeFeedback && <span className="new-review-inline-status">{intakeFeedback}</span>}
             </ReviewStep>
 
-            {Object.keys(selectedPhotoProduction).length > 0 && (
+            {!isMerchAcceptanceReview && (
+              <ReviewStep
+                n={2}
+                title="Deliverables"
+                done={deliverablesDone}
+                statusText={deliverablesDone ? '' : 'Choose at least one'}
+                statusTone={deliverablesDone ? 'ok' : 'wait'}
+                summary={wizardState.deliverables.join(', ') || '—'}
+                collapseWhenDone={false}
+              >
+                <DeliverablesSelector
+                  values={intakeDraft.deliverables}
+                  onChange={stageDeliverables}
+                  disabled={finishBusy || (isWorkstreamCard && !workstreamTypeChangeAllowed)}
+                />
+                {showProductRequestTypeSuggestion && (
+                  <p className="deliverables-suggestion">
+                    Suggested from Product Request Type: <strong>{product.requestType}</strong> → {productRequestTypeSuggestion.join(', ')}
+                  </p>
+                )}
+                {showQuantityAllocation && (
+                  <div className="quantity-allocation-panel">
+                    <div className="quantity-allocation-head">
+                      <strong>Split received quantity</strong>
+                      <span>Qty received {totalQuantity}</span>
+                    </div>
+                    <div className="quantity-allocation-grid">
+                      <label>
+                        <span>THR3D ships</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max={Math.max(1, totalQuantity - 1)}
+                          inputMode="numeric"
+                          value={thr3dAllocation}
+                          onChange={event => stageThr3dAllocation(event.target.value)}
+                          disabled={finishBusy}
+                        />
+                      </label>
+                      <label>
+                        <span>Packaging keeps</span>
+                        <input type="number" value={packagingAllocation} readOnly disabled />
+                      </label>
+                    </div>
+                    <p className="quantity-allocation-note">
+                      Assigned {allocatedQuantity} of {totalQuantity}. Packaging receives the remaining quantity.
+                    </p>
+                  </div>
+                )}
+                {splitNeedsMultipleUnits && (
+                  <div className="quantity-split-warning" role="alert">
+                    <strong>Received quantity cannot be split</strong>
+                    <span>Qty received is {totalQuantity}. Update Qty received in Shipments, or choose one deliverable for this item.</span>
+                  </div>
+                )}
+                {wizardState.thr3dOnly && (
+                  <div className="thr3d-ship-warning" role="alert">
+                    <strong>Thr3d shipping path</strong>
+                    <span>{THR3D_SHIP_CONFIRMATION_MESSAGE}</span>
+                  </div>
+                )}
+                {intakeFeedback && <span className="new-review-inline-status">{intakeFeedback}</span>}
+              </ReviewStep>
+            )}
+
+            {!isMerchAcceptanceReview && Object.keys(selectedPhotoProduction).length > 0 && (
               <ReviewStep
                 n={3}
                 title="Product data for photo"
@@ -11635,7 +11674,7 @@ function MerchandiseReviewV2Page() {
         if (typeChanged) {
           await api.updateWorkstreamCard(item.workstreamCardId, {
             workstreamType: nextType,
-            planningStatus: item.planningStatus || 'awaiting-info',
+            planningStatus: item.planningStatus || 'needs-more-information',
           });
           await refreshV2WorkflowData();
           return { ok: true, message: `Workstream changed to ${nextType}.` };
@@ -11670,6 +11709,7 @@ function MerchandiseReviewV2Page() {
           stage: QUEUE_IDS.waitingInformation,
           deliverables,
           expectedProductId,
+          ...(state.noClearMatch ? { noClearMatch: true } : {}),
           ...(manualProductInfo ? { manualProductInfo } : {}),
         });
         await refreshV2WorkflowData();

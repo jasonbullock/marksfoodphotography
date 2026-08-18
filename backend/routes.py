@@ -4335,8 +4335,11 @@ def _derive_product_production_summary(*, merchandise, workstreams, thr3d):
     intake_statuses = {
         {
             "New": "Needs Review",
+            "Needs More Information": "Waiting on Information",
             "Awaiting Info": "Waiting on Information",
-            "Needs Product / Work": "Needs Review",
+            "Needs Product / Work": "Waiting on Information",
+            "Awaiting Info/Activation": "Waiting on Information",
+            "Waiting on Information": "Waiting on Information",
             "Ready for Photo": "Ready for Photo",
         }.get(value, value)
         for value in planning_statuses
@@ -4359,7 +4362,7 @@ def _derive_product_production_summary(*, merchandise, workstreams, thr3d):
         status = "Complete" if work_units and all(value == "Complete" for value in cf_statuses) and (not thr3d_fields or shipping_statuses == {"Shipped"}) else "In Production"
     elif work_units == 0:
         status = "Waiting on Information" if "Waiting on Information" in intake_statuses else "Work Not Defined"
-    elif "Awaiting Info" in card_statuses or "Waiting on Information" in intake_statuses:
+    elif {"Awaiting Info", "Awaiting Info/Activation", "Needs More Information", "Waiting on Information"} & card_statuses or "Waiting on Information" in intake_statuses:
         status = "Waiting on Information"
     elif workstream_fields and all(value == "Ready for Photo" for value in card_statuses):
         status = "Ready for Photo"
@@ -5110,8 +5113,9 @@ def _validate_intake_status(value):
         return None
     if value == "":
         return err(f"Planning status must be one of: {', '.join(C.PLANNING_STATUS_OPTIONS)}.")
-    if value not in C.INTAKE_STATUS_OPTIONS:
-        return err(f"Planning status must be one of: {', '.join(C.INTAKE_STATUS_OPTIONS)}.")
+    allowed = set(C.INTAKE_STATUS_OPTIONS) | set(C.PLANNING_STATUS_OPTIONS)
+    if value not in allowed:
+        return err(f"Planning status must be one of: {', '.join(C.PLANNING_STATUS_OPTIONS)}.")
     return value
 
 
@@ -5791,11 +5795,12 @@ def _photo_production_value_is_valid(key, value):
     return True
 
 
-PLANNING_STATUS_VALUES = ("new", "needs-product-work", "awaiting-info", "ready-for-photo")
+PLANNING_STATUS_VALUES = ("new", "needs-more-information", "ready-for-photo")
 PLANNING_STATUS_LABELS = {
     "new": "New",
-    "needs-product-work": "Needs Product / Work",
-    "awaiting-info": "Awaiting Info",
+    "needs-more-information": "Needs More Information",
+    "needs-product-work": "Needs More Information",
+    "awaiting-info": "Needs More Information",
     "ready-for-photo": "Ready for Photo",
 }
 
@@ -5807,11 +5812,12 @@ def _normalized_planning_status(value):
     normalized = text.lower().replace("_", "-")
     aliases = {
         "needs review": "new",
-        "needs product / work": "needs-product-work",
-        "needs-product / work": "needs-product-work",
-        "waiting on information": "awaiting-info",
-        "awaiting info/activation": "awaiting-info",
-        "awaiting info": "awaiting-info",
+        "needs product / work": "needs-more-information",
+        "needs-product / work": "needs-more-information",
+        "needs more information": "needs-more-information",
+        "waiting on information": "needs-more-information",
+        "awaiting info/activation": "needs-more-information",
+        "awaiting info": "needs-more-information",
         "ready for photo": "ready-for-photo",
         "complete": "ready-for-photo",
     }
@@ -5850,8 +5856,8 @@ def _planning_status_for_fields(fields=None):
     ):
         return "new"
     if not item_ids or not deliverables:
-        return "needs-product-work"
-    return "awaiting-info"
+        return "needs-more-information"
+    return "needs-more-information"
 
 
 def _shape_thr3d_shipping_item(record):
@@ -6035,7 +6041,7 @@ def _confirm_assign_payload(body, entry, item_record=None):
             C.F_WORKSTREAM_CARD_NAME: _workstream_name(entry_fields, workstream_type),
             C.F_WORKSTREAM_CARD_RECEIVED_MERCH: [entry["id"]],
             C.F_WORKSTREAM_CARD_TYPE: workstream_type,
-            C.F_WORKSTREAM_CARD_PLANNING_STATUS: PLANNING_STATUS_LABELS["awaiting-info"],
+            C.F_WORKSTREAM_CARD_PLANNING_STATUS: PLANNING_STATUS_LABELS["needs-more-information"],
             C.F_WORKSTREAM_CARD_QUANTITY: quantity,
             **({C.F_WORKSTREAM_CARD_EXPECTED_PRODUCT: expected_product_ids} if expected_product_ids else {}),
             **({C.F_WORKSTREAM_CARD_MANUAL_PRODUCT_INFO: manual_product_info} if manual_product_info else {}),
@@ -6587,7 +6593,7 @@ def create_workstream_card():
         C.F_WORKSTREAM_CARD_NAME: _workstream_name(entry_fields, workstream_type),
         C.F_WORKSTREAM_CARD_RECEIVED_MERCH: [merchandise_id],
         C.F_WORKSTREAM_CARD_TYPE: workstream_type,
-        C.F_WORKSTREAM_CARD_PLANNING_STATUS: PLANNING_STATUS_LABELS["awaiting-info"],
+        C.F_WORKSTREAM_CARD_PLANNING_STATUS: PLANNING_STATUS_LABELS["needs-more-information"],
         C.F_WORKSTREAM_CARD_QUANTITY: quantity,
         **({C.F_WORKSTREAM_CARD_EXPECTED_PRODUCT: expected_product_ids} if expected_product_ids else {}),
         **({C.F_WORKSTREAM_CARD_MANUAL_PRODUCT_INFO: manual_product_info} if manual_product_info else {}),
@@ -6605,7 +6611,7 @@ def create_workstream_card():
         parent_update.update({
             C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS: "Workflows Created",
             C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review",
-            C.F_RECEIPT_ENTRY_PLANNING_STATUS: PLANNING_STATUS_LABELS["awaiting-info"],
+            C.F_RECEIPT_ENTRY_PLANNING_STATUS: PLANNING_STATUS_LABELS["needs-more-information"],
             **_merch_status_normalization_fields(entry_fields),
         })
     try:
@@ -6637,7 +6643,7 @@ def update_workstream_card(record_id):
     current_planning_status = _normalized_planning_status(
         current_fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS, "")
     )
-    effective_planning_status = planning_status or current_planning_status or "awaiting-info"
+    effective_planning_status = planning_status or current_planning_status or "needs-more-information"
     workstream_type = body.get("workstreamType", body.get("type", current_fields.get(C.F_WORKSTREAM_CARD_TYPE, "")))
     workstream_type = str(workstream_type or "").strip()
     if workstream_type not in C.WORKSTREAM_TYPE_OPTIONS:
@@ -6881,6 +6887,7 @@ def update_merchandise_intake_state(entry_id):
     if planning_status:
         planning_stage_map = {
             "new": "new-review",
+            "needs-more-information": "waiting-info",
             "needs-product-work": "waiting-info",
             "awaiting-info": "waiting-info",
             "ready-for-photo": "ready-production",
@@ -6913,16 +6920,19 @@ def update_merchandise_intake_state(entry_id):
         if isinstance(decision_fields, tuple):
             return decision_fields
         update_fields.update(decision_fields)
+    if body.get("noClearMatch"):
+        update_fields[C.F_RECEIPT_ENTRY_ITEM] = []
+        update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Received"
     effective_fields = {**fields, **update_fields}
     if intake_status:
         update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = intake_status
         intake_to_planning = {
             "needs review": "new",
-            "waiting on information": "awaiting-info",
+            "waiting on information": "needs-more-information",
             "ready for photo": "ready-for-photo",
         }
         update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS[
-            intake_to_planning.get(str(intake_status).strip().lower(), "awaiting-info")
+            intake_to_planning.get(str(intake_status).strip().lower(), "needs-more-information")
         ]
         update_fields.update(_merch_status_normalization_fields(fields))
     elif stage == "new-review":
@@ -6932,7 +6942,7 @@ def update_merchandise_intake_state(entry_id):
     elif stage == "waiting-info":
         update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Waiting on Information"
         update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS[
-            planning_status if planning_status in {"needs-product-work", "awaiting-info"} else "awaiting-info"
+            planning_status if planning_status == "needs-more-information" else "needs-more-information"
         ]
         update_fields.update(_merch_status_normalization_fields(fields))
     elif stage == "send-thr3d":
@@ -6955,7 +6965,7 @@ def update_merchandise_intake_state(entry_id):
         update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Ready to Ship"
     elif stage == "waiting-activation":
         update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Needs Review"
-        update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["awaiting-info"]
+        update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["needs-more-information"]
         update_fields.update(_merch_status_normalization_fields(fields))
     elif stage == "ready-production":
         item_ids = _as_list(fields.get(C.F_RECEIPT_ENTRY_ITEM, []))
@@ -8509,7 +8519,7 @@ def _review_state_for_entry(shaped, linked_item=None, blocking_issues=None):
     intake_status = shaped.get("intakeStatus") or ""
     if merch_status == "Issue" or blocking_issues:
         return "Issue"
-    if intake_status in {"Awaiting Info", "Waiting on Information"}:
+    if intake_status in {"Needs More Information", "Awaiting Info", "Awaiting Info/Activation", "Waiting on Information"}:
         return "Waiting for Product Data"
     if intake_status == "Ready for Photo":
         return "Validated"

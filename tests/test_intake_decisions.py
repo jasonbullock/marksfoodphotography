@@ -252,7 +252,7 @@ class IntakeDecisionTests(unittest.TestCase):
             C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging"],
             C.F_RECEIPT_ENTRY_NOTES: "Receiver note",
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Info",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs More Information",
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
@@ -265,9 +265,37 @@ class IntakeDecisionTests(unittest.TestCase):
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging"])
         self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_STATUS, fields)
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Awaiting Info")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Needs More Information")
         self.assertNotIn(C.F_RECEIPT_ENTRY_NOTES, fields)
         self.assertEqual(response.get_json()["reviewState"], "Waiting for Product Data")
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_intake_state_no_clear_match_clears_product_on_commit(self, get_record, update_record, _clients):
+        get_record.side_effect = [
+            self.entry({C.F_RECEIPT_ENTRY_ITEM: ["recProduct"]}),
+            self.receipt(),
+        ]
+        update_record.return_value = self.entry({
+            C.F_RECEIPT_ENTRY_ITEM: [],
+            C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Waiting on Information",
+            C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Needs More Information",
+        })
+
+        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
+            "stage": "waiting-info",
+            "deliverables": [],
+            "noClearMatch": True,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        fields = update_record.call_args.args[2]
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_ITEM], [])
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Needs More Information")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Needs More Information")
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.create_record")

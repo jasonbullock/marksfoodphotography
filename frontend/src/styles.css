@@ -3926,20 +3926,31 @@ input[type="checkbox"]:disabled {
 }
 
 .receiving-match-secondary-action {
-  min-height: 26px;
-  padding: 3px 7px;
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-  color: var(--text-3);
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+  color: var(--text-2);
   font-size: 11px;
-  font-weight: 750;
+  font-weight: 800;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease, color 0.14s ease;
 }
 
-.receiving-match-secondary-action:hover {
-  border-color: rgba(148, 163, 184, 0.28);
-  background: rgba(248, 250, 252, 0.72);
-  color: var(--text-2);
+.receiving-match-secondary-action:hover:not(:disabled),
+.receiving-match-secondary-action:focus-visible {
+  border-color: rgba(100, 116, 139, 0.46);
+  background: #fff;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  color: var(--text-1);
+  outline: none;
+}
+
+.receiving-match-secondary-action:disabled {
+  cursor: default;
+  opacity: 0.58;
 }
 
 .receiving-match-list {
@@ -6729,6 +6740,28 @@ input[type="checkbox"]:disabled {
 
 .planning-release-card-open.has-no-meta {
   grid-template-columns: 52px minmax(0, 1fr);
+}
+
+.planning-release-identity-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.planning-release-identity-line > span {
+  min-width: 0;
+}
+
+.planning-release-identity-line > span + span::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--text-3);
+}
+
+.planning-release-identity-line .is-matched {
+  color: var(--green-dark);
+  font-weight: 750;
 }
 
 .planning-release-card:hover,

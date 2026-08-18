@@ -48,7 +48,7 @@ class PlanningStatusMigrationTests(unittest.TestCase):
         update, reason = self.utility.planned_record_update(record)
 
         self.assertEqual(reason, "migrated_marker")
-        self.assertEqual(update[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Awaiting Info")
+        self.assertEqual(update[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Needs More Information")
         self.assertNotIn("Intake Status", update)
         self.assertEqual(update[C.F_RECEIPT_ENTRY_NOTES], "Receiver note\n Import missing")
 

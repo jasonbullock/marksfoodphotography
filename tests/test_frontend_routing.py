@@ -209,8 +209,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "MERCH_REVIEW_V2_DECISIONS_KEY",
             "PM_QUEUE_COLUMNS",
             "label: 'New Merch'",
-            "label: 'Needs Product / Work'",
-            "label: 'Awaiting Info'",
+            "label: 'Needs More Information'",
             "Confirm Merch",
             "ConversationPanel",
             "NewReviewSupportPanel",
@@ -657,10 +656,9 @@ class FrontendRoutingTests(unittest.TestCase):
             self.assertIn(text, modal_section)
         self.assertIn("Create ${workstreams[0].type} Workstream", self.source)
         self.assertIn("Create THR3D Shipment", self.source)
-        self.assertIn("function needsProductWorkQueue", self.source)
-        self.assertIn("needsProductWorkQueue(record)", self.source)
-        self.assertIn("Workstream cards belong in Awaiting Info/Activation", self.source)
-        self.assertIn("const value = String(status || '').trim().toLowerCase();\n  if (value === 'ready for photo') return QUEUE_IDS.readyProduction;\n  return QUEUE_IDS.waitingInformation;", self.source)
+        self.assertIn("label: 'Needs More Information'", self.source)
+        self.assertNotIn("label: 'Needs Product / Work'", self.source)
+        self.assertNotIn("label: 'Awaiting Info'", self.source)
         self.assertIn("requestedQueueId: QUEUE_IDS.waitingInformation", self.source)
         for text in [
             "function assignmentCreationSummary",
@@ -737,7 +735,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "Workstream Card",
             "Assigned Qty",
             "api.updateWorkstreamCard(item.workstreamCardId",
-            "planningStatus: item.planningStatus || 'awaiting-info'",
+            "planningStatus: item.planningStatus || 'needs-more-information'",
         ]:
             self.assertIn(text, self.source)
         for text in [

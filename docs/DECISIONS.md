@@ -1,5 +1,13 @@
 # Product Decisions
 
+## 2026-08-18 - Planning Status Uses One Middle State
+
+The persisted `Planning Status` dropdown should have three active values: `New`, `Needs More Information`, and `Ready for Photo`. `Needs Product / Work` and `Awaiting Info` were remnants of the earlier four-lane board and now collapse into `Needs More Information`.
+
+`Ready to Release` remains a derived UI section, not an Airtable status. The app may continue to accept old `needs-product-work`, `awaiting-info`, `Needs Product / Work`, `Awaiting Info`, and `Awaiting Info/Activation` values as compatibility aliases, but new writes should use `Needs More Information`.
+
+Airtable may still show retired choices in the single-select dropdown until they are removed through Airtable's own field configuration UI. The metadata API rejected live choice-pruning requests with a 422 response, so the application must not depend on pruning being complete.
+
 ## 2026-08-17 - Source Check Is Read-Only Evidence
 
 Topco tracker integration should begin as reversible Source Check mode, not replacement sync. The shared Google Sheet remains read-only from Marks Photo, and existing Product import/edit behavior stays available. The first implementation compares current in-application Product Data with source sheet row data already preserved in Product `Reference Data`, limited to identity fields needed to confirm the match and fields required by Client settings for the suggested photo deliverable. It ignores non-required source sheet fields and lets PMs recheck the current local Product data without writing Products, routing Merchandise, updating statuses, or writing back to Google Sheets.
@@ -57,6 +65,14 @@ In Add Merchandise, matching suggestions are the preferred path. For clients wit
 The primary forward action for newly received merchandise is `Confirm Merch`. The footer preview explains whether confirmation will move the item to `Needs More Information` or `Ready to Release`. `Raise Issue` is the paired exception action and begins as a blocking Issue layer attached to the Merchandise. Full replacement, relink, supersession, and corrected-merch workflows are deferred until the Issue model is intentionally designed.
 
 Ecomm/Packaging separation should be visually deferred until release/handoff so PMs can keep one merchandise card through `Newly Received Merch` and `Needs More Information`. Current backend support for child Ecomm/Packaging workstream cards remains available for compatibility, but the Planning Release view should not make PMs feel that confirming merchandise immediately fragments the card.
+
+## 2026-08-18 - Newly Received Merch Does Not Choose Work
+
+`Newly Received Merch` now answers only whether the physical merchandise is acceptable and whether the Product match looks correct enough to continue. It must not ask the PM to choose Deliverables, show Product-data-for-photo requirements, or preselect Product Request Type suggestions while the item is still in the first review column.
+
+Accepting newly received merchandise moves the item forward for later product/work planning. A source-linked Product may still suggest expected work after the item leaves the first column, but the work declaration and required-to-proceed checks belong in the later Planning sections. This keeps column 1 distinct from column 2: column 1 is physical acceptance and match confidence; column 2 is Product/work readiness.
+
+`No clear match` in the first-column modal is a draft intake choice, not an immediate status change. It should only persist, clear the Product link, and move the card when the PM uses the footer action to accept the merchandise.
 
 ## 2026-08-17 - Planning Actions Use Stable Business Intent
 

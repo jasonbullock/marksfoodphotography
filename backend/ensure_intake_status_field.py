@@ -118,7 +118,7 @@ def planned_record_update(record):
         return update, "skipped_historical"
 
     if marker_present:
-        update[Config.F_RECEIPT_ENTRY_PLANNING_STATUS] = "Awaiting Info"
+        update[Config.F_RECEIPT_ENTRY_PLANNING_STATUS] = "Needs More Information"
         reason = "migrated_marker"
     else:
         update[Config.F_RECEIPT_ENTRY_PLANNING_STATUS] = "New"
