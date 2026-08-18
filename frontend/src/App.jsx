@@ -1,4 +1,4 @@
-import React, { Component, useState, useEffect, useCallback, useRef, createContext, useContext, Fragment, memo } from 'react';
+import React, { Component, useState, useEffect, useCallback, useRef, createContext, useContext, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
@@ -13,12 +13,12 @@ import {
   GripVertical,
   Group as GroupIcon,
   Images,
-  Kanban,
   List as ListIcon,
   LayoutGrid,
   Layers,
   PackageOpen,
-  SquareKanban,
+  Pencil,
+  RefreshCw,
   Tag,
   Trash2,
   X,
@@ -102,8 +102,8 @@ const Icon = {
   NavImport: () => <DownloadIcon size={20} strokeWidth={1.5} />,
   NavShipments: () => <PackageOpen size={20} strokeWidth={1.5} />,
   NavMerchandise: () => <ClipboardList size={20} strokeWidth={1.5} />,
-  NavWork: () => <Kanban size={20} strokeWidth={1.5} />,
-  NavProduction: () => <SquareKanban size={20} strokeWidth={1.5} />,
+  NavWork: () => <Columns3 size={20} strokeWidth={1.5} />,
+  NavProduction: () => <LayoutGrid size={20} strokeWidth={1.5} />,
   NavJobs: () => <Layers size={20} strokeWidth={1.5} />,
   NavProducts: () => <Tag size={20} strokeWidth={1.5} />,
   Upload: () => (
@@ -186,13 +186,13 @@ function valueForExport(value) {
   return String(value);
 }
 
-const DEFAULT_WALNUT_SCOPE_SUGGESTIONS = ['Full Set Renders'];
-const DEFAULT_STRUCTURE_SUGGESTIONS = ['Hang Tag / Label'];
+const DEFAULT_WALNUT_SCOPE_SUGGESTIONS = ['Full set renders - WALNUT (PHOTO)'];
+const DEFAULT_STRUCTURE_SUGGESTIONS = ['Hang Tag / Label', 'On Product (Label)'];
 const DEFAULT_DUE_URGENCY_SUGGESTIONS = [];
 
 function normalizeSuggestionText(value) {
   const text = String(value || '').trim();
-  if (text.toLowerCase() === 'full set renders') return DEFAULT_WALNUT_SCOPE_SUGGESTIONS[0];
+  if (['full set renders', 'full set renders - walnut (photo)'].includes(text.toLowerCase())) return DEFAULT_WALNUT_SCOPE_SUGGESTIONS[0];
   return text;
 }
 
@@ -222,7 +222,21 @@ function activationSkuFieldSuggestions(records = [], field, defaults = []) {
   return textSuggestions(values, defaults);
 }
 
-function SuggestiveTextInput({ label, value, onChange, placeholder = '', suggestions = [], className = '' }) {
+function ActivationFieldLabel({ children, required = false, value, detail = '' }) {
+  const complete = String(value || '').trim();
+  const stateClass = required ? (complete ? 'is-complete' : 'is-required') : '';
+  return (
+    <span className={`activation-field-label ${stateClass}`.trim()}>
+      <span className="activation-field-label-main">
+        {children}
+        {required && <span className="activation-required-mark" aria-hidden="true">*</span>}
+      </span>
+      {detail && <small className="activation-field-label-detail">{detail}</small>}
+    </span>
+  );
+}
+
+function SuggestiveTextInput({ label, value, onChange, placeholder = '', suggestions = [], className = '', showDropdownButton = false, required = false }) {
   const [open, setOpen] = useState(false);
   const inputId = useRef(`suggestive-input-${Math.random().toString(16).slice(2)}`).current;
   const listId = `${inputId}-options`;
@@ -238,7 +252,7 @@ function SuggestiveTextInput({ label, value, onChange, placeholder = '', suggest
 
   return (
     <label className={`suggestive-text-field ${className}`.trim()}>
-      <span>{label}</span>
+      <ActivationFieldLabel required={required} value={value}>{label}</ActivationFieldLabel>
       <input
         id={inputId}
         className="form-input"
@@ -255,6 +269,18 @@ function SuggestiveTextInput({ label, value, onChange, placeholder = '', suggest
         aria-controls={visibleSuggestions.length ? listId : undefined}
         aria-expanded={open && visibleSuggestions.length > 0}
       />
+      {showDropdownButton && suggestions.length > 0 && (
+        <button
+          type="button"
+          className="suggestive-text-toggle"
+          aria-label={`Show ${label} suggestions`}
+          aria-expanded={open && visibleSuggestions.length > 0}
+          onMouseDown={event => event.preventDefault()}
+          onClick={() => setOpen(current => !current)}
+        >
+          <span aria-hidden="true">&#9662;</span>
+        </button>
+      )}
       {open && visibleSuggestions.length > 0 && (
         <div className="suggestive-text-options" id={listId} role="listbox">
           {visibleSuggestions.map(suggestion => (
@@ -425,7 +451,7 @@ function SubNav({ items, value, onChange, actions, className = '', label = 'Sect
               {item.icon}
               <span>{item.label}</span>
               {item.count !== undefined && item.count !== null && (
-                <span className="subnav-count">{item.count}</span>
+                <span className={`subnav-count ${item.countTone ? `is-${item.countTone}` : ''}`}>{item.count}</span>
               )}
             </button>
           );
@@ -921,22 +947,38 @@ function Dashboard({ navigate }) {
     .sort((a, b) => (b.daysAgo ?? -1) - (a.daysAgo ?? -1));
   const newlyReceivedMerch = receiptList
     .flatMap(receipt => (receipt.entries ?? [])
-      .filter(entry => entry.intakeStatus !== 'Complete' && entry.newMerchStatus !== 'Workflows Created')
       .map(entry => {
         const receivedAt = entry.dateReceived || entry.received || receipt.receivedDate || receipt.received || '';
         const client = clientMap[entry.clientIds?.[0] || receipt.clientIds?.[0]];
+        const location = entry.locationId ? locationMap[entry.locationId] : null;
+        const planningBoard = planningBoardForClient(entry.clientIds?.[0] || receipt.clientIds?.[0]);
+        const planningCard = evaluateMerchandiseReviewAssignment(entry, {
+          requestedQueueId: intakeRequestedQueueForRecord(entry),
+          reviewState: reviewStateFor(entry),
+          client,
+          planningBoard,
+        });
+        const card = buildPlanningCard(entry, { assignment: planningCard, client, location });
+        const columnId = queueIdForPlanningStatus(
+          entry.planningStatus || planningStatusFromLegacyQueue(intakeRequestedQueueForRecord(entry)),
+        );
         return {
-          ...entry,
+          ...card,
+          record: entry,
+          id: entry.id,
+          merchandiseId: entry.id,
           shipmentId: receipt.id,
+          columnId,
           receivedAt,
           clientName: client?.name || 'Unknown client',
-          title: receivingEntryLabel(entry),
-          identifier: receivingEntrySku(entry),
+          title: card.title || receivingEntryLabel(entry),
+          identifier: card.identifier || receivingEntrySku(entry),
           daysAgo: receivedAt ? Math.max(0, Math.floor((today - new Date(receivedAt)) / 86400000)) : null,
           photoRecord: recordPhotoUrl(entry) ? entry : receipt,
           matched: (entry.itemIds || []).length > 0 || Boolean(entry.linkedItem?.id),
         };
       }))
+    .filter(entry => releaseSectionForPlanningItem(entry) === 'needsReview')
     .sort((a, b) => new Date(b.receivedAt || 0) - new Date(a.receivedAt || 0))
     .slice(0, 6);
 
@@ -1454,16 +1496,14 @@ function ReceivingMatchSuggestions({
   onNoClearMatch,
   onSelect,
   disabled = false,
+  showNoClearMatchAction = true,
+  showEmptyState = true,
 }) {
+  if (!matches.length && !matchLoading && !showEmptyState && !showNoClearMatchAction) return null;
   return (
     <div className="receiving-match-panel">
       <div className="receiving-match-panel-head">
         <span>{title}</span>
-        {onNoClearMatch && (
-          <button type="button" className="receiving-match-secondary-action" onClick={onNoClearMatch} disabled={disabled}>
-            No clear match
-          </button>
-        )}
       </div>
       {nameOnlyMatchSuggestions && (
         <div className="receiving-match-helper">Enter or scan UPC / ID to confirm the exact Product.</div>
@@ -1495,11 +1535,87 @@ function ReceivingMatchSuggestions({
             );
           })}
         </div>
-      ) : (
+      ) : showEmptyState ? (
         !matchLoading && <p className="merch-compare-empty">No matching Products found. Check the package name and UPC / ID, or mark this as no clear match.</p>
+      ) : null}
+      {showNoClearMatchAction && onNoClearMatch && (
+        <div className="receiving-match-panel-footer">
+          <button type="button" className="receiving-match-secondary-action" onClick={onNoClearMatch} disabled={disabled}>
+            No clear match
+          </button>
+        </div>
       )}
     </div>
   );
+}
+
+function SourceSheetMatchSuggestions({
+  title = 'Possible Product Matches',
+  matches = [],
+  client,
+  matchLoading = false,
+  activatingRowNumber = null,
+  canActivate = false,
+  selectedRowNumber = null,
+  onActivate,
+}) {
+  return (
+    <div className="receiving-match-panel receiving-source-match-panel">
+      <div className="receiving-match-panel-head">
+        <span>{matchLoading ? 'Finding product matches...' : title}</span>
+      </div>
+      {matches.length > 0 ? (
+        <div className="receiving-match-list">
+          {matches.slice(0, 5).map(row => {
+            const source = row.sourceData || {};
+            const rowNumber = row.sourceRowNumber;
+            const activating = activatingRowNumber === rowNumber;
+            const selected = selectedRowNumber === rowNumber;
+            return (
+              <button
+                type="button"
+                className={`receiving-match-option receiving-source-match-option ${selected ? 'is-selected' : ''}`}
+                key={`${rowNumber}-${source.UPC || source['Product Name']}`}
+                onClick={() => onActivate?.(row)}
+                disabled={activating}
+              >
+                <span>
+                  <strong>{source['Product Name'] || 'Unnamed source row'}</strong>
+                  <small>{[
+                    row.matchBasis ? `Matched by ${row.matchBasis}` : '',
+                    source.UPC ? `UPC ${source.UPC}` : '',
+                  ].filter(Boolean).join(' · ')}</small>
+                </span>
+                <em>{activating ? 'Matching...' : selected && !canActivate ? 'Selected' : 'Match'}</em>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        !matchLoading && <p className="merch-compare-empty">No product matches found for these package clues.</p>
+      )}
+    </div>
+  );
+}
+
+function sourceRowMatchItem(row = {}) {
+  const source = row.sourceData || {};
+  const sourceIdentity = row.sourceIdentity || {};
+  const sourceName = source['Product Name'] || sourceIdentity.productName || '';
+  const sourceUpc = source.UPC || sourceIdentity.upc || '';
+  return {
+    id: `source-row-${row.sourceRowNumber || sourceUpc || sourceName || 'selected'}`,
+    name: sourceName || 'Selected product',
+    product: sourceName || 'Selected product',
+    identifier: sourceUpc || '',
+    primaryMatchKey: sourceUpc || '',
+    productId: sourceUpc || '',
+    gtinUpc: sourceUpc || '',
+    primaryMatchKeyLabel: 'UPC',
+    identifierLabel: 'UPC',
+    codeType: 'UPC',
+    brand: '',
+  };
 }
 
 function itemMatchIdentifierLabel(item) {
@@ -1877,6 +1993,7 @@ function QuickReceivingCapture({ locationList }) {
 }
 
 function ShipmentsPage() {
+  const [searchParams] = useSearchParams();
   const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
   const carrierOptions = useResource(() => api.airtableSingleSelectOptions({ tableName: 'Shipments', fieldName: 'Carrier' }));
@@ -1912,6 +2029,10 @@ function ShipmentsPage() {
   const [editingEntryId, setEditingEntryId] = useState('');
   const [itemMatches, setItemMatches] = useState([]);
   const [matchLoading, setMatchLoading] = useState(false);
+  const [sourceMatches, setSourceMatches] = useState([]);
+  const [sourceMatchLoading, setSourceMatchLoading] = useState(false);
+  const [sourceActivatingRow, setSourceActivatingRow] = useState(null);
+  const [stagedSourceRow, setStagedSourceRow] = useState(null);
   const [matchChoice, setMatchChoice] = useState({ status: 'none', item: null });
   const [editingMatchedEntryIdentity, setEditingMatchedEntryIdentity] = useState(false);
   const [prevMatchedItemId, setPrevMatchedItemId] = useState('');
@@ -1931,6 +2052,7 @@ function ShipmentsPage() {
   const skuIdRef = useRef(null);
 
   const clientList = (clients.data?.records ?? []).filter(c => c.active !== false);
+  const topcoTestingClientId = clientList.find(client => String(client.name || '').trim().toLowerCase() === 'topco')?.id || '';
   const locationList = (locations.data?.records ?? []).filter(l => l.active !== false);
   const carrierList = carrierOptions.data?.options ?? [];
   const carrierSelectOptions = session.carrier && !carrierList.includes(session.carrier)
@@ -1940,6 +2062,7 @@ function ShipmentsPage() {
   const clientNameById = Object.fromEntries(clientList.map(c => [c.id, c.name]));
   const receiptList = allReceipts.data?.records ?? [];
   const thr3dOutgoingRecords = thr3dOutgoing.data?.records ?? [];
+  const thr3dShippedRecords = thr3dOutgoing.data?.shipped ?? [];
   const twoDaysAgo = Date.now() - 5 * 24 * 60 * 60 * 1000;
   const isSearching = search.trim().length > 0;
   const filteredReceipts = receiptList.filter(r => {
@@ -1952,6 +2075,7 @@ function ShipmentsPage() {
   });
 
   const activeClientId = receipt?.clientIds?.[0] || session.clientId || '';
+  const activeClient = clientList.find(client => client.id === activeClientId);
   const jobList = jobsResource.data?.records ?? [];
   const matchIdentifierQuery = String(entry.skuId || '').trim();
   const matchNameQuery = String(entry.productName || '').trim();
@@ -1968,7 +2092,9 @@ function ShipmentsPage() {
     && !matchValuesConflict(matchIdentifierQuery, matchChoiceProductIdentifier)
   );
   const showEntryIdentityFields = !matchedEntryIdentityIsClean || editingMatchedEntryIdentity;
-  const showMatchSuggestions = matchChoice.status !== 'matched'
+  const stagedSourceMatchItem = stagedSourceRow ? sourceRowMatchItem(stagedSourceRow) : null;
+  const showMatchSuggestions = !stagedSourceRow
+    && matchChoice.status !== 'matched'
     && matchChoice.status !== 'needs'
     && (matchIdentifierReady || matchNameReady);
   const nameOnlyMatchSuggestions = itemMatches.length > 0 && itemMatches.every(item => item.matchBasis === 'name');
@@ -1979,6 +2105,17 @@ function ShipmentsPage() {
     : itemMatches.length
       ? (nameOnlyMatchSuggestions || combinedPartialMatchSuggestions) ? 'Possible products' : 'Suggested products'
       : combinedMatchSearch ? 'No product matches both fields' : 'No matches found';
+  const sourceBackedMatching = Boolean(sourceCheckRulesForClient(activeClient));
+  const showSourceMatchSuggestions = showMatchSuggestions && sourceBackedMatching;
+  const showSourceMatchPanel = showSourceMatchSuggestions && (sourceMatchLoading || sourceMatches.length > 0);
+  const showLocalMatchSuggestionPanel = showMatchSuggestions
+    && !sourceBackedMatching
+    && (itemMatches.length > 0 || (!showSourceMatchSuggestions && matchLoading));
+  const sourceSuggestionsTitle = sourceMatchLoading
+    ? 'Finding product matches...'
+    : sourceMatches.length
+      ? 'Possible Product Matches'
+      : 'No product matches';
   const entryCount = savedEntries.length;
   const shipmentPhotos = recordPhotos(receipt);
   const headerReceived = receipt?.received || session.received;
@@ -1991,6 +2128,18 @@ function ShipmentsPage() {
     const t = window.setTimeout(() => setToast(''), 1200);
     return () => window.clearTimeout(t);
   }, [toast]);
+
+  useEffect(() => {
+    if (receipt || session.clientId || !topcoTestingClientId) return;
+    setSession(prev => prev.clientId ? prev : { ...prev, clientId: topcoTestingClientId });
+  }, [receipt, session.clientId, topcoTestingClientId]);
+
+  useEffect(() => {
+    const requestedShipmentId = searchParams.get('shipmentId') || searchParams.get('receiptId') || '';
+    if (!requestedShipmentId || receipt?.id === requestedShipmentId) return;
+    selectReceipt(requestedShipmentId);
+    setTab('incoming');
+  }, [searchParams, receipt?.id]);
 
   useEffect(() => {
     if (matchChoice.status !== 'matched') setEditingMatchedEntryIdentity(false);
@@ -2006,7 +2155,7 @@ function ShipmentsPage() {
 
   useEffect(() => {
     let active = true;
-    if (!showMatchSuggestions) {
+    if (!showMatchSuggestions || sourceBackedMatching) {
       setItemMatches([]);
       setMatchLoading(false);
       return () => { active = false; };
@@ -2038,7 +2187,33 @@ function ShipmentsPage() {
       }
     }, 220);
     return () => { active = false; window.clearTimeout(t); };
-  }, [showMatchSuggestions, matchIdentifierReady, matchIdentifierQuery, matchNameReady, matchNameQuery, activeClientId, prevMatchedItemId, matchChoice.status, matchChoice.item?.id]);
+  }, [showMatchSuggestions, sourceBackedMatching, matchIdentifierReady, matchIdentifierQuery, matchNameReady, matchNameQuery, activeClientId, prevMatchedItemId, matchChoice.status, matchChoice.item?.id]);
+
+  useEffect(() => {
+    let active = true;
+    if (!showSourceMatchSuggestions) {
+      setSourceMatches([]);
+      setSourceMatchLoading(false);
+      return () => { active = false; };
+    }
+    setSourceMatchLoading(true);
+    const t = window.setTimeout(async () => {
+      try {
+        const data = await api.topcoSourceSuggestions({
+          clientId: activeClientId,
+          productName: matchNameQuery,
+          upc: matchIdentifierQuery,
+          limit: 5,
+        });
+        if (active) setSourceMatches(data.records ?? []);
+      } catch {
+        if (active) setSourceMatches([]);
+      } finally {
+        if (active) setSourceMatchLoading(false);
+      }
+    }, 260);
+    return () => { active = false; window.clearTimeout(t); };
+  }, [showSourceMatchSuggestions, activeClientId, matchNameQuery, matchIdentifierQuery]);
 
   function setSessionField(field, value) {
     setSession(prev => ({ ...prev, [field]: value }));
@@ -2063,7 +2238,7 @@ function ShipmentsPage() {
     }
   }
 
-  function setEntry(field, value) {
+  function setEntry(field, value, options = {}) {
     setEntryState(prev => ({ ...prev, [field]: value }));
     if ((field === 'productName' || field === 'skuId') && matchChoice.status === 'needs') {
       setMatchChoice({ status: 'none', item: null });
@@ -2071,6 +2246,59 @@ function ShipmentsPage() {
     if ((field === 'productName' || field === 'skuId') && matchChoice.status === 'matched') {
       setEditingMatchedEntryIdentity(true);
     }
+    if ((field === 'productName' || field === 'skuId') && stagedSourceRow && !options.preserveStagedSourceRow) {
+      setStagedSourceRow(null);
+    }
+  }
+
+  async function activateSourceRowForEntry(sourceRow) {
+    if (!editingEntryId) {
+      setError('');
+      setStagedSourceRow(sourceRow);
+      setMatchChoice({ status: 'none', item: null });
+      setPrevMatchedItemId('');
+      setToast('Product matched');
+      return;
+    }
+    const sourceRowNumber = sourceRow?.sourceRowNumber;
+    if (!sourceRowNumber) return;
+    setError('');
+    setSourceActivatingRow(sourceRowNumber);
+    try {
+      const result = await api.activateMerchandiseSourceRow(editingEntryId, { sourceRowNumber });
+      const merchandise = result.merchandise;
+      const product = result.product || merchandise?.linkedItem;
+      if (merchandise?.id) {
+        setSavedEntries(prev => prev.map(item => item.id === merchandise.id ? merchandise : item));
+      }
+      if (result.pending) {
+        setStagedSourceRow(sourceRow);
+        setMatchChoice({ status: 'none', item: null });
+        setEditingMatchedEntryIdentity(false);
+        setPrevMatchedItemId('');
+        allReceipts.reload();
+        setToast('Product matched');
+        return;
+      }
+      if (product) {
+        setMatchChoice({ status: 'matched', item: product });
+        setEditingMatchedEntryIdentity(false);
+        setPrevMatchedItemId('');
+      }
+      setStagedSourceRow(null);
+      setSourceMatches(prev => prev.map(row => row.sourceRowNumber === sourceRowNumber ? { ...row, product, matchMethod: 'Activated' } : row));
+      allReceipts.reload();
+      setToast('Product matched');
+    } catch (err) {
+      setError(err.message || 'Could not activate source row.');
+    } finally {
+      setSourceActivatingRow(null);
+    }
+  }
+
+  function markEntryNoClearMatch() {
+    setMatchChoice({ status: 'needs', item: null });
+    setStagedSourceRow(null);
   }
 
   async function addEntryPhotos(files) {
@@ -2147,6 +2375,10 @@ function ShipmentsPage() {
       jobId: entry.jobId || '',
     });
     setItemMatches([]);
+    setSourceMatches([]);
+    setSourceMatchLoading(false);
+    setSourceActivatingRow(null);
+    setStagedSourceRow(null);
     setMatchChoice({ status: 'none', item: null });
     setPrevMatchedItemId('');
     setTimeout(() => productNameRef.current?.focus(), 0);
@@ -2214,10 +2446,10 @@ function ShipmentsPage() {
         matchPayload.matchStatus = 'Matched';
         matchPayload.noClearMatch = false;
         if (entry.jobId) matchPayload.jobId = entry.jobId;
-      } else if (matchChoice.status === 'needs' || !editingEntryId) {
+      } else if (matchChoice.status === 'needs' || (!editingEntryId && !stagedSourceRow)) {
         matchPayload.itemId = '';
         matchPayload.matchStatus = 'Needs Match';
-        matchPayload.noClearMatch = true;
+        matchPayload.noClearMatch = matchChoice.status === 'needs';
       }
       const entryPayload = {
         productName: entry.productName.trim(),
@@ -2233,6 +2465,12 @@ function ShipmentsPage() {
         saved = await api.updateReceiptEntry(activeReceipt.id, editingEntryId, entryPayload);
       } else {
         saved = await api.createReceiptEntry(activeReceipt.id, entryPayload);
+      }
+      if (stagedSourceRow?.sourceRowNumber && saved?.id) {
+        const activation = await api.activateMerchandiseSourceRow(saved.id, {
+          sourceRowNumber: stagedSourceRow.sourceRowNumber,
+        });
+        saved = activation.merchandise || saved;
       }
       const newPhotos = entryPhotos.filter(p => p.file);
       if (newPhotos.length > 0) {
@@ -2257,6 +2495,7 @@ function ShipmentsPage() {
       setRecentEntryIds(saved.id ? [saved.id] : []);
       window.setTimeout(() => setRecentEntryIds(cur => cur.includes(saved.id) ? [] : cur), 3200);
       setEditingEntryId('');
+      setStagedSourceRow(null);
       resetActiveEntry(entry.locationId, entry.condition || 'Good');
       if (!newPhotos.length || saved.photos?.length || saved.photoMetadata?.length) {
         setToast(editingEntryId ? 'Merchandise updated' : 'Merchandise saved');
@@ -2300,6 +2539,9 @@ function ShipmentsPage() {
       });
       setSavedEntries(data.entries || []);
       setEditingEntryId('');
+      setSourceMatches([]);
+      setSourceMatchLoading(false);
+      setSourceActivatingRow(null);
       setShipmentPhotoError('');
       setShipmentPhotoPreviews(prev => {
         prev.forEach(photo => URL.revokeObjectURL(photo.previewUrl));
@@ -2388,9 +2630,9 @@ function ShipmentsPage() {
     // Restore product-info state from the linked Product, not from physical Merch Status.
     const effectiveStatus = saved.matchStatus || '';
     const isMatched = (saved.itemIds || []).length > 0;
-    const needsMatch = effectiveStatus === 'Needs Match' || saved.noClearMatch;
     if (isMatched && (saved.itemIds || []).length > 0) {
       const matchedProduct = saved.matchedProduct || saved.linkedProduct || {};
+      setStagedSourceRow(null);
       setMatchChoice({
         status: 'matched',
         item: {
@@ -2406,9 +2648,11 @@ function ShipmentsPage() {
           codeType: matchedProduct.codeType || '',
         },
       });
-    } else if (needsMatch) {
-      setMatchChoice({ status: 'needs', item: null });
+    } else if (saved.pendingSourceMatch?.sourceRowNumber) {
+      setStagedSourceRow(saved.pendingSourceMatch);
+      setMatchChoice({ status: 'none', item: null });
     } else {
+      setStagedSourceRow(null);
       setMatchChoice({ status: 'none', item: null });
     }
     setItemMatches([]);
@@ -2478,8 +2722,9 @@ function ShipmentsPage() {
         delete next[record.id];
         return next;
       });
-      thr3dOutgoing.reload();
+      await thr3dOutgoing.reload({ quiet: true });
       allReceipts.reload();
+      window.dispatchEvent(new Event('thr3d-queue-updated'));
       setToast('THR3D item shipped.');
     } catch (err) {
       setError(err.message || 'Could not ship THR3D item.');
@@ -2512,7 +2757,7 @@ function ShipmentsPage() {
         }}
         items={[
           { id: 'incoming', label: 'Incoming', icon: <Icon.Download /> },
-          { id: 'outgoing', label: 'THR3D / Outgoing', icon: <Icon.NavShipments />, count: thr3dOutgoingRecords.length || undefined },
+          { id: 'outgoing', label: 'THR3D / Outgoing', icon: <Icon.NavShipments />, count: thr3dOutgoingRecords.length || undefined, countTone: 'thr3d' },
           { id: 'all', label: 'All Shipments', icon: <Icon.Jobs />, count: receiptList.length || undefined },
         ]}
         actions={tab === 'incoming' && receipt && (
@@ -2552,13 +2797,15 @@ function ShipmentsPage() {
                   {carrierSelectOptions.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
-              <div className="recv-field">
-                <label>Tracking Number</label>
-                <input value={session.tracking} onChange={e => setSessionField('tracking', e.target.value)} onBlur={e => autoSaveReceiptHeader({ tracking: e.target.value })} placeholder="Optional" />
-              </div>
-              <div className="recv-field">
-                <label>Box Quantity</label>
-                <input type="number" min="1" inputMode="numeric" value={session.boxQuantity} onChange={e => setSessionField('boxQuantity', e.target.value)} onBlur={e => autoSaveReceiptHeader({ boxQuantity: Number(e.target.value || 1) })} />
+              <div className="recv-shipment-inline-row">
+                <div className="recv-field">
+                  <label>Tracking Number</label>
+                  <input value={session.tracking} onChange={e => setSessionField('tracking', e.target.value)} onBlur={e => autoSaveReceiptHeader({ tracking: e.target.value })} placeholder="Optional" />
+                </div>
+                <div className="recv-field">
+                  <label>Box Quantity</label>
+                  <input type="number" min="1" inputMode="numeric" value={session.boxQuantity} onChange={e => setSessionField('boxQuantity', e.target.value)} onBlur={e => autoSaveReceiptHeader({ boxQuantity: Number(e.target.value || 1) })} />
+                </div>
               </div>
               <div className="recv-field">
                 <label>Date Received</label>
@@ -2569,7 +2816,9 @@ function ShipmentsPage() {
                 <textarea value={session.notes} onChange={e => setSessionField('notes', e.target.value)} onBlur={e => autoSaveReceiptHeader({ notes: e.target.value })} rows="2" placeholder="Optional" />
               </div>
               <div className="recv-field shipment-photo-field">
-                <label>Shipment Photos</label>
+                <label className="recv-photo-label">
+                  <span>Shipment Photos{(shipmentPhotos.length === 0 && shipmentPhotoPreviews.length === 0) && <><b aria-hidden="true">*</b><strong>Required</strong></>}</span>
+                </label>
                 <input ref={shipmentCameraInputRef} type="file" accept="image/*" capture="environment" multiple hidden onChange={e => { uploadShipmentPhotoFiles(e.target.files); e.target.value = ''; }} />
                 <input ref={shipmentLibraryInputRef} type="file" accept="image/*" multiple hidden onChange={e => { uploadShipmentPhotoFiles(e.target.files); e.target.value = ''; }} />
                 <div className="recv-photo-btns shipment-photo-actions">
@@ -2605,17 +2854,6 @@ function ShipmentsPage() {
                 )}
               </div>
               {!receipt && error && <div className="recv-field-error">{error}</div>}
-              {receipt ? (
-                <div className="recv-autosave-card is-saved" role="status">
-                  <strong>Shipment saved</strong>
-                  <span>Changes to shipment details save when you leave each field.</span>
-                </div>
-              ) : (
-                <div className="recv-autosave-card is-pending" role="status">
-                  <strong>Shipment needs photos</strong>
-                  <span>Add shipment photos to save this shipment.</span>
-                </div>
-              )}
             </div>
             {receipt && (
               <div className="recv-panel-footer">
@@ -2662,12 +2900,15 @@ function ShipmentsPage() {
                       </div>
                     )}
                     <div className="recv-photo-row">
-                      <div className="recv-required-row">
-                        <span>Merchandise Photos</span>
-                        <strong className={entryPhotos.length > 0 ? 'is-complete' : ''}>{entryPhotos.length > 0 ? 'Added' : 'Required'}</strong>
-                      </div>
+                      <label className="recv-photo-label">
+                        <span>Merchandise Photos{entryPhotos.length === 0 && <><b aria-hidden="true">*</b><strong>Required</strong></>}</span>
+                      </label>
                       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" multiple hidden onChange={e => { addEntryPhotos(e.target.files); e.target.value = ''; }} />
                       <input ref={libraryInputRef} type="file" accept="image/*" multiple hidden onChange={e => { addEntryPhotos(e.target.files); e.target.value = ''; }} />
+                      <div className="recv-photo-btns">
+                        <button type="button" className="recv-camera-btn" onClick={() => cameraInputRef.current?.click()}><Camera size={17} strokeWidth={2} aria-hidden="true" />Take Photo</button>
+                        <button type="button" className="recv-library-btn" onClick={() => libraryInputRef.current?.click()}><Images size={17} strokeWidth={2} aria-hidden="true" />Library</button>
+                      </div>
                       {entryPhotos.length > 0 && (
                         <div className="recv-photo-thumbs">
                           {entryPhotos.map(photo => (
@@ -2678,10 +2919,6 @@ function ShipmentsPage() {
                           ))}
                         </div>
                       )}
-                      <div className="recv-photo-btns">
-                        <button type="button" className="recv-camera-btn" onClick={() => cameraInputRef.current?.click()}><Camera size={17} strokeWidth={2} aria-hidden="true" />Take Photo</button>
-                        <button type="button" className="recv-library-btn" onClick={() => libraryInputRef.current?.click()}><Images size={17} strokeWidth={2} aria-hidden="true" />Library</button>
-                      </div>
                       {showUploadProgress && <div className="receiving-upload-progress" role="status"><span />Uploading...</div>}
                     </div>
                     {showEntryIdentityFields && (
@@ -2697,7 +2934,19 @@ function ShipmentsPage() {
                       </>
                     )}
                     <div className="receiving-match-field">
-                      {matchChoice.status === 'matched' && matchChoice.item ? (
+                      {stagedSourceMatchItem ? (
+                        <ProductMatchCard
+                          item={stagedSourceMatchItem}
+                          observedName={entry.productName}
+                          observedIdentifier={entry.skuId}
+                          useWhenBlank
+                          onChange={() => setStagedSourceRow(null)}
+                          onUseProductIdentifier={() => setEntry('skuId', itemMatchIdentifierValue(stagedSourceMatchItem), { preserveStagedSourceRow: true })}
+                          onUseProductName={() => setEntry('productName', itemMatchTitle(stagedSourceMatchItem), { preserveStagedSourceRow: true })}
+                          nameWarningText={`Observed ${DOMAIN_TERMS.packageName} differs from the matched Product name.`}
+                          identifierWarningText={`Observed ${DOMAIN_TERMS.merchandiseIdentifier} differs from the matched Product ${itemMatchMethod(stagedSourceMatchItem)}.`}
+                        />
+                      ) : matchChoice.status === 'matched' && matchChoice.item ? (
                         <>
                           <ProductMatchCard
                             item={matchChoice.item}
@@ -2707,6 +2956,7 @@ function ShipmentsPage() {
 	                            onChange={() => {
 	                              setPrevMatchedItemId(matchChoice.item?.id || '');
 	                              setMatchChoice({ status: 'none', item: null });
+                                setStagedSourceRow(null);
 	                              setEditingMatchedEntryIdentity(false);
 	                            }}
                             onUseProductIdentifier={() => setEntry('skuId', itemMatchIdentifierValue(matchChoice.item))}
@@ -2714,7 +2964,7 @@ function ShipmentsPage() {
                             nameWarningText={`Observed ${DOMAIN_TERMS.packageName} differs from the Product name.`}
                             identifierWarningText={`Observed ${DOMAIN_TERMS.merchandiseIdentifier} differs from the Product ${itemMatchMethod(matchChoice.item)}.`}
                           />
-                          {showMatchSuggestions && (
+                          {showLocalMatchSuggestionPanel && (
 	                            <ReceivingMatchSuggestions
 	                              title={matchSuggestionsTitle}
 	                              matches={itemMatches}
@@ -2723,12 +2973,27 @@ function ShipmentsPage() {
                               combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
                               combinedMatchSearch={combinedMatchSearch}
                               matchLoading={matchLoading}
-                              onNoClearMatch={() => setMatchChoice({ status: 'needs', item: null })}
+                              onNoClearMatch={markEntryNoClearMatch}
+                              showNoClearMatchAction={false}
+                              showEmptyState={false}
 	                              onSelect={item => {
 	                                setMatchChoice({ status: 'matched', item });
+                                  setStagedSourceRow(null);
 	                                setEditingMatchedEntryIdentity(false);
 	                                setPrevMatchedItemId('');
 	                              }}
+                            />
+                          )}
+                          {showSourceMatchPanel && (
+                            <SourceSheetMatchSuggestions
+                              title={sourceSuggestionsTitle}
+                              matches={sourceMatches}
+                              client={activeClient}
+                              matchLoading={sourceMatchLoading}
+                              activatingRowNumber={sourceActivatingRow}
+                              canActivate={Boolean(editingEntryId)}
+                              selectedRowNumber={stagedSourceRow?.sourceRowNumber || null}
+                              onActivate={activateSourceRowForEntry}
                             />
                           )}
                         </>
@@ -2737,9 +3002,12 @@ function ShipmentsPage() {
                           status="unmatched"
                           title="No Clear Match"
                           meta="Will go to Merchandise Review."
-                          onChange={() => setMatchChoice({ status: 'none', item: null })}
+                          onChange={() => {
+                            setMatchChoice({ status: 'none', item: null });
+                            setStagedSourceRow(null);
+                          }}
                         />
-	                      ) : showMatchSuggestions ? (
+	                      ) : showLocalMatchSuggestionPanel ? (
 	                        <ReceivingMatchSuggestions
 	                          title={matchSuggestionsTitle}
 	                          matches={itemMatches}
@@ -2748,11 +3016,26 @@ function ShipmentsPage() {
                           combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
                           combinedMatchSearch={combinedMatchSearch}
                           matchLoading={matchLoading}
-                          onNoClearMatch={() => setMatchChoice({ status: 'needs', item: null })}
+                          onNoClearMatch={markEntryNoClearMatch}
+                          showNoClearMatchAction={false}
+                          showEmptyState={false}
 	                          onSelect={item => {
 	                            setMatchChoice({ status: 'matched', item });
+                              setStagedSourceRow(null);
 	                            setPrevMatchedItemId('');
 	                          }}
+                        />
+                      ) : null}
+                      {matchChoice.status !== 'needs' && showSourceMatchPanel ? (
+                        <SourceSheetMatchSuggestions
+                          title={sourceSuggestionsTitle}
+                          matches={sourceMatches}
+                          client={activeClient}
+                          matchLoading={sourceMatchLoading}
+                          activatingRowNumber={sourceActivatingRow}
+                          canActivate={Boolean(editingEntryId)}
+                          selectedRowNumber={stagedSourceRow?.sourceRowNumber || null}
+                          onActivate={activateSourceRowForEntry}
                         />
                       ) : null}
                     </div>
@@ -2819,6 +3102,7 @@ function ShipmentsPage() {
                 const isConfirmedStatus = ['Received', 'Ready to Ship', 'Shipped', 'Disposed'].includes(merchStatus);
                 const statusClass = isConfirmedStatus ? 'is-ok' : 'is-warn';
                 const statusIcon = merchStatus === 'Received' ? '' : (isConfirmedStatus ? '✓' : '!');
+                const isMatched = (saved.itemIds || []).length > 0 || Boolean(saved.matchedProduct?.id || saved.linkedProduct?.id);
                 return (
                   <div
                     key={saved.id || index}
@@ -2830,13 +3114,20 @@ function ShipmentsPage() {
                     <RecordThumbnail record={saved} className="receiving-current-thumb" />
                     <span className="receiving-current-copy">
                       <strong>{receivingEntryLabel(saved)}</strong>
-                      <small>Qty {saved.quantity || 1}{locationName ? ` · ${locationName}` : ''}</small>
-                      <small className="receiving-status-line">
-                        <span className={statusClass}>{statusIcon ? `${statusIcon} ` : ''}{merchStatus}</span>
-                      </small>
+                      <small>Qty {saved.quantity || 1} · {isMatched ? 'Matched' : 'Unmatched'}{locationName ? ` · ${locationName}` : ''}</small>
                     </span>
                     <span className="receiving-current-actions">
-                      <button type="button" className="receiving-current-copy-button is-danger" onClick={e => { e.stopPropagation(); removeReceivedItem(saved); }}>×</button>
+                      <button
+                        type="button"
+                        className="receiving-current-copy-button is-danger"
+                        aria-label="Remove merchandise"
+                        onClick={e => { e.stopPropagation(); removeReceivedItem(saved); }}
+                      >
+                        <X size={15} strokeWidth={2.4} aria-hidden="true" />
+                      </button>
+                      <span className="receiving-status-line">
+                        <span className={statusClass}>{statusIcon ? `${statusIcon} ` : ''}{merchStatus}</span>
+                      </span>
                     </span>
                   </div>
                 );
@@ -2859,14 +3150,16 @@ function ShipmentsPage() {
             <div className="empty-state">Loading THR3D queue...</div>
           ) : thr3dOutgoing.error ? (
             <div className="error-state">{thr3dOutgoing.error}</div>
-          ) : thr3dOutgoingRecords.length === 0 ? (
-            <div className="recv-outgoing-empty">
-              <strong>No THR3D shipping items need attention.</strong>
-              <span>Confirmed THR3D quantities from New Merch will appear here until they are shipped.</span>
-            </div>
           ) : (
-            <div className="recv-outgoing-list">
-              {thr3dOutgoingRecords.map(record => {
+            <div className="recv-outgoing-content">
+              {thr3dOutgoingRecords.length === 0 ? (
+                <div className="recv-outgoing-empty">
+                  <strong>No THR3D shipping items need attention.</strong>
+                  <span>Confirmed THR3D quantities from New Merch will appear here until they are shipped.</span>
+                </div>
+              ) : (
+                <div className="recv-outgoing-list">
+                  {thr3dOutgoingRecords.map(record => {
                 const merch = record.receivedMerch || record;
                 const clientName = (merch.clientIds || record.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown client';
                 const locationName = locationNameById[merch.currentLocationId || merch.locationId] || 'Location needed';
@@ -2910,7 +3203,7 @@ function ShipmentsPage() {
                             type="button"
                             className="btn btn-primary"
                             onClick={() => shipThr3dItem(record)}
-                            disabled={saving === `thr3d-${record.id}` || !(draft.tracking || '').trim()}
+                            disabled={saving === `thr3d-${record.id}`}
                           >
                             {saving === `thr3d-${record.id}` ? 'Shipping...' : 'Ship'}
                           </button>
@@ -2919,7 +3212,40 @@ function ShipmentsPage() {
                     </div>
                   </article>
                 );
-              })}
+                  })}
+                </div>
+              )}
+              {thr3dShippedRecords.length > 0 && (
+                <section className="recv-outgoing-shipped" aria-labelledby="thr3d-shipped-heading">
+                  <div className="recv-outgoing-shipped-head">
+                    <div>
+                      <div className="recv-outgoing-kicker">Shipment history</div>
+                      <h3 id="thr3d-shipped-heading">Shipped</h3>
+                    </div>
+                    <span className="recv-session-badge">{thr3dShippedRecords.length}</span>
+                  </div>
+                  <div className="recv-outgoing-shipped-table-wrap">
+                    <table className="recv-outgoing-shipped-table">
+                      <thead><tr><th>Item</th><th>Client</th><th>Qty shipped</th><th>Status</th></tr></thead>
+                      <tbody>
+                        {thr3dShippedRecords.map(record => {
+                          const merch = record.receivedMerch || record;
+                          const clientName = (merch.clientIds || record.clientIds || []).map(id => clientNameById[id]).filter(Boolean).join(', ') || 'Unknown client';
+                          const quantity = record.quantityToShip || record.quantity || merch.quantity || 1;
+                          return (
+                            <tr key={record.id}>
+                              <td><strong>{record.name || merch.productName || merch.name || 'Unnamed THR3D item'}</strong></td>
+                              <td>{clientName}</td>
+                              <td>{quantity}</td>
+                              <td><span className="recv-outgoing-shipped-status">Shipped</span></td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
             </div>
           )}
         </div>
@@ -3290,6 +3616,58 @@ const DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS = [
 const PRODUCT_REQUEST_TYPE_OPTIONS = ['Ecomm only', 'Pack only', 'Thr3d only', 'Pack & Thr3d', 'Ecomm & Pack'];
 const PRODUCT_TYPE_OPTIONS = ['Shelf Stable', 'Fresh/Perishable', 'Refrigeration Req', 'Freezer Req', 'Non-Food'];
 const PRODUCT_GRID_ROW_HEIGHTS = ['small', 'medium', 'tall'];
+const SOURCE_CHECK_VISIBLE_LIMIT = 20;
+const SOURCE_CHECK_FIELD_CONFIG = {
+  productName: { label: 'Product Name', marksKey: 'name', trackerKeys: ['Product Name'] },
+  upc: { label: 'UPC', marksKey: 'upc', trackerKeys: ['UPC'], detail: 'Required to proceed for matching and Topco folder naming, including Ecomm.' },
+  cvid: { label: 'CVID', marksKey: 'cvid', trackerKeys: ['CVID'], detail: 'Required to proceed for Ecomm file naming.' },
+  brandPrefix: { label: 'Brand Prefix', marksKey: 'brandPrefix', trackerKeys: ['Brand Prefix'] },
+  jobNumber: { label: 'WKFT Job Number', marksKey: 'wkftJobNumber', trackerKeys: ['WKFT #', 'WKFT Job Number'], detail: 'Required to proceed for Topco folder naming and handoff.' },
+  fileNameDescription: { label: 'File Name Description', marksKey: 'productDescription', trackerKeys: ['Prod Descrip', 'Product Description'], detail: 'Source Prod Descrip is used as this packaging filename/handoff token and also shown as Product Description.' },
+  productDescription: { label: 'Product Description', marksKey: 'productDescription', trackerKeys: ['Prod Descrip', 'Product Description'], detail: 'Display value from source Prod Descrip.' },
+  productType: { label: 'Product Type', marksKey: 'productType', trackerKeys: ['Product Type'] },
+  ecommPhotoNotes: { label: 'Ecomm Photo Notes', marksKey: 'ecommPhotoNotes', trackerKeys: ['Photo Notes', 'Ecomm Photo Notes'] },
+  pathToArt: { label: 'Path to Art', marksKey: 'pathToArt', trackerKeys: ['Path to Art'] },
+};
+const TOPCO_SOURCE_CHECK_RULES = {
+  version: 1,
+  sourceIdentityFields: ['productName', 'upc'],
+  activationField: 'requestType',
+  requiredToProceed: {
+    Packaging: ['productName', 'upc', 'jobNumber'],
+    Ecomm: ['productName', 'upc', 'cvid'],
+  },
+  requestTypeMappings: {
+    'ecomm only': { requiredDeliverables: ['Ecomm'], label: 'Ecomm required to proceed' },
+    'pack only': { requiredDeliverables: ['Packaging'], label: 'Packaging required to proceed' },
+    'ecomm pack': { requiredDeliverables: ['Ecomm', 'Packaging'], label: 'Ecomm + Packaging required to proceed' },
+    'ecomm and pack': { requiredDeliverables: ['Ecomm', 'Packaging'], label: 'Ecomm + Packaging required to proceed' },
+    'pack thr3d': { requiredDeliverables: ['Packaging'], shipmentContext: ['Thr3d'], label: 'Packaging required to proceed + Thr3d shipment context' },
+    'pack and thr3d': { requiredDeliverables: ['Packaging'], shipmentContext: ['Thr3d'], label: 'Packaging required to proceed + Thr3d shipment context' },
+    'thr3d only': { requiredDeliverables: [], noWalnutWorkExpected: true, alertIfReceived: true, label: 'No Walnut work expected; alert if received' },
+    'not needed': { requiredDeliverables: [], noWalnutWorkExpected: true, alertIfReceived: true, label: 'No Walnut work expected; alert if received' },
+  },
+  sourceFieldMappings: [
+    {
+      sourceField: 'Prod Descrip',
+      usedAs: ['File Name Description', 'Product Description'],
+      note: 'For this Topco slice, Prod Descrip satisfies the packaging filename/handoff token and the display Product Description.',
+    },
+  ],
+};
+const SOURCE_CHECK_RULES_BY_CLIENT = {
+  topco: TOPCO_SOURCE_CHECK_RULES,
+};
+const SOURCE_CHECK_REQUEST_TYPE_LABELS = {
+  'ecomm only': 'Ecomm Only',
+  'pack only': 'Pack Only',
+  'ecomm pack': 'Ecomm & Pack',
+  'ecomm and pack': 'Ecomm and Pack',
+  'pack thr3d': 'Pack & Thr3d',
+  'pack and thr3d': 'Pack and Thr3d',
+  'thr3d only': 'Thr3d Only',
+  'not needed': 'Not Needed',
+};
 
 function normalizedProductColumnOrder(order) {
   const source = Array.isArray(order) ? order : DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS;
@@ -3320,6 +3698,229 @@ function saveProductGridPreferences(key, value) {
   } catch {
     // The grid still works if browser storage is unavailable.
   }
+}
+
+function normalizedCompareValue(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function topcoReferenceValue(referenceData, keys) {
+  const data = referenceData && typeof referenceData === 'object' ? referenceData : {};
+  for (const key of keys) {
+    const value = data[key];
+    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+  }
+  return '';
+}
+
+function sourceCheckRulesForClient(client) {
+  const configuredRules = client?.sourceCheckRules || client?.readinessProfile?.sourceCheckRules;
+  if (configuredRules && typeof configuredRules === 'object' && !Array.isArray(configuredRules)) return configuredRules;
+  const key = String(client?.name || '').trim().toLowerCase();
+  return SOURCE_CHECK_RULES_BY_CLIENT[key] || null;
+}
+
+function normalizedSourceCheckRequestTypeKey(value) {
+  return stripSurroundingQuotes(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function sourceCheckRequiredFields(client, requestTypeInfo) {
+  const rules = sourceCheckRulesForClient(client) || {};
+  const fields = new Set(rules.sourceIdentityFields || []);
+  const requiredToProceed = rules.requiredToProceed || {};
+  (requestTypeInfo.requiredDeliverables || [])
+    .filter(deliverable => ['Packaging', 'Ecomm'].includes(deliverable))
+    .forEach(deliverable => {
+      (requiredToProceed[deliverable] || []).forEach(field => fields.add(field));
+    });
+  return [...fields]
+    .map(field => SOURCE_CHECK_FIELD_CONFIG[field])
+    .filter(Boolean);
+}
+
+function sourceCheckRequestTypeInfo(client, requestType) {
+  const rules = sourceCheckRulesForClient(client) || {};
+  const key = normalizedSourceCheckRequestTypeKey(requestType);
+  if (!key) {
+    return {
+      state: 'missing-source',
+      label: 'Missing in source sheet',
+      requiredDeliverables: [],
+      shipmentContext: [],
+      noWalnutWorkExpected: false,
+      alertIfReceived: false,
+    };
+  }
+  const mapping = (rules.requestTypeMappings || {})[key];
+  if (!mapping) {
+    return {
+      state: 'different',
+      label: 'Needs review',
+      requiredDeliverables: [],
+      shipmentContext: [],
+      noWalnutWorkExpected: false,
+      alertIfReceived: false,
+    };
+  }
+  return {
+    state: 'match',
+    label: mapping.label || 'Ready',
+    requiredDeliverables: normalizeDeliverableList(mapping.requiredDeliverables || []),
+    shipmentContext: normalizeDeliverableList(mapping.shipmentContext || []),
+    noWalnutWorkExpected: Boolean(mapping.noWalnutWorkExpected),
+    alertIfReceived: Boolean(mapping.alertIfReceived),
+  };
+}
+
+function sourceCheckSuggestedLabel(info = {}) {
+  if (info.noWalnutWorkExpected) return 'No Walnut work expected';
+  const labels = [
+    ...normalizeDeliverableList(info.requiredDeliverables || []),
+    ...(info.shipmentContext || []).map(value => `${value} shipment`),
+  ];
+  return labels.length ? labels.join(' + ') : 'None';
+}
+
+function sourceCheckHasReceivedContext(item = {}) {
+  const status = String(item.productionSummary?.status || '').trim();
+  return Boolean(status && !['No Merchandise', 'Work Not Defined'].includes(status));
+}
+
+function topcoProductTrackerRows(items, clients) {
+  const sourceCheckClients = (clients || []).filter(client => sourceCheckRulesForClient(client));
+  const sourceCheckClientIds = new Set(sourceCheckClients.map(client => client.id));
+  const sourceCheckClientById = Object.fromEntries(sourceCheckClients.map(client => [client.id, client]));
+  return (items || [])
+    .filter(item => (item.clientIds || []).some(id => sourceCheckClientIds.has(id)))
+    .map(item => {
+      const referenceData = item.referenceData || {};
+      const client = (item.clientIds || []).map(id => sourceCheckClientById[id]).find(Boolean);
+      const trackerRequestType = topcoReferenceValue(referenceData, ['Request Type']);
+      const requestTypeInfo = sourceCheckRequestTypeInfo(client, trackerRequestType);
+      const compareFields = sourceCheckRequiredFields(client, requestTypeInfo);
+      const trackerUpc = topcoReferenceValue(referenceData, ['UPC']);
+      const noWalnutWorkAlert = requestTypeInfo.alertIfReceived && sourceCheckHasReceivedContext(item);
+      const requestTypeRow = {
+        label: 'Request Type',
+        detail: 'Activation field; suggests expected work only.',
+        marksValue: item.requestType || '',
+        trackerValue: trackerRequestType,
+        state: noWalnutWorkAlert ? 'different' : requestTypeInfo.state,
+        resultLabel: requestTypeInfo.label,
+      };
+      const rows = compareFields.map(field => {
+        const marksValue = String(photoProductionProductValue(item, field.marksKey) || item[field.marksKey] || '').trim();
+        const trackerValue = topcoReferenceValue(referenceData, field.trackerKeys);
+        const marksKey = normalizedCompareValue(marksValue);
+        const trackerKey = normalizedCompareValue(trackerValue);
+        const state = trackerValue
+          ? (marksValue ? (marksKey === trackerKey ? 'match' : 'different') : 'missing-application')
+          : 'missing-source';
+        return { ...field, marksValue, trackerValue, state };
+      });
+      const counts = [requestTypeRow, ...rows].reduce((total, row) => {
+        total[row.state] = (total[row.state] || 0) + 1;
+        return total;
+      }, {});
+      return {
+        item,
+        rows,
+        requestTypeRow,
+        counts,
+        suggestedDeliverables: requestTypeInfo.requiredDeliverables,
+        suggestedLabel: sourceCheckSuggestedLabel(requestTypeInfo),
+        trackerRequestType,
+        ambiguousMatchKey: !trackerUpc || normalizedCompareValue(trackerUpc) === 'no upc',
+        noWalnutWorkExpected: requestTypeInfo.noWalnutWorkExpected,
+        noWalnutWorkAlert,
+        shipmentContext: requestTypeInfo.shipmentContext || [],
+        sourceData: item.referenceData || {},
+        ready: requestTypeInfo.state === 'match'
+          && !noWalnutWorkAlert
+          && !rows.some(row => ['different', 'missing-application', 'missing-source'].includes(row.state))
+          && trackerUpc
+          && normalizedCompareValue(trackerUpc) !== 'no upc',
+      };
+    })
+    .filter(row => Object.keys(row.item.referenceData || {}).length > 0);
+}
+
+function topcoLiveSourceCheckRows(sourceCheck, clients) {
+  const topcoClient = (clients || []).find(client => sourceCheckRulesForClient(client) && String(client.name || '').trim().toLowerCase() === 'topco')
+    || (clients || []).find(client => sourceCheckRulesForClient(client));
+  return (sourceCheck?.rows || []).map(row => {
+    const sourceData = row.sourceData || {};
+    const product = row.product || null;
+    const item = product || {
+      id: `source-row-${row.sourceRowNumber}`,
+      name: sourceData['Product Name'] || 'Unnamed source row',
+      upc: sourceData.UPC || '',
+      primaryMatchKey: sourceData.UPC || '',
+      requestType: '',
+      referenceData: sourceData,
+    };
+    const trackerRequestType = sourceData['Request Type'] || '';
+    const requestTypeInfo = sourceCheckRequestTypeInfo(topcoClient, trackerRequestType);
+    const compareFields = sourceCheckRequiredFields(topcoClient, requestTypeInfo);
+    const trackerUpc = sourceData.UPC || '';
+    const noWalnutWorkAlert = requestTypeInfo.alertIfReceived && product && sourceCheckHasReceivedContext(product);
+    const requestTypeRow = {
+      label: 'Request Type',
+      detail: 'Activation field; suggests expected work only.',
+      marksValue: product?.requestType || '',
+      trackerValue: trackerRequestType,
+      state: noWalnutWorkAlert ? 'different' : requestTypeInfo.state,
+      resultLabel: requestTypeInfo.label,
+    };
+    const rows = compareFields.map(field => {
+      const marksValue = product
+        ? String(photoProductionProductValue(product, field.marksKey) || product[field.marksKey] || '').trim()
+        : '';
+      const trackerValue = topcoReferenceValue(sourceData, field.trackerKeys);
+      const marksKey = normalizedCompareValue(marksValue);
+      const trackerKey = normalizedCompareValue(trackerValue);
+      const state = trackerValue
+        ? (marksValue ? (marksKey === trackerKey ? 'match' : 'different') : 'missing-application')
+        : 'missing-source';
+      return { ...field, marksValue, trackerValue, state };
+    });
+    const counts = [requestTypeRow, ...rows].reduce((total, compareRow) => {
+      total[compareRow.state] = (total[compareRow.state] || 0) + 1;
+      return total;
+    }, {});
+    return {
+      item,
+      rows,
+      requestTypeRow,
+      counts,
+      sourceRowNumber: row.sourceRowNumber,
+      matchMethod: row.matchMethod || '',
+      matchCount: row.matchCount || 0,
+      sourceData,
+      hasProductData: Boolean(product),
+      suggestedDeliverables: requestTypeInfo.requiredDeliverables,
+      suggestedLabel: sourceCheckSuggestedLabel(requestTypeInfo),
+      trackerRequestType,
+      ambiguousMatchKey: !trackerUpc || normalizedCompareValue(trackerUpc) === 'no upc',
+      noWalnutWorkExpected: requestTypeInfo.noWalnutWorkExpected,
+      noWalnutWorkAlert,
+      shipmentContext: requestTypeInfo.shipmentContext || [],
+      ready: Boolean(product)
+        && requestTypeInfo.state === 'match'
+        && !noWalnutWorkAlert
+        && !rows.some(compareRow => ['different', 'missing-application', 'missing-source'].includes(compareRow.state))
+        && trackerUpc
+        && normalizedCompareValue(trackerUpc) !== 'no upc',
+    };
+  });
+}
+
+function topcoCompareStateLabel(state) {
+  if (state === 'match') return 'Ready';
+  if (state === 'different') return 'Needs review';
+  if (state === 'missing-application') return 'Needs review';
+  if (state === 'missing-source') return 'Missing in source sheet';
+  return 'Blank';
 }
 
 function normalizeProductGridCondition(condition, columns) {
@@ -3366,6 +3967,21 @@ function ProductsPage({ navigate, jobId: initJobId }) {
   const [savingCell, setSavingCell] = useState('');
   const [gridError, setGridError] = useState('');
   const [columnPrefs, setColumnPrefs] = useState(() => loadProductGridPreferences(userPreferenceKey));
+  const [topcoCompareOpen, setTopcoCompareOpen] = useState(() => {
+    try {
+      return window.localStorage.getItem('marks:topco-tracker-compare') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [topcoCompareLastChecked, setTopcoCompareLastChecked] = useState('');
+  const [topcoCompareChecking, setTopcoCompareChecking] = useState(false);
+  const [topcoSourceCheck, setTopcoSourceCheck] = useState(null);
+  const [topcoSourceCheckError, setTopcoSourceCheckError] = useState('');
+  const [sourceLookupSearch, setSourceLookupSearch] = useState('');
+  const [sourceLookupNotice, setSourceLookupNotice] = useState('');
+  const [activatingSourceRow, setActivatingSourceRow] = useState('');
+  const [topcoProductSyncing, setTopcoProductSyncing] = useState(false);
   const [draggingColumnId, setDraggingColumnId] = useState('');
   const [columnDropTarget, setColumnDropTarget] = useState(null);
   const [fillDrag, setFillDrag] = useState(null);
@@ -3393,6 +4009,37 @@ function ProductsPage({ navigate, jobId: initJobId }) {
   useEffect(() => {
     saveProductGridPreferences(userPreferenceKey, columnPrefs);
   }, [userPreferenceKey, columnPrefs]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('marks:topco-tracker-compare', topcoCompareOpen ? '1' : '0');
+    } catch {
+      // The compare panel is still removable if browser storage is unavailable.
+    }
+  }, [topcoCompareOpen]);
+
+  const loadTopcoSourceCheck = useCallback(async () => {
+    const data = await api.topcoSourceCheck({ limit: SOURCE_CHECK_VISIBLE_LIMIT });
+    setTopcoSourceCheck(data);
+    setTopcoSourceCheckError('');
+    setTopcoCompareLastChecked(new Date(data.checkedAt || Date.now()).toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }));
+    return data;
+  }, []);
+
+  useEffect(() => {
+    if (!topcoCompareOpen || topcoSourceCheck || topcoCompareChecking) return;
+    setTopcoCompareChecking(true);
+    loadTopcoSourceCheck()
+      .catch(error => {
+        setTopcoSourceCheckError(error.message || 'Could not read source sheet.');
+      })
+      .finally(() => setTopcoCompareChecking(false));
+  }, [loadTopcoSourceCheck, topcoCompareChecking, topcoCompareOpen, topcoSourceCheck]);
 
   useEffect(() => {
     function closeProductPopovers(event) {
@@ -3532,6 +4179,33 @@ function ProductsPage({ navigate, jobId: initJobId }) {
     return sortConfig.direction === 'desc' ? -result : result;
   });
   const visibleItems = sortedItems;
+  const sourceLookupClient = clientList.find(client => sourceCheckRulesForClient(client) && String(client.name || '').trim().toLowerCase() === 'topco')
+    || clientList.find(client => sourceCheckRulesForClient(client));
+  const canSyncTopcoProducts = isAdminRole(auth?.role) && Boolean(sourceLookupClient);
+  const allTopcoCompareRows = topcoSourceCheck
+    ? topcoLiveSourceCheckRows(topcoSourceCheck, clientList)
+    : topcoProductTrackerRows(visibleItems, clientList).slice(0, SOURCE_CHECK_VISIBLE_LIMIT);
+  const sourceLookupSearchText = sourceLookupSearch.trim().toLowerCase();
+  const topcoCompareRows = sourceLookupSearchText
+    ? allTopcoCompareRows.filter(compare => [
+        compare.item?.name,
+        compare.item?.upc,
+        compare.item?.primaryMatchKey,
+        compare.trackerRequestType,
+        compare.suggestedLabel,
+        compare.sourceRowNumber,
+        ...Object.values(compare.sourceData || {}),
+      ].some(value => String(value || '').toLowerCase().includes(sourceLookupSearchText)))
+    : allTopcoCompareRows;
+  const topcoCompareTotals = topcoCompareRows.reduce((totals, row) => {
+    const missingSource = row.counts['missing-source'] || 0;
+    const needsReview = (row.counts.different || 0) + (row.counts['missing-application'] || 0);
+    if (row.ambiguousMatchKey) totals.ambiguous += 1;
+    else if (missingSource) totals.missingSource += 1;
+    else if (needsReview || !row.ready) totals.needsReview += 1;
+    else totals.ready += 1;
+    return totals;
+  }, { ready: 0, missingSource: 0, needsReview: 0, ambiguous: 0 });
   const visibleProductIndexById = Object.fromEntries(visibleItems.map((item, index) => [item.id, index]));
   const groupByColumn = visibleProductGridColumns.find(column => column.id === groupByColumnId);
   const groupedVisibleItems = groupByColumn
@@ -3809,6 +4483,66 @@ function ProductsPage({ navigate, jobId: initJobId }) {
     }
   }
 
+  async function recheckTopcoCompare() {
+    setTopcoCompareChecking(true);
+    setSourceLookupNotice('');
+    try {
+      await Promise.all([
+        items.reload({ quiet: true }),
+        loadTopcoSourceCheck(),
+      ]);
+    } catch (error) {
+      setTopcoSourceCheckError(error.message || 'Could not read source sheet.');
+    } finally {
+      setTopcoCompareChecking(false);
+    }
+  }
+
+  async function syncTopcoProductsFromSource() {
+    if (!sourceLookupClient || topcoProductSyncing) return;
+    setTopcoProductSyncing(true);
+    setGridError('');
+    setSourceLookupNotice('');
+    try {
+      const data = await api.refreshTopcoSourceLinkedProducts({
+        clientId: sourceLookupClient.id,
+        limit: sourceRefreshConfigForClient(sourceLookupClient)?.limit || 100,
+      });
+      await Promise.all([
+        items.reload({ quiet: true }),
+        topcoCompareOpen ? loadTopcoSourceCheck() : Promise.resolve(),
+      ]);
+      setSourceLookupNotice(`Synced ${data.updated || 0} Product${data.updated === 1 ? '' : 's'} from the source sheet.`);
+    } catch (error) {
+      setGridError(error.message || 'Could not sync Products from the source sheet.');
+    } finally {
+      setTopcoProductSyncing(false);
+    }
+  }
+
+  async function activateTopcoSourceRow(compare) {
+    if (!compare?.sourceRowNumber) return;
+    setGridError('');
+    setSourceLookupNotice('');
+    setActivatingSourceRow(String(compare.sourceRowNumber));
+    try {
+      const data = await api.activateTopcoSourceRow({
+        sourceRowNumber: compare.sourceRowNumber,
+        clientId: sourceLookupClient?.id || '',
+      });
+      const productName = data.record?.name || compare.item?.name || `source row ${compare.sourceRowNumber}`;
+      setSourceLookupNotice(`${productName} activated in Marks.`);
+      await Promise.all([
+        items.reload({ quiet: true }),
+        loadTopcoSourceCheck(),
+      ]);
+    } catch (error) {
+      setGridError(error.message || 'Could not activate source row in Marks.');
+    } finally {
+      setActivatingSourceRow('');
+    }
+  }
+
   return (
     <div className="page-stack">
       {items.error && <div className="error-state">{items.error}</div>}
@@ -4026,6 +4760,27 @@ function ProductsPage({ navigate, jobId: initJobId }) {
               </div>
             )}
             </div>
+            <button
+              type="button"
+              className={`btn btn-ghost table-filter-button${topcoCompareOpen ? ' is-active' : ''}`}
+              onClick={() => setTopcoCompareOpen(open => !open)}
+              title="Look up Topco source sheet rows"
+            >
+              <ClipboardList size={16} strokeWidth={2} />
+              Source Lookup
+            </button>
+            {canSyncTopcoProducts && (
+              <button
+                type="button"
+                className="btn btn-ghost table-filter-button"
+                onClick={syncTopcoProductsFromSource}
+                disabled={topcoProductSyncing}
+                title="Sync existing source-linked Products from the source sheet"
+              >
+                <RefreshCw size={15} strokeWidth={2} />
+                {topcoProductSyncing ? 'Syncing...' : 'Sync Products'}
+              </button>
+            )}
             <ExcelExportButton
               filename={todayExportFilename('products')}
               columns={productExportColumns}
@@ -4035,6 +4790,129 @@ function ProductsPage({ navigate, jobId: initJobId }) {
           </div>
         </div>
       </DataTableToolbar>
+
+      {topcoCompareOpen && (
+        <section className="topco-compare-panel" aria-label="Source Lookup">
+          <div className="topco-compare-head">
+            <div>
+              <div className="topco-compare-title">Source Lookup</div>
+              <div className="topco-compare-sub">
+                {topcoSourceCheck
+                  ? `Read-only lookup of ${topcoSourceCheck.source?.sheetName || 'source sheet'} ${topcoSourceCheck.source?.range || ''}.`
+                  : 'Read-only lookup of the first 20 source-backed rows in this Products view.'}
+              </div>
+            </div>
+            <div className="topco-compare-actions">
+              <input
+                className="topco-source-search"
+                value={sourceLookupSearch}
+                onChange={event => setSourceLookupSearch(event.target.value)}
+                placeholder="Search source rows"
+                aria-label="Search source rows"
+              />
+              <span>Last checked: {topcoCompareLastChecked || 'Not yet'}</span>
+              <button className="btn btn-ghost table-filter-button" type="button" onClick={recheckTopcoCompare} disabled={topcoCompareChecking}>
+                <RefreshCw size={15} strokeWidth={2} />
+                {topcoCompareChecking ? 'Checking...' : 'Recheck source sheet'}
+              </button>
+              <button className="btn btn-ghost table-filter-button" type="button" onClick={() => setTopcoCompareOpen(false)}>
+                <X size={15} strokeWidth={2.2} />
+                Hide
+              </button>
+            </div>
+          </div>
+          <div className="topco-compare-summary" aria-label="Source Lookup summary">
+            <span><strong>{topcoCompareRows.length}</strong> rows checked</span>
+            <span><strong>{topcoCompareTotals.ready}</strong> ready</span>
+            <span><strong>{topcoCompareTotals.missingSource}</strong> missing in source sheet</span>
+            <span><strong>{topcoCompareTotals.needsReview}</strong> needs review</span>
+            <span><strong>{topcoCompareTotals.ambiguous}</strong> ambiguous match</span>
+          </div>
+          {topcoSourceCheckError && (
+            <div className="topco-compare-warning">Could not read the live source sheet. Showing stored Product source data instead. {topcoSourceCheckError}</div>
+          )}
+          {sourceLookupNotice && (
+            <div className="topco-compare-note">{sourceLookupNotice}</div>
+          )}
+          {topcoCompareRows.length === 0 ? (
+            <div className="topco-compare-empty">No source rows match this lookup.</div>
+          ) : (
+            <div className="topco-compare-list">
+              {topcoCompareRows.map(compare => (
+                <article className="topco-compare-card" key={compare.item.id}>
+                  <div className="topco-compare-card-head">
+                    <div>
+                      <strong>{compare.item.name || compare.item.product || 'Unnamed Product'}</strong>
+                      <span>
+                        {compare.sourceRowNumber ? `Source row ${compare.sourceRowNumber} · ` : ''}
+                        {compare.hasProductData === false ? 'No Product Data in application' : 'Product Data found in application'}
+                        {compare.matchMethod ? ` · Matched by ${compare.matchMethod}` : ''}
+                        {` · ${compare.item.upc || compare.item.primaryMatchKey || 'No UPC'}`}
+                      </span>
+                    </div>
+                    <div className="topco-compare-deliverables">
+                      <span>Expected Work</span>
+                      <strong>{compare.suggestedLabel}</strong>
+                    </div>
+                    <div className="topco-compare-card-actions">
+                      <button
+                        className="btn btn-primary"
+                        type="button"
+                        onClick={() => activateTopcoSourceRow(compare)}
+                        disabled={!compare.sourceRowNumber || compare.ambiguousMatchKey || activatingSourceRow === String(compare.sourceRowNumber)}
+                        title={compare.ambiguousMatchKey ? 'Fix the UPC in the source sheet before activating in Marks.' : 'Create or update one local Product from this source row.'}
+                      >
+                        {activatingSourceRow === String(compare.sourceRowNumber) ? 'Activating...' : 'Activate in Marks'}
+                      </button>
+                    </div>
+                  </div>
+                  {compare.ambiguousMatchKey && (
+                    <div className="topco-compare-warning">Ambiguous match: blank or NO UPC cannot confirm source identity.</div>
+                  )}
+                  {compare.noWalnutWorkExpected && (
+                    <div className="topco-compare-warning">
+                      No Walnut work expected from the source Request Type. Alert if merchandise arrives at Walnut.
+                    </div>
+                  )}
+                  {compare.shipmentContext.length > 0 && (
+                    <div className="topco-compare-note">
+                      THR3D is shipment context here, not automatic Walnut routing.
+                    </div>
+                  )}
+                  <div className="topco-compare-grid" role="table" aria-label={`Tracker comparison for ${compare.item.name || compare.item.id}`}>
+                    <div className="topco-compare-row is-header" role="row">
+                      <span role="columnheader">Field</span>
+                      <span role="columnheader">In Application</span>
+                      <span role="columnheader">In Source Sheet</span>
+                      <span role="columnheader">Result</span>
+                    </div>
+                    <div className={`topco-compare-row is-${compare.requestTypeRow.state}`} role="row" key={`${compare.item.id}-request-type`}>
+                      <span role="cell">
+                        <strong>{compare.requestTypeRow.label}</strong>
+                        <small>{compare.requestTypeRow.detail}</small>
+                      </span>
+                      <span role="cell">{compare.requestTypeRow.marksValue || '—'}</span>
+                      <span role="cell">{compare.requestTypeRow.trackerValue || '—'}</span>
+                      <span role="cell">{compare.requestTypeRow.resultLabel}</span>
+                    </div>
+                    {compare.rows.map(row => (
+                      <div className={`topco-compare-row is-${row.state}`} role="row" key={row.label}>
+                        <span role="cell">
+                          <strong>{row.label}</strong>
+                          {row.detail && <small>{row.detail}</small>}
+                        </span>
+                        <span role="cell">{row.marksValue || '—'}</span>
+                        <span role="cell">{row.trackerValue || '—'}</span>
+                        <span role="cell">{row.resultLabel || topcoCompareStateLabel(row.state)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="table-wrap products-grid-wrap">
         <table
@@ -4426,7 +5304,7 @@ const PHOTO_PRODUCTION_FIELD_LABELS = {
   productName: 'Product Name',
   upc: 'UPC / Product ID',
   cvid: 'CVID',
-  jobNumber: 'Job Number',
+  jobNumber: 'WKFT Job Number',
   brandPrefix: 'Brand Prefix',
   fileNameDescription: 'File Name Description',
   productDescription: 'Product Description',
@@ -4456,7 +5334,7 @@ const TOPCO_PHOTO_PRODUCTION_DEFAULTS = {
       creativeForce: { productCodeField: '', categoryField: 'clientName', categoryValue: '' },
     },
     Ecomm: {
-      requiredProductFields: ['productName', 'upc', 'cvid', 'pathToArt'],
+      requiredProductFields: ['productName', 'upc', 'cvid'],
       naming: { template: '{cvid}_{view}', tokens: ['cvid', 'view'], views: ['front', 'back', 'left', 'right', 'top', 'bottom', 'frontelevated', 'leftelevated', 'rightelevated'] },
       creativeForce: { productCodeField: '', categoryField: 'clientName', categoryValue: '' },
     },
@@ -4469,7 +5347,7 @@ function fallbackPhotoProductionStatus(type, item = {}) {
   const clientName = String(typeof item.client === 'string' ? item.client : item.client?.name || item.record?.clientName || '').trim().toLowerCase();
   const config = clientConfig || (clientName === 'topco' ? TOPCO_PHOTO_PRODUCTION_DEFAULTS.workstreams[type] : null);
   if (!config) return null;
-  const product = item.record?.linkedItem || {};
+  const product = productDataSourceForPlanningItem(item);
   const checks = (config.requiredProductFields || []).map(key => ({
     key,
     label: PHOTO_PRODUCTION_FIELD_LABELS[key] || key,
@@ -4519,7 +5397,7 @@ function evaluatedPhotoProductionStatusForType(item = {}, type) {
     ...check,
     present: photoProductionValuePresent(
       check.key,
-      photoProductionProductValue(item.record?.linkedItem || {}, check.key),
+      photoProductionProductValue(productDataSourceForPlanningItem(item), check.key),
     ),
   }));
   return {
@@ -4540,7 +5418,11 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
     : String(client?.name || '').trim().toLowerCase() === 'topco'
       ? TOPCO_PHOTO_PRODUCTION_DEFAULTS
       : { version: 1, workstreams: {} };
-  const [requirements, setRequirements] = useState(() => ({ version: 1, workstreams: { ...(initial.workstreams || {}) } }));
+  const [requirements, setRequirements] = useState(() => ({
+    version: 1,
+    workstreams: { ...(initial.workstreams || {}) },
+    ...(initial.sourceRefresh ? { sourceRefresh: initial.sourceRefresh } : {}),
+  }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -4717,10 +5599,106 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
   );
 }
 
+function sourceRefreshConfigForClient(client) {
+  return client?.readinessProfile?.sourceRefresh || client?.photoProductionRequirements?.sourceRefresh || null;
+}
+
+function sourceRefreshIntervalText(config) {
+  if (!config?.enabled) return 'Off';
+  const seconds = Number(config.intervalSeconds || 0);
+  if (!seconds) return 'On';
+  if (seconds % 3600 === 0) {
+    const hours = seconds / 3600;
+    return `Every ${hours} hour${hours === 1 ? '' : 's'}`;
+  }
+  if (seconds % 60 === 0) {
+    const minutes = seconds / 60;
+    return `Every ${minutes} minute${minutes === 1 ? '' : 's'}`;
+  }
+  return `Every ${seconds} seconds`;
+}
+
+function ClientSourceSyncModal({ client, onClose, onSaved }) {
+  const current = sourceRefreshConfigForClient(client) || {};
+  const [enabled, setEnabled] = useState(Boolean(current.enabled));
+  const [intervalMinutes, setIntervalMinutes] = useState(Math.max(1, Math.round(Number(current.intervalSeconds || 300) / 60)));
+  const [limit, setLimit] = useState(Math.max(1, Number(current.limit || 100)));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function save() {
+    setSaving(true); setError('');
+    try {
+      const existingRequirements = client.photoProductionRequirements?.workstreams
+        ? client.photoProductionRequirements
+        : String(client?.name || '').trim().toLowerCase() === 'topco'
+          ? TOPCO_PHOTO_PRODUCTION_DEFAULTS
+          : { version: 1, workstreams: {} };
+      const sourceRefresh = {
+        enabled,
+        intervalSeconds: Math.max(1, Number(intervalMinutes || 1)) * 60,
+        limit: Math.max(1, Number(limit || 1)),
+        provider: current.provider || 'topco',
+      };
+      const data = await api.updateClient(client.id, {
+        photoProductionRequirements: {
+          ...existingRequirements,
+          sourceRefresh,
+        },
+      });
+      onSaved(data.client);
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Could not save source sync settings.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return createPortal(
+    <div className="modal-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="modal client-source-sync-editor" role="dialog" aria-modal="true" aria-labelledby="client-source-sync-title">
+        <div className="modal-header">
+          <div>
+            <div className="modal-title" id="client-source-sync-title">Source sync</div>
+            <div className="modal-subtitle">{client.name} · Refresh existing source-linked Products from the read-only source sheet.</div>
+          </div>
+          <button className="modal-close" type="button" onClick={onClose} aria-label="Close">×</button>
+        </div>
+        <div className="client-source-sync-form">
+          <label className="client-source-sync-check">
+            <input type="checkbox" checked={enabled} onChange={event => setEnabled(event.target.checked)} />
+            Refresh source-linked Products
+          </label>
+          <label>
+            <span>Refresh interval</span>
+            <div className="client-source-sync-input-row">
+              <input type="number" min="1" value={intervalMinutes} onChange={event => setIntervalMinutes(event.target.value)} />
+              <span>minutes</span>
+            </div>
+          </label>
+          <label>
+            <span>Products per refresh</span>
+            <input type="number" min="1" value={limit} onChange={event => setLimit(event.target.value)} />
+          </label>
+        </div>
+        {error && <div className="error-state">{error}</div>}
+        <div className="form-actions">
+          <button className="btn btn-primary" type="button" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save sync settings'}</button>
+          <button className="btn btn-ghost" type="button" onClick={onClose}>Cancel</button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function CreativeForceAdminSection() {
   const [refreshKey, setRefreshKey] = useState(0);
   const feed = useResource(() => api.previewCreativeForceProductFeed(), [refreshKey]);
+  const diagnostics = useResource(() => api.getCreativeForceWebhookDiagnostics(), [refreshKey]);
   const preview = feed.data || {};
+  const webhook = diagnostics.data?.webhook;
   const counts = preview.counts || {};
   const rows = preview.rows || [];
 
@@ -4754,6 +5732,32 @@ function CreativeForceAdminSection() {
           </div>
         </>}
       </div>
+      <div className="panel">
+        <div className="panel-header">
+          <div>
+            <span className="panel-title">Latest webhook delivery</span>
+            <p className="panel-subtitle">Admin-only troubleshooting view of the most recent signed Creative Force event received by Marks Photo.</p>
+          </div>
+          <button className="btn btn-ghost" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={diagnostics.loading}>Refresh</button>
+        </div>
+        {diagnostics.loading && <div className="empty-state">Loading webhook diagnostics…</div>}
+        {diagnostics.error && <div className="error-state">{diagnostics.error}</div>}
+        {!diagnostics.loading && !diagnostics.error && !webhook && <div className="empty-state">No signed Creative Force webhook has been received since the backend started.</div>}
+        {!diagnostics.loading && !diagnostics.error && webhook && <>
+          <div className="settings-list">
+            <div className="setting-row"><span className="setting-key">Received</span><span className="setting-val">{webhook.receivedAt || '—'}</span></div>
+            <div className="setting-row"><span className="setting-key">Result</span><span className="setting-val">{webhook.accepted ? (webhook.duplicate ? 'Duplicate ignored' : 'Written to Workstream Card') : webhook.reason || 'Rejected'}</span></div>
+            <div className="setting-row"><span className="setting-key">Work Unit ID</span><span className="setting-val">{webhook.workUnitId || webhook.sync?.workUnitId || '—'}</span></div>
+            <div className="setting-row"><span className="setting-key">Matched card</span><span className="setting-val">{webhook.workstreamCardId || '—'}</span></div>
+            <div className="setting-row"><span className="setting-key">Raw Creative Force status</span><span className="setting-val">{webhook.creativeForceStatus || webhook.sync?.statusRaw || '—'}</span></div>
+            <div className="setting-row"><span className="setting-key">Creative Force step</span><span className="setting-val">{webhook.creativeForceStep || webhook.sync?.stepName || '—'}{webhook.sync?.stepStatusRaw ? ` · ${webhook.sync.stepStatusRaw}` : ''}</span></div>
+          </div>
+          <details className="webhook-diagnostics-details">
+            <summary>Show payload details</summary>
+            <pre>{JSON.stringify(webhook.payload || {}, null, 2)}</pre>
+          </details>
+        </>}
+      </div>
     </div>
   );
 }
@@ -4772,6 +5776,7 @@ function SettingsPage({ cards = null } = {}) {
   const [collapsedSections, setCollapsedSections] = useState({});
   const [editingImportClient, setEditingImportClient] = useState(null);
   const [editingPhotoRequirementsClient, setEditingPhotoRequirementsClient] = useState(null);
+  const [editingSourceSyncClient, setEditingSourceSyncClient] = useState(null);
   const hasCard = id => !cards || cards.includes(id);
   const sectionOpen = key => !collapsedSections[key];
   const toggleSection = key => setCollapsedSections(sections => ({ ...sections, [key]: !sections[key] }));
@@ -4792,51 +5797,125 @@ function SettingsPage({ cards = null } = {}) {
     { header: 'Product ID', value: client => clientProductIdLabel(client) },
     { header: 'Product Imports', value: client => Object.keys(client.productImportProfiles?.profiles || {}).length ? `${Object.keys(client.productImportProfiles.profiles).length} saved` : 'Not configured' },
     { header: 'Photo Requirements', value: client => ['Packaging', 'Ecomm'].map(type => client.photoProductionRequirements?.workstreams?.[type] ? `${type}: configured` : `${type}: not configured`).join('; ') },
+    { header: 'Source Lookup', value: client => sourceCheckRulesForClient(client) ? 'Configured' : 'Standard' },
   ];
 
-  function ClientReadinessProfile({ profile }) {
-    if (!profile) return <span className="badge badge-neutral">Standard</span>;
-    const deliverables = Object.entries(profile.deliverables || {});
-    const pathPrefixes = Object.entries(profile.pathPrefixes || {});
+  function sourceCheckFieldLabel(field) {
+    return SOURCE_CHECK_FIELD_CONFIG[field]?.label || PHOTO_PRODUCTION_FIELD_LABELS[field] || field;
+  }
+
+  function sourceCheckActivationLabel(field) {
+    if (field === 'requestType') return 'Request Type';
+    return sourceCheckFieldLabel(field);
+  }
+
+  function sourceCheckRequestTypeLabel(key) {
+    return SOURCE_CHECK_REQUEST_TYPE_LABELS[key] || key;
+  }
+
+  function sourceCheckExpectedWorkLabel(mapping = {}) {
+    if (mapping.noWalnutWorkExpected) return `No Walnut work expected${mapping.alertIfReceived ? '; alert if received' : ''}`;
+    const labels = [
+      ...normalizeDeliverableList(mapping.requiredDeliverables || []),
+      ...normalizeDeliverableList(mapping.shipmentContext || []).map(value => `${value} shipment context`),
+    ];
+    return labels.length ? labels.join(' + ') : 'No expected work';
+  }
+
+  function ClientReadinessProfile({ profile, client }) {
+    const sourceRules = sourceCheckRulesForClient(client);
+    const sourceRefresh = sourceRefreshConfigForClient(client);
+    if (!profile && !sourceRules) return <span className="badge badge-neutral">Standard</span>;
+    const deliverables = Object.entries(profile?.deliverables || {});
+    const pathPrefixes = Object.entries(profile?.pathPrefixes || {});
+    const requestTypeMappings = Object.entries(sourceRules?.requestTypeMappings || {});
+    const requiredToProceed = Object.entries(sourceRules?.requiredToProceed || {});
+    const sourceFieldMappings = sourceRules?.sourceFieldMappings || [];
     return (
       <div className="client-readiness-profile">
-        <div className="client-readiness-profile-top">
-          <span className="badge badge-blue">{profile.label || 'Client profile'}</span>
-          <span>{profile.matchingTarget}</span>
-        </div>
-        <div className="client-readiness-grid">
+        <div className="client-readiness-summary">
           <div>
-            <span className="client-readiness-label">Ready for Photo requires</span>
-            <div className="requirements-chips">
-              {(profile.readyForPhotoRequires || []).map(field => <span className="requirements-chip" key={field}>{field}</span>)}
-            </div>
+            <span className="client-readiness-label">Source sync</span>
+            <strong>{sourceRefreshIntervalText(sourceRefresh)}</strong>
+            {sourceRefresh?.enabled && <small>{sourceRefresh.limit || 100} Products per refresh</small>}
           </div>
-          {deliverables.map(([deliverable, config]) => (
-            <div key={deliverable}>
-              <span className="client-readiness-label">{deliverable}</span>
+          <div>
+            <span className="client-readiness-label">Match by</span>
+            <strong>{(sourceRules?.sourceIdentityFields || []).map(sourceCheckFieldLabel).join(' + ') || 'Standard Product match'}</strong>
+          </div>
+          <div>
+            <span className="client-readiness-label">Activation</span>
+            <strong>{sourceRules ? sourceCheckActivationLabel(sourceRules.activationField) : 'Standard'}</strong>
+          </div>
+          {sourceRules && <button className="btn btn-ghost btn-sm client-source-sync-button" type="button" onClick={() => setEditingSourceSyncClient(client)}>Edit sync</button>}
+        </div>
+        <details className="client-readiness-details">
+          <summary>Details</summary>
+          <div className="client-readiness-grid">
+            {profile && <div>
+              <span className="client-readiness-label">Ready for Photo requires</span>
               <div className="requirements-chips">
-                {(config.requiredFields || []).map(field => <span className="requirements-chip" key={field}>{field}</span>)}
+                {(profile.readyForPhotoRequires || []).map(field => <span className="requirements-chip" key={field}>{field}</span>)}
               </div>
-            </div>
-          ))}
-          <div>
-            <span className="client-readiness-label">Not required from activation</span>
-            <div className="requirements-chips">
-              {(profile.notRequiredFromActivation || []).map(field => <span className="requirements-chip is-muted" key={field}>{field}</span>)}
-            </div>
-          </div>
-          {pathPrefixes.length > 0 && (
-            <div className="client-readiness-paths">
-              <span className="client-readiness-label">Server paths</span>
-              {pathPrefixes.map(([key, value]) => (
-                <div className="client-readiness-path" key={key}>
-                  <span>{key === 'artwork' ? 'Artwork prefix' : key === 'upload' ? 'Upload prefix' : key}</span>
-                  <code>{value}</code>
+            </div>}
+            {deliverables.map(([deliverable, config]) => (
+              <div key={deliverable}>
+                <span className="client-readiness-label">{deliverable}</span>
+                <div className="requirements-chips">
+                  {(config.requiredFields || []).map(field => <span className="requirements-chip" key={field}>{field}</span>)}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+            ))}
+            {profile && <div>
+              <span className="client-readiness-label">Not required from activation</span>
+              <div className="requirements-chips">
+                {(profile.notRequiredFromActivation || []).map(field => <span className="requirements-chip is-muted" key={field}>{field}</span>)}
+              </div>
+            </div>}
+            {sourceRules && <>
+              <div className="client-source-check-rules">
+                <span className="client-readiness-label">Request Type mapping</span>
+                {requestTypeMappings.map(([key, mapping]) => (
+                  <div className="client-source-check-rule" key={key}>
+                    <span>{sourceCheckRequestTypeLabel(key)}</span>
+                    <strong>{sourceCheckExpectedWorkLabel(mapping)}</strong>
+                  </div>
+                ))}
+              </div>
+              {sourceFieldMappings.length > 0 && (
+                <div className="client-source-check-rules">
+                  <span className="client-readiness-label">Source field usage</span>
+                  {sourceFieldMappings.map(mapping => (
+                    <div className="client-source-check-rule" key={mapping.sourceField}>
+                      <span>Source {mapping.sourceField}</span>
+                      <strong>Used as {(mapping.usedAs || []).join(' / ')}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="client-source-check-rules">
+                <span className="client-readiness-label">Required to proceed</span>
+                {requiredToProceed.map(([deliverable, fields]) => (
+                  <div className="client-source-check-rule" key={deliverable}>
+                    <span>{deliverable}</span>
+                    <strong>{(fields || []).map(sourceCheckFieldLabel).join(', ') || 'None'}</strong>
+                  </div>
+                ))}
+              </div>
+            </>}
+            {pathPrefixes.length > 0 && (
+              <div className="client-readiness-paths">
+                <span className="client-readiness-label">Server paths</span>
+                {pathPrefixes.map(([key, value]) => (
+                  <div className="client-readiness-path" key={key}>
+                    <span>{key === 'artwork' ? 'Artwork prefix' : key === 'upload' ? 'Upload prefix' : key}</span>
+                    <code>{value}</code>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </details>
       </div>
     );
   }
@@ -4948,10 +6027,11 @@ function SettingsPage({ cards = null } = {}) {
                 <th>Product ID</th>
                 <th>Product Imports</th>
                 <th>Photo Production</th>
+                <th>Source Lookup</th>
               </tr>
             </thead>
             <tbody>
-              {clients.loading && <tr><td colSpan="4" className="empty-state">Loading clients…</td></tr>}
+              {clients.loading && <tr><td colSpan="5" className="empty-state">Loading clients…</td></tr>}
               {!clients.loading && clientList.map(client => (
                 <Fragment key={client.id}>
                   <tr>
@@ -4982,7 +6062,19 @@ function SettingsPage({ cards = null } = {}) {
                         <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEditingPhotoRequirementsClient(client)}>Edit requirements</button>
                       </div>
                     </td>
+                    <td>
+                      {sourceCheckRulesForClient(client)
+                        ? <span className="badge badge-blue">Configured</span>
+                        : <span className="badge badge-neutral">Standard</span>}
+                    </td>
                   </tr>
+                  {sourceCheckRulesForClient(client) && (
+                    <tr className="client-readiness-row">
+                      <td colSpan="5">
+                        <ClientReadinessProfile profile={client.readinessProfile} client={client} />
+                      </td>
+                    </tr>
+                  )}
                 </Fragment>
               ))}
             </tbody>
@@ -5048,6 +6140,16 @@ function SettingsPage({ cards = null } = {}) {
           onSaved={updated => {
             clients.reload({ quiet: true });
             setEditingPhotoRequirementsClient(updated);
+          }}
+        />
+      )}
+      {editingSourceSyncClient && (
+        <ClientSourceSyncModal
+          client={editingSourceSyncClient}
+          onClose={() => setEditingSourceSyncClient(null)}
+          onSaved={updated => {
+            clients.reload({ quiet: true });
+            setEditingSourceSyncClient(updated);
           }}
         />
       )}
@@ -6986,9 +8088,11 @@ function wizardStateForItem(item, draftDeliverables) {
   const actionableRequirements = requirements.filter(requirement => requirementBlockerLabel(requirement) !== 'Merchandise Verified');
   const blockers = visibleRequirementBlockers(actionableRequirements);
   const productLinked = Boolean(product.id || record.itemIds?.length);
+  const productIdentified = productIdentifiedForPlanningItem(item);
   const missingLabels = blockers.map(requirementLabelForUser);
   return {
     productLinked,
+    productIdentified,
     deliverables,
     blockers,
     missingLabels,
@@ -7030,24 +8134,29 @@ function workstreamAssignmentsForDeliverables(deliverables = [], quantity = 1, a
   };
 }
 
-function assignmentPrimaryActionLabel(assignment = {}) {
-  const workstreams = Array.isArray(assignment.workstreams) ? assignment.workstreams : [];
-  const hasThr3d = Boolean(assignment.thr3d);
-  const sortedWorkstreams = [...workstreams].sort((a, b) => {
-    const order = { Packaging: 0, Ecomm: 1 };
-    return (order[a.type] ?? 10) - (order[b.type] ?? 10);
-  });
-  const workstreamNames = sortedWorkstreams.map(workstream => workstream.type);
-  const workstreamLabel = workstreamNames.length === 1
-    ? `${workstreamNames[0]} Workstream`
-    : workstreamNames.length === 2
-      ? `${workstreamNames[0]} and ${workstreamNames[1]} Workstreams`
-      : 'Workstreams';
-  if (workstreams.length > 0 && hasThr3d) return `Create ${workstreamLabel} + Ship to Thr3d`;
-  if (workstreams.length > 1) return `Create ${workstreamLabel}`;
-  if (workstreams.length === 1) return `Create ${workstreams[0].type} Workstream`;
-  if (hasThr3d) return 'Ship to Thr3d';
-  return 'Mark Merch Reviewed';
+function planningActionOutcomePreview({
+  isWorkstreamCard = false,
+  stepFlagged = false,
+  splitNeedsMultipleUnits = false,
+  wizardState = {},
+  photoProductionMissingCount = 0,
+  photoProductionReady = false,
+} = {}) {
+  if (stepFlagged) return 'Issue will keep this item out of release until resolved.';
+  if (isWorkstreamCard) {
+    const hasPhotoDeliverable = (wizardState.deliverables || []).some(type => type === 'Packaging' || type === 'Ecomm');
+    if (!hasPhotoDeliverable) return 'Blocked by missing required info: choose Ecomm or Packaging.';
+    if (!photoProductionReady) {
+      const count = photoProductionMissingCount || 1;
+      return `Blocked by missing required info: ${count} product field${count === 1 ? '' : 's'} still needed.`;
+    }
+    return 'Details complete. Ready to create a release from Ready to Release.';
+  }
+  if (splitNeedsMultipleUnits) return 'Blocked by missing required info: update Qty received or choose one deliverable.';
+  const deliverables = normalizeDeliverableList(wizardState.deliverables || []);
+  const hasPhotoDeliverable = deliverables.some(type => type === 'Packaging' || type === 'Ecomm');
+  if (wizardState.productIdentified && hasPhotoDeliverable && photoProductionReady) return 'Will move to Ready to Release.';
+  return 'Will move to Needs More Information.';
 }
 
 function enforceExclusiveGs1Deliverables(values = [], changedOption = '') {
@@ -7055,12 +8164,6 @@ function enforceExclusiveGs1Deliverables(values = [], changedOption = '') {
   if (!normalized.includes('Ecomm') || !normalized.includes('Thr3d')) return normalized;
   const removeOption = changedOption === 'Thr3d' ? 'Ecomm' : 'Thr3d';
   return normalized.filter(value => value !== removeOption);
-}
-
-function queueIdForWorkstreamStatus(status) {
-  const value = String(status || '').trim().toLowerCase();
-  if (value === 'ready for photo') return QUEUE_IDS.readyProduction;
-  return QUEUE_IDS.waitingInformation;
 }
 
 function queueIdForPlanningStatus(status) {
@@ -7080,12 +8183,6 @@ function planningStatusFromLegacyQueue(queueId) {
   return 'awaiting-info';
 }
 
-function workstreamStatusForQueueId(queueId) {
-  if (queueId === QUEUE_IDS.waitingInformation) return 'Waiting';
-  if (queueId === QUEUE_IDS.readyProduction) return 'Ready for Photo';
-  return 'Planning';
-}
-
 function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = {} } = {}) {
   const record = card.receivedMerch || {};
   const type = card.type || 'Workstream';
@@ -7101,13 +8198,12 @@ function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = 
     },
   );
   const baseCard = buildPlanningCard(record, { assignment: baseAssignment, client, location });
-  const columnId = card.planningStatus
-    ? queueIdForPlanningStatus(card.planningStatus)
-    : queueIdForWorkstreamStatus(card.status);
+  const planningStatus = card.planningStatus || 'awaiting-info';
+  const columnId = queueIdForPlanningStatus(planningStatus);
   const productionStatus = fallbackPhotoProductionStatus(type, {
     client,
     clientPhotoProductionRequirements: client?.photoProductionRequirements,
-    record: { ...record, linkedItem: card.expectedProduct || record.linkedItem || {} },
+    record: { ...record, manualProductInfo: card.manualProductInfo || record.manualProductInfo || '', linkedItem: card.expectedProduct || record.linkedItem || {} },
   }) || card.photoProduction || null;
   const requiredToShoot = [...(baseCard.requiredToShoot || [])];
   return {
@@ -7124,7 +8220,8 @@ function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = 
     deliverableRouteId: DELIVERABLE_ROUTE_MAP[type],
     deliverableRoute: type,
     workstreamType: type,
-    workstreamStatus: card.status || 'New',
+    creativeForceStep: card.creativeForceStep || '',
+    planningStatus,
     workstreamQuantity: card.quantity || 0,
     clientPhotoProductionRequirements: client?.photoProductionRequirements || null,
     photoProduction: productionStatus,
@@ -7136,8 +8233,10 @@ function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = 
       deliverables: [type],
       workstreamCardId: card.id,
       workstreamType: type,
-      workstreamStatus: card.status || 'New',
+      creativeForceStep: card.creativeForceStep || '',
+      planningStatus,
       workstreamQuantity: card.quantity || 0,
+      manualProductInfo: card.manualProductInfo || record.manualProductInfo || '',
       photoProduction: productionStatus,
     },
   };
@@ -7172,23 +8271,6 @@ function deliverableSummaryLabel(values = []) {
   return deliverables.join(' + ');
 }
 
-function RequiredToShootIndicators({ items }) {
-  const visibleItems = (items || []).filter(item => item.visible !== false && item.tone !== 'neutral');
-  if (!visibleItems.length) return null;
-  const doneCount = visibleItems.filter(item => item.satisfied).length;
-  return (
-    <div className="required-to-shoot-indicators" aria-label={`${doneCount} of ${visibleItems.length} steps complete`}>
-      {visibleItems.map(item => (
-        <span
-          key={item.key}
-          className={`required-to-shoot-dot ${item.satisfied ? 'is-done' : 'is-todo'}`}
-          title={`${item.label}: ${item.satisfied ? 'Complete' : (item.detail || 'Not done')}`}
-        />
-      ))}
-    </div>
-  );
-}
-
 function requiredToShootSummary(item) {
   const requirements = (item.requiredToShoot || []).filter(requirement => requirement.visible !== false && requirement.tone !== 'neutral');
   const complete = requirements.filter(requirement => requirement.satisfied).length;
@@ -7200,49 +8282,6 @@ function requiredToShootSummary(item) {
     missing,
     label: total ? `${complete} / ${total}` : 'Not set',
   };
-}
-
-function compactRequirementKey(label = '') {
-  if (/product|identifier|barcode|sku/i.test(label)) return 'Product';
-  if (/deliverable/i.test(label)) return 'Deliverables';
-  if (/artwork/i.test(label)) return 'Artwork';
-  if (/activation|campaign|client/i.test(label)) return 'Client Req';
-  if (/merchandise|verify/i.test(label)) return 'Merch';
-  return label.split(/\s+/).slice(0, 2).join(' ');
-}
-
-function RequiredToShootPreview({ item, ready }) {
-  const requirements = (item.requiredToShoot || [])
-    .filter(requirement => requirement.visible !== false && requirement.tone !== 'neutral')
-    .slice(0, 4);
-  if (!requirements.length) return (
-    <div className="kanban-required-checks is-empty">
-      <span>Required to Shoot</span>
-      <strong>Not set</strong>
-    </div>
-  );
-  return (
-    <div className={`kanban-required-checks ${ready ? 'is-ready' : ''}`} aria-label="Required to Shoot">
-      {requirements.map(requirement => (
-        <span className={requirement.satisfied ? 'is-complete' : 'is-missing'} key={requirement.key}>
-          <i aria-hidden="true">{requirement.satisfied ? '✓' : '×'}</i>
-          {compactRequirementKey(requirementLabelForUser(requirement))}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function awaitingInfoChecklistForItem(item = {}) {
-  const deliverables = normalizeDeliverableList(item.deliverables || item.record?.deliverables);
-  const photoStatuses = deliverables
-    .filter(value => value === 'Packaging' || value === 'Ecomm')
-    .map(value => evaluatedPhotoProductionStatusForType(item, value))
-    .filter(Boolean);
-  const photoDataReady = photoStatuses.length > 0 && photoStatuses.every(status => status.productData?.ready ?? status.ready);
-  return [
-    { label: 'Photo Data', tone: photoDataReady ? 'matched' : 'needed', mark: photoDataReady ? 'check' : 'none' },
-  ];
 }
 
 function ageBucketForItem(item) {
@@ -7264,11 +8303,11 @@ function ageBucketForItem(item) {
 function CommentCountChip({ count = 0, unread = 0, recent = false, className = '', title = '', ariaLabel = '' }) {
   return (
     <span
-      className={`kanban-comment-signal ${recent ? 'has-recent' : ''} ${unread > 0 ? 'has-unread' : ''} ${className}`.trim()}
+      className={`planning-comment-signal ${recent ? 'has-recent' : ''} ${unread > 0 ? 'has-unread' : ''} ${className}`.trim()}
       aria-label={ariaLabel || `${count || 0} comments${unread > 0 ? `, ${unread} new` : ''}${recent ? ', recent activity' : ''}`}
       title={title || undefined}
     >
-      {unread > 0 && <span className="kanban-unread-dot" aria-hidden="true" />}
+      {unread > 0 && <span className="planning-unread-dot" aria-hidden="true" />}
       <span aria-hidden="true">💬</span>
       {count || 0}
     </span>
@@ -7280,13 +8319,73 @@ function productLinkedForPlanningItem(item = {}) {
   return Boolean(record.linkedItem?.id || record.itemIds?.length);
 }
 
+function manualProductInfoObject(value) {
+  if (!value) return {};
+  if (typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function manualProductInfoForItem(item = {}) {
+  const record = item.record || {};
+  return {
+    ...manualProductInfoObject(record.manualProductInfo),
+    ...manualProductInfoObject(item.manualProductInfo),
+  };
+}
+
+function productDataSourceForPlanningItem(item = {}, draft = {}) {
+  const record = item.record || {};
+  const linked = record.linkedItem || {};
+  if (linked.id) return { ...linked, ...draft };
+  const manual = manualProductInfoForItem(item);
+  return {
+    name: manual.name || manual.productName || manual.product || record.productName || '',
+    product: manual.product || manual.productName || manual.name || record.productName || '',
+    upc: manual.upc || manual.primaryMatchKey || manual.identifier || manual.productId || record.skuId || record.observedIdentifier || '',
+    primaryMatchKey: manual.primaryMatchKey || manual.upc || manual.identifier || manual.productId || record.skuId || record.observedIdentifier || '',
+    identifier: manual.identifier || manual.upc || manual.primaryMatchKey || manual.productId || record.skuId || record.observedIdentifier || '',
+    cvid: manual.cvid || record.cvid || '',
+    itemJobNumber: manual.itemJobNumber || manual.jobNumber || '',
+    wkftJobNumber: manual.wkftJobNumber || '',
+    pickupJobNumber: manual.pickupJobNumber || '',
+    brandPrefix: manual.brandPrefix || '',
+    fileNameDescription: manual.fileNameDescription || '',
+    productDescription: manual.productDescription || manual.description || record.description || '',
+    productType: manual.productType || '',
+    ecommPhotoNotes: manual.ecommPhotoNotes || '',
+    pathToArt: manual.pathToArt || manual.artworkPath || '',
+    description: manual.description || manual.productDescription || record.description || '',
+    brand: manual.brand || '',
+    ...draft,
+  };
+}
+
+function productIdentifiedForPlanningItem(item = {}) {
+  if (productLinkedForPlanningItem(item)) return true;
+  const productData = productDataSourceForPlanningItem(item);
+  return Boolean(
+    String(productData.name || productData.product || '').trim()
+    && String(productData.upc || productData.primaryMatchKey || productData.identifier || '').trim()
+  );
+}
+
 function productWorkChecklistForItem(item = {}) {
   const record = item.record || {};
-  const deliverables = normalizeDeliverableList(item.deliverables || record.deliverables);
+  const deliverables = normalizeDeliverableList(item.deliverables || initialReviewDeliverables(record));
+  const productIdentified = productIdentifiedForPlanningItem(item);
+  const productLinked = productLinkedForPlanningItem(item);
   return [
-    productLinkedForPlanningItem(item)
-      ? { label: 'Matched', tone: 'matched', mark: 'check' }
-      : { label: 'Product missing', tone: 'needed', mark: 'none' },
+    productIdentified
+      ? { label: productLinked ? 'Matched' : 'Manual info', tone: 'matched', mark: 'check' }
+      : { label: 'Product info missing', tone: 'needed', mark: 'none' },
     deliverables.length
       ? { label: `Deliverables: ${deliverableSummaryLabel(deliverables)}`, tone: 'matched', mark: 'check' }
       : { label: 'Deliverables missing', tone: 'needed', mark: 'none' },
@@ -7299,7 +8398,7 @@ function PhotoProductionValidationSummary({ production, compact = false }) {
     : Object.entries(production || {});
   if (!entries.length) return null;
   return (
-    <div className={`kanban-card-photo-validation ${compact ? 'is-compact' : ''}`} aria-label="Photo production validation">
+    <div className={`planning-card-photo-validation ${compact ? 'is-compact' : ''}`} aria-label="Photo production validation">
       {entries.map(([type, status]) => (
         <span key={type}>
           <strong>{type}</strong>
@@ -7315,7 +8414,7 @@ const PHOTO_PRODUCTION_EDITABLE_FIELDS = {
   productName: { label: 'Product Name', patch: 'name' },
   upc: { label: 'UPC / Product ID', patch: 'primaryMatchKey' },
   cvid: { label: 'CVID', patch: 'cvid' },
-  jobNumber: { label: 'Job Number', patch: 'itemJobNumber' },
+  jobNumber: { label: 'WKFT Job Number', patch: 'itemJobNumber' },
   brandPrefix: { label: 'Brand Prefix', patch: 'brandPrefix' },
   fileNameDescription: { label: 'File Name Description', patch: 'fileNameDescription' },
   productDescription: { label: 'Product Description', patch: 'productDescription' },
@@ -7361,10 +8460,16 @@ function photoProductionChecks(production = {}, item = {}) {
 }
 
 function photoProductionProductValue(product = {}, field) {
-  if (field === 'productName') return product.name || product.product || '';
-  if (field === 'upc') return product.upc || product.primaryMatchKey || product.identifier || '';
-  if (field === 'jobNumber') return product.itemJobNumber || product.wkftJobNumber || product.pickupJobNumber || '';
-  if (field === 'fileNameDescription') return referenceDataValue(product, ['File Name Description', 'fileNameDescription']);
+  if (field === 'productName') return product.name || product.product || product.productName || '';
+  if (field === 'upc') return product.upc || product.primaryMatchKey || product.identifier || product.productId || product.skuId || '';
+  if (field === 'jobNumber') return product.itemJobNumber || product.jobNumber || product.wkftJobNumber || product.pickupJobNumber || '';
+  if (field === 'fileNameDescription' && product.fileNameDescription) return product.fileNameDescription;
+  if (field === 'fileNameDescription') {
+    return referenceDataValue(product, ['File Name Description', 'fileNameDescription', 'Prod Descrip', 'Product Description'])
+      || product.productDescription
+      || product.description
+      || '';
+  }
   return product[field] || '';
 }
 
@@ -7375,6 +8480,7 @@ function photoProductionValuePresent(field, value) {
 
 function PhotoProductionFieldsEditor({ item, production, onRefresh, onDraftChange }) {
   const product = item?.record?.linkedItem || {};
+  const productDataSource = productDataSourceForPlanningItem(item);
   const entries = production?.workstreamType
     ? [[production.workstreamType, production]]
     : Object.entries(production || {});
@@ -7382,31 +8488,47 @@ function PhotoProductionFieldsEditor({ item, production, onRefresh, onDraftChang
     ...photoProductionChecks(production, item).map(check => check.key),
     ...entries.map(([, status]) => status.creativeForce?.productCodeField),
   ].filter(field => PHOTO_PRODUCTION_EDITABLE_FIELDS[field]))];
+  const inheritedIdentityFields = fields.filter(field => (
+    !product.id
+    && ['productName', 'upc'].includes(field)
+    && photoProductionValuePresent(field, photoProductionProductValue(productDataSource, field))
+  ));
+  const inheritedIdentityFieldSet = new Set(inheritedIdentityFields);
+  const editableFields = fields.filter(field => !inheritedIdentityFieldSet.has(field));
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState('');
 
   useEffect(() => {
-    const nextDraft = Object.fromEntries(fields.map(field => [field, photoProductionProductValue(product, field)]));
+    const nextDraft = Object.fromEntries(fields.map(field => [field, photoProductionProductValue(productDataSource, field)]));
     setDraft(nextDraft);
     onDraftChange?.(nextDraft);
     setFeedback('');
-  }, [item?.id, product.id, fields.join('|')]);
+  }, [item?.id, product.id, item?.manualProductInfo, item?.record?.manualProductInfo, item?.record?.productName, item?.record?.skuId, fields.join('|')]);
 
   if (!entries.length || !fields.length) return null;
-  if (!product.id) return <div className="photo-production-editor-note">Link an Expected Product to edit these fields.</div>;
 
   async function save() {
     setSaving(true);
     setFeedback('');
     try {
-      const patch = {};
+      const values = {};
       fields.forEach(field => {
-        patch[PHOTO_PRODUCTION_EDITABLE_FIELDS[field].patch] = String(draft[field] || '').trim();
+        values[field] = String(draft[field] || '').trim();
       });
-      await api.updateProduct(product.id, patch);
+      if (product.id) {
+        const patch = {};
+        fields.forEach(field => {
+          patch[PHOTO_PRODUCTION_EDITABLE_FIELDS[field].patch] = values[field];
+        });
+        await api.updateProduct(product.id, patch);
+      } else if (item?.subjectType === 'workstream-card' && item.workstreamCardId) {
+        await api.updateWorkstreamCard(item.workstreamCardId, { manualProductInfo: values });
+      } else {
+        await api.updateMerchandiseIntakeDecisions(item.merchandiseId, { manualProductInfo: values });
+      }
       await onRefresh?.();
-      setFeedback('Product data saved.');
+      setFeedback(product.id ? 'Product data saved.' : 'Manual product data saved.');
     } catch (error) {
       setFeedback(error.message || 'Could not save Product data.');
     } finally {
@@ -7418,8 +8540,13 @@ function PhotoProductionFieldsEditor({ item, production, onRefresh, onDraftChang
     <div className="photo-production-fields-editor">
       <div className="photo-production-fields-editor-header">
       </div>
-      <div className="photo-production-fields-grid">
-        {fields.map(field => {
+      {inheritedIdentityFields.length > 0 && (
+        <div className="photo-production-editor-note">
+          Using package name and UPC from merchandise identity.
+        </div>
+      )}
+      {editableFields.length > 0 && <div className="photo-production-fields-grid">
+        {editableFields.map(field => {
           const definition = PHOTO_PRODUCTION_EDITABLE_FIELDS[field];
           const present = photoProductionValuePresent(field, draft[field]);
           return (
@@ -7439,129 +8566,14 @@ function PhotoProductionFieldsEditor({ item, production, onRefresh, onDraftChang
             </label>
           );
         })}
-      </div>
-      <div className="photo-production-fields-editor-actions">
-        <button type="button" className="btn btn-secondary btn-sm" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save product data'}</button>
-      </div>
+      </div>}
+      {editableFields.length > 0 && <div className="photo-production-fields-editor-actions">
+        <button type="button" className="btn btn-secondary btn-sm" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save Details'}</button>
+      </div>}
       {feedback && <span className={feedback.includes('saved') ? 'is-success' : 'is-error'}>{feedback}</span>}
     </div>
   );
 }
-
-function KanbanCardComponent({ item, selected, onSelect, disabled = false, showNewCardClient = true }) {
-  const blockers = visibleRequirementBlockers(item.requiredToShoot || []);
-  const required = requiredToShootSummary(item);
-  const flagged = item.issueBadge === 'Issue';
-  const ready = !flagged && required.total > 0 && blockers.length === 0;
-  const notStarted = !flagged && required.total === 0;
-  const age = ageBucketForItem(item);
-  const isNewQueue = item.columnId === QUEUE_IDS.newReview;
-  const status = flagged ? 'flag' : isNewQueue ? 'new' : ready ? 'ready' : 'todo';
-  const statusLabel = flagged
-    ? 'Flagged'
-    : isNewQueue
-      ? 'New'
-      : ready
-      ? 'Ready to finish'
-      : notStarted
-        ? 'Not started'
-        : `${blockers.length} still needed`;
-  const isWorkstreamCard = item.subjectType === 'workstream-card';
-  const quantity = item.record?.quantity || 1;
-  const displayQuantity = isWorkstreamCard
-    ? (item.workstreamQuantity || item.record?.workstreamQuantity || quantity)
-    : quantity;
-  const identifier = item.identifier || item.record?.skuId || item.record?.linkedItem?.identifier || '';
-  const storage = item.location || item.record?.locationName || '';
-  const photoCount = recordPhotos(item.record).length;
-  const deliverables = normalizeDeliverableList(item.deliverables || item.record?.deliverables);
-  const hasDeliverables = deliverables.length > 0;
-  const photoProduction = item.photoProduction || item.record?.photoProduction;
-  const clientLabel = item.client || 'Unknown client';
-  const showStorage = false && !isNewQueue && storage;
-  const showFooter = item.commentCount > 0 || item.unreadComments > 0;
-  const showProductWorkChecklist = isNewQueue || item.columnId === PM_LOCAL_QUEUE_IDS.needsProductWork;
-  const productWorkChecklist = showProductWorkChecklist ? productWorkChecklistForItem(item) : [];
-  const awaitingInfoChecklist = !showProductWorkChecklist
-    && [QUEUE_IDS.waitingInformation, QUEUE_IDS.waitingActivation].includes(item.columnId)
-    ? awaitingInfoChecklistForItem(item)
-    : [];
-  const showStatusChip = !isNewQueue;
-  return (
-    <button
-      type="button"
-      className={`kanban-card status-${status} ${isNewQueue ? 'is-new-card' : ''} ${isWorkstreamCard ? 'is-workstream-card' : ''} ${selected ? 'is-selected' : ''}`}
-      onClick={() => onSelect?.(item.id)}
-      draggable={!disabled}
-      onDragStart={event => {
-        if (disabled) {
-          event.preventDefault();
-          return;
-        }
-        event.dataTransfer.setData('text/plain', item.id);
-        event.dataTransfer.effectAllowed = 'move';
-      }}
-      disabled={disabled}
-      aria-label={`${isNewQueue ? 'Review merch' : 'Open'} ${item.title}${flagged ? ' (flagged)' : ''}`}
-    >
-      <div className="kanban-card-media">
-        <RecordThumbnail record={item.record} count={1} />
-        {isNewQueue && photoCount > 1 && <span className="kanban-photo-count" aria-label={`${photoCount} images`}>+{photoCount - 1}</span>}
-        <span className={`kanban-age-badge is-overlay is-${age.tone} ${age.label === 'New' ? 'is-new-arrival' : ''}`} aria-label={`Age ${age.label}`}>{age.label}</span>
-        {hasDeliverables && <DeliverableBadges values={deliverables} overlay />}
-        {flagged && <span className="kanban-card-flag" aria-label="Flagged for an issue">⚑ Flagged</span>}
-      </div>
-      <div className="kanban-card-body">
-        <span className="kanban-card-client-eyebrow">{clientLabel}</span>
-        <h3>{item.title}</h3>
-        <div className="kanban-card-identity-row" aria-label="Merchandise identity">
-          <span className="kanban-card-upc">
-            <b>{DOMAIN_TERMS.merchandiseIdentifier}</b>
-            {identifier || '—'}
-          </span>
-          <span>
-            <b>Qty</b>
-            {displayQuantity}
-          </span>
-        </div>
-        {(identifier || showStorage) && (
-          <div className="kanban-card-details" aria-label="Merchandise details">
-            {showStorage && (
-              <span>
-                <b>Storage</b>
-                {storage}
-              </span>
-            )}
-          </div>
-        )}
-        {showProductWorkChecklist ? (
-          <div className="kanban-criteria-list" aria-label="Review criteria">
-            {productWorkChecklist.map(check => (
-              <span className={`kanban-criterion is-${check.tone} has-${check.mark}`} key={check.label}>{check.label}</span>
-            ))}
-          </div>
-        ) : (!hasDeliverables && item.deliverableRoute && <strong className="kanban-card-deliverables">{item.deliverableRoute}</strong>)}
-        {awaitingInfoChecklist.length > 0 && (
-          <div className="kanban-criteria-list" aria-label="Awaiting information criteria">
-            {awaitingInfoChecklist.map(check => (
-              <span className={`kanban-criterion is-${check.tone} has-${check.mark}`} key={check.label}>{check.label}</span>
-            ))}
-          </div>
-        )}
-        {!isWorkstreamCard && hasDeliverables && photoProduction && <PhotoProductionValidationSummary production={photoProduction} compact />}
-        {showFooter && <div className="kanban-card-footer">
-          {showStatusChip && <span className={`kanban-status-chip is-${status}`}>{statusLabel}</span>}
-          <span className="kanban-card-signals">
-            {!isNewQueue && <span className={`kanban-age-badge is-${age.tone}`} aria-label={`Age ${age.label}`}>{age.label}</span>}
-            <CommentCountChip count={item.commentCount} unread={item.unreadComments} recent={item.recentComment} />
-          </span>
-        </div>}
-      </div>
-    </button>
-  );
-}
-
-const KanbanCard = memo(KanbanCardComponent);
 
 function activationSummary(activation = {}) {
   const linkedCount = (activation.linkedMerchandiseIds || activation.matchedMerchandiseIds || []).length;
@@ -7633,79 +8645,6 @@ function activationEditableForPhoto(activation = {}) {
   return !['Released', 'Cancelled', 'Complete'].includes(String(activation.status || '').trim());
 }
 
-function KanbanColumn({ column, items, selectedId, onSelect, onMove, disabled = false, showNewCardClient = true }) {
-  const [dragState, setDragState] = useState('');
-  const title = column.label || column.displayName || column.title || column.name;
-  const missingArtwork = items.filter(item => requiredToShootSummary(item).missing.some(label => /artwork/i.test(label))).length;
-  const withComments = items.filter(item => item.commentCount > 0).length;
-  const withRecentComments = items.filter(item => item.recentComment).length;
-  return (
-    <section
-      className={`kanban-column ${dragState ? `is-${dragState}` : ''}`}
-      aria-label={title}
-      onDragOver={event => {
-        if (disabled) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'move';
-        setDragState('drag-target');
-      }}
-      onDragLeave={event => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setDragState('');
-      }}
-      onDrop={event => {
-        if (disabled) return;
-        event.preventDefault();
-        setDragState('');
-        const itemId = event.dataTransfer.getData('text/plain');
-        if (itemId) onMove?.(itemId, column.id);
-      }}
-    >
-      <header className="kanban-column-header">
-        <div className="kanban-column-title-row">
-          <h2>{title}</h2>
-          <div className="kanban-column-summary">
-            {missingArtwork > 0 && <span>{missingArtwork} missing artwork</span>}
-            {withComments > 0 && (
-              <CommentCountChip
-                count={withComments}
-                recent={withRecentComments > 0}
-                className="is-column"
-                ariaLabel={`${withComments} cards with comments${withRecentComments > 0 ? `, ${withRecentComments} recent` : ''}`}
-                title={`${withComments} cards with comments${withRecentComments > 0 ? `, ${withRecentComments} recent` : ''}`}
-              />
-            )}
-          </div>
-        </div>
-      </header>
-      <div className="kanban-column-list">
-        {items.length === 0 && <div className="kanban-empty">No cards in this queue.</div>}
-        {items.map(item => (
-          <KanbanCard item={item} key={item.id} selected={selectedId === item.id} onSelect={disabled ? undefined : onSelect} disabled={disabled} showNewCardClient={showNewCardClient} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function KanbanBoard({ columns, itemsByColumn, selectedId, onSelect, onMove, disabled = false, showNewCardClient = true }) {
-  return (
-    <div className={`kanban-board ${disabled ? 'is-frozen' : ''}`} role="list" aria-label="Planning Board" aria-disabled={disabled ? 'true' : undefined}>
-      {columns.map(column => (
-        <KanbanColumn
-          column={column}
-          items={itemsByColumn[column.id] || []}
-          key={column.id}
-          selectedId={selectedId}
-          onSelect={onSelect}
-          onMove={onMove}
-          disabled={disabled}
-          showNewCardClient={showNewCardClient}
-        />
-      ))}
-    </div>
-  );
-}
-
 function PlanningListView({ columns, itemsByColumn, selectedId, onSelect, disabled = false, showNewCardClient = true }) {
   return (
     <div className={`planning-list-view ${disabled ? 'is-frozen' : ''}`} aria-label="Planning list">
@@ -7745,6 +8684,250 @@ function PlanningListView({ columns, itemsByColumn, selectedId, onSelect, disabl
             ) : (
               <div className="planning-list-empty">No cards in this queue.</div>
             )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+const PLANNING_RELEASE_SECTIONS = [
+  { id: 'needsReview', label: 'Newly Received Merch', description: 'View and acknowledge newly received merchandise.' },
+  { id: 'needsDetails', label: 'Needs More Information', description: 'Reviewed work with outstanding validation.' },
+  { id: 'readyToRelease', label: 'Ready to Release', description: 'Items waiting on Activation.' },
+];
+
+function releaseSectionForPlanningItem(item = {}) {
+  if (item.columnId === QUEUE_IDS.readyProduction) return 'readyForPhoto';
+  if (item.columnId === QUEUE_IDS.newReview) return 'needsReview';
+  if (releaseInfoCompleteForPlanningItem(item)) return 'readyToRelease';
+  return 'needsDetails';
+}
+
+function releaseInfoCompleteForPlanningItem(item = {}) {
+  const productChecksComplete = productWorkChecklistForItem(item).every(check => check.mark === 'check');
+  const photoProductionComplete = photoProductionReadyForPlanningItem(item);
+  if (item.subjectType === 'workstream-card') {
+    return productChecksComplete && photoProductionComplete;
+  }
+  const summary = requiredToShootSummary(item);
+  const blockers = visibleRequirementBlockers(item.requiredToShoot || []);
+  const requiredToShootComplete = summary.total === 0 || blockers.length === 0;
+  return productChecksComplete && photoProductionComplete && requiredToShootComplete;
+}
+
+function photoProductionReadyForPlanningItem(item = {}) {
+  const deliverables = normalizeDeliverableList(item.deliverables || item.record?.deliverables);
+  const currentWorkstreamType = item.workstreamType || item.record?.workstreamType || item.deliverableRoute || '';
+  const photoTypes = item.subjectType === 'workstream-card'
+    ? [normalizeDeliverableValue(currentWorkstreamType)].filter(type => type === 'Packaging' || type === 'Ecomm')
+    : deliverables.filter(type => type === 'Packaging' || type === 'Ecomm');
+  if (!photoTypes.length) return true;
+  const production = Object.fromEntries(
+    photoTypes.map(type => {
+      const status = type === normalizeDeliverableValue(currentWorkstreamType)
+        ? photoProductionStatusForItem(item)
+        : item.record?.photoProduction?.[type] || fallbackPhotoProductionStatus(type, item);
+      return [type, status];
+    }).filter(([, status]) => status)
+  );
+  const checks = photoProductionChecks(production, item);
+  if (!checks.length) return true;
+  const product = productDataSourceForPlanningItem(item);
+  return checks.every(check => photoProductionValuePresent(check.key, photoProductionProductValue(product, check.key)));
+}
+
+function releaseStatusTextForItem(item = {}, sectionId = '') {
+  if (sectionId === 'needsReview') {
+    return productLinkedForPlanningItem(item) ? 'Matched' : 'Unmatched';
+  }
+  if (sectionId === 'readyToRelease') return 'Waiting on activation details';
+  if (sectionId === 'readyForPhoto') return 'Ready for Photo';
+  const missing = requiredToShootSummary(item).missing;
+  return missing.length ? missing.slice(0, 3).join(' / ') : 'Needs more information';
+}
+
+function releaseCardIdentifierLine(item = {}, identifier = '', sectionId = '') {
+  if (sectionId !== 'needsReview') return releaseStatusTextForItem(item, sectionId);
+  return [identifier || 'No UPC', releaseStatusTextForItem(item, sectionId)].filter(Boolean).join(' · ');
+}
+
+function releaseCardDeliverables(item = {}, sectionId = '') {
+  if (sectionId === 'needsReview') return [];
+  if (item.subjectType === 'workstream-card') {
+    return normalizeDeliverableList(item.deliverables || item.record?.deliverables);
+  }
+  return normalizeDeliverableList(item.record?.deliverables);
+}
+
+function planningShipmentDateValue(item = {}) {
+  return item.record?.receipt?.received || item.record?.dateReceived || item.record?.received || item.receivedAt || '';
+}
+
+function planningShipmentGroupLabel(item = {}) {
+  const receipt = item.record?.receipt || {};
+  const clientName = String(item.client || item.record?.client || '').trim();
+  const label = String(receipt.name || receipt.receipt || receipt.tracking || item.shipmentId || '').trim();
+  if (clientName && label.toLowerCase().startsWith(clientName.toLowerCase())) {
+    const withoutClient = label.slice(clientName.length).replace(/^\s*[-–—:]\s*/, '').trim();
+    return withoutClient || 'Shipment';
+  }
+  return label || 'Shipment';
+}
+
+function groupPlanningItemsByShipment(items = []) {
+  const groups = new Map();
+  items.forEach(item => {
+    const receipt = item.record?.receipt || {};
+    const received = planningShipmentDateValue(item);
+    const key = receipt.id || item.shipmentId || `unassigned-${received || 'unknown'}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        shipmentId: receipt.id || item.shipmentId || '',
+        label: planningShipmentGroupLabel(item),
+        received,
+        items: [],
+      });
+    }
+    const group = groups.get(key);
+    if (!group.received && received) group.received = received;
+    group.items.push(item);
+  });
+  return Array.from(groups.values())
+    .map(group => ({
+      ...group,
+      items: [...group.items].sort((a, b) => (
+        new Date(planningShipmentDateValue(b) || 0) - new Date(planningShipmentDateValue(a) || 0)
+        || String(a.title || '').localeCompare(String(b.title || ''))
+      )),
+    }))
+    .sort((a, b) => (
+      new Date(b.received || 0) - new Date(a.received || 0)
+      || String(a.label || '').localeCompare(String(b.label || ''))
+    ));
+}
+
+function PlanningReleaseView({
+  sections,
+  items,
+  selectedId,
+  onSelect,
+  disabled = false,
+  showNewCardClient = true,
+  groupByShipment = true,
+  selectedReleaseIds = [],
+  onToggleReleaseSelection,
+  onReleaseSelected,
+}) {
+  const itemsBySection = sections.reduce((groups, section) => ({ ...groups, [section.id]: [] }), {});
+  const visibleSectionIds = new Set(sections.map(section => section.id));
+  items.forEach(item => {
+    const sectionId = releaseSectionForPlanningItem(item);
+    if (visibleSectionIds.has(sectionId)) {
+      itemsBySection[sectionId]?.push(item);
+    }
+  });
+  const selectedReleaseSet = new Set(selectedReleaseIds);
+  return (
+    <div className={`planning-release-view ${disabled ? 'is-frozen' : ''}`} aria-label="Planning release view">
+      {sections.map(section => {
+        const sectionItems = itemsBySection[section.id] || [];
+        const selectedInSection = sectionItems.filter(item => selectedReleaseSet.has(item.id));
+        const shouldGroupByShipment = groupByShipment && ['needsReview', 'needsDetails'].includes(section.id);
+        const shipmentGroups = shouldGroupByShipment
+          ? groupPlanningItemsByShipment(sectionItems)
+          : [{ key: `${section.id}-all`, items: sectionItems, received: '' }];
+        return (
+          <section className={`planning-release-section is-${section.id}`} key={section.id} aria-labelledby={`planning-release-${section.id}`}>
+            <header className="planning-release-section-header">
+              <div>
+                <h2 id={`planning-release-${section.id}`}>{section.label}</h2>
+                <span>{section.description}</span>
+              </div>
+              <div className="planning-release-section-actions">
+                <strong>{sectionItems.length}</strong>
+                {section.id === 'readyToRelease' && selectedInSection.length > 0 && (
+                  <button type="button" className="btn btn-primary btn-sm" onClick={() => onReleaseSelected?.(selectedInSection)} disabled={disabled}>
+                    Create Release ({selectedInSection.length})
+                  </button>
+                )}
+              </div>
+            </header>
+            <div className="planning-release-card-list">
+              {shipmentGroups.length ? shipmentGroups.map(group => (
+                <div className="planning-release-shipment-group" key={group.key}>
+                  {shouldGroupByShipment && (
+                    <div className="planning-release-shipment-header">
+                      {group.shipmentId ? (
+                        <Link to={`/shipments?shipmentId=${encodeURIComponent(group.shipmentId)}`}>
+                          {group.received ? formatInventoryDate(group.received) : 'Open shipment'}
+                        </Link>
+                      ) : (
+                        <span>{group.received ? formatInventoryDate(group.received) : 'No received date'}</span>
+                      )}
+                    </div>
+                  )}
+                  {group.items.map(item => {
+                    const age = ageBucketForItem(item);
+                    const identifier = item.identifier || item.record?.skuId || item.record?.linkedItem?.identifier || '';
+                    const selectable = section.id === 'readyToRelease';
+                    const checked = selectedReleaseSet.has(item.id);
+                    const displayDeliverables = releaseCardDeliverables(item, section.id);
+                    const showAge = age.label === 'New' ? section.id === 'needsReview' : true;
+                    return (
+                      <div
+                        className={`planning-release-card ${selectedId === item.id ? 'is-selected' : ''} ${selectable ? 'is-selectable' : ''}`}
+                        key={item.id}
+                      >
+                        <button
+                          type="button"
+                          className={`planning-release-card-open ${!(displayDeliverables.length || showAge) ? 'has-no-meta' : ''}`}
+                          onClick={() => {
+                            if (disabled) return;
+                            if (selectable) {
+                              onToggleReleaseSelection?.(item.id);
+                              return;
+                            }
+                            onSelect?.(item.id);
+                          }}
+                          disabled={disabled}
+                          aria-pressed={selectable ? checked : undefined}
+                        >
+                          <span className="planning-release-thumb">
+                            <RecordThumbnail record={item.record} count={1} />
+                          </span>
+                          <span className="planning-release-main">
+                            <strong>{item.title || 'Received Merchandise'}</strong>
+                            <span>{releaseCardIdentifierLine(item, identifier, section.id)}</span>
+                          </span>
+                          {(displayDeliverables.length || showAge) && (
+                            <span className="planning-release-meta">
+                              <DeliverableBadges values={displayDeliverables} />
+                              {showAge && <span className={`planning-release-age is-${age.tone}`}>{age.label}</span>}
+                            </span>
+                          )}
+                        </button>
+                        {selectable && (
+                          <button
+                            type="button"
+                            className="planning-release-details-button"
+                            aria-label={`Edit ${item.title || 'received merchandise'}`}
+                            title="Edit"
+                            onClick={() => !disabled && onSelect?.(item.id)}
+                            disabled={disabled}
+                          >
+                            <Pencil size={13} strokeWidth={2.3} aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )) : (
+                <div className="planning-release-empty">No cards here.</div>
+              )}
+            </div>
           </section>
         );
       })}
@@ -7899,14 +9082,12 @@ function PlanningWorkspaceSection({ section, item, photos, activePhotoUrl, photo
           <div className="planning-fact-grid">
             {item.subjectType === 'workstream-card' && <PlanningFact label="Work Type" value={item.workstreamType || record.workstreamType || 'Photo'} />}
             {item.subjectType === 'workstream-card' && <PlanningFact label="Assigned Qty" value={item.workstreamQuantity || record.workstreamQuantity || item.quantity} />}
-            {item.subjectType === 'workstream-card' && <PlanningFact label="Workstream Status" value={item.workstreamStatus || record.workstreamStatus || 'New'} />}
             {item.subjectType === 'workstream-card' && <PlanningFact label="Product Data" value={item.photoProduction?.productData?.ready ? 'Ready' : item.photoProduction?.productData?.missing?.join(', ') || 'Not configured'} />}
             {item.subjectType === 'workstream-card' && <PlanningFact label="Filename" value={item.photoProduction?.fileNaming?.ready ? item.photoProduction.fileNaming.template || 'Ready' : item.photoProduction?.fileNaming?.missing?.join(', ') || 'Not configured'} />}
             {item.subjectType === 'workstream-card' && item.photoProduction?.creativeForce?.checks?.length > 0 && <PlanningFact label="Creative Force" value={item.photoProduction.creativeForce.ready ? `Product Code + ${item.photoProduction.creativeForce.categoryField === 'clientName' ? 'Client Name' : 'Category'}` : item.photoProduction.creativeForce.missing?.join(', ') || 'Not configured'} />}
             <PlanningFact label={DOMAIN_TERMS.packageName} value={record.productName} />
             <PlanningFact label="Client" value={item.client} />
             <PlanningFact label="Queue" value={item.planningCard.currentQueueName} />
-            <PlanningFact label="Status" value={record.merchStatus || record.reviewState} />
             <PlanningFact label="Time Here" value={item.timeHere} />
             <PlanningFact label="Storage" value={item.location} />
           </div>
@@ -8489,10 +9670,10 @@ function DeliverablesSelector({ values = [], onChange, disabled = false, options
             checked={selected}
             onChange={() => toggle(option)}
             disabled={disabled}
-            data-testid={`deliverable-${DELIVERABLE_ROUTE_MAP[option] || option.toLowerCase().replaceAll(' ', '-')}`}
-          />
+              data-testid={`deliverable-${DELIVERABLE_ROUTE_MAP[option] || option.toLowerCase().replaceAll(' ', '-')}`}
+            />
               <span className="intake-deliverable-check" aria-hidden="true" />
-              {option}
+              <span className="intake-deliverable-label">{option}</span>
             </label>
           );
         })}
@@ -8844,7 +10025,6 @@ function ConversationPanel({ comments = [], onAddComment, saving, error }) {
         <CommentCountChip count={comments.length} className="is-support" />
       </header>
       <div className="conversation-list" ref={listRef}>
-        {comments.length === 0 && <p className="conversation-empty">No comments yet.</p>}
         {comments.map(comment => (
           <article className="conversation-comment" key={comment.id}>
                 <span className="conversation-avatar" aria-hidden="true">{commentAuthorInitials(comment)}</span>
@@ -8867,12 +10047,13 @@ function ConversationPanel({ comments = [], onAddComment, saving, error }) {
 }
 
 function HistoryPanel({ events = [] }) {
+  const visibleEvents = events.filter(event => String(event.action || event.body || '').trim().toLowerCase() !== 'added a comment.');
   return (
     <section className="review-step is-open activity-panel">
       <header className="review-step-head"><span className="review-step-num review-step-num-plain">·</span><h3>History</h3></header>
       <div className="activity-list">
-        {events.length === 0 && <p className="conversation-empty">No history yet.</p>}
-        {events.map(event => (
+        {visibleEvents.length === 0 && <p className="conversation-empty">No history yet.</p>}
+        {visibleEvents.map(event => (
           <div className="activity-event" key={event.id}>
             <span>{event.actor || 'System'}</span>
             <strong>{event.action || event.body}</strong>
@@ -9020,7 +10201,7 @@ function ImageLightbox({ photos, index, setIndex, onClose }) {
   );
 }
 
-function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyForPhoto, onRemove, workstreamPhotoCardCount = 1, workstreamTypes = [], onClose, previousItem, nextItem, onSelectItem, onRefresh, photos, photoIndex, setPhotoIndex, comments, commentSaving, commentError, activity, onAddComment, onMarkCommentsRead }) {
+function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyForPhoto, onAddDeliverable, onRemove, workstreamPhotoCardCount = 1, workstreamTypes = [], onClose, previousItem, nextItem, onSelectItem, onRefresh, photos, photoIndex, setPhotoIndex, comments, commentSaving, commentError, activity, onAddComment, onMarkCommentsRead }) {
   const isWorkstreamCard = item.subjectType === 'workstream-card';
   const isNewQueue = item.columnId === QUEUE_IDS.newReview;
   const [zoom, setZoom] = useState(1);
@@ -9031,11 +10212,18 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   }));
   const [intakeFeedback, setIntakeFeedback] = useState('');
   const [finishState, setFinishState] = useState({ status: 'idle', message: '' });
+  const [deliverableState, setDeliverableState] = useState({ status: 'idle', message: '' });
   const [photoDraftValues, setPhotoDraftValues] = useState({});
+  const [issueDraftOpen, setIssueDraftOpen] = useState(false);
+  const [issueType, setIssueType] = useState('Wrong Merch');
+  const [issueDescription, setIssueDescription] = useState('');
+  const [issueNotes, setIssueNotes] = useState('');
+  const [issueState, setIssueState] = useState({ status: 'idle', message: '' });
   const product = item.record?.linkedItem || {};
   const committedDeliverables = deliverablesForRecord(item.record);
   const productRequestTypeSuggestion = suggestedDeliverablesForRecord(item.record);
   const showProductRequestTypeSuggestion = Boolean(product.requestType && productRequestTypeSuggestion.length && !committedDeliverables.length);
+  const initialDeliverablesKey = initialReviewDeliverables(item.record).join('|');
   const activePhoto = photos[photoIndex] || photos[0];
   const activePhotoUrl = receivingPhotoUrl(activePhoto);
   const wizardState = wizardStateForItem(item, intakeDraft.deliverables);
@@ -9067,9 +10255,6 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
           })
           .filter(([, status]) => status)
       );
-  const currentWorkstreamStatus = selectedPhotoProduction?.[currentWorkstreamType]
-    || selectedPhotoProduction?.[normalizeDeliverableValue(currentWorkstreamType)]
-    || null;
   const photoProductionChecksForSelection = photoProductionChecks(selectedPhotoProduction, item).map(check => (
     {
       ...check,
@@ -9077,7 +10262,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
         check.key,
         Object.prototype.hasOwnProperty.call(photoDraftValues, check.key)
           ? photoDraftValues[check.key]
-          : photoProductionProductValue(product, check.key),
+          : photoProductionProductValue(productDataSourceForPlanningItem(item), check.key),
       ),
     }
   ));
@@ -9086,7 +10271,6 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   const packagingAllocation = assignmentPreview.workstreams.find(workstream => workstream.type === 'Packaging')?.quantity || 0;
   const thr3dAllocation = assignmentPreview.thr3d?.quantity || defaultThr3dAllocation(totalQuantity);
   const allocatedQuantity = splitDeliverablesSelected ? packagingAllocation + thr3dAllocation : totalQuantity;
-  const reviewOnlyCommit = wizardState.productLinked && wizardState.deliverables.length === 0;
   const selectedWorkstreamType = intakeDraft.deliverables.find(type => type === 'Packaging' || type === 'Ecomm') || '';
   const selectedPhotoTypes = intakeDraft.deliverables.filter(type => type === 'Packaging' || type === 'Ecomm');
   const alternateWorkstreamType = currentWorkstreamType === 'Packaging' ? 'Ecomm' : 'Packaging';
@@ -9100,24 +10284,53 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     : '';
   const workstreamActionType = workstreamAction ? (workstreamAction === 'add' ? alternateWorkstreamType : selectedWorkstreamType) : '';
   const workstreamTypeChanged = workstreamAction === 'switch';
+  const existingPhotoTypes = workstreamTypes.filter(type => type === 'Packaging' || type === 'Ecomm');
+  const addFromType = currentWorkstreamType || (existingPhotoTypes.length === 1 ? existingPhotoTypes[0] : '');
+  const missingPhotoDeliverable = addFromType
+    ? (addFromType === 'Packaging' ? 'Ecomm' : 'Packaging')
+    : '';
+  const canAddDeliverable = Boolean(
+    missingPhotoDeliverable
+      && existingPhotoTypes.length === 1
+      && !existingPhotoTypes.includes(missingPhotoDeliverable)
+      && (!isWorkstreamCard || workstreamPhotoCardCount < 2)
+  );
   const canReadyForPhoto = Boolean(
-    wizardState.productLinked
-      && wizardState.deliverables.some(type => type === 'Packaging' || type === 'Ecomm')
+    wizardState.deliverables.some(type => type === 'Packaging' || type === 'Ecomm')
       && photoProductionReady
       && !splitNeedsMultipleUnits
   );
+  const stepFlagged = item.record?.reviewState === 'Issue' || item.record?.merchStatus === 'Issue' || Boolean(item.record?.blockingIssues?.length);
   const finishBlocked = isWorkstreamCard
-    ? !canReadyForPhoto
-    : !wizardState.productLinked || splitNeedsMultipleUnits;
+    ? stepFlagged || !canReadyForPhoto
+    : stepFlagged || splitNeedsMultipleUnits;
+
+  useEffect(() => {
+    if (committedDeliverables.length) return;
+    const suggested = initialReviewDeliverables(item.record);
+    if (!suggested.length) return;
+    setIntakeDraft(current => (
+      normalizeDeliverableList(current.deliverables).length
+        ? current
+        : { ...current, deliverables: suggested }
+    ));
+  }, [item.id, initialDeliverablesKey, committedDeliverables.length]);
   const finishDisabled = finishBusy || finishBlocked;
-  const finishLabel = isWorkstreamCard
-    ? 'Ready for Photo'
-    : reviewOnlyCommit || finishBlocked ? 'Mark Merch Reviewed' : assignmentPrimaryActionLabel(assignmentPreview);
+  const finishLabel = isWorkstreamCard ? 'Save Details' : 'Confirm Merch';
+  const issueBusy = issueState.status === 'loading';
+  const footerOutcomePreview = planningActionOutcomePreview({
+    isWorkstreamCard,
+    stepFlagged,
+    splitNeedsMultipleUnits,
+    wizardState,
+    photoProductionMissingCount,
+    photoProductionReady,
+  });
   const workstreamFooterMessage = isWorkstreamCard
     ? workstreamPhotoCardCount >= 2
       ? <><span>This merchandise already has Ecomm and Packaging workstreams.</span><br /><span>You cannot add or change one here; remove this card only to end this workstream.</span></>
-      : <><span>Adding the other deliverable creates a second workstream.</span><br /><span>Removing the current deliverable switches this card in place.</span><br /><span>When Product data is complete, choose Ready for Photo to send this item or group it with other ready items.</span></>
-    : <><span>Selecting Ecomm and Packaging creates two workstreams.</span><br /><span>Thr3d does not create a workstream; it creates a shipping record.</span><br /><span>Selecting one creates one workstream; the assignment can be changed later.</span></>;
+      : <span>{footerOutcomePreview}</span>
+    : <span>{footerOutcomePreview}</span>;
 
   useEffect(() => {
     setPhotoDraftValues({});
@@ -9151,6 +10364,11 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     });
     setIntakeFeedback('');
     setFinishState({ status: 'idle', message: '' });
+    setIssueDraftOpen(false);
+    setIssueType('Wrong Merch');
+    setIssueDescription('');
+    setIssueNotes('');
+    setIssueState({ status: 'idle', message: '' });
     onMarkCommentsRead?.(item.merchandiseId);
   }, [item.id, product.id, product.requestType]);
 
@@ -9176,14 +10394,14 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   async function finishCurrentVerification() {
     if (finishBusy) return;
     if (isWorkstreamCard) {
-      setFinishState({ status: 'loading', message: 'Opening photo release...' });
+      setFinishState({ status: 'loading', message: 'Saving details...' });
       try {
         const result = await onReadyForPhoto?.(item);
         if (result?.ok === false) {
           setFinishState({ status: 'error', message: result.message || 'Could not move this card.' });
           return;
         }
-        setFinishState({ status: 'success', message: result?.message || 'Photo release opened.' });
+        setFinishState({ status: 'success', message: result?.message || 'Details saved.' });
       } catch (error) {
         setFinishState({ status: 'error', message: error.message || 'Could not move this card.' });
       }
@@ -9197,22 +10415,43 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
       setFinishState({ status: 'idle', message: 'Thr3d shipment cancelled.' });
       return;
     }
-    setFinishState({ status: 'loading', message: latestState.reviewOnly ? 'Marking merchandise reviewed...' : 'Creating work...' });
+    setFinishState({ status: 'loading', message: 'Confirming merch...' });
     try {
       const result = await onFinish?.(item, latestState);
       if (result?.ok === false) {
         setFinishState({ status: 'error', message: result.message || 'Could not assign work. Try again.' });
         return;
       }
-      setFinishState({ status: 'success', message: result?.message || (latestState.reviewOnly ? 'Merchandise reviewed.' : 'Work created.') });
+      setFinishState({ status: 'success', message: result?.message || 'Merch confirmed.' });
     } catch (error) {
       setFinishState({ status: 'error', message: error.message || 'Could not assign work. Try again.' });
     }
   }
 
-  const stepFlagged = item.record?.reviewState === 'Issue' || item.record?.merchStatus === 'Issue' || Boolean(item.record?.blockingIssues?.length);
+  async function raiseIssue() {
+    if (issueBusy) return;
+    if (!issueDescription.trim()) {
+      setIssueState({ status: 'error', message: 'Add a short issue description before raising it.' });
+      setIssueDraftOpen(true);
+      return;
+    }
+    setIssueState({ status: 'loading', message: 'Raising issue...' });
+    try {
+      await api.createMerchandiseReviewIssue(item.merchandiseId || item.id, {
+        type: issueType,
+        description: issueDescription.trim(),
+        notes: issueNotes,
+      });
+      setIssueState({ status: 'success', message: 'Issue raised. This item stays out of release until resolved.' });
+      await onRefresh?.();
+    } catch (error) {
+      setIssueState({ status: 'error', message: error.message || 'Could not raise issue.' });
+    }
+  }
+
   const identifyDone = wizardState.productLinked;
   const deliverablesDone = wizardState.deliverables.length > 0;
+  const receivedDateLabel = formatInventoryDate(item.record?.dateReceived || item.record?.received);
 
   return (
     <div className="new-review-modal-backdrop" role="presentation" onClick={() => onClose(item)}>
@@ -9264,14 +10503,17 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
           <aside className="new-review-decision-pane" aria-label="Planning decision">
             <ReviewStep
               n={1}
-              title="Match Product"
+              title="Merch Check"
               done={identifyDone}
               flagged={stepFlagged}
-              statusText={stepFlagged ? '⚑ Flagged' : wizardState.productLinked ? 'Matched' : 'Not matched'}
+              statusText={stepFlagged ? '⚑ Issue' : wizardState.productLinked ? '' : 'Needs check'}
               statusTone={stepFlagged ? 'flag' : wizardState.productLinked ? 'ok' : 'wait'}
-              summary={product.product || product.name || product.identifier || '—'}
+              summary={stepFlagged ? 'Issue keeps this item out of release.' : product.product || product.name || product.identifier || 'Confirm the received item can continue.'}
               collapseWhenDone={false}
             >
+              <p className="new-review-step-intro">
+                Confirm the physical item is acceptable to continue. Match the expected Product when it exists, or keep it unmatched and complete the needed information later.
+              </p>
               <NewReviewProductIdentification item={item} product={product} onRefresh={onRefresh} />
             </ReviewStep>
 
@@ -9279,7 +10521,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
               n={2}
               title="Deliverables"
               done={deliverablesDone}
-              statusText={deliverablesDone ? `✓ ${wizardState.deliverables.length} chosen` : 'Choose at least one'}
+              statusText={deliverablesDone ? '' : 'Choose at least one'}
               statusTone={deliverablesDone ? 'ok' : 'wait'}
               summary={wizardState.deliverables.join(', ') || '—'}
               collapseWhenDone={false}
@@ -9343,7 +10585,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                 n={3}
                 title="Product data for photo"
                 done={photoProductionReady}
-                statusText={photoProductionReady ? '✓ Complete' : `${photoProductionMissingCount} missing`}
+                statusText={photoProductionReady ? '' : `${photoProductionMissingCount} missing`}
                 statusTone={photoProductionReady ? 'ok' : 'wait'}
                 summary={photoProductionReady ? 'All required Product data is present.' : `${photoProductionMissingCount} Product field${photoProductionMissingCount === 1 ? '' : 's'} still needed.`}
                 collapseWhenDone={false}
@@ -9369,24 +10611,65 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
 
         <footer className="new-review-modal-footer">
           <div className="new-review-footer-left">
-            {!isWorkstreamCard && isNewQueue && (
-              <>
-                <button type="button" className="btn" onClick={() => previousItem && onSelectItem(previousItem.id)} disabled={!previousItem}>
-                  <span aria-hidden="true">←</span>
-                  Previous Merchandise
-                </button>
-                <button type="button" className="btn" onClick={() => nextItem && onSelectItem(nextItem.id)} disabled={!nextItem}>
-                  Next Merchandise
-                  <span aria-hidden="true">→</span>
-                </button>
-              </>
+            <span className="new-review-received-date">Received {receivedDateLabel}</span>
+            {!isWorkstreamCard && (
+              <button
+                type="button"
+                className="btn btn-danger-outline"
+                onClick={() => setIssueDraftOpen(open => !open)}
+                disabled={finishBusy || issueBusy}
+              >
+                Raise Issue
+              </button>
             )}
             {isWorkstreamCard && onRemove && (
               <button type="button" className="btn btn-danger-outline" onClick={() => onRemove(item)} disabled={finishBusy}>
                 Remove workstream
               </button>
             )}
+            {canAddDeliverable && onAddDeliverable && (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={async () => {
+                  setDeliverableState({ status: 'loading', message: '' });
+                  const result = await onAddDeliverable(item, missingPhotoDeliverable);
+                  setDeliverableState(result?.ok
+                    ? { status: 'success', message: `${missingPhotoDeliverable} deliverable added.` }
+                    : { status: 'error', message: result?.message || 'Could not add deliverable.' });
+                }}
+                disabled={finishBusy || deliverableState.status === 'loading' || deliverableState.status === 'success'}
+                title={`Add ${missingPhotoDeliverable} without changing this card`}
+              >
+                {deliverableState.status === 'loading' ? 'Adding...' : deliverableState.status === 'success' ? 'Added' : 'Add Deliverable'}
+              </button>
+            )}
           </div>
+          {!isWorkstreamCard && issueDraftOpen && (
+            <div className="new-review-issue-draft">
+              <label>
+                <span>Issue type</span>
+                <select value={issueType} onChange={event => setIssueType(event.target.value)} disabled={issueBusy}>
+                  <option value="Wrong Merch">Wrong Merch</option>
+                  <option value="Damaged">Damaged</option>
+                  <option value="Unknown Item">Unidentified Merchandise</option>
+                  <option value="Missing Merch">Missing Merch</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+              <label>
+                <span>Description</span>
+                <input value={issueDescription} onChange={event => setIssueDescription(event.target.value)} placeholder="Short issue summary" disabled={issueBusy} />
+              </label>
+              <label className="is-wide">
+                <span>Notes</span>
+                <input value={issueNotes} onChange={event => setIssueNotes(event.target.value)} placeholder="Optional context" disabled={issueBusy} />
+              </label>
+              <button type="button" className="btn btn-danger-outline btn-sm" onClick={raiseIssue} disabled={issueBusy || !issueDescription.trim()}>
+                {issueBusy ? 'Raising...' : 'Save Issue'}
+              </button>
+            </div>
+          )}
           <div className="new-review-footer-actions">
             {finishState.message && (
               <div className="new-review-finish-summary">
@@ -9395,11 +10678,21 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
             )}
             {finishLabel && (
               <button type="button" className="btn btn-primary" onClick={finishCurrentVerification} disabled={finishDisabled}>
-                {finishBusy ? (isWorkstreamCard ? 'Opening...' : 'Creating...') : finishLabel}
+                {finishBusy ? (isWorkstreamCard ? 'Saving...' : 'Confirming...') : finishLabel}
               </button>
             )}
           </div>
           <p className="new-review-footer-guidance">{workstreamFooterMessage}</p>
+          {issueState.message && (
+            <p className={`new-review-footer-feedback is-${issueState.status}`} role={issueState.status === 'error' ? 'alert' : 'status'}>
+              {issueState.message}
+            </p>
+          )}
+          {deliverableState.message && (
+            <p className={`new-review-footer-feedback is-${deliverableState.status}`} role={deliverableState.status === 'error' ? 'alert' : 'status'}>
+              {deliverableState.message}
+            </p>
+          )}
         </footer>
       </section>
       {lightboxOpen && activePhotoUrl && (
@@ -9409,9 +10702,14 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   );
 }
 
-function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [], initialClientId = '', initialMerchandiseId = '', initialActivation = null, onClose, onSaved }) {
+function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [], initialClientId = '', initialMerchandiseId = '', initialMerchandiseIds = [], initialDeliverableType = '', initialActivation = null, onClose, onSaved }) {
   const topcoClient = clients.find(client => (client.name || '').trim().toLowerCase() === 'topco');
   const defaultClientId = initialClientId || topcoClient?.id || clients[0]?.id || '';
+  const scopedDeliverableType = ['Packaging', 'Ecomm'].includes(initialDeliverableType) ? initialDeliverableType : '';
+  const initialMerchandiseIdList = [
+    ...(Array.isArray(initialMerchandiseIds) ? initialMerchandiseIds : []),
+    initialMerchandiseId,
+  ].filter(Boolean).filter((id, index, list) => list.indexOf(id) === index);
   const emptyItem = () => ({
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     merchandiseId: '',
@@ -9419,6 +10717,11 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
     upc: '',
     cvid: '',
     structure: '',
+    brandPrefix: '',
+    jobNumber: '',
+    fileNameDescription: '',
+    artworkPath: '',
+    uploadLocation: '',
   });
   const formFromActivation = activation => {
     const skuRows = Array.isArray(activation?.skuDetails)
@@ -9429,18 +10732,30 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
           upc: String(row?.upc || ''),
           cvid: String(row?.cvid || ''),
           structure: String(row?.structure || ''),
+          brandPrefix: String(row?.brandPrefix || ''),
+          jobNumber: String(row?.jobNumber || ''),
+          fileNameDescription: String(row?.fileNameDescription || ''),
+          artworkPath: String(row?.artworkPath || activation?.artworkPath || ''),
+          uploadLocation: String(row?.uploadLocation || activation?.uploadLocation || ''),
         }))
       : [];
+    const initialRows = skuRows.length
+      ? skuRows
+      : (initialMerchandiseIdList.length ? initialMerchandiseIdList : ['']).map(merchandiseId => ({ ...emptyItem(), merchandiseId }));
     return {
       clientId: activation?.clientIds?.[0] || defaultClientId,
       name: activation?.name || '',
       dueUrgency: activation?.dueUrgency || '',
-      deliverables: normalizeDeliverableList(activation?.deliverables || ['Ecomm']).filter(value => ACTIVATION_DELIVERABLE_OPTIONS.includes(value)),
-      walnutScope: activation?.walnutScope || DEFAULT_WALNUT_SCOPE_SUGGESTIONS[0],
+      imagesPerBundle: activation ? (activation.imagesPerBundle ?? '') : 9,
+      totalImages: activation ? (activation.totalImages ?? '') : 9 * initialRows.length,
+      deliverables: scopedDeliverableType
+        ? [scopedDeliverableType]
+        : normalizeDeliverableList(activation?.deliverables || ['Ecomm']).filter(value => ACTIVATION_DELIVERABLE_OPTIONS.includes(value)),
+      walnutScope: activation?.walnutScope || '',
       artworkPath: activation?.artworkPath || '',
       uploadLocation: activation?.uploadLocation || '',
       notes: activation?.notes || '',
-      skuRows: skuRows.length ? skuRows : [{ ...emptyItem(), merchandiseId: initialMerchandiseId }],
+      skuRows: initialRows,
     };
   };
   const [form, setForm] = useState(() => formFromActivation(initialActivation));
@@ -9461,20 +10776,17 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
     setForm(formFromActivation(initialActivation));
     setEditingActivationId(initialActivation?.id || '');
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialActivation?.id, defaultClientId, initialMerchandiseId]);
+  }, [initialActivation?.id, defaultClientId, initialMerchandiseIdList.join('|'), scopedDeliverableType]);
 
   const selectedClient = clients.find(client => client.id === form.clientId) || topcoClient;
+  const selectedClientName = selectedClient?.name || 'Client';
   const pathPrefixes = selectedClient?.readinessProfile?.pathPrefixes || {};
-  const walnutScopeSuggestions = activationFieldSuggestions(
-    activationHistory.data?.records,
-    'walnutScope',
-    DEFAULT_WALNUT_SCOPE_SUGGESTIONS
-  );
+  const walnutScopeSuggestions = DEFAULT_WALNUT_SCOPE_SUGGESTIONS;
   const dueUrgencySuggestions = activationFieldSuggestions(
     activationHistory.data?.records,
     'dueUrgency',
     DEFAULT_DUE_URGENCY_SUGGESTIONS
-  );
+  ).filter(value => value.trim().toLowerCase() !== 'today');
   const structureSuggestions = activationSkuFieldSuggestions(
     activationHistory.data?.records,
     'structure',
@@ -9500,8 +10812,14 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
           description: row.description || selected.description || selected.productName || selected.title || '',
           upc: row.upc || selected.upc || selected.identifier || '',
           cvid: row.cvid || selected.cvid || '',
+          brandPrefix: row.brandPrefix || selected.brandPrefix || '',
+          jobNumber: row.jobNumber || selected.jobNumber || '',
+          fileNameDescription: row.fileNameDescription || selected.fileNameDescription || '',
+          artworkPath: fieldIsConfigured('pathToArt')
+            ? row.artworkPath || selected.artworkPath || ''
+            : row.artworkPath,
         };
-        if (next.description !== row.description || next.upc !== row.upc || next.cvid !== row.cvid) changed = true;
+        if (Object.keys(next).some(key => next[key] !== row[key])) changed = true;
         return next;
       });
       return changed ? { ...current, skuRows } : current;
@@ -9516,8 +10834,9 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
     setForm(current => ({
       ...savedForm,
       clientId: current.clientId,
-      skuRows: initialMerchandiseId
-        ? [{ ...emptyItem(), merchandiseId: initialMerchandiseId }]
+      deliverables: scopedDeliverableType ? [scopedDeliverableType] : savedForm.deliverables,
+      skuRows: initialMerchandiseIdList.length
+        ? initialMerchandiseIdList.map(merchandiseId => ({ ...emptyItem(), merchandiseId }))
         : savedForm.skuRows,
     }));
   }
@@ -9540,7 +10859,14 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
         : row),
     }));
   };
-  const addItem = () => setForm(current => ({ ...current, skuRows: [...current.skuRows, emptyItem()] }));
+  const addItem = () => setForm(current => {
+    const nextRows = [...current.skuRows, emptyItem()];
+    const defaultTotal = Number(current.imagesPerBundle || 9) * current.skuRows.length;
+    const totalImages = String(current.totalImages) === String(defaultTotal)
+      ? Number(current.imagesPerBundle || 9) * nextRows.length
+      : current.totalImages;
+    return { ...current, skuRows: nextRows, totalImages };
+  });
   const removeItem = rowId => setForm(current => ({
     ...current,
     skuRows: current.skuRows.filter(row => row.id !== rowId),
@@ -9548,22 +10874,91 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
   const itemRows = form.skuRows;
   const itemCount = itemRows.length;
   const selectedMerchandiseIds = new Set(itemRows.map(row => row.merchandiseId).filter(Boolean));
+  const selectedDeliverables = normalizeDeliverableList(form.deliverables)
+    .filter(value => ACTIVATION_DELIVERABLE_OPTIONS.includes(value));
+  const selectedRequirementConfigs = selectedDeliverables.map(type => ({
+    type,
+    config: selectedClient?.photoProductionRequirements?.workstreams?.[type] || null,
+  }));
+  const normalizeRequirementKey = value => {
+    const key = String(value || '').trim().toLowerCase().replace(/[\s_/-]+/g, '');
+    return {
+      productname: 'productName',
+      description: 'productName',
+      upc: 'upc',
+      productid: 'upc',
+      cvid: 'cvid',
+      jobnumber: 'jobNumber',
+      brandprefix: 'brandPrefix',
+      filenamedescription: 'fileNameDescription',
+      productdescription: 'productDescription',
+      producttype: 'productType',
+      ecommphotonotes: 'ecommPhotoNotes',
+      pathtoart: 'pathToArt',
+      validartworkpath: 'pathToArt',
+      artworkpath: 'pathToArt',
+      uploadlocation: 'uploadLocation',
+      structure: 'structure',
+    }[key] || value;
+  };
+  const configuredRequiredFields = new Set(
+    selectedRequirementConfigs.flatMap(({ config }) => (
+      Array.isArray(config?.requiredProductFields)
+        ? config.requiredProductFields.map(normalizeRequirementKey)
+        : []
+    )),
+  );
+  const fieldIsConfigured = field => configuredRequiredFields.has(normalizeRequirementKey(field));
+  const fieldShouldShow = field => fieldIsConfigured(field);
+  const showStructure = selectedDeliverables.includes('Ecomm') || fieldIsConfigured('structure');
+  const showArtworkPath = selectedDeliverables.length > 0;
+  const showUploadLocation = selectedDeliverables.length > 0;
+  const previewColumnDefinitions = [
+    { key: 'productName', label: 'Description', getValue: row => row.description },
+    { key: 'structure', label: 'Structure', getValue: row => row.structure },
+    { key: 'upc', label: 'UPC', getValue: row => row.upc },
+    { key: 'cvid', label: 'CVID', getValue: row => row.cvid },
+    { key: 'brandPrefix', label: 'Brand Prefix', getValue: row => row.brandPrefix },
+    { key: 'jobNumber', label: 'WKFT Job Number', getValue: row => row.jobNumber },
+    { key: 'fileNameDescription', label: 'File Name Description', getValue: row => row.fileNameDescription },
+  ];
+  const previewColumns = previewColumnDefinitions.filter(column => (
+    column.key === 'structure' ? showStructure : fieldShouldShow(column.key)
+  ));
+  const previewLabel = selectedDeliverables.length === 1
+    ? selectedDeliverables[0]
+    : selectedDeliverables.join(' + ') || 'Photo';
+  const previewHeading = selectedDeliverables.length === 1
+    ? `${previewLabel} photography is needed for the following projects:`
+    : 'Photo deliverables are needed for the following projects:';
   const fieldStatus = value => String(value || '').trim() ? 'is-present' : 'is-missing';
   const fieldText = (value, fallback) => String(value || '').trim() || fallback;
   const activationRequiredFields = [
     ['Name', form.name],
     ['Walnut Scope', form.walnutScope],
-    ['Upload Location', form.uploadLocation],
   ];
   const activationMissing = activationRequiredFields.filter(([, value]) => !String(value || '').trim()).map(([label]) => label);
   const itemRequiredFields = row => [
     ['Linked Merchandise', row.merchandiseId],
-    ['Description', row.description],
-    ['UPC', row.upc],
-    ['CVID', row.cvid],
+    ...(fieldIsConfigured('productName') ? [['Description', row.description]] : []),
+    ...(fieldIsConfigured('upc') ? [['UPC', row.upc]] : []),
+    ...(fieldIsConfigured('cvid') ? [['CVID', row.cvid]] : []),
+    ...(fieldIsConfigured('pathToArt') ? [['Artwork Path', row.artworkPath]] : []),
+    ...(showUploadLocation ? [['Upload Location', row.uploadLocation]] : []),
+    ...(fieldIsConfigured('brandPrefix') ? [['Brand Prefix', row.brandPrefix]] : []),
+    ...(fieldIsConfigured('jobNumber') ? [['WKFT Job Number', row.jobNumber]] : []),
+    ...(fieldIsConfigured('fileNameDescription') ? [['File Name Description', row.fileNameDescription]] : []),
   ];
   const itemMissingFields = row => itemRequiredFields(row).filter(([, value]) => !String(value || '').trim()).map(([label]) => label);
-  const modalTitle = initialActivation?.id ? 'Edit Photo Release' : 'Ready for Photo';
+  const itemSummaryFields = row => [
+    ...(fieldIsConfigured('productName') ? [['Description', row.description]] : []),
+    ...(fieldIsConfigured('upc') ? [['UPC', row.upc]] : []),
+    ...(fieldIsConfigured('cvid') ? [['CVID', row.cvid]] : []),
+    ...(fieldIsConfigured('brandPrefix') ? [['Brand Prefix', row.brandPrefix]] : []),
+    ...(fieldIsConfigured('jobNumber') ? [['WKFT Job Number', row.jobNumber]] : []),
+    ...(fieldIsConfigured('fileNameDescription') ? [['File Name Description', row.fileNameDescription]] : []),
+  ];
+  const modalTitle = initialActivation?.id ? 'Edit Photo Release' : 'Photo Release';
   const PreviewValue = ({ value, fallback, children }) => {
     const present = String(value || '').trim();
     return <span className={`activation-preview-token ${present ? 'is-present' : 'is-missing'}`}>{children || present || fallback}</span>;
@@ -9596,10 +10991,12 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
       name: form.name.trim() || 'Topco Photo Release',
       status,
       dueUrgency: form.dueUrgency,
+      imagesPerBundle: form.imagesPerBundle === '' ? null : Number(form.imagesPerBundle),
+      totalImages: form.totalImages === '' ? null : Number(form.totalImages),
       deliverables: form.deliverables,
       walnutScope: form.walnutScope,
-      artworkPath: form.artworkPath,
-      uploadLocation: form.uploadLocation,
+      artworkPath: form.skuRows[0]?.artworkPath || form.artworkPath,
+      uploadLocation: form.skuRows[0]?.uploadLocation || form.uploadLocation,
       notes: form.notes,
       activationPackage: form.notes,
       skuDetails,
@@ -9648,77 +11045,48 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
         <header className="activation-modal-header">
           <div>
             <span className="nr-eyebrow">Topco</span>
-            <h2>{modalTitle}</h2>
+            <div className="activation-modal-title-row">
+              <h2>{modalTitle}:</h2>
+              <DeliverableBadges values={selectedDeliverables} />
+            </div>
           </div>
           <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close photo release">
             <Icon.Close />
           </button>
         </header>
-        <form className="activation-modal-body activation-simple-form" onSubmit={event => { event.preventDefault(); saveActivationPackage('draft'); }}>
+        <form className="activation-modal-body activation-simple-form" onSubmit={event => event.preventDefault()}>
           <div className="activation-builder-layout">
             <div className="activation-builder-inputs">
               <section className="activation-simple-section">
                 <div className="activation-section-heading">
-                  <div>
-                    <span className="client-readiness-label">Photo release</span>
-                    <p>One request package. These fields apply to every item below.</p>
-                  </div>
-                  <span className={`activation-completion-pill ${activationMissing.length ? 'is-missing' : 'is-complete'}`}>
-                    {activationMissing.length ? `${activationMissing.length} missing` : 'Complete'}
-                  </span>
+                  {!activationMissing.length && (
+                    <span className="activation-completion-check" role="img" aria-label="Complete">✓</span>
+                  )}
                 </div>
-                {!initialActivation && (activationHistory.data?.records || []).length > 0 && (
-                  <label className="activation-saved-template-field">
-                    <span>Continue saved photo release</span>
-                    <select className="form-input" defaultValue="" onChange={event => useSavedActivation(event.target.value)}>
-                      <option value="">Choose a draft to continue...</option>
-                      {(activationHistory.data?.records || []).map(saved => (
-                        <option value={saved.id} key={saved.id}>
-                          {saved.name || 'Untitled photo release'}{normalizeDeliverableList(saved.deliverables).length ? ` · ${normalizeDeliverableList(saved.deliverables).join(' + ')}` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
                 <div className="activation-simple-grid">
-                  <label><span>Name</span><input className="form-input" value={form.name} onChange={event => updateForm('name', event.target.value)} placeholder="Fresh Melons" /></label>
+                  <label><ActivationFieldLabel required value={form.name}>Project name</ActivationFieldLabel><input className="form-input" value={form.name} onChange={event => updateForm('name', event.target.value)} /></label>
                   <SuggestiveTextInput
                     label="Due / Urgency"
                     value={form.dueUrgency}
                     onChange={value => updateForm('dueUrgency', value)}
-                    placeholder="Optional"
+                    placeholder=""
                     suggestions={dueUrgencySuggestions}
                   />
                   <SuggestiveTextInput
                     label="Walnut Scope"
                     value={form.walnutScope}
                     onChange={value => updateForm('walnutScope', value)}
-                    placeholder="Full Set Renders - WALNUT (Photo)"
+                    placeholder=""
                     suggestions={walnutScopeSuggestions}
+                    className="activation-walnut-scope-field"
+                    showDropdownButton
+                    required
                   />
-                  <div className="activation-deliverables-field">
-                    <span>Deliverables</span>
-                    <DeliverablesSelector
-                      values={form.deliverables}
-                      options={ACTIVATION_DELIVERABLE_OPTIONS}
-                      onChange={value => updateForm('deliverables', normalizeDeliverableList(value))}
-                    />
+                  <div className="activation-image-count-fields">
+                    <label><ActivationFieldLabel value={form.imagesPerBundle}>Images/Bundle</ActivationFieldLabel><input className="form-input" type="number" min="0" value={form.imagesPerBundle} onChange={event => updateForm('imagesPerBundle', event.target.value)} /></label>
+                    <label><ActivationFieldLabel value={form.totalImages}>Total Images</ActivationFieldLabel><input className="form-input" type="number" min="0" value={form.totalImages} onChange={event => updateForm('totalImages', event.target.value)} /></label>
                   </div>
-                  <label>
-                    <span className="activation-label-stack">
-                      Artwork Path
-                      <small>{pathPrefixes.artwork || 'Enter artwork path'}</small>
-                    </span>
-                    <input className="form-input" value={form.artworkPath} onChange={event => updateForm('artworkPath', event.target.value)} placeholder="Fresh_Melons/26003302..." />
-                  </label>
-                  <label>
-                    <span className="activation-label-stack">
-                      Upload Location
-                      <small>{pathPrefixes.upload || 'Enter upload location'}</small>
-                    </span>
-                    <input className="form-input" value={form.uploadLocation} onChange={event => updateForm('uploadLocation', event.target.value)} placeholder="Fresh_Melons/26003302.../3_IMAGES/3D" />
-                  </label>
-                  <label className="activation-simple-wide"><span>Notes</span><textarea className="form-input" value={form.notes} onChange={event => updateForm('notes', event.target.value)} placeholder="Anything the producer needs to know" /></label>
+                  <label className="activation-simple-wide"><span>Notes</span><textarea className="form-input" value={form.notes} onChange={event => updateForm('notes', event.target.value)} placeholder="Once completed, please send for review/approval. Thanks!" /></label>
                 </div>
               </section>
 
@@ -9728,7 +11096,7 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
                     <span className="client-readiness-label">Items</span>
                     <p>Each row is one received item/SKU that must be linked and complete.</p>
                   </div>
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={addItem}>Add ready item</button>
+                  <button type="button" className="btn btn-ghost btn-sm activation-add-item-button" onClick={addItem}>Add ready item</button>
                 </div>
                 <div className="activation-sku-rows">
                   {itemRows.length === 0 && (
@@ -9741,15 +11109,14 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
                       <div className="activation-sku-row-top">
                         <div>
                           <strong>Item {index + 1}</strong>
-                          <small>{itemMissingFields(row).length ? `Missing: ${itemMissingFields(row).join(', ')}` : 'Item complete'}</small>
                         </div>
-                        <span className={`activation-completion-pill ${itemMissingFields(row).length ? 'is-missing' : 'is-complete'}`}>
-                          {itemMissingFields(row).length ? `${itemMissingFields(row).length} missing` : 'Complete'}
-                        </span>
+                        {!itemMissingFields(row).length && (
+                          <span className="activation-completion-check" role="img" aria-label="Item complete">✓</span>
+                        )}
                         <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeItem(row.id)}>Remove</button>
                       </div>
                       <label className="activation-merchandise-match-field">
-                        <span>Link Merchandise</span>
+                        <ActivationFieldLabel required value={row.merchandiseId}>Link Merchandise</ActivationFieldLabel>
                         <select className="form-input" value={row.merchandiseId} onChange={event => linkMerchandise(row.id, event.target.value)}>
                           <option value="">Choose received merchandise...</option>
                           {topcoMerchandiseOptions
@@ -9757,19 +11124,30 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
                             .map(item => <option value={item.id} key={item.id}>{item.label}</option>)}
                         </select>
                       </label>
-                      <SuggestiveTextInput
+                      <div className="activation-validated-summary">
+                        <span className="client-readiness-label">Validated details</span>
+                        <div className="activation-validated-grid">
+                          {itemSummaryFields(row).map(([label, value]) => (
+                            <span className={`activation-validated-field ${String(value || '').trim() ? '' : 'is-missing'}`} key={label}>
+                              <small>{label}</small>
+                              <strong>{String(value || '').trim() || 'Missing'}</strong>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {showStructure && <SuggestiveTextInput
                         label="Structure"
                         value={row.structure}
                         onChange={value => updateItem(row.id, 'structure', value)}
-                        placeholder="Hang Tag / Label"
+                        placeholder=""
                         suggestions={structureSuggestions}
                         className="activation-structure-field"
-                      />
-                      <label className="activation-description-field"><span>Description</span><input className="form-input" value={row.description} onChange={event => updateItem(row.id, 'description', event.target.value)} placeholder="Cantaloupe 1 Ea" /></label>
-                      <label><span>UPC</span><input className="form-input" value={row.upc} onChange={event => updateItem(row.id, 'upc', event.target.value)} /></label>
-                      <label><span>CVID</span><input className="form-input" value={row.cvid} onChange={event => updateItem(row.id, 'cvid', event.target.value)} /></label>
+                      />}
+                      {showArtworkPath && <label className="activation-path-field"><ActivationFieldLabel required={fieldIsConfigured('pathToArt')} value={row.artworkPath} detail={pathPrefixes.artwork || 'Enter artwork path'}>Artwork Path</ActivationFieldLabel><input className={`form-input ${row.artworkPath ? 'is-autofilled' : ''}`} value={row.artworkPath} onChange={event => updateItem(row.id, 'artworkPath', event.target.value)} placeholder="" /></label>}
+                      {showUploadLocation && <label className="activation-path-field"><ActivationFieldLabel required value={row.uploadLocation} detail={pathPrefixes.upload || 'Enter upload location'}>Upload Location</ActivationFieldLabel><input className={`form-input ${row.uploadLocation ? 'is-autofilled' : ''}`} value={row.uploadLocation} onChange={event => updateItem(row.id, 'uploadLocation', event.target.value)} placeholder="" /></label>}
                     </div>
                   ))}
+                  <button type="button" className="btn btn-ghost btn-sm activation-add-item-button activation-add-item-bottom" onClick={addItem}>Add ready item</button>
                 </div>
               </section>
             </div>
@@ -9780,50 +11158,51 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
                 <span>Live</span>
               </div>
               <div className="activation-email-preview-body">
-                <p className="activation-email-subject"><strong>Subject:</strong> Topco eComm Photo Request - <PreviewValue value={form.name} fallback="Photo request" /></p>
-                <p><strong>eComm image bundles are needed for the following projects:</strong></p>
+                <p className="activation-email-subject"><strong>Subject:</strong> {selectedClientName} {previewLabel} Photo Request - <PreviewValue value={form.name} fallback="Photo request" /></p>
+                <p><strong>{previewHeading}</strong></p>
                 <ul>
                   {itemRows.map((row, index) => (
                     <li key={row.id}>
                       <PreviewValue value={row.description} fallback={`Item ${index + 1} description`} />
-                      {' '}<PreviewValue value={row.cvid} fallback="CVID" />{' - 1 SKU'}
+                      {selectedDeliverables.includes('Ecomm') && <> {' '}<PreviewValue value={row.cvid} fallback="CVID" /></>}{' - 1 SKU'}
                     </li>
                   ))}
                 </ul>
                 <div className="activation-preview-lines">
                   <strong>Number of SKUs:</strong> <span className="activation-preview-token is-present">{itemCount}</span>
                   <br />
-                  <strong>Samples received:</strong> <PreviewValue value={form.name} fallback="project/sample group" />
-                  <br />
                   <strong>Walnut scope:</strong> <PreviewValue value={form.walnutScope} fallback="Walnut scope" />
-                  <br />
-                  <strong>Due:</strong> <PreviewValue value={form.dueUrgency} fallback="Due / urgency" />
-                  <br />
-                  <strong>Path to artwork:</strong> <PreviewPath value={form.artworkPath} prefix={pathPrefixes.artwork} fallback="Artwork path" />
-                  <br />
-                  <strong>Location for image uploads:</strong> <PreviewPath value={form.uploadLocation} prefix={pathPrefixes.upload} fallback="Upload location" />
+                  {String(form.imagesPerBundle || '').trim() && <><br /><strong>Number of images per bundle:</strong> <PreviewValue value={form.imagesPerBundle} fallback="Images per bundle" /></>}
+                  {String(form.totalImages || '').trim() && <><br /><strong>Total number of images:</strong> <PreviewValue value={form.totalImages} fallback="Total images" /></>}
+                  {String(form.dueUrgency || '').trim() && <><br /><strong>Due:</strong> <PreviewValue value={form.dueUrgency} fallback="Due / urgency" /></>}
                 </div>
-                <p className="activation-preview-table-title"><strong>Sku Details</strong></p>
+                {showArtworkPath && <section className="activation-preview-path-section">
+                  <p><strong>Path to artwork:</strong></p>
+                  <ul>
+                    {itemRows.map((row, index) => <li key={`${row.id}-artwork`}><PreviewValue value={row.description} fallback={`Item ${index + 1}`} />: <PreviewPath value={row.artworkPath} prefix={pathPrefixes.artwork} fallback="Artwork path" /></li>)}
+                  </ul>
+                </section>}
+                {showUploadLocation && <section className="activation-preview-path-section">
+                  <p><strong>Location for image uploads:</strong></p>
+                  <ul>
+                    {itemRows.map((row, index) => <li key={`${row.id}-upload`}><PreviewValue value={row.description} fallback={`Item ${index + 1}`} />: <PreviewPath value={row.uploadLocation} prefix={pathPrefixes.upload} fallback="Upload location" /></li>)}
+                  </ul>
+                </section>}
+                {previewColumns.length > 0 && <><p className="activation-preview-table-title"><strong>Sku Details</strong></p>
                 <table>
                   <thead>
                     <tr>
-                      <th>Description</th>
-                      <th>Structure</th>
-                      <th>UPC</th>
-                      <th>CVID</th>
+                      {previewColumns.map(column => <th key={column.key}>{column.label}</th>)}
                     </tr>
                   </thead>
                   <tbody>
                     {itemRows.map(row => (
                       <tr key={`${row.id}-details`}>
-                        <td className={fieldStatus(row.description)}>{fieldText(row.description, 'Description')}</td>
-                        <td className={fieldStatus(row.structure)}>{fieldText(row.structure, 'Structure')}</td>
-                        <td className={fieldStatus(row.upc)}>{fieldText(row.upc, 'UPC')}</td>
-                        <td className={fieldStatus(row.cvid)}>{fieldText(row.cvid, 'CVID')}</td>
+                        {previewColumns.map(column => <td key={column.key} className={fieldStatus(column.getValue(row))}>{fieldText(column.getValue(row), column.label)}</td>)}
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></>}
                 <p>{form.notes || 'Once completed, please send for review/approval. Thanks!'}</p>
               </div>
             </aside>
@@ -9832,9 +11211,6 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
           {error && <div className="error-state">{error}</div>}
           <footer className="activation-modal-footer">
             <button type="button" className="btn" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-blue-outline" disabled={saving || !form.clientId}>
-              {saving && saveAction === 'draft' ? 'Saving...' : 'Save Draft'}
-            </button>
             <button type="button" className="btn btn-primary" onClick={() => saveActivationPackage('move')} disabled={saving || !form.clientId}>
               {saving && saveAction === 'move' ? 'Sending...' : 'Ready for Photo'}
             </button>
@@ -9878,11 +11254,15 @@ function MerchandiseReviewV2Page() {
   const [locationFilter, setLocationFilter] = useState('');
   const [ageFilter, setAgeFilter] = useState('');
   const [deliverableFilter, setDeliverableFilter] = useState('');
-  const [planningView, setPlanningView] = useState('kanban');
+  const [planningView, setPlanningView] = useState('release');
+  const [groupReleaseByShipment, setGroupReleaseByShipment] = useState(true);
   const [activationModalOpen, setActivationModalOpen] = useState(false);
   const [activationListOpen, setActivationListOpen] = useState(false);
   const [selectedActivation, setSelectedActivation] = useState(null);
   const [activationMerchandiseId, setActivationMerchandiseId] = useState('');
+  const [activationMerchandiseIds, setActivationMerchandiseIds] = useState([]);
+  const [activationDeliverableType, setActivationDeliverableType] = useState('');
+  const [selectedReleaseItemIds, setSelectedReleaseItemIds] = useState([]);
   const [localActivations, setLocalActivations] = useState([]);
 
   const merchandiseIdsKey = records.map(record => record.id).sort().join('|');
@@ -9954,7 +11334,7 @@ function MerchandiseReviewV2Page() {
     });
     const card = buildPlanningCard(record, { assignment: planningCard, client, location });
     const activationDriven = topcoClientIds.has(record.clientIds?.[0]) || (client?.name || '').trim().toLowerCase() === 'topco';
-    const deliverables = deliverablesForRecord(record);
+    const deliverables = initialReviewDeliverables(record);
     const deliverableLabels = deliverables.map(deliverableRouteLabelForDeliverable).filter(Boolean);
     const deliverableRoutes = deliverables.map(deliverable => DELIVERABLE_ROUTE_MAP[deliverable]).filter(Boolean);
     const linkedActivation = linkedActivationByMerchandiseId[record.id] || null;
@@ -9997,7 +11377,19 @@ function MerchandiseReviewV2Page() {
       activation: activationDriven ? (linkedActivationByMerchandiseId[item.merchandiseId] || null) : null,
     };
   });
-  const boardItems = [...receivedMerchItems, ...workstreamItems];
+  // Child photo cards replace the parent board card once a workstream exists.
+  // Rendering both makes one Received Merch item look duplicated and prevents
+  // Ecomm and Packaging siblings from reading as one coherent set.
+  const photoWorkstreamMerchandiseIds = new Set(
+    workstreamItems
+      .filter(item => ['Packaging', 'Ecomm'].includes(item.workstreamType))
+      .map(item => String(item.merchandiseId || item.record?.id || '').trim())
+      .filter(Boolean),
+  );
+  const boardItems = [
+    ...receivedMerchItems.filter(item => !photoWorkstreamMerchandiseIds.has(String(item.merchandiseId || item.record?.id || '').trim())),
+    ...workstreamItems,
+  ];
   const workstreamPhotoCardCounts = workstreamItems.reduce((counts, item) => {
     const key = item.merchandiseId || item.record?.id;
     if (key) counts[key] = (counts[key] || 0) + 1;
@@ -10043,7 +11435,10 @@ function MerchandiseReviewV2Page() {
   const activationMerchandiseOptions = boardItems
     .filter(item => topcoClientIds.has(item.record?.clientIds?.[0]))
     .filter(item => item.subjectType === 'workstream-card')
-    .filter(item => item.requiredToShoot?.ready || item.merchandiseId === activationMerchandiseId)
+    .filter(item => item.columnId === QUEUE_IDS.readyProduction
+      || item.requiredToShoot?.ready
+      || item.merchandiseId === activationMerchandiseId
+      || activationMerchandiseIds.includes(item.merchandiseId))
     .map(item => {
       const parts = [
         item.title,
@@ -10060,10 +11455,23 @@ function MerchandiseReviewV2Page() {
         upc: item.record?.linkedItem?.upc || item.record?.linkedItem?.identifier || item.identifier || '',
         cvid: item.record?.linkedItem?.cvid || '',
         brand: item.record?.linkedItem?.brand || '',
+        brandPrefix: item.record?.linkedItem?.brandPrefix || item.record?.linkedItem?.referenceData?.['Brand Prefix'] || '',
+        jobNumber: item.record?.linkedItem?.itemJobNumber || item.record?.linkedItem?.wkftJobNumber || '',
+        fileNameDescription: item.record?.linkedItem?.referenceData?.['File Name Description'] || '',
+        artworkPath: item.record?.linkedItem?.pathToArt || item.record?.linkedItem?.referenceData?.['Path to Art'] || '',
+        uploadLocation: '',
+        columnId: item.columnId,
         deliverables: normalizeDeliverableList(item.deliverables || item.record?.deliverables),
         label: parts.join(' · ') || item.merchandiseId,
       };
     });
+
+  useEffect(() => {
+    const visibleReadyIds = new Set(filteredItems
+      .filter(item => releaseSectionForPlanningItem(item) === 'readyToRelease')
+      .map(item => item.id));
+    setSelectedReleaseItemIds(current => current.filter(id => visibleReadyIds.has(id)));
+  }, [filteredItems.map(item => item.id).join('|')]);
 
   useEffect(() => {
     setPhotoIndex(0);
@@ -10123,62 +11531,6 @@ function MerchandiseReviewV2Page() {
     } finally {
       setCommentSavingId('');
     }
-  }
-
-  async function moveItemToQueue(item, columnId) {
-    const destination = planningQueues.find(column => column.id === columnId);
-    if (!destination || item.columnId === columnId) return false;
-    if (item.subjectType === 'workstream-card' && columnId === PM_LOCAL_QUEUE_IDS.needsProductWork) {
-      setFeedback('Workstream cards stay in Awaiting Info until their product or photo data is complete. Group eligible cards from Planning to release them to Ready for Photo.');
-      return false;
-    }
-    if (columnId === QUEUE_IDS.readyProduction) {
-      if (item.subjectType === 'workstream-card') {
-        setFeedback('Group eligible workstreams from Planning to release them to Ready for Photo.');
-        return;
-      }
-      const blockers = visibleRequirementBlockers(item.requiredToShoot || []);
-      if (blockers.length) {
-        setFeedback(`Cannot move to Ready for Photo. Missing: ${blockers.map(requirementLabelForUser).join(', ')}`);
-        return;
-      }
-    }
-    try {
-      if (item.subjectType === 'workstream-card') {
-        await api.updateWorkstreamCard(item.workstreamCardId, {
-          planningStatus: columnId === QUEUE_IDS.newReview
-            ? 'new'
-            : columnId === QUEUE_IDS.readyProduction
-              ? 'ready-for-photo'
-              : 'awaiting-info',
-        });
-      } else if ([QUEUE_IDS.newReview, PM_LOCAL_QUEUE_IDS.needsProductWork, QUEUE_IDS.waitingInformation, QUEUE_IDS.sendThr3d, QUEUE_IDS.readyProduction].includes(columnId)) {
-        await api.updateMerchandiseIntakeState(item.merchandiseId, {
-          planningStatus: columnId === QUEUE_IDS.newReview
-            ? 'new'
-            : columnId === PM_LOCAL_QUEUE_IDS.needsProductWork
-              ? 'needs-product-work'
-              : columnId === QUEUE_IDS.readyProduction
-                ? 'ready-for-photo'
-                : 'awaiting-info',
-          blockingRequirements: item.requiredToShoot.filter(requirement => requirement.visible !== false && !requirement.satisfied).map(requirementLabelForUser),
-        });
-      }
-      recordActivity(item.merchandiseId, `Moved to ${destination.label}.`, { actor: 'Planning', action: `Moved to ${destination.label}.` });
-      await refreshV2WorkflowData();
-      setSelectedId(item.id);
-      setFeedback(`Moved ${item.title || 'merchandise'} to ${destination.label}.`);
-      return true;
-    } catch (error) {
-      setFeedback(error.message || 'Could not move Merchandise.');
-      return false;
-    }
-  }
-
-  function moveBoardItem(itemId, columnId) {
-    const item = boardItems.find(candidate => candidate.id === itemId);
-    if (!item) return;
-    moveItemToQueue(item, columnId);
   }
 
   async function saveIntakeItem(item, { keepSelection = true } = {}) {
@@ -10281,7 +11633,10 @@ function MerchandiseReviewV2Page() {
           return { ok: true, message: `${state.workstreamActionType || nextType} workstream added.` };
         }
         if (typeChanged) {
-          await api.updateWorkstreamCard(item.workstreamCardId, { workstreamType: nextType, status: item.workstreamStatus || 'New' });
+          await api.updateWorkstreamCard(item.workstreamCardId, {
+            workstreamType: nextType,
+            planningStatus: item.planningStatus || 'awaiting-info',
+          });
           await refreshV2WorkflowData();
           return { ok: true, message: `Workstream changed to ${nextType}.` };
         }
@@ -10293,22 +11648,41 @@ function MerchandiseReviewV2Page() {
     const deliverables = normalizeDeliverableList(state.deliverables || item.deliverables);
     const assignment = state.assignment || workstreamAssignmentsForDeliverables(deliverables, item.record?.quantity);
     const expectedProductId = item.record?.linkedItem?.id || item.record?.itemIds?.[0] || '';
+    const manualProductInfo = expectedProductId ? undefined : productDataSourceForPlanningItem(item, photoDraftValues);
     try {
-      if (state.reviewOnly || deliverables.length === 0) {
-        const result = await api.updateMerchandiseIntakeState(item.merchandiseId, {
-          stage: QUEUE_IDS.waitingInformation,
-          deliverables: [],
+      const isThr3dHandoff = deliverables.includes('Thr3d') && !deliverables.includes('Packaging') && !deliverables.includes('Ecomm');
+      if (isThr3dHandoff) {
+        const result = await api.confirmAssignMerchandise(item.merchandiseId, {
           expectedProductId,
+          ...(manualProductInfo ? { manualProductInfo } : {}),
+          workstreams: assignment.workstreams,
+          thr3d: assignment.thr3d,
         });
         await refreshV2WorkflowData();
         setSelectedId('');
         setWorkspaceOpen(false);
-        const message = 'Merchandise reviewed. Waiting for deliverables.';
+        const message = 'Merch confirmed. Sent to THR3D shipping.';
+        setFeedback(message);
+        return { ok: true, message, record: result.merchandise };
+      }
+      if (state.reviewOnly || deliverables.length === 0 || deliverables.some(type => type === 'Packaging' || type === 'Ecomm')) {
+        const result = await api.updateMerchandiseIntakeState(item.merchandiseId, {
+          stage: QUEUE_IDS.waitingInformation,
+          deliverables,
+          expectedProductId,
+          ...(manualProductInfo ? { manualProductInfo } : {}),
+        });
+        await refreshV2WorkflowData();
+        setSelectedId('');
+        setWorkspaceOpen(false);
+        const readyEnough = releaseInfoCompleteForPlanningItem({ ...item, record: { ...item.record, ...result }, deliverables });
+        const message = readyEnough ? 'Merch confirmed. Waiting on Activation.' : 'Merch confirmed. Needs more information.';
         setFeedback(message);
         return { ok: true, message, record: result };
       }
       const result = await api.confirmAssignMerchandise(item.merchandiseId, {
         expectedProductId,
+        ...(manualProductInfo ? { manualProductInfo } : {}),
         workstreams: assignment.workstreams,
         thr3d: assignment.thr3d,
       });
@@ -10331,6 +11705,25 @@ function MerchandiseReviewV2Page() {
       return { ok: false, message };
     } finally {
       setFinishSavingId('');
+    }
+  }
+
+  async function addWorkstreamDeliverable(item, workstreamType) {
+    if (!item?.merchandiseId || !['Packaging', 'Ecomm'].includes(workstreamType)) {
+      return { ok: false, message: 'A photo deliverable could not be identified.' };
+    }
+    if ((workstreamTypesByMerchandise[item.merchandiseId] || []).includes(workstreamType)) {
+      return { ok: false, message: `${workstreamType} is already present for this merchandise.` };
+    }
+    try {
+      await api.createWorkstreamCard({ merchandiseId: item.merchandiseId, workstreamType });
+      await refreshV2WorkflowData();
+      setFeedback(`${workstreamType} deliverable added. The existing card stayed in its current queue.`);
+      return { ok: true };
+    } catch (error) {
+      const message = error.message || `Could not add ${workstreamType}.`;
+      setFeedback(message);
+      return { ok: false, message };
     }
   }
 
@@ -10360,28 +11753,103 @@ function MerchandiseReviewV2Page() {
   async function closePlanningWorkspace(item = selectedItem) {
     void item;
     setWorkspaceOpen(false);
+    setSelectedId('');
   }
 
-  function openActivationModal(activation = null, merchandiseId = '') {
+  function openActivationModal(activation = null, merchandiseId = '', deliverableType = '', merchandiseIds = []) {
     setActivationListOpen(false);
     setSelectedActivation(activation);
     setActivationMerchandiseId(merchandiseId);
+    setActivationMerchandiseIds(merchandiseIds);
+    setActivationDeliverableType(deliverableType);
     setActivationModalOpen(true);
+  }
+
+  function releaseDeliverableForItem(item = {}) {
+    const workstreamType = normalizeDeliverableValue(item?.workstreamType || item?.record?.workstreamType || item?.deliverableRoute || '');
+    if (['Packaging', 'Ecomm'].includes(workstreamType)) return workstreamType;
+    const photoDeliverables = normalizeDeliverableList(item?.deliverables || item?.record?.deliverables)
+      .filter(type => ['Packaging', 'Ecomm'].includes(type))
+      .filter((type, index, list) => list.indexOf(type) === index);
+    return photoDeliverables.length === 1 ? photoDeliverables[0] : '';
   }
 
   function openReadyForPhoto(item) {
     const merchandiseId = item?.merchandiseId || item?.record?.id || '';
     if (!merchandiseId) return { ok: false, message: 'This item is missing its Merchandise record.' };
+    const deliverableType = releaseDeliverableForItem(item);
+    if (!deliverableType) return { ok: false, message: 'Choose either Ecomm or Packaging before releasing to photo.' };
     setSelectedId('');
     setWorkspaceOpen(false);
-    openActivationModal(null, merchandiseId);
-    return { ok: true, message: 'Photo release opened.' };
+    openActivationModal(null, merchandiseId, deliverableType);
+    return { ok: true, message: 'Details saved.' };
+  }
+
+  function toggleReleaseSelection(itemId) {
+    const item = boardItems.find(candidate => candidate.id === itemId);
+    const itemDeliverable = releaseDeliverableForItem(item);
+    if (!itemDeliverable) {
+      setFeedback('Select a ready Ecomm or Packaging item before releasing.');
+      return;
+    }
+    if (!selectedReleaseItemIds.includes(itemId)) {
+      const selectedDeliverables = selectedReleaseItemIds
+        .map(id => releaseDeliverableForItem(boardItems.find(candidate => candidate.id === id)))
+        .filter(Boolean)
+        .filter((type, index, list) => list.indexOf(type) === index);
+      if (selectedDeliverables.length && selectedDeliverables[0] !== itemDeliverable) {
+        setFeedback('Release Ecomm and Packaging separately. Select one deliverable type at a time.');
+        return;
+      }
+    }
+    setSelectedReleaseItemIds(current => (
+      current.includes(itemId)
+        ? current.filter(id => id !== itemId)
+        : [...current, itemId]
+    ));
+  }
+
+  function openSelectedReadyRelease(items) {
+    const selectedItems = items.length ? items : boardItems.filter(item => selectedReleaseItemIds.includes(item.id));
+    if (!selectedItems.length) {
+      setFeedback('Select ready Ecomm or Packaging items before releasing.');
+      return;
+    }
+    const clientIds = [...new Set(selectedItems.map(item => item.record?.clientIds?.[0]).filter(Boolean))];
+    if (clientIds.length > 1) {
+      setFeedback('Select items for one client at a time before releasing.');
+      return;
+    }
+    const merchandiseIds = selectedItems
+      .map(item => item.merchandiseId || item.record?.id)
+      .filter(Boolean)
+      .filter((id, index, list) => list.indexOf(id) === index);
+    const deliverableTypes = selectedItems
+      .map(releaseDeliverableForItem)
+      .filter(Boolean)
+      .filter((type, index, list) => list.indexOf(type) === index);
+    if (deliverableTypes.length !== 1) {
+      setFeedback(deliverableTypes.length > 1
+        ? 'Release Ecomm and Packaging separately. Select one deliverable type at a time.'
+        : 'Select ready Ecomm or Packaging items before releasing.');
+      return;
+    }
+    setSelectedId('');
+    setWorkspaceOpen(false);
+    openActivationModal(
+      null,
+      merchandiseIds[0] || '',
+      deliverableTypes[0],
+      merchandiseIds,
+    );
   }
 
   function closeActivationModal() {
     setActivationModalOpen(false);
     setSelectedActivation(null);
     setActivationMerchandiseId('');
+    setActivationMerchandiseIds([]);
+    setActivationDeliverableType('');
   }
 
   async function handleActivationSaved(record, result = {}) {
@@ -10417,14 +11885,23 @@ function MerchandiseReviewV2Page() {
         </div>
         <div className="planning-board-view-controls" aria-label="Planning view controls">
           <label className="planning-deliverable-filter">
-            <span>Deliverable</span>
             <select value={deliverableFilter} onChange={event => setDeliverableFilter(event.target.value)} aria-label="Filter by deliverable">
               <option value="">All deliverables</option>
               {DELIVERABLE_ROUTES.filter(route => route.id !== 'thr3d').map(route => <option value={route.id} key={route.id}>{route.label}</option>)}
             </select>
           </label>
+          {planningView === 'release' && (
+            <label className="planning-group-toggle">
+              <input
+                type="checkbox"
+                checked={groupReleaseByShipment}
+                onChange={event => setGroupReleaseByShipment(event.target.checked)}
+              />
+              <span>Group by shipment</span>
+            </label>
+          )}
           <div className="planning-view-toggle" role="group" aria-label="Planning view">
-            <button type="button" className={planningView === 'kanban' ? 'is-active' : ''} onClick={() => setPlanningView('kanban')} aria-label="Kanban view" title="Kanban view">
+            <button type="button" className={planningView === 'release' ? 'is-active' : ''} onClick={() => setPlanningView('release')} aria-label="Release view" title="Release view">
               <LayoutGrid size={16} strokeWidth={2} />
             </button>
             <button type="button" className={planningView === 'list' ? 'is-active' : ''} onClick={() => setPlanningView('list')} aria-label="List view" title="List view">
@@ -10437,7 +11914,7 @@ function MerchandiseReviewV2Page() {
             <button type="button" className="btn btn-blue-outline" onClick={() => setActivationListOpen(true)}>
               Edit Photo Releases
             </button>
-            <button type="button" className="btn btn-primary" onClick={() => openActivationModal(null)}>
+            <button type="button" className="btn btn-primary" onClick={() => openSelectedReadyRelease([])}>
               Group Ready Items
             </button>
           </div>
@@ -10453,14 +11930,17 @@ function MerchandiseReviewV2Page() {
           showNewCardClient={showNewCardClient}
         />
       ) : (
-        <KanbanBoard
-          columns={planningQueues}
-          itemsByColumn={itemsByColumn}
+        <PlanningReleaseView
+          sections={PLANNING_RELEASE_SECTIONS}
+          items={filteredItems}
           selectedId={selectedId}
           onSelect={openPlanningWorkspace}
-          onMove={moveBoardItem}
           disabled={workspaceOpen}
           showNewCardClient={showNewCardClient}
+          groupByShipment={groupReleaseByShipment}
+          selectedReleaseIds={selectedReleaseItemIds}
+          onToggleReleaseSelection={toggleReleaseSelection}
+          onReleaseSelected={openSelectedReadyRelease}
         />
       )}
       {workspaceOpen && selectedItem ? (
@@ -10470,6 +11950,7 @@ function MerchandiseReviewV2Page() {
           onDecisionChange={updateSelectedDecision}
           onFinish={finishVerification}
           onReadyForPhoto={openReadyForPhoto}
+          onAddDeliverable={addWorkstreamDeliverable}
           onRemove={selectedItem.subjectType === 'workstream-card' ? removeWorkstreamCard : undefined}
           workstreamPhotoCardCount={workstreamPhotoCardCounts[selectedItem.merchandiseId] || 1}
           workstreamTypes={workstreamTypesByMerchandise[selectedItem.merchandiseId] || []}
@@ -10495,7 +11976,10 @@ function MerchandiseReviewV2Page() {
           loading={activations.loading}
           onClose={() => setActivationListOpen(false)}
           onEdit={openActivationModal}
-          onAdd={() => openActivationModal(null)}
+          onAdd={() => {
+            setActivationListOpen(false);
+            openSelectedReadyRelease([]);
+          }}
         />
       )}
       {activationModalOpen && (
@@ -10504,6 +11988,8 @@ function MerchandiseReviewV2Page() {
           merchandiseOptions={activationMerchandiseOptions}
           initialClientId={clientFilter}
           initialMerchandiseId={activationMerchandiseId}
+          initialMerchandiseIds={activationMerchandiseIds}
+          initialDeliverableType={activationDeliverableType}
           initialActivation={selectedActivation}
           onClose={closeActivationModal}
           onSaved={handleActivationSaved}
@@ -10596,12 +12082,12 @@ function PlanningThr3dRegressionPage() {
 
   return (
     <div className="work-board-page" data-testid="planning-thr3d-regression">
-      <KanbanBoard
-        columns={PM_QUEUE_COLUMNS}
-        itemsByColumn={{ [QUEUE_IDS.newReview]: [item] }}
+      <PlanningReleaseView
+        sections={PLANNING_RELEASE_SECTIONS}
+        items={[item]}
         selectedId={selectedId}
         onSelect={setSelectedId}
-        onMove={() => {}}
+        groupByShipment={false}
         disabled={Boolean(selectedItem)}
       />
       {selectedItem && (
@@ -10761,14 +12247,19 @@ function LoginScreen({ onLogin }) {
   const [selected, setSelected] = useState(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const pinRef = useRef(null);
 
   useEffect(() => {
     api.listLoginUsers().then(d => {
       setUsers((d.records || []).filter(u => u.active));
+      setLoadError('');
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch(error => {
+      setLoadError(error.message || 'Could not load users.');
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => {
@@ -10810,6 +12301,16 @@ function LoginScreen({ onLogin }) {
         <div className="login-users">
           <p className="login-prompt">Who's working today?</p>
           {loading && <div className="login-loading">Loading…</div>}
+          {!loading && loadError && (
+            <div className="login-load-error" role="alert">
+              Could not load users. Make sure the Marks Photo backend is running.
+            </div>
+          )}
+          {!loading && !loadError && users.length === 0 && (
+            <div className="login-load-error" role="status">
+              No active users are available.
+            </div>
+          )}
           <div className="login-user-grid">
             {users.map(u => (
               <button key={u.id} className="login-user-card" onClick={() => setSelected(u)}>
@@ -11556,6 +13057,7 @@ function TopNavigation({
   items,
   adminItem,
   showAdmin,
+  thr3dOutgoingCount = 0,
   location,
   mobileOpen,
   setMobileOpen,
@@ -11580,6 +13082,11 @@ function TopNavigation({
           >
             {item.icon}
             <span>{item.label}</span>
+            {item.path === '/shipments' && thr3dOutgoingCount > 0 && (
+              <span className="topbar-nav-badge" aria-label={`${thr3dOutgoingCount} THR3D items ready to ship`}>
+                {thr3dOutgoingCount}
+              </span>
+            )}
           </Link>
         );
       })}
@@ -11682,6 +13189,14 @@ function AppLayout() {
   const allowed = auth ? allowedPaths(auth.role, rolePermissions) : allowedPaths('User', rolePermissions);
   const visibleNav = NAV_ITEMS.filter(item => isTopNavVisible(item, allowed));
   const hasAdminAccess = auth ? roleHasAdminAccess(auth.role, rolePermissions) : false;
+  const thr3dOutgoing = useResource(() => api.listThr3dShippingItems());
+  const thr3dOutgoingCount = thr3dOutgoing.data?.records?.length || 0;
+
+  useEffect(() => {
+    const reloadThr3dQueue = () => thr3dOutgoing.reload({ quiet: true });
+    window.addEventListener('thr3d-queue-updated', reloadThr3dQueue);
+    return () => window.removeEventListener('thr3d-queue-updated', reloadThr3dQueue);
+  }, [thr3dOutgoing.reload]);
 
   useEffect(() => {
     if (!mobileNavOpen) return undefined;
@@ -11710,6 +13225,7 @@ function AppLayout() {
         items={visibleNav}
         adminItem={ADMIN_NAV_ITEM}
         showAdmin={hasAdminAccess}
+        thr3dOutgoingCount={thr3dOutgoingCount}
         location={location}
         mobileOpen={mobileNavOpen}
         setMobileOpen={setMobileNavOpen}

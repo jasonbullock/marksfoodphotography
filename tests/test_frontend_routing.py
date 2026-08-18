@@ -110,10 +110,10 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("Download as DownloadIcon", self.source)
         for text in [
             "ClipboardList",
-            "Kanban",
+            "Columns3",
+            "LayoutGrid",
             "Layers",
             "PackageOpen",
-            "SquareKanban",
             "Tag",
         ]:
             self.assertIn(text, self.source)
@@ -121,8 +121,8 @@ class FrontendRoutingTests(unittest.TestCase):
             "NavImport: () => <DownloadIcon size={20} strokeWidth={1.5} />",
             "NavShipments: () => <PackageOpen size={20} strokeWidth={1.5} />",
             "NavMerchandise: () => <ClipboardList size={20} strokeWidth={1.5} />",
-            "NavWork: () => <Kanban size={20} strokeWidth={1.5} />",
-            "NavProduction: () => <SquareKanban size={20} strokeWidth={1.5} />",
+            "NavWork: () => <Columns3 size={20} strokeWidth={1.5} />",
+            "NavProduction: () => <LayoutGrid size={20} strokeWidth={1.5} />",
             "NavJobs: () => <Layers size={20} strokeWidth={1.5} />",
             "NavProducts: () => <Tag size={20} strokeWidth={1.5} />",
         ]:
@@ -192,14 +192,12 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertNotIn(".merch-review-subnav .subnav-tab", self.styles)
         self.assertNotIn("flex: 1 1 0;\n  justify-content: center;", self.styles)
 
-    def test_merchandise_review_v2_has_experimental_kanban_board(self):
+    def test_merchandise_review_v2_uses_release_and_list_views_without_kanban(self):
         for text in [
             "function MerchandiseReviewV2Page",
-            "RequiredToShootIndicators",
             "requiredToShootSummary",
-            "KanbanBoard",
-            "KanbanColumn",
-            "KanbanCard",
+            "PlanningReleaseView",
+            "PlanningListView",
             "MERCHANDISE_PLANNING_BOARD",
             "evaluateMerchandiseReviewAssignment",
             "PlanningWorkspaceDrawer",
@@ -212,37 +210,37 @@ class FrontendRoutingTests(unittest.TestCase):
             "PM_QUEUE_COLUMNS",
             "label: 'New Merch'",
             "label: 'Needs Product / Work'",
-            "label: 'Awaiting Info/Activation'",
-            "Mark Merch Reviewed",
-            "newReviewContextForItem",
-            "kanban-review-context",
-            "kanban-card-client-eyebrow",
-            "kanban-photo-count",
+            "label: 'Awaiting Info'",
+            "Confirm Merch",
             "ConversationPanel",
-            "ActivityPanel",
+            "NewReviewSupportPanel",
             "api.listMerchandiseReviewEntries()",
             '<Route path="/planning" element={<MerchandiseReviewV2Page />} />',
         ]:
             self.assertIn(text, self.source)
+        for text in [
+            "KanbanBoard",
+            "KanbanColumn",
+            "KanbanCard",
+            "KanbanCardComponent",
+            "moveBoardItem",
+            "moveItemToQueue",
+            "Kanban view",
+            "setPlanningView('kanban')",
+        ]:
+            self.assertNotIn(text, self.source)
         api_source = (ROOT / "frontend" / "src" / "api.js").read_text()
         self.assertIn("api.listMerchandiseComments", api_source)
         self.assertIn("api.createMerchandiseComment", api_source)
         self.assertIn(".work-board-page", self.styles)
-        self.assertIn(".kanban-board", self.styles)
-        self.assertIn(".kanban-column", self.styles)
-        self.assertIn(".kanban-card", self.styles)
+        self.assertIn(".planning-release-view", self.styles)
+        self.assertIn(".planning-list-view", self.styles)
         self.assertNotIn(".kanban-card-action", self.styles)
-        self.assertIn(".kanban-required-checks", self.styles)
-        self.assertIn(".kanban-age-badge", self.styles)
-        self.assertIn(".kanban-comment-signal", self.styles)
-        self.assertIn(".kanban-column-summary > span", self.styles)
-        self.assertIn(".kanban-comment-signal.has-recent", self.styles)
+        self.assertIn(".planning-comment-signal", self.styles)
+        self.assertIn(".planning-comment-signal.has-recent", self.styles)
         self.assertIn("background: rgba(255, 251, 235, 0.92);", self.styles)
         self.assertIn("function CommentCountChip", self.source)
-        self.assertIn("<CommentCountChip count={item.commentCount} unread={item.unreadComments} recent={item.recentComment} />", self.source)
         self.assertIn("<CommentCountChip", self.source)
-        self.assertIn("count={withComments}", self.source)
-        self.assertIn("className=\"is-column\"", self.source)
         self.assertIn("<CommentCountChip count={comments.length} className=\"is-support\" />", self.source)
         self.assertIn("const APP_TIME_ZONE = 'America/Chicago';", self.source)
         self.assertIn("const RECENT_COMMENT_WINDOW_MS = 4 * 60 * 60 * 1000;", self.source)
@@ -251,8 +249,8 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("recentComment,", self.source)
         self.assertIn(".conversation-avatar", self.styles)
         self.assertIn(".conversation-count", self.styles)
-        self.assertIn(".new-review-support-summary", self.styles)
-        self.assertIn(".kanban-comment-signal.is-support", self.styles)
+        self.assertIn(".new-review-support-panel", self.styles)
+        self.assertIn("className=\"is-support\"", self.source)
         self.assertIn(".conversation-author-name", self.styles)
         self.assertIn(".conversation-meta-line", self.styles)
         self.assertNotIn("function formatCommentRole", self.source)
@@ -267,29 +265,17 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn(".new-review-image-layout", self.styles)
         self.assertIn(".verification-wizard-progress", self.styles)
         self.assertIn(".new-review-modal-footer", self.styles)
-        self.assertIn(".required-to-shoot-dot.is-overridden::after", self.styles)
+        self.assertIn(".required-to-shoot-list li.is-ready .req-mark::before", self.styles)
         self.assertIn("recordPhotos(selectedItem?.record)", self.source)
         self.assertIn("setSelectedId", self.source)
         self.assertIn("workspaceOpen", self.source)
-        self.assertIn("function RequiredToShootPreview", self.source)
         self.assertIn("function ageBucketForItem", self.source)
         self.assertIn("showNewCardClient", self.source)
-        self.assertIn("const showStorage = false && !isNewQueue && storage;", self.source)
-        self.assertIn("const showQuantity = !isNewQueue || Number(quantity) > 1;", self.source)
-        self.assertIn("const showFooter = item.commentCount > 0 || item.unreadComments > 0;", self.source)
         self.assertNotIn("Needs PM review", self.source)
         self.assertNotIn("New Arrival", self.source)
         self.assertNotIn("Deliverables not set", self.source)
-        self.assertIn("const showRequiredIndicators = !isNewQueue && !activationState", self.source)
-        self.assertIn("{showRequiredIndicators && <RequiredToShootIndicators items={item.requiredToShoot} />}", self.source)
-        self.assertIn("const showRequiredPreview = !isNewQueue && !activationState", self.source)
-        self.assertIn("const showStatusChip = !isNewQueue && !activationState", self.source)
-        self.assertIn("{showRequiredPreview && <RequiredToShootPreview item={item} ready={ready} />}", self.source)
         self.assertNotIn(".kanban-new-arrival-label", self.styles)
         self.assertNotIn(".kanban-new-soft-prompt", self.styles)
-        self.assertIn(".kanban-status-chip.is-new", self.styles)
-        self.assertIn("const KanbanCard = memo(KanbanCardComponent)", self.source)
-        self.assertIn("setDragState('drag-target')", self.source)
         self.assertIn("list.scrollTop = list.scrollHeight", self.source)
         for text in [
             "New",
@@ -323,8 +309,8 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertNotIn("function NewReviewRequiredInformation", self.source)
         self.assertNotIn('title="Required to Shoot"', modal_section)
         self.assertNotIn("Complete required information", modal_section)
-        self.assertIn("!wizardState.productLinked || wizardState.deliverables.length === 0", modal_section)
-        self.assertIn("'Mark Merch Reviewed'", modal_section)
+        self.assertIn("latestState.reviewOnly = latestState.productLinked && latestState.deliverables.length === 0", modal_section)
+        self.assertIn("'Confirm Merch'", modal_section)
         self.assertNotIn("requiredToShoot-text", self.source)
         self.assertNotIn("new-review-requiredToShoot", self.source)
         self.assertNotIn("<small>{chip.hint}</small>", self.source)
@@ -659,7 +645,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "quantity-split-warning",
             "Received quantity cannot be split",
             "splitNeedsMultipleUnits",
-            "Mark Merch Reviewed",
+            "Confirm Merch",
             "assignmentPrimaryActionLabel(assignmentPreview)",
             "stageThr3dAllocation",
             "Packaging",
@@ -748,20 +734,10 @@ class FrontendRoutingTests(unittest.TestCase):
             "return QUEUE_IDS.newReview;",
             "merchandiseId",
             "isDraftPlanningCard",
-            "kanban-card-deliverables",
-            "is-workstream-card",
-            "kanban-card-workstream-row",
-            "kanban-card-workstream-meta",
             "Workstream Card",
             "Assigned Qty",
-            "queueIdForWorkstreamStatus",
-            "workstreamStatusForQueueId",
             "api.updateWorkstreamCard(item.workstreamCardId",
-            "status: workstreamStatusForQueueId(columnId)",
-            "PM_QUEUE_STORAGE_KEY",
-            "onDrop={event =>",
-            "Cannot move to Ready for Photo. Missing:",
-            "[QUEUE_IDS.newReview, QUEUE_IDS.waitingInformation, QUEUE_IDS.sendThr3d, QUEUE_IDS.readyProduction]",
+            "planningStatus: item.planningStatus || 'awaiting-info'",
         ]:
             self.assertIn(text, self.source)
         for text in [
@@ -795,12 +771,17 @@ class FrontendRoutingTests(unittest.TestCase):
             "updateWorkOrder",
             "listWorkflowTemplates",
             "listWorkOrderTypes",
+            "PM_QUEUE_STORAGE_KEY",
         ]:
             self.assertNotIn(text, (ROOT / "frontend" / "src" / "api.js").read_text())
-        self.assertIn(".kanban-card-deliverables", self.styles)
-        self.assertIn(".kanban-card.is-workstream-card", self.styles)
-        self.assertIn(".kanban-card-workstream-row", self.styles)
-        self.assertIn(".kanban-card-workstream-meta", self.styles)
+        self.assertNotIn("PM_QUEUE_STORAGE_KEY", self.source)
+        planning_source = self.source.split("function MerchandiseReviewV2Page", 1)[1].split("function PlanningThr3dRegressionPage", 1)[0]
+        self.assertNotIn("onDrop={event =>", planning_source)
+        self.assertIn("function PlanningReleaseView", self.source)
+        self.assertIn("function PlanningListView", self.source)
+        self.assertNotIn("function KanbanBoard", self.source)
+        self.assertNotIn("function KanbanColumn", self.source)
+        self.assertNotIn("KanbanCardComponent", self.source)
 
     def test_unified_modal_replaces_waiting_information_controls_in_active_intake(self):
         for text in [
@@ -867,8 +848,7 @@ class FrontendRoutingTests(unittest.TestCase):
 
     def test_admin_clients_show_activation_readiness_profiles(self):
         for text in [
-            "function ClientReadinessProfile({ profile })",
-            "client.readinessProfile?.label || 'Standard'",
+            "function ClientReadinessProfile({ profile, client })",
             "Ready for Photo requires",
             "Not required from activation",
             "Server paths",
@@ -879,6 +859,11 @@ class FrontendRoutingTests(unittest.TestCase):
             "client-readiness-profile",
             "client-readiness-grid",
             "Activation",
+            "Source sync",
+            "Edit sync",
+            "function ClientSourceSyncModal",
+            "sourceRefreshConfigForClient",
+            "Save sync settings",
         ]:
             self.assertIn(text, self.source + self.styles)
         admin_section = self.source.split("function SettingsPage", 1)[1].split("async function randomizeDemoData", 1)[0]
@@ -887,6 +872,17 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertNotIn("Save Activation", admin_section)
         self.assertNotIn("Add Activation", admin_section)
         self.assertNotIn("activation-package-", self.styles)
+
+    def test_products_page_exposes_manual_source_product_sync(self):
+        for text in [
+            "const [topcoProductSyncing, setTopcoProductSyncing] = useState(false)",
+            "function syncTopcoProductsFromSource()",
+            "api.refreshTopcoSourceLinkedProducts",
+            "Sync Products",
+            "Synced ${data.updated || 0} Product",
+            "items.reload({ quiet: true })",
+        ]:
+            self.assertIn(text, self.source)
 
     def test_frontend_api_exposes_activation_endpoints(self):
         api_source = (ROOT / "frontend/src/api.js").read_text()
@@ -1015,23 +1011,23 @@ class FrontendRoutingTests(unittest.TestCase):
         ]:
             self.assertNotIn(text, self.source + self.styles if text.startswith("new-review") else modal_section)
 
-    def test_topco_cards_use_activation_state_instead_of_required_preview(self):
+    def test_topco_cards_do_not_use_kanban_activation_preview(self):
         for text in [
-            "function activationStateForPlanningCard",
-            "item?.activationDriven",
-            "Needs Activation",
-            "Needs Activation",
-            "Activation Ready",
-            "kanban-activation-chip",
-            "const showRequiredPreview = !isNewQueue && !activationState",
+            "activationDriven,",
             "function activationByMerchandiseId",
             "activationLinkedMerchandiseIds",
             "linkedActivationByMerchandiseId",
             "activationLinksLoaded",
+        ]:
+            self.assertIn(text, self.source + self.styles)
+        for text in [
+            "function activationStateForPlanningCard",
+            "kanban-activation-chip",
+            "const showRequiredPreview = !isNewQueue && !activationState",
             "!linkedActivation && baseColumnId === QUEUE_IDS.readyProduction",
             "Cannot move to Ready for Photo. Missing: linked Activation",
         ]:
-            self.assertIn(text, self.source + self.styles)
+            self.assertNotIn(text, self.source)
 
     def test_admin_does_not_expose_work_order_types_configuration(self):
         for text in [
@@ -1479,7 +1475,7 @@ class FrontendRoutingTests(unittest.TestCase):
         harness_section = self.source.split("function PlanningThr3dRegressionPage", 1)[1].split("// ── Auth", 1)[0]
         for text in [
             'data-testid="planning-thr3d-regression"',
-            "<KanbanBoard",
+            "<PlanningReleaseView",
             "<NewReviewModal",
             "requiredToShoot: undefined",
             "finishRegressionVerification",
@@ -1496,12 +1492,14 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("window.location.pathname === '/__test/planning-thr3d'", self.source)
         self.assertIn("data-testid={`deliverable-${DELIVERABLE_ROUTE_MAP[option] || option.toLowerCase().replaceAll(' ', '-')}`}", self.source)
 
-    def test_planning_board_freezes_while_modal_is_open(self):
-        self.assertIn("function KanbanBoard({ columns, itemsByColumn, selectedId, onSelect, onMove, disabled = false, showNewCardClient = true })", self.source)
-        self.assertIn("className={`kanban-board ${disabled ? 'is-frozen' : ''}`}", self.source)
-        self.assertIn("draggable={!disabled}", self.source)
+    def test_planning_views_freeze_while_modal_is_open(self):
+        self.assertIn("function PlanningReleaseView({", self.source)
+        self.assertIn("function PlanningListView({ columns, itemsByColumn, selectedId, onSelect, disabled = false, showNewCardClient = true })", self.source)
+        self.assertIn("className={`planning-release-view ${disabled ? 'is-frozen' : ''}`}", self.source)
+        self.assertIn("className={`planning-list-view ${disabled ? 'is-frozen' : ''}`}", self.source)
         self.assertIn("disabled={workspaceOpen}", self.source)
-        self.assertIn(".kanban-board.is-frozen", self.styles)
+        self.assertIn(".planning-release-view.is-frozen", self.styles)
+        self.assertIn(".planning-list-view.is-frozen", self.styles)
         self.assertIn("pointer-events: none", self.styles)
 
     def test_thr3d_planning_card_lookup_returns_current_queue_name(self):

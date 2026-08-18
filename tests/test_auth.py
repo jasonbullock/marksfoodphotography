@@ -453,6 +453,46 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(status["productData"]["missing"], ["File Name Description"])
         self.assertEqual(status["fileNaming"]["missing"], ["File Name Description"])
 
+    def test_photo_production_status_uses_product_description_as_file_name_description(self):
+        client = {
+            "photoProductionRequirements": {
+                "version": 1,
+                "workstreams": {
+                    "Packaging": {
+                        "requiredProductFields": ["productName", "upc", "jobNumber", "brandPrefix", "fileNameDescription"],
+                        "naming": {
+                            "template": "{jobNumber}_{brandPrefix}_{fileNameDescription}",
+                            "tokens": ["jobNumber", "brandPrefix", "fileNameDescription"],
+                        },
+                    },
+                },
+            },
+        }
+
+        status = _photo_production_status("Packaging", {
+            "name": "Ranch Mix",
+            "upc": "036800108738",
+            "itemJobNumber": "25026953",
+            "brandPrefix": "FX",
+            "productDescription": "Topco Ranch Mix 12 oz",
+        }, client)
+
+        self.assertTrue(status["ready"])
+        self.assertEqual(status["productData"]["missing"], [])
+        self.assertEqual(status["fileNaming"]["missing"], [])
+
+        status = _photo_production_status("Packaging", {
+            "name": "Ranch Mix",
+            "upc": "036800108738",
+            "itemJobNumber": "25026953",
+            "brandPrefix": "FX",
+            "referenceData": {"Prod Descrip": "Topco Ranch Mix 12 oz"},
+        }, client)
+
+        self.assertTrue(status["ready"])
+        self.assertEqual(status["productData"]["missing"], [])
+        self.assertEqual(status["fileNaming"]["missing"], [])
+
     @patch("routes.airtable.list_records")
     @patch("routes.airtable.update_record")
     def test_creative_force_webhook_updates_matching_workstream_card(self, update_record, list_records):
@@ -466,6 +506,8 @@ class AuthTests(unittest.TestCase):
             "ProductCode": "CVID-1",
             "ProductionTypeName": "Ecomm",
             "WorkUnitStatusName": "InProgress",
+            "StepName": "Capture",
+            "StepStatusName": "Ready To Work",
         }
         body = json.dumps(payload, separators=(",", ":")).encode()
         list_records.return_value = {"records": [{
@@ -478,6 +520,8 @@ class AuthTests(unittest.TestCase):
         update_record.return_value = {"id": "recCard", "fields": {
             C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
             C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC: json.dumps({"workUnitId": "cf-work-1", "status": "In Production"}),
+            C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS: "InProgress",
+            C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP: "Capture",
         }}
         signature = hmac.new(b"secret", body, hashlib.sha256).hexdigest()
         with patch.object(C, "CREATIVE_FORCE_WEBHOOK_SECRET", "secret"):
@@ -488,6 +532,8 @@ class AuthTests(unittest.TestCase):
         saved = json.loads(update_record.call_args.args[2][C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC])
         self.assertEqual(saved["status"], "In Production")
         self.assertEqual(saved["workUnitId"], "cf-work-1")
+        self.assertEqual(update_record.call_args.args[2][C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS], "InProgress")
+        self.assertEqual(update_record.call_args.args[2][C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP], "Capture")
 
     def test_creative_force_webhook_rejects_invalid_signature(self):
         with patch.object(C, "CREATIVE_FORCE_WEBHOOK_SECRET", "secret"):
@@ -498,6 +544,42 @@ class AuthTests(unittest.TestCase):
                 headers={"X-CF-Signature": "invalid"},
             )
         self.assertEqual(response.status_code, 401)
+
+    @patch("routes._creative_force_product_code_for_card", return_value="CVID-AUTO")
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.list_records")
+    def test_creative_force_webhook_auto_links_unique_product_code(self, list_records, update_record, product_code):
+        payload = {
+            "Action": "StatusChanged",
+            "PayloadId": "payload-auto-link",
+            "WorkUnitId": "cf-work-auto",
+            "ProductCode": "CVID-AUTO",
+            "ProductionTypeName": "Ecomm",
+            "WorkUnitStatusName": "InProgress",
+        }
+        body = json.dumps(payload, separators=(",", ":")).encode()
+        list_records.return_value = {"records": [{
+            "id": "recCard",
+            "fields": {C.F_WORKSTREAM_CARD_TYPE: "Ecomm"},
+        }]}
+        update_record.return_value = {"id": "recCard", "fields": {
+            C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
+            C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC: json.dumps({"workUnitId": "cf-work-auto"}),
+            C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS: "InProgress",
+        }}
+        signature = hmac.new(b"secret", body, hashlib.sha256).hexdigest()
+        with patch.object(C, "CREATIVE_FORCE_WEBHOOK_SECRET", "secret"):
+            response = self.client.post(
+                "/api/integrations/creative-force/webhook",
+                data=body,
+                content_type="application/json",
+                headers={"X-CF-Signature": signature},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["accepted"])
+        saved = json.loads(update_record.call_args.args[2][C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC])
+        self.assertEqual(saved["workUnitId"], "cf-work-auto")
 
     @patch("routes.airtable.list_records")
     @patch("routes.airtable.update_record")
@@ -644,6 +726,40 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(saved["workstreams"]["Packaging"]["requiredProductFields"], requirements["workstreams"]["Packaging"]["requiredProductFields"])
         self.assertEqual(saved["workstreams"]["Packaging"]["naming"]["template"], requirements["workstreams"]["Packaging"]["naming"]["template"])
         self.assertEqual(saved["workstreams"]["Packaging"]["naming"]["tokens"], requirements["workstreams"]["Packaging"]["naming"]["tokens"])
+        feed_schema.assert_called_once()
+
+    @patch("routes._ensure_creative_force_feed_schema", return_value={"verified": True, "changes": []})
+    @patch("routes.airtable.update_record")
+    def test_admin_can_update_client_source_refresh(self, update_record, feed_schema):
+        self.authenticate(user_record(role="Admin", all_clients=True))
+        requirements = {
+            "version": 1,
+            "workstreams": {
+                "Packaging": {
+                    "requiredProductFields": ["productName", "upc"],
+                    "naming": {"template": "{productName}_{upc}", "tokens": ["productName", "upc"]},
+                },
+            },
+            "sourceRefresh": {
+                "enabled": True,
+                "intervalSeconds": 420,
+                "limit": 12,
+                "provider": "topco",
+            },
+        }
+        update_record.return_value = {"id": "recTopco", "fields": {
+            C.F_CLIENT_NAME: "Topco",
+            C.F_CLIENT_PHOTO_PRODUCTION_REQUIREMENTS: json.dumps(requirements),
+        }}
+
+        response = self.client.patch("/api/clients/recTopco", json={"photoProductionRequirements": requirements})
+
+        self.assertEqual(response.status_code, 200)
+        update_fields = update_record.call_args.args[2]
+        saved = json.loads(update_fields[C.F_CLIENT_PHOTO_PRODUCTION_REQUIREMENTS])
+        self.assertEqual(saved["sourceRefresh"], requirements["sourceRefresh"])
+        client = response.get_json()["client"]
+        self.assertEqual(client["readinessProfile"]["sourceRefresh"], requirements["sourceRefresh"])
         feed_schema.assert_called_once()
 
     @patch("routes.airtable.list_records")
@@ -944,7 +1060,7 @@ class AuthTests(unittest.TestCase):
         activation_update = update_record.call_args_list[0].args[2]
         self.assertEqual(activation_update[C.F_ACTIVATION_MATCHED_MERCHANDISE], [])
         merchandise_update = update_record.call_args_list[1].args[2]
-        self.assertEqual(merchandise_update[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Needs Review")
+        self.assertEqual(merchandise_update[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "New")
         self.assertEqual(merchandise_update[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
         self.assertFalse(merchandise_update[C.F_RECEIPT_ENTRY_MERCH_VERIFIED])
 
@@ -1009,6 +1125,89 @@ class AuthTests(unittest.TestCase):
     @patch("routes._populate_creative_force_feed_for_ready_cards")
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
+    def test_scoped_ecomm_release_does_not_release_packaging_sibling(self, get_record, update_record, populate_feed, list_all_records):
+        self.authenticate(user_record(role="PM", all_clients=False, client_ids=["recTopco"]))
+        activation = {
+            "id": "recActivation",
+            "fields": {
+                C.F_ACTIVATION_NAME: "Topco Ecomm",
+                C.F_ACTIVATION_CLIENT: ["recTopco"],
+                C.F_ACTIVATION_STATUS: "Active",
+                C.F_ACTIVATION_WALNUT_SCOPE: "Full Set Renders",
+                C.F_ACTIVATION_UPLOAD_LOCATION: "Fresh_Melons/3_IMAGES/3D",
+                C.F_ACTIVATION_DELIVERABLES: ["Ecomm"],
+                C.F_ACTIVATION_MATCHED_MERCHANDISE: ["recMerch"],
+                C.F_ACTIVATION_SKU_DETAILS_JSON: '[{"merchandiseId":"recMerch","description":"Cantaloupe 1 Ea","upc":"036800029804","cvid":"036800029804EGPA022600"}]',
+            },
+        }
+        merchandise = {
+            "id": "recMerch",
+            "fields": {
+                C.F_RECEIPT_ENTRY_NAME: "Cantaloupe",
+                C.F_RECEIPT_ENTRY_QUANTITY: 1,
+                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
+                C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm", "Packaging"],
+                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Info/Activation",
+            },
+        }
+        ecomm_card = {
+            "id": "recEcommCard",
+            "fields": {
+                C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+                C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Info/Activation",
+            },
+        }
+        packaging_card = {
+            "id": "recPackagingCard",
+            "fields": {
+                C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+                C.F_WORKSTREAM_CARD_TYPE: "Packaging",
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Info/Activation",
+            },
+        }
+        updated_merchandise = {
+            "id": "recMerch",
+            "fields": {
+                **merchandise["fields"],
+                C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
+            },
+        }
+        updated_ecomm_card = {
+            "id": "recEcommCard",
+            "fields": {
+                **ecomm_card["fields"],
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
+            },
+        }
+        released_activation = {
+            "id": "recActivation",
+            "fields": {**activation["fields"], C.F_ACTIVATION_STATUS: "Released"},
+        }
+        get_record.side_effect = [activation, merchandise]
+        list_all_records.return_value = [ecomm_card, packaging_card]
+        update_record.side_effect = [updated_merchandise, updated_ecomm_card, released_activation]
+
+        response = self.client.post("/api/activations/recActivation/move-to-photo")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["moved"][0]["intakeStatus"], "Awaiting Info/Activation")
+        merch_update = update_record.call_args_list[0].args[2]
+        self.assertEqual(merch_update[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Ecomm", "Packaging"])
+        self.assertNotIn(C.F_RECEIPT_ENTRY_INTAKE_STATUS, merch_update)
+        self.assertEqual(update_record.call_args_list[1].args[0], C.WORKSTREAM_CARDS_TABLE)
+        self.assertEqual(update_record.call_args_list[1].args[1], "recEcommCard")
+        self.assertEqual(update_record.call_args_list[1].args[2], {
+            C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
+            C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
+        })
+        self.assertEqual(update_record.call_count, 3)
+        populate_feed.assert_called_once_with([updated_ecomm_card])
+
+    @patch("routes._list_all_records")
+    @patch("routes._populate_creative_force_feed_for_ready_cards")
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
     def test_move_activation_to_photo_projects_already_ready_workstream(self, get_record, update_record, populate_feed, list_all_records):
         self.authenticate(user_record(role="PM", all_clients=False, client_ids=["recTopco"]))
         activation = {
@@ -1037,7 +1236,7 @@ class AuthTests(unittest.TestCase):
             "fields": {
                 C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
                 C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
-                C.F_WORKSTREAM_CARD_STATUS: "Ready for Photo",
+            C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
             },
         }
         updated_merchandise = {

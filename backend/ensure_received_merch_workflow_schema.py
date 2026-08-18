@@ -86,7 +86,7 @@ def ensure_received_merch_workflow_schema(*, dry_run=False):
         link_field(Config.F_WORKSTREAM_CARD_RECEIVED_MERCH, merchandise["id"]),
         link_field(Config.F_WORKSTREAM_CARD_EXPECTED_PRODUCT, products["id"]),
         single_select_field(Config.F_WORKSTREAM_CARD_TYPE, Config.WORKSTREAM_TYPE_OPTIONS),
-        single_select_field(Config.F_WORKSTREAM_CARD_STATUS, Config.WORKSTREAM_CARD_STATUS_OPTIONS),
+        single_select_field(Config.F_WORKSTREAM_CARD_PLANNING_STATUS, Config.PLANNING_STATUS_OPTIONS),
         number_field(Config.F_WORKSTREAM_CARD_QUANTITY),
         multiline_text_field(Config.F_WORKSTREAM_CARD_MANUAL_PRODUCT_INFO),
         multiline_text_field(Config.F_WORKSTREAM_CARD_NOTES),

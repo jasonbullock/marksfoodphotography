@@ -194,7 +194,7 @@ class MerchandiseReviewTests(unittest.TestCase):
             }),
             self.entry("recWaiting", {
                 C.F_RECEIPT_ENTRY_NAME: "Imported later",
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Waiting on Information",
+                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Info",
             }),
             self.entry("recValidated", {
                 C.F_RECEIPT_ENTRY_ITEM: ["recProductValidated"],
@@ -363,7 +363,7 @@ class MerchandiseReviewTests(unittest.TestCase):
         update_record.return_value = self.entry("recEntry", {
             C.F_RECEIPT_ENTRY_NOTES: "Receiver note\nImport missing",
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Waiting on Information",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Info",
         })
 
         response = self.app.post("/api/merchandise/review/recEntry/waiting-product-data", json={"note": "Import missing"})
@@ -371,7 +371,7 @@ class MerchandiseReviewTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_ITEM], [])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Waiting on Information")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Awaiting Info")
         self.assertNotIn("[Waiting for Product Data]", fields[C.F_RECEIPT_ENTRY_NOTES])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
         self.assertEqual(response.get_json()["reviewState"], "Waiting for Product Data")

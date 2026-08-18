@@ -1,8 +1,96 @@
 # Product Decisions
 
+## 2026-08-17 - Source Check Is Read-Only Evidence
+
+Topco tracker integration should begin as reversible Source Check mode, not replacement sync. The shared Google Sheet remains read-only from Marks Photo, and existing Product import/edit behavior stays available. The first implementation compares current in-application Product Data with source sheet row data already preserved in Product `Reference Data`, limited to identity fields needed to confirm the match and fields required by Client settings for the suggested photo deliverable. It ignores non-required source sheet fields and lets PMs recheck the current local Product data without writing Products, routing Merchandise, updating statuses, or writing back to Google Sheets.
+
+Tracker `Request Type` is expected-work intent and may map to suggested Deliverables (`Ecomm only` -> `Ecomm`, `Pack only` -> `Packaging`, `Thr3d only` -> `Thr3d`, `Pack & Thr3d` -> `Packaging + Thr3d`, `Ecomm & Pack` -> `Ecomm + Packaging`). Those suggestions are not committed Deliverables and must not create work, move Planning cards, or send THR3D items until a PM confirms in Planning. Blank UPC and `NO UPC` tracker rows are compare-only until a stronger Topco match key is approved.
+
+Source Check rules should live as client readiness/source configuration rather than one-off panel logic. Topco's Source Check configuration uses Product Name + UPC as source identity, Request Type as the activation field, and required-to-proceed fields by suggested work path. Packaging requires Product Name, UPC, and WKFT Job Number. Ecomm requires Product Name, UPC, and CVID. UPC is required for Topco matching and folder naming, including Ecomm folders; WKFT Job Number is required for Topco folder naming/handoff, especially Packaging; CVID is required for Ecomm file naming. These fields are required to proceed, not narrowly required to shoot.
+
+The first implementation keeps this reversible by seeding Topco Source Check rules in the client readiness profile and exposing them through `/api/clients` as `sourceCheckRules`; Admin > Clients displays those rules read-only. This does not add a new Airtable Client schema field or a general rules editor yet.
+
+For Topco Source Check, `Pack & Thr3d` means Packaging required plus THR3D shipment context. `Thr3d Only` and `Not Needed` mean no normal Walnut production work is expected and should alert if merchandise arrives at Walnut. Missing source values should be corrected in the source sheet; Marks may store local activation/readiness state but must not overwrite source Product data or write back to the Google Sheet from Source Check.
+
+Source Check may read the shared Topco Google Sheet live through a read-only CSV export endpoint so Products can show source-only rows that do not yet have Marks Product records. That live read is evidence only: it may match source rows to Products by UPC first and exact Product Name second, display the match method, and compare required-to-proceed fields, but it must not create Products, update Product fields, write back to Google Sheets, or route Merchandise. The initial live slice is intentionally bounded to the first 20 data rows of `Master Tracker 2026`.
+
+The live Source Check payload should stay narrow. For Topco, return only the source fields currently needed for identity, activation, required-to-proceed checks, and source product/naming context: `Product Name`, `CVID`, `UPC`, `Brand Prefix`, `Request Type`, `WKFT #`, `Mbox #`, `Product Type`, `Prod Descrip`, `Link to Prepro/Overlays`, `Path to Art`, and `Photo Notes`. Physical/noise tracker columns such as merch status, vendor, received date, studio destination, and quantity received remain in the source sheet and should not be part of Source Check unless a real rule needs them later.
+
+For this Topco slice, the source column `Prod Descrip` is the source-owned value used for the packaging `File Name Description` handoff/filename token and the display `Product Description`. Do not add a new Airtable field for this yet. Source Lookup and Admin > Clients should show the mapping clearly as `Prod Descrip` -> `File Name Description` / `Product Description`, and readiness/handoff checks should not report Product Description and File Name Description as unrelated missing values when `Prod Descrip` or Product Description is present.
+
+## 2026-08-18 - Source Snapshot Metadata Lives In Product Reference Data
+
+Topco source-linked Products should remain local/actionable Marks records, not a full mirror of every tracker row. When a PM commits an actionable Product import, the app may store a small `_sourceSnapshot` object inside the existing Product `Reference Data` JSON. The snapshot records source provenance and source identity only: client, source spreadsheet, tab, row number when known, checked timestamp, match method, actionable reason, Product Name, and UPC.
+
+This is metadata only. It must not create a new Airtable table or schema field, must not write to Google Sheets, must not auto-create Products from Source Check preview rows, must not overwrite source Product facts, and must not change Planning routing or status behavior. Missing source facts remain missing in the source sheet until corrected there. Future writeback, if approved, should be narrow status reporting rather than Product/source-fact synchronization.
+
+## 2026-08-18 - Source Lookup Activation Is The One-Row Commit
+
+For Topco, Source Lookup is the source-first Product data path for daily use, while Product Import remains the bulk spreadsheet upload/mapping/validation path. Browsing, searching, previewing, or rechecking Source Lookup remains read-only against the Google Sheet and must not create Products or route Planning.
+
+`Activate in Marks` is the explicit commit point. It may create or update exactly one local Product from one selected source row, using the approved Topco Product fields plus the existing Product `Reference Data` `_sourceSnapshot`. It must not create Planning cards, assign Deliverables, move queues, update statuses, or write to Google Sheets. A selected source row is sufficient identity for activation even when UPC is blank; UPC remains required-to-proceed for downstream naming/readiness and can update the same local Product later by `_sourceSnapshot`.
+
+Activation must be idempotent. For the same Topco client, the app first reuses a Product whose `_sourceSnapshot` points at the same source row. If no snapshot match exists, it reuses a Product with the same UPC. Product Name may support human review but is not the activation key. A new Product is created only after both checks fail.
+
+Source-linked refresh is allowed to clear source-owned activation data when the source row is blank. In this slice, Topco Request Type is the activation field that drives suggested Deliverables, so clearing Request Type in the Google Sheet must clear the local Product Request Type on the next source-linked refresh/open. This prevents Planning from suggesting work from stale source data. Regular Product Import keeps its existing behavior where blank import cells do not wipe existing Product values.
+
+Topco source-linked Product refresh may run on a backend interval as long as it calls the same narrow helper as the manual/admin operation. The refresh may update only local Products that already carry `_sourceSnapshot` for the Topco source sheet. It must not ingest every sheet row, create Products for unmatched rows, write to Google Sheets, change Merchandise committed Deliverables, route Planning cards, create workstreams, or create THR3D records. Planning cards should not refresh source rows individually on open once the backend refresher exists.
+
+The source refresh timer is a Client source/readiness setting, not a Product workspace control. Admins edit it under Admin > Clients as `Source sync`, and the saved override lives in the existing Client Photo Production Requirements JSON under `sourceRefresh` until a broader client-settings schema is approved. This avoids adding a new Airtable field for the current Topco slice while keeping the setting visible and reversible.
+
+## 2026-08-18 - Shipments Can Activate A Source Row While Matching Merchandise
+
+Daily Topco source matching should start where the physical sample is being handled: Shipments. A Product does not need to exist before a receiver or PM reviews a saved Merchandise item. The match UI may show read-only source-backed Product matches beside the existing local Product suggestions, using observed package clues such as Product Name on Package and UPC / ID.
+
+Viewing source suggestions is evidence only. It must not create Products, write Google Sheets, route work, or change Planning state. For saved Merchandise, selecting `Match` on one source row is the commit point: Marks creates or updates exactly one local Product through the same idempotent Source Lookup activation helper, stores `_sourceSnapshot` in Product `Reference Data`, and links the Merchandise record to that Product through the existing Product match behavior.
+
+For new Add Merchandise drafts, source rows should be selectable before a Merchandise record exists. The draft action is also `Match`, which stages the source row locally. Product activation still waits until `Save Merchandise`: the app first creates the Merchandise record, then activates/updates the Product from the selected source row, stores `_sourceSnapshot`, and links the new Merchandise to the Product.
+
+This remains reversible and narrow. It does not replace Product Import, does not create Planning cards, does not assign Deliverables, and does not create THR3D shipping items. If no source row is chosen, the Merchandise stays unmatched.
+
+In Add Merchandise, matching suggestions are the preferred path. For clients with source rules, including Topco, Shipments should use source-backed Product matches as the suggestion source and should not run local Product lookup for suggestions. Local Products remain the activation result and linked record after a source row is selected, but they are not the discovery source for source-backed clients. Source-backed Product matches should stay focused on product identity; request/work readiness belongs later in Planning and Source Lookup details, not on each candidate row during merchandise matching. If the receiver does not choose a match while adding Merchandise, they can simply save the Merchandise and leave it unmatched for later review instead of clicking a separate `No clear match` action.
+
+## 2026-08-17 - Newly Received Merch Is Acceptance And Triage
+
+`Newly Received Merch` is a merchandise acceptance/triage surface, not a Product-data completion surface. The PM's first decision is whether the physical received item is acceptable to continue. Product matching remains available inside that check, but it should not feel like the only job of the column.
+
+The primary forward action for newly received merchandise is `Confirm Merch`. The footer preview explains whether confirmation will move the item to `Needs More Information` or `Ready to Release`. `Raise Issue` is the paired exception action and begins as a blocking Issue layer attached to the Merchandise. Full replacement, relink, supersession, and corrected-merch workflows are deferred until the Issue model is intentionally designed.
+
+Ecomm/Packaging separation should be visually deferred until release/handoff so PMs can keep one merchandise card through `Newly Received Merch` and `Needs More Information`. Current backend support for child Ecomm/Packaging workstream cards remains available for compatibility, but the Planning Release view should not make PMs feel that confirming merchandise immediately fragments the card.
+
+## 2026-08-17 - Planning Actions Use Stable Business Intent
+
+Planning action buttons should describe the user intent, not the backend mechanism or changing implementation outcome. Newly received merchandise uses a stable `Confirm Merch` action, and workstream/detail cards use `Save Details`. The footer preview carries the variable outcome language, such as moving to Needs More Information, moving to Ready to Release, or blocking on an open issue/missing required information.
+
+Ready-to-Release remains release-focused. Batch selection opens the release composer through `Create Release`, and Ecomm/Packaging selections remain mutually separated for release package clarity. Card-level actions should stay consistent: the card body selects in batch mode, the pencil opens details, and state-changing workflow commits happen in the modal footer. Do not add more per-card workflow buttons. The current frontend continues to use existing backend endpoints; backend transaction cleanup for a single save/review/release commit boundary is a follow-up.
+
+## 2026-08-17 - Dashboard Newly Received Merch Mirrors Planning
+
+The Dashboard `Newly Received Merch` section must reflect the same card eligibility used by the Planning Release view's `Newly Received Merch` section. Dashboard should not independently infer “new” from Shipment completion fields alone, because that can drift from Planning's current PM queue/section logic. The Dashboard remains a visibility slice and entry point into Planning; it does not add a workflow status, duplicate Planning queues, or create a separate dashboard-only definition of newly received merchandise.
+
+## 2026-08-18 - Planning Kanban View Removed
+
+Planning no longer exposes the Kanban board as a user-facing view. The active Planning views are Release and List. Kanban-only card/column components, the Kanban toolbar button, and Kanban drag/drop queue movement logic are removed from the frontend. Planning routing still follows the Draft -> Commit contract: opening or selecting cards does not reroute work, and committed movement happens through the shared Planning modal or release flow.
+
+## 2026-08-14 - Planning Release View Is A Reversible View
+
+Planning may use the Release view as the default Planning scanning surface for PMs. The Release view must reuse the same Planning cards, filters, shared modal, Draft -> Commit behavior, and Ready for Photo handoff. It must not add Airtable fields, routes, workflow states, or a parallel queue model. The former Kanban fallback was removed on 2026-08-18; Release/List are now the supported Planning views.
+
+The Release view names the first presentation section `Newly Received Merch` to keep the surface grounded in what physically arrived, while preserving the underlying New/Needs Review data contract. Newly received merchandise must be viewed and acknowledged before it leaves this section, even when captured data is already complete. After acknowledgement, cards with any outstanding validation belong in `Needs More Information`; cards that satisfy the same checks used by the modal's `Ready for Photo` action belong in `Ready to Release` because they only need activation/release information before being committed to `Ready for Photo`. `Ready to Release` is not a persisted status and must not replace the canonical `Ready for Photo` handoff. The default Release view should not show a full `Ready for Photo` work section: once Planning commits that handoff, the item leaves the active Planning surface and downstream status belongs on Production-facing surfaces. The List view may still expose the canonical queue model for inspection.
+
+`Ready to Release` is a batching surface. PMs may select multiple ready cards and open one activation/release package with those items prelinked. Selection should feel like choosing cards, not filling out a form: use the card's selected state instead of visible checkboxes, and keep a secondary details action for opening the review modal. This must reuse the existing activation/release persistence and must not create a separate batch table or workflow state.
+
+The photo release modal is a release composer, not a second validation surface. Item/Product data that made a card eligible for release should be visible as read-only confirmation context inside the release package. PMs should edit only release-specific details there, such as Project name, Walnut Scope, image counts, artwork path, upload location, notes, and optional Structure. Corrections to validated Product or Merchandise data belong back in Planning.
+
+Photo releases are scoped to one photo deliverable. Because the selected deliverable is already established before the release composer opens and appears in the modal header, the composer should not expose an internal Deliverables selector. Ready-to-release batching must prevent selecting Ecomm and Packaging together; PMs release each deliverable type separately so the release package, item requirements, and email preview stay unambiguous.
+
 ## 2026-08-12 - Planning Cards Share One Opened-Card Surface
 
 New Merch, Received Merch, and Ecomm/Packaging workstream cards are the same PM planning-card experience at different queue steps. Opening any of them uses the shared review modal with the same merchandise, Product match, Deliverables, Product data, comments, and history sections. Queue position changes the available action, not the visual anatomy. Only New Merch provides Previous/Next Merchandise navigation and creates work; existing workstream cards use the same modal and may move to Ready for Photo after validation. This keeps the card focused on readiness rather than exposing implementation-specific workstream drawers.
+
+Expected Product matching is optional for unmatched merchandise exceptions. If no Expected Product exists or no clear match is found, Planning should let the PM manually enter the Product data required for the selected photo deliverable and continue toward release. Those manual fields live on Received Merch or child Workstream Cards as `Manual Product Info` and may satisfy Photo Production Requirements and Creative Force feed projection. Planning must not create or mutate a Product record as a side effect of this manual path; later Product creation or labeling on the Products page is a separate reconciliation decision.
+
+In the unmatched/manual path, merchandise identity fields are not duplicated as editable Product data fields. Product Name and UPC / Product ID entered in the Match Product step should satisfy the corresponding Product data for photo requirements and be inherited into the handoff payload. The Product data step should show only the remaining missing handoff fields, with a small note that package name and UPC are being reused from merchandise identity.
 
 An existing Ecomm or Packaging workstream may be changed to the other photo deliverable. The PM edits the draft Deliverables selection and commits it with `Save workstream`; the backend updates the existing Workstream Card type and display name in place, preserves its queue/status, and does not create a duplicate child card.
 
@@ -324,7 +412,7 @@ Topco Ready for Photo requires:
 
 Topco Ecomm activation data currently requires UPC, CVID, Description, Walnut Scope, and Upload Location. Artwork Path is optional activation context because it is not an Ecomm requirement; Structure is also optional item-level context. Neither blocks Move to Photo.
 
-Topco Packaging activation data currently requires UPC, Job Number, Brand, and Coordinator Description.
+Topco Packaging activation data currently requires UPC, WKFT Job Number, Brand Prefix, and File Name Description.
 
 Quantity received, storage location, individual file names, and post-photo tracking statuses are not Topco activation requirements. Quantity and physical handling remain Shipments facts. Creative Force owns detailed production file naming unless Marks Photo explicitly needs a token such as CVID or a folder reference to perform the handoff.
 
@@ -349,13 +437,13 @@ The canonical interaction contract is:
 - Board = committed state.
 - Modal = draft workspace.
 - Footer = single commit area.
-- `Finish & Move` = only commit action for routing changes.
+- The footer action is the only commit action for routing changes; current visible language is `Confirm Merch` for newly received merchandise.
 - No optimistic routing, board refresh, card movement, badge movement, or background animation while the modal is open.
 - Background board interaction is frozen while the modal is active.
 - Cancel, Esc, close, and backdrop close discard uncommitted draft changes.
 - Cards move or animate only after the finish save succeeds and the board reloads.
 
-For the Merchandise Verification modal, selecting `Thr3d`, `Packaging`, or `Ecomm` updates only local modal state and the `Will move to ...` footer preview. The frontend must not call the Deliverables save endpoint or reload the Planning board from that selection. `Finish & Move` sends the selected `Deliverables`, destination `stage`, and blocking requirements together through `/api/merchandise/:id/intake-state`; after success, the board refreshes, the modal closes, and the card appears in its committed destination.
+For the Merchandise Verification modal, selecting `Thr3d`, `Packaging`, or `Ecomm` updates only local modal state and the footer outcome preview. The frontend must not call the Deliverables save endpoint or reload the Planning board from that selection. The stable footer commit action sends the selected `Deliverables`, destination `stage`, and blocking requirements together through `/api/merchandise/:id/intake-state`; after success, the board refreshes, the modal closes, and the card appears in its committed destination.
 
 ## 2026-07-22 - Merchandise Comments Are Lightweight Conversation Records
 
@@ -399,7 +487,7 @@ The backend `/api/merchandise/:id/intake-state` endpoint may continue accepting 
 
 ## 2026-08-12 - Client Photo Requirements Are the Card Verification Source
 
-The client `Photo Production Requirements` JSON is the single configuration source for Product-data checks shown on Received Merch and Workstream cards. The frontend must not use a separate hard-coded per-card checklist when a client profile is present; the Topco profile is only an initial fallback for clients whose configuration field is empty. Topco Ecomm does not require Job Number by default. A PM may add Job Number in Admin > Clients when a client-specific handoff requires it. Matched Product Name and UPC satisfy those identity checks and are not repeated as remaining work.
+The client `Photo Production Requirements` JSON is the single configuration source for Product-data checks shown on Received Merch and Workstream cards. The frontend must not use a separate hard-coded per-card checklist when a client profile is present; the Topco profile is only an initial fallback for clients whose configuration field is empty. Topco Ecomm does not require WKFT Job Number by default. A PM may add WKFT Job Number in Admin > Clients when a client-specific handoff requires it. Matched Product Name and UPC satisfy those identity checks and are not repeated as remaining work.
 
 ## 2026-07-22 - Legacy Workflow Architecture Is Removed
 
@@ -554,7 +642,7 @@ Clicking `Change` on a matched Product should restart Product selection rather t
 
 ## 2026-08-10 - Planning Board Labels Reflect PM Decisions
 
-The Planning board keeps the canonical internal queue values `New`, `Planning`, `Waiting`, and `Ready for Photo`, but the user-facing column labels should describe the PM decision being made: `New Merch`, `Needs Product / Work`, `Awaiting Info/Activation`, and `Ready for Photo`. `New Merch` is the brand-new received-merch inbox. Its cards should open review without a visible `Review Merch` badge; the modal footer is where the primary action reads as the next outcome. Incomplete review uses `Mark Merch Reviewed`; once work can be created, the button should name the creation outcome, such as `Create Packaging Workstream` or `Create THR3D Shipment`. Merchandise navigation belongs together on the footer's left side with previous/next arrows. `Needs Product / Work` is reserved for reviewed merchandise whose Product identity or deliverable/workstream intent is unresolved. Ecomm and Packaging workstream cards with known Product/deliverable intent but missing dependencies belong in `Awaiting Info/Activation`, not the product/work exception lane. This supersedes the earlier first-column `Needs Review` display decision and remains a presentation and routing refinement, not a new Airtable status model.
+The Planning board keeps the canonical internal queue values `New`, `Planning`, `Waiting`, and `Ready for Photo`, but the user-facing column labels should describe the PM decision being made: `New Merch`, `Needs Product / Work`, `Awaiting Info/Activation`, and `Ready for Photo`. `New Merch` is the brand-new received-merch inbox. Its cards should open review without a visible `Review Merch` badge. `Needs Product / Work` is reserved for reviewed merchandise whose Product identity or deliverable/workstream intent is unresolved. Ecomm and Packaging workstream cards with known Product/deliverable intent but missing dependencies belong in `Awaiting Info/Activation`, not the product/work exception lane. This supersedes the earlier first-column `Needs Review` display decision and remains a presentation and routing refinement, not a new Airtable status model. The 2026-08-17 stable-action decision supersedes the older dynamic footer-label guidance from this decision.
 
 Cards in `New Merch` and `Needs Product / Work` should summarize the builder checklist, not later activation state: Product matched/missing and Deliverables defined/missing. Activation belongs in the later info/activation readiness layer after the Product and work intent are known.
 
@@ -583,7 +671,7 @@ Product Job Number and Brand are retired from the Products workspace. Existing c
 
 Photo production requirements belong to Client configuration, not a universal Product table. The first implementation uses one app-owned multiline JSON field on `Clients`, `Photo Production Requirements`, with separate Packaging and Ecomm blocks. This keeps client variation explicit without a configuration table or many Product columns.
 
-For Topco, Packaging requires Product Name, UPC/Product ID, Job Number, Brand Prefix, and File Name Description. Its handoff pattern is `{jobNumber}_{brandPrefix}_{fileNameDescription}`. Ecomm requires Product Name, UPC/Product ID, CVID, and Job Number. Its pattern is `{cvid}_{view}` with the standard view set in configuration. `Brand Prefix` is distinct from Brand because it is the packaging filename value.
+For Topco, Packaging requires Product Name, UPC/Product ID, WKFT Job Number, Brand Prefix, and File Name Description. Its handoff pattern is `{jobNumber}_{brandPrefix}_{fileNameDescription}`. Ecomm requires Product Name, UPC/Product ID, and CVID unless client configuration adds more fields. Its pattern is `{cvid}_{view}` with the standard view set in configuration. `Brand Prefix` is distinct from Brand because it is the packaging filename value.
 
 Creative Force owns final naming convention and execution. Marks Photo verifies that a matched Product has the configured values and that filename tokens/views resolve before handoff. Raw shipment quantity and physical statuses remain on Received Merch/Shipments, and Activation remains separate. The Clients grid calls the identity value `UPC` or `Product ID`; `Primary Match Key` and Airtable `Identifier` remain internal compatibility terminology only.
 
@@ -591,7 +679,17 @@ Creative Force owns final naming convention and execution. Marks Photo verifies 
 
 Creative Force status is associated with the Ecomm or Packaging Workstream Card, not with Product or Received Merch. Creative Force Work Unit webhooks provide the stable `WorkUnitId`, Product identifiers, production type, and status. Marks Photo should match callbacks by `WorkUnitId`, retain the raw Creative Force status, and expose a small normalized status summary without overwriting Planning status or physical Merchandise status.
 
-The first backend slice accepts `POST /api/integrations/creative-force/webhook`, verifies the `X-CF-Signature` HMAC-SHA256 header, handles duplicate payload IDs, and stores a compact sync object in the app-owned Workstream Card field `Creative Force Sync`. The webhook is public only in the HTTP-auth sense; signature validation is mandatory. Creative Force retries failed deliveries, so the endpoint returns success for valid but currently unknown Work Unit IDs rather than creating an unlinked card.
+For the first live integration test, the raw Creative Force status is written directly to the app-owned Workstream Cards field `Creative Force Status`. It is intentionally separate from `Planning Status`; Creative Force does not move the Planning card or translate its status. The existing JSON sync field retains the event payload details for reconciliation.
+
+The first backend slice accepts `POST /api/integrations/creative-force/webhook`, verifies the `X-CF-Signature` HMAC-SHA256 header, handles duplicate payload IDs, and stores a compact sync object in the app-owned Workstream Card field `Creative Force Sync`. The webhook is public only in the HTTP-auth sense; signature validation is mandatory. A first event establishes the link from the unique Creative Force Product Feed row and its `Source Key` when possible; later events use the stored Work Unit ID. Product Code/workstream matching remains a fallback. Ambiguous or unmatched events are not written to a card.
+
+The Admin Creative Force view exposes the latest signed webhook payload and handling result for troubleshooting. This is an in-memory diagnostic snapshot only; durable webhook history would require a separate persistence decision.
+
+Creative Force progress is represented with two raw values: `Creative Force Status` for the Work Unit status and `Creative Force Step` for the reported production step. The step status is retained in `Creative Force Sync` until a separate UI or Airtable field is justified. Marks Photo does not translate either value into Planning Status.
+
+Ready for Photo release packages show item-level Artwork Path, Upload Location, and Structure inputs for both photo deliverables because path values can differ by SKU. Item-level activation values remain client-configured: linked Product data prefills the required Ecomm or Packaging fields, while the release retains explicit overrides in its SKU details JSON. Legacy top-level path values remain read-compatible and are copied into item rows when a saved release is reopened.
+
+The release workflow is commit-oriented for now: PMs complete the package and choose `Ready for Photo`. The UI does not expose saved drafts or a Save Draft action. Existing Draft activation records are retained only as backend compatibility data until a cleanup decision is made.
 
 The Clients configuration remains the source of truth for the Creative Force Product Code and Category mappings. PMs do not select those mappings during work. Outbound handoff creation, Airtable field provisioning, and API-based reconciliation are separate follow-up slices.
 
@@ -601,7 +699,7 @@ Before an external Creative Force record is created, Marks Photo must resolve a 
 
 This does not make PMs configure or manually map ordinary work. Client configuration remains admin-owned. The current admin-only link endpoint is a temporary integration bridge while the Creative Force API connection is being provisioned; it must be replaced or supplemented by outbound API creation once the Creative Force OAuth app, workspace/client IDs, datasource ID, and Product Code mapping are available.
 
-Open decisions: whether File Name Description should become a first-class Product/Client Reference value rather than remain in Product Reference Data; whether other clients need configurable per-view naming requirements; and whether the new Airtable field should be ensured through the existing schema utility or provisioned in the next migration.
+Open decisions: whether File Name Description should ever become a first-class Product/Client Reference value rather than remain in Product Reference Data; and whether other clients need configurable per-view naming requirements.
 
 The requirements editor should remain a handoff-readiness configuration surface, not a second naming system. PMs select required source values and views; Creative Force remains responsible for executing final file names.
 
@@ -669,12 +767,12 @@ The underlying fields remain owned by their source records: Merchandise owns `Me
 
 ## 2026-08-12 - Workstream Card Actions Stay Actionable
 
-An existing workstream card must not offer `In Creative Force` as a dead-end button. Product data is updated through the existing Save product data action. Add activation opens the shared Activation editor with the current Received Merch item pre-linked. The footer primary action is shown only when the PM can change the workstream or move the card to Ready for Photo.
+An existing workstream card must not offer `In Creative Force` as a dead-end button. Product data is updated through the existing details save action. Add activation opens the shared Activation editor with the current Received Merch item pre-linked. The 2026-08-17 stable-action decision supersedes earlier footer labels that named workstream changes or movement directly.
 When one photo child exists, changing its deliverable updates that child in place and the commit action names the destination workstream. When both Ecomm and Packaging children exist, neither child may be added or changed into a duplicate; the card explains that the other workstream is already tied to the merchandise and removal is the only structural action.
 
 Creative Force Airtable ingestion uses a separate flat app-owned Product Feed because the Airtable Connector cannot reliably derive readiness from linked Merchandise or Workstream Card fields. The physical table contains fixed scalar handoff fields plus the union of scalar Product fields required by client Photo Production Requirements. A field required by one client becomes a shared column; rows for other clients leave it blank. It does not contain eligibility, Production Summary, status, or blocker fields. The schema utility adds supported required-field columns as client configuration evolves.
 
-The feed projection is one row per eligible Ecomm or Packaging Workstream Card, not one row per Product. This preserves separate Creative Force production types when one Product needs both Packaging and Ecomm work. `Source Key` is the Workstream Card ID. A row exists only when the child card is `Ready for Photo` and the client-configured handoff validation is complete. The feed contains only Airtable handoff fields and never serves as a blocker/status/reporting table.
+The feed projection is one row per Ecomm or Packaging Workstream Card in `Ready for Photo`, not one row per Product. This preserves separate Creative Force production types when one Product needs both Packaging and Ecomm work. `Source Key` is the Workstream Card ID. Client Photo Production Requirements are the single gate for entering Ready for Photo; the feed writer does not apply a second hard-coded Creative Force validation gate after that status is committed. The feed contains only Airtable handoff fields and never serves as a blocker/status/reporting table.
 
 Creative Force handoff must be visible before it is provisioned. Admin includes a read-only Creative Force section that previews ready handoff rows and reports feed-table provisioning state. When an Ecomm or Packaging Workstream Card enters `Ready for Photo`, the backend upserts that row into the Creative Force Product Feed automatically; there is no manual sync action. Blockers remain in Products and Planning; the Airtable feed remains a single-purpose integration surface, not a PM workflow or reporting table. The physical table was provisioned on 2026-08-12 as `tblxEmSy1xZLHtEWW`.
 
@@ -686,7 +784,7 @@ The workstream-card modal uses the selected deliverables to make the intended op
 Removing a workstream deletes only the child Workstream Card. The parent Received Merch remains the source record: it keeps its remaining deliverables when another child exists, and returns to merchandise review when the removed card was the last photo workstream.
 The removal confirmation is the commit point for the modal. Once the delete succeeds, close the card immediately and refresh the board afterward; refresh failure must not make a successful deletion appear unsuccessful.
 
-Activation is a separate fourth step from Product data. Creative Force handoff configuration and activation must not inflate the Step 3 Product-data missing count; each has its own validation/action surface. Structure is optional activation context and is not part of the Move to Photo completion gate.
+Activation is a separate fourth step from Product data. Creative Force handoff configuration and activation must not inflate the Step 3 Product-data missing count; each has its own action surface. Structure is optional activation context and is not part of the Move to Photo completion gate. Client Photo Production Requirements are the single gate for entering Ready for Photo. Once a card is in Ready for Photo, the backend writes or updates its Creative Force Product Feed row without applying a second hard-coded Creative Force validation gate.
 
 ### Activation drafts are one-time request packages
 
@@ -713,4 +811,67 @@ The photo-release utility has one simple commit path: `Ready for Photo`. The cur
 
 ## 2026-08-13 - Planning Uses One Normalized Status
 
-Planning queue placement is represented to the UI/API by one derived `planningStatus` value: `new`, `needs-product-work`, `awaiting-info`, or `ready-for-photo`. The board must not use browser-local queue overrides or make PM-visible placement depend on hidden client state. Existing Airtable Merchandise intake fields and Workstream Card status remain compatibility storage for this slice; the backend derives and returns the normalized status and accepts it on explicit queue updates. The four columns therefore have clear meanings: New Merch, Needs Product / Work, Awaiting Info, and Ready for Photo. The final Ready for Photo group commit is the only path that releases eligible work and populates the Creative Force Product Feed.
+Planning queue placement is represented to the UI/API by one normalized `planningStatus` value: `new`, `needs-product-work`, `awaiting-info`, or `ready-for-photo`. Each planning record stores that value in one Airtable `Planning Status` field; the backend mirrors older intake/status fields only for compatibility and falls back to them for records not yet migrated. The board must not use browser-local queue overrides or make PM-visible placement depend on hidden client state. The four columns therefore have clear meanings: New Merch, Needs Product / Work, Awaiting Info, and Ready for Photo. The final Ready for Photo group commit is the only path that releases eligible work and populates the Creative Force Product Feed. The schema utility `backend/ensure_planning_status_fields.py` creates the field on Merchandise and Workstream Cards.
+
+Unreviewed shipment merchandise is identified by `Planning Status = New` and remains `planningStatus = new` even if intake has already captured an item ID or deliverable value. Raw intake values must not bypass PM review. `Awaiting Info`, `Ready for Photo`, and `Workflows Created` are explicit later states and take precedence over the New Merch default. Older `Intake Status` labels are accepted only as inbound API compatibility aliases and are translated to the canonical planning values before writes.
+
+## 2026-08-13 - Retire Merchandise Intake Status
+
+`Merchandise.Intake Status` is retired. `Merchandise.Planning Status` is the sole persisted queue field and is the source for board placement, with `intakeStatus`/`intake_status` retained only as response aliases for older clients. The migration utility backfilled active records and removes the legacy field when the Airtable schema API supports it. The live metadata DELETE request returned `404 NOT_FOUND`, so the field remains a manual Airtable schema cleanup item rather than an active application dependency.
+
+## 2026-08-13 - Ready for Photo Is The Creative Force Feed Gate
+
+Client Photo Production Requirements are the single validation source for whether an Ecomm or Packaging card may enter `Ready for Photo`. Once that status is committed, the backend must create or update the corresponding Creative Force Product Feed row. Feed projection must not apply a second hard-coded Creative Force validation gate or silently skip a committed Ready for Photo card. Missing feed values, if any, remain visible in the feed payload and are not a second Planning blocker.
+
+## 2026-08-13 - Add Deliverable Preserves Existing Ready Cards
+
+Adding the missing Ecomm or Packaging deliverable is an explicit `Add Deliverable` action on the shared merchandise/workstream card. It creates only the missing sibling workstream and leaves the current card in its existing queue, including `Ready for Photo`; it must never silently switch or reroute the current card. The action is unavailable once both photo workstreams exist. The new child starts in the waiting path and inherits the parent merchandise quantity, matched Product, and manual product information.
+
+## 2026-08-13 - Card-Scoped Photo Release Preserves Siblings
+
+Launching a Ready for Photo release from an Ecomm or Packaging card releases only that selected child workstream. The parent Received Merch record retains the union of its photo deliverables, and an unselected sibling remains in its current queue. The parent is promoted to Ready for Photo only when all of its photo workstreams have been released. A broader grouped release can still release multiple explicitly selected workstreams together.
+
+## 2026-08-13 - Product Type Is Not A Creative Force Feed Field
+
+`Product Type` remains a valid Product/import field and may be used by client photo requirements. It is not part of the Creative Force Product Feed projection because the live feed table does not contain that column. A stale client requirement must not cause a `Product Type` write or feed-schema expansion.
+
+## 2026-08-13 - Product Schema Audit Uses Live Metadata
+
+The non-destructive Airtable schema audit must distinguish live Products fields from historical compatibility names. A fresh live metadata read confirms that `Merch Status`, `Studio/Qty Rcvd`, and `Shot Date` are not dedicated Products columns; any remaining occurrences are embedded Reference Data values and are not deletion targets until a record-level migration is designed. Retired names such as `Workstream`, `Output Type`, shipment/receipt fields, export flags, and Product-level physical fields are not reported when absent from live Products metadata. Compatibility constants may remain in code until their remaining references are removed safely; this audit does not mutate Airtable.
+
+The audit must exclude its own generated report from dependency scanning. Candidate Product fields are review targets only; no live Airtable field is deleted without confirming its record values, code references, and replacement/retention decision.
+## 2026-08-13 - THR3D Outgoing Navigation Signal
+
+Use the live unshipped THR3D shipping-item count as the notification signal. Display it as a yellow badge matching the existing navigation accent both beside `Shipments` in the top navigation and on the `THR3D / Outgoing` Shipments tab. Do not add a second status field or notification table; shipped items disappear from the existing outgoing endpoint and therefore from both badges.
+
+## 2026-08-13 - THR3D Ship Commit and History
+
+Shipping a THR3D item is the commit action: the existing outbound shipment record is created, the shipping item becomes Shipped, and it leaves the active outgoing queue. The active queue badge counts only unshipped items. Shipped items remain visible in a history table at the bottom of the THR3D / Outgoing view; no parallel history table or notification field is introduced.
+
+The `Add Deliverable` action is acknowledged in place. The button shows a pending state during the create request and a success confirmation afterward, preventing duplicate clicks and keeping the card context available for review.
+
+## 2026-08-13 - Keep Planning Vertical Scroll On The Page
+
+The Planning page owns vertical scrolling. The Kanban board may scroll horizontally to reveal columns, but it must not become a competing vertical scroll surface; columns grow with their cards so lower items remain reachable from the page scrollbar.
+
+## 2026-08-13 - Group Sibling Photo Cards Visually
+
+The Planning Kanban presents photo workstream child cards instead of also rendering their parent Received Merch card. It groups Ecomm and Packaging cards only when they belong to the same Received Merch and are in the same queue. This is presentation-only: each Workstream Card remains its own record, retains its own deliverable badge and click target, and can be edited or moved independently. Different merchandise and siblings in different queues are not grouped.
+
+## 2026-08-13 - Photo Release Fields Follow Client Requirements
+
+The Ready for Photo release package is deliverable-aware. Its editable item fields, artwork/upload inputs, and email-preview columns are projected from the selected client's Photo Production Requirements rather than a universal hard-coded Ecomm form. Unconfigured fields are omitted, and inherited matched-product values are shown as subdued autofilled defaults. The release validation uses the same client configuration so the visible modal and final commit do not disagree about what is required.
+
+## 2026-08-13 - Retire legacy Workstream Card Status
+
+Planning queue placement and card updates use the single `Planning Status` field. The older Workstream Card `Status` field is removed from active application behavior to avoid conflicting sources of truth. The Airtable column is not deleted automatically; it can be removed after confirming no external views or automations depend on it.
+
+## 2026-08-18 - Source Refresh Is Client-Configured And Timed
+
+Source-linked Product freshness belongs to client source/readiness configuration, not individual Planning card-open behavior. A background worker may poll enabled client `sourceRefresh` configs and refresh only existing local Products that already have source snapshot metadata. The refresh must not create Products from unmatched source rows, write to Google Sheets, create Planning cards, route work, or create THR3D records. UPC remains required-to-proceed for downstream Topco naming/readiness but is not required to match or refresh a source-linked Product; the source row snapshot is the primary refresh anchor.
+
+Source Request Type may provide the default/suggested Planning deliverable after refresh. That suggestion can appear on the Planning card and in the modal draft, but it is not a committed Merchandise Deliverables value until the PM confirms the card.
+
+The `Newly Received Merch` card should not visually badge source-suggested Packaging, Ecomm, or Thr3d work. Column 1 is an acknowledgement/identity scan, so cards show title, UPC / ID, and matched/unmatched state only. Deliverable badges and missing-info summaries belong after the PM has declared/verified work in the later Planning sections. The `New` pill is limited to the Newly Received section; later sections already imply the merch has been validated or moved forward.
+
+Planning Release grouping is a display option. `Group by shipment` applies only to `Newly Received Merch` and `Needs More Information`; `Ready to Release` remains ungrouped because it is already validated release work. Group headers show the received timestamp on the right only, without a duplicate left-side timestamp.

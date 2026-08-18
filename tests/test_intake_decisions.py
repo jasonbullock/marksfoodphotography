@@ -94,6 +94,32 @@ class IntakeDecisionTests(unittest.TestCase):
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
+    def test_intake_decisions_can_save_manual_product_info(self, get_record, update_record, _clients):
+        get_record.side_effect = [self.entry(), self.receipt()]
+        update_record.return_value = self.entry({
+            C.F_RECEIPT_ENTRY_MANUAL_PRODUCT_INFO: '{"productName":"Manual Toy","upc":"036800030107","cvid":"ManualCVID"}',
+        })
+
+        response = self.app.patch("/api/merchandise/recMerch/intake-decisions", json={
+            "manualProductInfo": {
+                "productName": "Manual Toy",
+                "upc": "036800030107",
+                "cvid": "ManualCVID",
+            },
+        })
+
+        self.assertEqual(response.status_code, 200)
+        fields = update_record.call_args.args[2]
+        self.assertEqual(
+            fields[C.F_RECEIPT_ENTRY_MANUAL_PRODUCT_INFO],
+            '{"cvid": "ManualCVID", "productName": "Manual Toy", "upc": "036800030107"}',
+        )
+        payload = response.get_json()
+        self.assertEqual(payload["manualProductInfo"], '{"productName":"Manual Toy","upc":"036800030107","cvid":"ManualCVID"}')
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
     def test_single_deliverable_saves_as_multi_select_payload(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
         update_record.return_value = self.entry({
@@ -226,7 +252,7 @@ class IntakeDecisionTests(unittest.TestCase):
             C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging"],
             C.F_RECEIPT_ENTRY_NOTES: "Receiver note",
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Waiting on Information",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Info",
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
@@ -239,7 +265,7 @@ class IntakeDecisionTests(unittest.TestCase):
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging"])
         self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_STATUS, fields)
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Waiting on Information")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Awaiting Info")
         self.assertNotIn(C.F_RECEIPT_ENTRY_NOTES, fields)
         self.assertEqual(response.get_json()["reviewState"], "Waiting for Product Data")
 
@@ -258,7 +284,7 @@ class IntakeDecisionTests(unittest.TestCase):
                     C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
                     C.F_WORKSTREAM_CARD_EXPECTED_PRODUCT: ["recProduct"],
                     C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
-                    C.F_WORKSTREAM_CARD_STATUS: "New",
+                    C.F_WORKSTREAM_CARD_PLANNING_STATUS: "New",
                     C.F_WORKSTREAM_CARD_QUANTITY: 4,
                 },
             },
@@ -269,7 +295,7 @@ class IntakeDecisionTests(unittest.TestCase):
                     C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
                     C.F_WORKSTREAM_CARD_EXPECTED_PRODUCT: ["recProduct"],
                     C.F_WORKSTREAM_CARD_TYPE: "Packaging",
-                    C.F_WORKSTREAM_CARD_STATUS: "New",
+                    C.F_WORKSTREAM_CARD_PLANNING_STATUS: "New",
                     C.F_WORKSTREAM_CARD_QUANTITY: 6,
                 },
             },
@@ -313,7 +339,7 @@ class IntakeDecisionTests(unittest.TestCase):
                     C.F_WORKSTREAM_CARD_NAME: "Frozen Pizza Box - 000123 - Packaging",
                     C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
                     C.F_WORKSTREAM_CARD_TYPE: "Packaging",
-                    C.F_WORKSTREAM_CARD_STATUS: "New",
+                    C.F_WORKSTREAM_CARD_PLANNING_STATUS: "New",
                     C.F_WORKSTREAM_CARD_QUANTITY: 6,
                 },
             },
@@ -377,7 +403,7 @@ class IntakeDecisionTests(unittest.TestCase):
                     C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
                     C.F_WORKSTREAM_CARD_EXPECTED_PRODUCT: ["recProduct"],
                     C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
-                    C.F_WORKSTREAM_CARD_STATUS: "New",
+                    C.F_WORKSTREAM_CARD_PLANNING_STATUS: "New",
                     C.F_WORKSTREAM_CARD_QUANTITY: 4,
                 },
             }]
@@ -403,7 +429,7 @@ class IntakeDecisionTests(unittest.TestCase):
                 C.F_WORKSTREAM_CARD_NAME: "Frozen Pizza - Packaging",
                 C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
                 C.F_WORKSTREAM_CARD_TYPE: "Packaging",
-                C.F_WORKSTREAM_CARD_STATUS: "Planning",
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Planning",
                 C.F_WORKSTREAM_CARD_QUANTITY: 6,
             },
         }
@@ -412,59 +438,36 @@ class IntakeDecisionTests(unittest.TestCase):
             "id": "recCard",
             "fields": {
                 **workstream_card["fields"],
-                C.F_WORKSTREAM_CARD_STATUS: "Ready for Photo",
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
             },
         }
 
-        response = self.app.patch("/api/workstream-cards/recCard", json={"status": "Ready for Photo"})
+        response = self.app.patch("/api/workstream-cards/recCard", json={"planningStatus": "Ready for Photo"})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(update_record.call_args.args[0], C.WORKSTREAM_CARDS_TABLE)
         self.assertEqual(update_record.call_args.args[1], "recCard")
         self.assertEqual(update_record.call_args.args[2], {
-            C.F_WORKSTREAM_CARD_STATUS: "Ready for Photo",
             C.F_WORKSTREAM_CARD_TYPE: "Packaging",
+            C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
         })
         self.assertTrue(update_record.call_args.kwargs["typecast"])
-        self.assertEqual(response.get_json()["record"]["status"], "Ready for Photo")
+        self.assertEqual(response.get_json()["record"]["planningStatus"], "ready-for-photo")
         populate_feed.assert_called_once_with([update_record.return_value])
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
-    def test_update_workstream_card_status_accepts_in_production(self, get_record, update_record):
-        workstream_card = {
-            "id": "recCard",
-            "fields": {
-                C.F_WORKSTREAM_CARD_NAME: "Frozen Pizza - Ecomm",
-                C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
-                C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
-                C.F_WORKSTREAM_CARD_STATUS: "Ready for Photo",
-                C.F_WORKSTREAM_CARD_QUANTITY: 6,
-            },
-        }
-        get_record.side_effect = [workstream_card, self.entry(), self.receipt()]
-        update_record.return_value = {
-            "id": "recCard",
-            "fields": {
-                **workstream_card["fields"],
-                C.F_WORKSTREAM_CARD_STATUS: "In Production",
-            },
-        }
-
+    def test_update_workstream_card_rejects_legacy_status(self, get_record, update_record):
         response = self.app.patch("/api/workstream-cards/recCard", json={"status": "In Production"})
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(update_record.call_args.args[2], {
-            C.F_WORKSTREAM_CARD_STATUS: "In Production",
-            C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
-        })
-        self.assertEqual(response.get_json()["record"]["status"], "In Production")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Status is no longer used", response.get_json()["error"])
 
-    def test_update_workstream_card_status_rejects_unknown_status(self):
-        response = self.app.patch("/api/workstream-cards/recCard", json={"status": "Blocked"})
+    def test_update_workstream_card_planning_status_rejects_unknown_status(self):
+        response = self.app.patch("/api/workstream-cards/recCard", json={"planningStatus": "Blocked"})
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Workstream Card Status must be one of", response.get_json()["error"])
+        self.assertIn("planningStatus must be one of", response.get_json()["error"])
 
     @patch("routes.airtable.get_record")
     @patch("routes.airtable.list_records")
@@ -497,6 +500,8 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertEqual(len(payload["records"]), 1)
         self.assertEqual(payload["records"][0]["quantityToShip"], 4)
         self.assertEqual(payload["records"][0]["receivedMerch"]["id"], "recMerch")
+        self.assertEqual(len(payload["shipped"]), 1)
+        self.assertEqual(payload["shipped"][0]["shippingStatus"], "Shipped")
 
     @patch("routes._now_iso", return_value="2026-08-05T14:30:00+00:00")
     @patch("routes.airtable.update_record")
@@ -662,7 +667,7 @@ class IntakeDecisionTests(unittest.TestCase):
         response = self.app.patch("/api/merchandise/recMerch/intake-state", json={"intakeStatus": "Blocked"})
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Intake Status must be one of", response.get_json()["error"])
+        self.assertIn("Planning status must be one of", response.get_json()["error"])
         update_record.assert_not_called()
 
     @patch("routes.airtable.get_record")

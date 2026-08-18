@@ -131,7 +131,7 @@ class ReleaseToProductionTests(unittest.TestCase):
         self.assertTrue(fields[C.F_RECEIPT_ENTRY_RELEASED])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_RELEASED_AT], "2026-07-20T12:00:00Z")
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_RELEASED_BY], ["recTestUser"])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Complete")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Ready for Photo")
         payload = response.get_json()
         self.assertTrue(payload["released"])
         self.assertTrue(payload["requiredToShoot"]["ready"])

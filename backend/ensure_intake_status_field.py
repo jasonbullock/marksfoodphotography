@@ -4,7 +4,7 @@ import json
 
 from airtable import airtable
 from config import Config
-from airtable_schema import create_field, field_by_name, get_tables, load_env, meta_request, table_by_name
+from airtable_schema import field_by_name, get_tables, load_env, meta_request, table_by_name
 
 
 LEGACY_WAITING_FOR_PRODUCT_DATA_MARKER = "[Waiting for Product Data]"
@@ -19,6 +19,7 @@ HISTORICAL_MERCH_STATUSES = {
     "sent to thread",
 }
 MERCH_STATUS_OPTIONS = ["Received", "Issue", "Ready to Ship", "Shipped", "Disposed"]
+LEGACY_INTAKE_STATUS_FIELD = "Intake Status"
 
 def single_select_field(name, options):
     return {
@@ -54,43 +55,21 @@ def merch_status_is_safe_intake_field(merchandise_table):
 
 
 def ensure_intake_status_schema(merchandise_table, *, dry_run=False):
-    intake_field = field_by_name(merchandise_table, Config.F_RECEIPT_ENTRY_INTAKE_STATUS)
-    merch_status = field_by_name(merchandise_table, Config.F_RECEIPT_ENTRY_MERCH_STATUS)
+    intake_field = field_by_name(merchandise_table, LEGACY_INTAKE_STATUS_FIELD)
     decision = {
-        "field": Config.F_RECEIPT_ENTRY_INTAKE_STATUS,
-        "result": "unchanged",
+        "field": LEGACY_INTAKE_STATUS_FIELD,
+        "result": "retired",
         "id": intake_field.get("id", "") if intake_field else "",
         "reusedMerchStatus": False,
         "merchStatusSafe": merch_status_is_safe_intake_field(merchandise_table),
-        "reason": "Intake Status already exists.",
+        "reason": "Intake Status is a retired field. Planning Status is canonical.",
         "missingOptions": [],
         "extraOptions": [],
     }
 
     if intake_field:
-        if intake_field.get("type") != "singleSelect":
-            raise SystemExit(f"{Config.F_RECEIPT_ENTRY_INTAKE_STATUS} exists but is {intake_field.get('type')}, not singleSelect.")
-        current_options = option_names(intake_field)
-        missing = [option for option in Config.INTAKE_STATUS_OPTIONS if option not in current_options]
-        decision["missingOptions"] = missing
-        decision["extraOptions"] = [option for option in current_options if option not in Config.INTAKE_STATUS_OPTIONS]
-        if missing:
-            decision["result"] = "would_update" if dry_run else "updated"
-            decision["reason"] = "Existing Intake Status field is missing required options."
-            if not dry_run:
-                update_field(merchandise_table["id"], intake_field["id"], field_options_payload(intake_field, Config.INTAKE_STATUS_OPTIONS))
-        return decision
-
-    decision["reason"] = (
-        "Merch Status is not reused because it describes physical merchandise state "
-        "with Received, Issue, Ready to Ship, Shipped, and Disposed."
-    )
-    if merch_status:
-        decision["merchStatusChoices"] = option_names(merch_status)
-    decision["result"] = "would_create" if dry_run else "created"
-    if not dry_run:
-        created = create_field(merchandise_table["id"], single_select_field(Config.F_RECEIPT_ENTRY_INTAKE_STATUS, Config.INTAKE_STATUS_OPTIONS))
-        decision["id"] = created.get("id", "")
+        decision["id"] = intake_field.get("id", "")
+        decision["result"] = "would_delete" if dry_run else "retired"
     return decision
 
 
@@ -109,7 +88,7 @@ def valid_intake_status(value):
 
 
 def historical_or_closed(fields):
-    intake_status = str(fields.get(Config.F_RECEIPT_ENTRY_INTAKE_STATUS, "") or "").strip()
+    intake_status = str(fields.get(LEGACY_INTAKE_STATUS_FIELD, "") or "").strip()
     merch_status = str(fields.get(Config.F_RECEIPT_ENTRY_MERCH_STATUS, "") or "").strip()
     if intake_status == "Closed":
         return True
@@ -120,7 +99,7 @@ def historical_or_closed(fields):
 
 def planned_record_update(record):
     fields = record.get("fields", {})
-    existing_status = str(fields.get(Config.F_RECEIPT_ENTRY_INTAKE_STATUS, "") or "").strip()
+    existing_status = str(fields.get(LEGACY_INTAKE_STATUS_FIELD, "") or "").strip()
     marker_present = has_legacy_marker(fields)
     update = {}
     reason = ""
@@ -128,7 +107,8 @@ def planned_record_update(record):
     if marker_present:
         update[Config.F_RECEIPT_ENTRY_NOTES] = clean_legacy_waiting_marker(fields.get(Config.F_RECEIPT_ENTRY_NOTES, ""))
 
-    if valid_intake_status(existing_status):
+    planning_status = str(fields.get(Config.F_RECEIPT_ENTRY_PLANNING_STATUS, "") or "").strip()
+    if planning_status:
         return update, "cleaned_marker_only" if update else "skipped_existing_status"
 
     if existing_status and not valid_intake_status(existing_status):
@@ -138,10 +118,10 @@ def planned_record_update(record):
         return update, "skipped_historical"
 
     if marker_present:
-        update[Config.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Waiting on Information"
+        update[Config.F_RECEIPT_ENTRY_PLANNING_STATUS] = "Awaiting Info"
         reason = "migrated_marker"
     else:
-        update[Config.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Needs Review"
+        update[Config.F_RECEIPT_ENTRY_PLANNING_STATUS] = "New"
         reason = "defaulted_needs_review"
     return update, reason
 
@@ -192,6 +172,16 @@ def migrate_intake_status_records(*, dry_run=False):
     return report
 
 
+def delete_legacy_intake_status_field(merchandise_table, *, dry_run=False):
+    field = field_by_name(merchandise_table, LEGACY_INTAKE_STATUS_FIELD)
+    if not field:
+        return {"result": "already_absent", "field": LEGACY_INTAKE_STATUS_FIELD}
+    if dry_run:
+        return {"result": "would_delete", "field": LEGACY_INTAKE_STATUS_FIELD, "id": field.get("id", "")}
+    meta_request("DELETE", f"/tables/{merchandise_table['id']}/fields/{field['id']}")
+    return {"result": "deleted", "field": LEGACY_INTAKE_STATUS_FIELD, "id": field.get("id", "")}
+
+
 def run(*, dry_run=False):
     load_env()
     if not Config.airtable_ready():
@@ -202,19 +192,21 @@ def run(*, dry_run=False):
     if not merchandise:
         raise SystemExit(f"{Config.MERCHANDISE_TABLE} table is required.")
 
-    schema = ensure_intake_status_schema(merchandise, dry_run=dry_run)
     migration = migrate_intake_status_records(dry_run=dry_run)
+    schema = ensure_intake_status_schema(merchandise, dry_run=dry_run)
+    deletion = delete_legacy_intake_status_field(merchandise, dry_run=dry_run)
     return {
         "dryRun": dry_run,
         "table": Config.MERCHANDISE_TABLE,
-        "canonicalValues": Config.INTAKE_STATUS_OPTIONS,
+        "canonicalValues": Config.PLANNING_STATUS_OPTIONS,
         "schema": schema,
         "migration": migration,
+        "deletion": deletion,
     }
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Ensure Merchandise has a durable Intake Status field and migrate legacy waiting markers.")
+    parser = argparse.ArgumentParser(description="Migrate legacy Intake Status values into Planning Status and retire the old field.")
     parser.add_argument("--dry-run", action="store_true", help="Inspect and report without changing Airtable.")
     args = parser.parse_args()
     print(json.dumps(run(dry_run=args.dry_run), indent=2))

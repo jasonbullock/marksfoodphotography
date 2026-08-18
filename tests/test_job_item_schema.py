@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 import config as C  # noqa: E402
 from routes import (  # noqa: E402
     _apply_item_fields,
+    _build_intake_plan,
     _build_intake_plan_from_source_rows,
     _item_fields_from_row,
     _item_match_score,
@@ -18,6 +19,7 @@ from routes import (  # noqa: E402
     _normalize_item_job_number,
     _normalize_master_or_variant,
     _normalize_product_request_type,
+    _parse_reference_data,
     _shape_receipt_entry,
     _shape_item,
     _shape_job,
@@ -227,6 +229,58 @@ class JobItemSchemaTests(unittest.TestCase):
         self.assertEqual(plan["jobsPreview"][0].get("parentJobNumber"), "")
         self.assertEqual(plan["rows"][0]["itemJobNumber"], "PRJ-260701")
         self.assertEqual(plan["rows"][0]["description"], "Organic Honey Oat Cereal")
+
+    @patch("routes._now_iso", return_value="2026-08-18T12:00:00Z")
+    def test_topco_import_plan_adds_source_snapshot_metadata(self, _now):
+        client_record = {
+            "id": "recTopco",
+            "fields": {
+                C.Config.F_CLIENT_NAME: "Topco",
+                C.Config.F_CLIENT_IDENTIFIER_TYPE: "",
+                C.Config.F_CLIENT_REQUIRED_TO_SHOOT: ["Identifier"],
+            },
+        }
+        parsed = {
+            "headerRow": 4,
+            "columnHeaders": ["Product Name", "UPC", "CVID", "Request Type", "WKFT #"],
+            "rows": [["Topcare Dental Guard", "36800410305", "CVID-1", "Ecomm Only", "JOB-1"]],
+            "sheetNames": ["Master Tracker 2026"],
+            "selectedSheet": "Master Tracker 2026",
+        }
+        mapping = {
+            "__noJob": True,
+            "__targetMapping": {
+                "Product Name": "Product Name",
+                "UPC": "UPC",
+                "CVID": "CVID",
+                "Request Type": "Request Type",
+                "WKFT Job Number": "WKFT #",
+            },
+        }
+
+        with patch("routes._client_record", return_value=client_record), \
+             patch("routes._client_permitted", return_value=True), \
+             patch("routes._existing_jobs_by_lookup", return_value={}), \
+             patch("routes._existing_items_by_identifier", return_value={}):
+            plan = _build_intake_plan("recTopco", "topco.xlsx", parsed, mapping=_mapping_from_ui_mapping(mapping))
+
+        snapshot = plan["rows"][0]["sourceSnapshot"]
+        self.assertEqual(snapshot["client"], "Topco")
+        self.assertEqual(snapshot["source"], "TOPCO (MARKS) PROJECTS")
+        self.assertEqual(snapshot["sheetTab"], "Master Tracker 2026")
+        self.assertEqual(snapshot["sourceRowNumber"], 5)
+        self.assertEqual(snapshot["sourceCheckedAt"], "2026-08-18T12:00:00Z")
+        self.assertEqual(snapshot["matchMethod"], "Import")
+        self.assertEqual(snapshot["actionableReason"], "import_commit")
+        self.assertEqual(snapshot["sourceIdentity"], {
+            "productName": "Topcare Dental Guard",
+            "upc": "36800410305",
+        })
+
+        fields = _item_fields_from_row("recTopco", "", plan["rows"][0])
+        reference_data = _parse_reference_data(fields[C.Config.F_ITEM_REFERENCE_DATA])
+        self.assertEqual(reference_data["_sourceSnapshot"]["sourceRowNumber"], 5)
+        self.assertEqual(reference_data["_sourceSnapshot"]["sourceIdentity"]["productName"], "Topcare Dental Guard")
 
     def test_import_plan_uses_selected_existing_job_container(self):
         client_record = {

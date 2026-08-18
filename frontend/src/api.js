@@ -42,6 +42,15 @@ const F = {
   SKU_UPC: 'UPC',
   SKU_CVID: 'CVID',
   SKU_BRAND_PREFIX: 'Brand Prefix',
+  SKU_REQUEST_TYPE: 'Request Type',
+  SKU_PROJECT_STATUS: 'Project Status',
+  SKU_WKFT_JOB_NUMBER: 'WKFT Job Number',
+  SKU_MBOX_NUMBER: 'Mbox Number',
+  SKU_PRODUCT_TYPE: 'Product Type',
+  SKU_PRODUCT_DESCRIPTION: 'Product Description',
+  SKU_PREPRO_OVERLAYS: 'Link to Prepro/Overlays',
+  SKU_ECOMM_PHOTO_NOTES: 'Ecomm Photo Notes',
+  SKU_PATH_TO_ART: 'Path to Art',
   SKU_IDENTIFIER_TYPE: 'Identifier Type',
   SKU_PRODUCT: 'Product or File Name',
   SKU_ITEM_JOB_NUMBER: 'Product Job Number',
@@ -123,20 +132,22 @@ function shapeClient(r) {
   const f = r.fields ?? {};
   return {
     id: r.id,
-    name: f[F.CLIENT_NAME] ?? '',
-    codeType: f[F.CLIENT_IDENTIFIER_TYPE] ?? '',
-    identifierLabel: f['Identifier Label'] ?? 'Primary Match Key',
-    primaryMatchKeyLabel: f['Identifier Label'] ?? 'Primary Match Key',
+    name: r.name ?? f[F.CLIENT_NAME] ?? '',
+    codeType: r.codeType ?? f[F.CLIENT_IDENTIFIER_TYPE] ?? '',
+    identifierLabel: r.identifierLabel ?? f['Identifier Label'] ?? 'Primary Match Key',
+    primaryMatchKeyLabel: r.primaryMatchKeyLabel ?? f['Identifier Label'] ?? 'Primary Match Key',
     upc: f['UPC'] ?? f['Identifier'] ?? '',
     cvid: f['CVID'] ?? '',
     brandPrefix: f['Brand Prefix'] ?? '',
-    requiredToShoot: f['Required to Shoot'] ?? ['Identifier'],
-    artworkRequirement: f['Artwork Requirement'] ?? 'Optional',
-    merchandiseRequired: f['Merchandise Required'] ?? true,
-    holdDays: f[F.CLIENT_HOLD_DAYS] ?? null,
-    dispoDays: f[F.CLIENT_DISPO_DAYS] ?? null,
-    jobPrefix: f[F.CLIENT_JOB_PREFIX] ?? '',
-    active: f[F.CLIENT_ACTIVE] ?? false,
+    requiredToShoot: r.requiredToShoot ?? f['Required to Shoot'] ?? ['Identifier'],
+    artworkRequirement: r.artworkRequirement ?? f['Artwork Requirement'] ?? 'Optional',
+    merchandiseRequired: r.merchandiseRequired ?? f['Merchandise Required'] ?? true,
+    holdDays: r.holdDays ?? f[F.CLIENT_HOLD_DAYS] ?? null,
+    dispoDays: r.dispoDays ?? f[F.CLIENT_DISPO_DAYS] ?? null,
+    jobPrefix: r.jobPrefix ?? f[F.CLIENT_JOB_PREFIX] ?? '',
+    readinessProfile: r.readinessProfile ?? f.readinessProfile ?? null,
+    sourceCheckRules: r.sourceCheckRules ?? f.sourceCheckRules ?? null,
+    active: r.active ?? f[F.CLIENT_ACTIVE] ?? false,
   };
 }
 
@@ -182,6 +193,18 @@ function shapeSku(r) {
     identifier: f[F.SKU_IDENTIFIER] ?? '',
     primaryMatchKey: f[F.SKU_IDENTIFIER] ?? '',
     codeType,
+    upc: f[F.SKU_UPC] ?? f[F.SKU_IDENTIFIER] ?? '',
+    cvid: f[F.SKU_CVID] ?? '',
+    brandPrefix: f[F.SKU_BRAND_PREFIX] ?? '',
+    requestType: f[F.SKU_REQUEST_TYPE] ?? '',
+    projectStatus: f[F.SKU_PROJECT_STATUS] ?? '',
+    wkftJobNumber: f[F.SKU_WKFT_JOB_NUMBER] ?? '',
+    mboxNumber: f[F.SKU_MBOX_NUMBER] ?? '',
+    productType: f[F.SKU_PRODUCT_TYPE] ?? '',
+    productDescription: f[F.SKU_PRODUCT_DESCRIPTION] ?? '',
+    preproOverlays: f[F.SKU_PREPRO_OVERLAYS] ?? '',
+    ecommPhotoNotes: f[F.SKU_ECOMM_PHOTO_NOTES] ?? '',
+    pathToArt: f[F.SKU_PATH_TO_ART] ?? '',
     product: f[F.SKU_PRODUCT] ?? '',
     itemJobNumber: f[F.SKU_ITEM_JOB_NUMBER] ?? '',
     description: f[F.SKU_DESCRIPTION] ?? '',
@@ -278,6 +301,25 @@ api.listProducts = async (jobId) => {
   if (jobId) params.set('jobId', jobId);
   return backend('GET', `/products${params.toString() ? `?${params.toString()}` : ''}`);
 };
+api.topcoSourceCheck = async ({ limit = 20 } = {}) => {
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', String(limit));
+  return backend('GET', `/source-check/topco${params.toString() ? `?${params.toString()}` : ''}`);
+};
+api.topcoSourceSuggestions = async ({ clientId, productName, upc, limit } = {}) => {
+  const params = new URLSearchParams();
+  if (clientId) params.set('clientId', clientId);
+  if (productName) params.set('productName', productName);
+  if (upc) params.set('upc', upc);
+  if (limit) params.set('limit', String(limit));
+  return backend('GET', `/source-check/topco/suggestions${params.toString() ? `?${params.toString()}` : ''}`);
+};
+api.activateTopcoSourceRow = ({ sourceRowNumber, clientId }) => {
+  return backend('POST', '/source-check/topco/activate', { sourceRowNumber, clientId });
+};
+api.refreshTopcoSourceLinkedProducts = ({ clientId, limit } = {}) => {
+  return backend('POST', '/source-check/topco/refresh-linked-products', { clientId, limit });
+};
 api.getProduct = (id) => backend('GET', `/products/${id}`);
 api.updateProduct = async (id, patch) => {
   if ('primaryMatchKey' in patch || 'productId' in patch || 'gtinUpc' in patch || 'identifier' in patch) {
@@ -336,6 +378,7 @@ api.deleteWorkstreamCard = async id => backend('DELETE', `/workstream-cards/${id
 api.getCreativeForceHandoff = async (id) => backend('GET', `/workstream-cards/${id}/creative-force-handoff`);
 api.linkCreativeForceWorkUnit = async (id, payload) => backend('PATCH', `/workstream-cards/${id}/creative-force-link`, payload);
 api.previewCreativeForceProductFeed = async () => backend('GET', '/integrations/creative-force/product-feed/preview');
+api.getCreativeForceWebhookDiagnostics = async () => backend('GET', '/integrations/creative-force/webhook/diagnostics');
 api.listThr3dShippingItems = async () => backend('GET', '/thr3d-shipping-items');
 api.shipThr3dShippingItem = async (id, payload) => backend('POST', `/thr3d-shipping-items/${id}/ship`, payload);
 api.searchVerificationItems = async ({ q, clientId, includeItemId } = {}) => {
@@ -358,6 +401,7 @@ api.validateVerificationEntry = async (entryId) => backend('POST', `/verificatio
 api.verifyMerchandise = async (entryId, payload = {}) => backend('POST', `/merchandise/review/${entryId}/verify`, payload);
 api.unverifyMerchandise = async (entryId) => backend('POST', `/merchandise/review/${entryId}/unverify`);
 api.matchMerchandiseReviewEntry = async (entryId, productId) => backend('POST', `/merchandise/review/${entryId}/match`, { itemId: productId });
+api.activateMerchandiseSourceRow = async (entryId, { sourceRowNumber } = {}) => backend('POST', `/merchandise/${entryId}/activate-source-row`, { sourceRowNumber });
 api.validateMerchandiseReviewEntry = async (entryId) => backend('POST', `/merchandise/review/${entryId}/validate`, { status });
 api.removeMerchandiseReviewMatch = async (entryId) => backend('POST', `/merchandise/review/${entryId}/remove-match`);
 api.updateMerchandiseIntakeDecisions = async (entryId, payload = {}) => backend('PATCH', `/merchandise/${entryId}/intake-decisions`, payload);

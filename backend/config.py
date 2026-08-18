@@ -29,6 +29,25 @@ class Config:
     RECEIVING_PHOTO_STORAGE = os.getenv("RECEIVING_PHOTO_STORAGE", "r2")
     RECEIVING_PHOTO_MAX_BYTES = int(os.getenv("RECEIVING_PHOTO_MAX_BYTES", str(12 * 1024 * 1024)) or str(12 * 1024 * 1024))
     RECEIVING_PHOTO_LOCAL_DIR = str(BACKEND_DIR / "uploads" / "receiving")
+    TOPCO_SOURCE_SHEET_ID = os.getenv("TOPCO_SOURCE_SHEET_ID", "1vYAEh-fPogUX5c3dsBqvlqx5aaUvZ_kBQUFnOfYtr9k")
+    TOPCO_SOURCE_SHEET_GID = os.getenv("TOPCO_SOURCE_SHEET_GID", "1627774267")
+    TOPCO_SOURCE_SHEET_TAB = os.getenv("TOPCO_SOURCE_SHEET_TAB", "Master Tracker 2026")
+    TOPCO_SOURCE_HEADER_ROW = int(os.getenv("TOPCO_SOURCE_HEADER_ROW", "5") or "5")
+    TOPCO_SOURCE_COLUMN_RANGE = os.getenv("TOPCO_SOURCE_COLUMN_RANGE", "A:AE")
+    TOPCO_SOURCE_REFRESH_ENABLED = os.getenv("TOPCO_SOURCE_REFRESH_ENABLED", "true").lower() == "true"
+    TOPCO_SOURCE_REFRESH_INTERVAL_SECONDS = int(os.getenv("TOPCO_SOURCE_REFRESH_INTERVAL_SECONDS", "300") or "300")
+    TOPCO_SOURCE_REFRESH_LIMIT = int(os.getenv("TOPCO_SOURCE_REFRESH_LIMIT", "100") or "100")
+    TOPCO_SOURCE_CHECK_FIELDS = [
+        field.strip()
+        for field in os.getenv(
+            "TOPCO_SOURCE_CHECK_FIELDS",
+            (
+                "Product Name,CVID,UPC,Brand Prefix,Request Type,WKFT #,Mbox #,"
+                "Product Type,Prod Descrip,Link to Prepro/Overlays,Path to Art,Photo Notes"
+            ),
+        ).split(",")
+        if field.strip()
+    ]
 
     # Table names - canonical application domain.
     CLIENTS_TABLE = "Clients"
@@ -109,7 +128,9 @@ class Config:
     F_RECEIPT_ENTRY_PHOTO_METADATA = "Photo Metadata"
     F_RECEIPT_ENTRY_ITEM = "Product"
     F_RECEIPT_ENTRY_MERCH_STATUS = "Merch Status"
-    F_RECEIPT_ENTRY_INTAKE_STATUS = "Intake Status"
+    F_RECEIPT_ENTRY_PLANNING_STATUS = "Planning Status"
+    # API compatibility name only. Planning Status is the sole persisted queue field.
+    F_RECEIPT_ENTRY_INTAKE_STATUS = F_RECEIPT_ENTRY_PLANNING_STATUS
     F_RECEIPT_ENTRY_NEW_MERCH_STATUS = "New Merch Status"
     F_RECEIPT_ENTRY_DELIVERABLES = "Deliverables"
     F_RECEIPT_ENTRY_MANUAL_PRODUCT_INFO = "Manual Product Info"
@@ -120,6 +141,7 @@ class Config:
     F_RECEIPT_ENTRY_MERCH_VERIFIED_AT = "Merchandise Verified At"
     F_RECEIPT_ENTRY_MERCH_VERIFIED_BY = "Merchandise Verified By"
     INTAKE_STATUS_OPTIONS = ["Needs Review", "Waiting on Information", "Ready for Photo", "Complete"]
+    PLANNING_STATUS_OPTIONS = ["New", "Needs Product / Work", "Awaiting Info", "Ready for Photo"]
     NEW_MERCH_STATUS_OPTIONS = ["Needs Review", "Workflows Created"]
     DELIVERABLE_OPTIONS = ["Packaging", "Ecomm", "Thr3d"]
 
@@ -128,13 +150,14 @@ class Config:
     F_WORKSTREAM_CARD_RECEIVED_MERCH = "Received Merch"
     F_WORKSTREAM_CARD_EXPECTED_PRODUCT = "Expected Product"
     F_WORKSTREAM_CARD_TYPE = "Workstream Type"
-    F_WORKSTREAM_CARD_STATUS = "Status"
+    F_WORKSTREAM_CARD_PLANNING_STATUS = "Planning Status"
     F_WORKSTREAM_CARD_QUANTITY = "Quantity"
     F_WORKSTREAM_CARD_MANUAL_PRODUCT_INFO = "Manual Product Info"
     F_WORKSTREAM_CARD_NOTES = "Notes"
     F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC = "Creative Force Sync"
+    F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS = "Creative Force Status"
+    F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP = "Creative Force Step"
     WORKSTREAM_TYPE_OPTIONS = ["Ecomm", "Packaging"]
-    WORKSTREAM_CARD_STATUS_OPTIONS = ["New", "Planning", "Waiting", "Ready for Photo", "In Production"]
 
     # Field names - THR3D Shipping Items
     F_THR3D_SHIPPING_ITEM_NAME = "THR3D Shipping Item"
@@ -252,7 +275,6 @@ class Config:
         "brandPrefix": "Brand Prefix",
         "fileNameDescription": "File Name Description",
         "productDescription": "Product Description",
-        "productType": "Product Type",
         "ecommPhotoNotes": "Ecomm Photo Notes",
         "pathToArt": "Valid Artwork Path",
     }

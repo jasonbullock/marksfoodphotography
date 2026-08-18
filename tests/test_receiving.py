@@ -694,7 +694,7 @@ class ReceivingTests(unittest.TestCase):
             "recEntry",
             {
                 C.F_RECEIPT_ENTRY_ITEM: ["recItem"],
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review",
+                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New",
             },
             by_field_id=False,
         )
@@ -920,6 +920,8 @@ class ReceivingTests(unittest.TestCase):
                 return {"records": [receipt_record]}
             if table == C.RECEIPT_ENTRIES_TABLE:
                 return {"records": [entry_record]}
+            if table == C.CLIENTS_TABLE:
+                return {"records": []}
             self.fail(f"Unexpected list table: {table}")
 
         list_records.side_effect = list_records_side_effect

@@ -1,584 +1,8 @@
 {
   "baseId": "appE30EGZv8OzssDx",
-  "generatedAt": "2026-07-22T03:52:25.509177Z",
+  "generatedAt": "2026-08-13T17:00:01.574951Z",
   "safeMode": true,
   "tables": [
-    {
-      "dependencies": [
-        ".env.example",
-        "README.md",
-        "backend/config.py",
-        "backend/migrate_r2_only_images.py",
-        "backend/routes.py",
-        "docs/CURRENT_STATE.md",
-        "docs/DECISIONS.md",
-        "docs/DESIGN_PRINCIPLES.md",
-        "docs/PRINCIPLES.md",
-        "docs/migrations/2026-07-20-airtable-domain-rename.md",
-        "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
-        "docs/migrations/2026-07-20-r2-only-image-storage.md",
-        "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-        "frontend/src/App.jsx",
-        "frontend/src/api.js",
-        "frontend/src/domainVocabulary.js",
-        "tests/test_domain_table_mapping.py",
-        "tests/test_frontend_routing.py"
-      ],
-      "fields": [
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "tests/test_frontend_routing.py",
-            "tests/test_release_to_production.py",
-            "tests/test_required_to_shoot.py"
-          ],
-          "id": "fld96N7hMpncFfXhJ",
-          "name": "Product Name",
-          "recommendation": "Keep",
-          "type": "singleLineText"
-        },
-        {
-          "dependencies": [
-            "AGENTS.md",
-            "README.md",
-            "backend/config.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/DOMAIN_MODEL.md",
-            "docs/PRINCIPLES.md",
-            "docs/WORKSPACES.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "frontend/src/merchandiseRouting.js",
-            "test-data/imports/Kroger Test.csv",
-            "test-data/imports/Smithfield Test.csv",
-            "tests/test_frontend_routing.py",
-            "tests/test_job_item_schema.py",
-            "tests/test_spreadsheet_parsing.py"
-          ],
-          "id": "fldTkQ5R14otWYKfb",
-          "name": "Job",
-          "recommendation": "Keep for reporting/integration review",
-          "type": "multipleRecordLinks"
-        },
-        {
-          "dependencies": [
-            "README.md",
-            "backend/airtable.py",
-            "backend/config.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/DOMAIN_MODEL.md",
-            "docs/PRINCIPLES.md",
-            "docs/WORKSPACES.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/merchandiseRouting.js",
-            "tests/test_auth.py",
-            "tests/test_domain_table_mapping.py",
-            "tests/test_frontend_routing.py",
-            "tests/test_intake_decisions.py",
-            "tests/test_job_item_schema.py",
-            "tests/test_merchandise_inventory.py",
-            "tests/test_merchandise_review.py",
-            "tests/test_receiving.py",
-            "tests/test_release_to_production.py"
-          ],
-          "id": "fldEO5eq2KZXF0lvJ",
-          "name": "Client",
-          "recommendation": "Keep",
-          "type": "multipleRecordLinks"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "test-data/imports/Kroger Test.csv",
-            "test-data/imports/Smithfield Test.csv",
-            "tests/test_reference_data.py",
-            "tests/test_spreadsheet_parsing.py"
-          ],
-          "id": "fldjXorVmESIHhTRv",
-          "name": "Brand",
-          "recommendation": "Keep",
-          "type": "singleLineText"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js"
-          ],
-          "id": "fld1ZqlcmXfTmitIj",
-          "name": "Identifier Type",
-          "recommendation": "Keep",
-          "type": "multipleLookupValues"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "frontend/src/merchandiseRouting.js",
-            "tests/test_frontend_routing.py",
-            "tests/test_job_item_schema.py",
-            "tests/test_receiving.py",
-            "tests/test_release_to_production.py",
-            "tests/test_required_to_shoot.py"
-          ],
-          "id": "fld4V648DORD6hWee",
-          "name": "Identifier",
-          "recommendation": "Keep",
-          "type": "singleLineText"
-        },
-        {
-          "dependencies": [
-            "AGENTS.md",
-            "backend/audit_airtable_schema.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/DOMAIN_MODEL.md",
-            "docs/PRODUCT_VISION.md",
-            "docs/WORKSPACES.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/merchandiseRouting.js",
-            "tests/test_frontend_routing.py"
-          ],
-          "id": "fldSl0Ctmp7dWtJUO",
-          "name": "Workstream",
-          "recommendation": "Manual delete after backup",
-          "type": "singleSelect"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js"
-          ],
-          "id": "fldv3ZlY830B3TKDl",
-          "name": "Master or Variant",
-          "recommendation": "Keep for reporting/integration review",
-          "type": "singleSelect"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js"
-          ],
-          "id": "fldOgmOAS9bMuFMON",
-          "name": "Pickup Job Number",
-          "recommendation": "Keep for reporting/integration review",
-          "type": "singleLineText"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "tests/test_frontend_routing.py"
-          ],
-          "id": "fldKETVOMVg2D1K3q",
-          "name": "Product Job Number",
-          "recommendation": "Keep for reporting/integration review",
-          "type": "singleLineText"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "test-data/imports/Kroger Test.csv",
-            "test-data/imports/Smithfield Test.csv",
-            "test-data/imports/UNFI Test.csv",
-            "tests/test_job_item_schema.py",
-            "tests/test_spreadsheet_parsing.py"
-          ],
-          "id": "fldL8mH6x9F9KS0B6",
-          "name": "Description",
-          "recommendation": "Keep",
-          "type": "multilineText"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js"
-          ],
-          "id": "fldtaJEzWpmAN02sk",
-          "name": "Product or File Name",
-          "recommendation": "Keep",
-          "type": "singleLineText"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js"
-          ],
-          "id": "fldHBntQSh15V88MD",
-          "name": "Category",
-          "recommendation": "Keep for reporting/integration review",
-          "type": "singleLineText"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/ensure_intake_status_field.py",
-            "backend/routes.py",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/merchandiseRouting.js",
-            "test-data/imports/Kroger Test.csv",
-            "tests/test_frontend_routing.py",
-            "tests/test_intake_decisions.py",
-            "tests/test_intake_status.py",
-            "tests/test_job_item_schema.py",
-            "tests/test_merchandise_inventory.py",
-            "tests/test_merchandise_review.py",
-            "tests/test_receiving.py",
-            "tests/test_required_to_shoot.py",
-            "tests/test_spreadsheet_parsing.py"
-          ],
-          "id": "fldBvh1XfurPzCFea",
-          "name": "Received",
-          "recommendation": "Manual delete after backup",
-          "type": "checkbox"
-        },
-        {
-          "dependencies": [
-            "backend/config.py"
-          ],
-          "id": "fldDiwQJjaDzqMd4Y",
-          "name": "Rec Date",
-          "recommendation": "Manual delete after backup",
-          "type": "dateTime"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "frontend/src/App.jsx",
-            "frontend/src/domainVocabulary.js",
-            "tests/test_frontend_routing.py"
-          ],
-          "id": "fldFAtluxtCymbMYx",
-          "name": "Condition",
-          "recommendation": "Manual delete after backup",
-          "type": "singleSelect"
-        },
-        {
-          "dependencies": [
-            "AGENTS.md",
-            "backend/config.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "test-data/imports/Kroger Test.csv",
-            "test-data/imports/Smithfield Test.csv",
-            "test-data/imports/UNFI Test.csv"
-          ],
-          "id": "fldJkPvdTZPdqWvGN",
-          "name": "Notes",
-          "recommendation": "Consolidate into Conversation review",
-          "type": "multilineText"
-        },
-        {
-          "dependencies": [
-            "backend/config.py"
-          ],
-          "id": "fldoXDI58Qz896RlU",
-          "name": "Exported",
-          "recommendation": "Manual delete after backup",
-          "type": "checkbox"
-        },
-        {
-          "dependencies": [
-            "backend/config.py"
-          ],
-          "id": "fldhIAVGRR8Z17WcW",
-          "name": "Exported On",
-          "recommendation": "Manual delete after backup",
-          "type": "dateTime"
-        },
-        {
-          "dependencies": [
-            "backend/config.py"
-          ],
-          "id": "fld2SUiQEmm2P6vZP",
-          "name": "Export Error",
-          "recommendation": "Manual delete after backup",
-          "type": "multilineText"
-        },
-        {
-          "dependencies": [
-            "AGENTS.md",
-            "backend/config.py",
-            "backend/ensure_intake_status_field.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/DOMAIN_MODEL.md",
-            "docs/PRINCIPLES.md",
-            "docs/PRODUCT_VISION.md",
-            "docs/WORKSPACES.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/design-system.jsx",
-            "frontend/src/merchandiseRouting.js",
-            "test-data/imports/UNFI Test.csv",
-            "tests/test_frontend_routing.py",
-            "tests/test_intake_decisions.py",
-            "tests/test_intake_status.py",
-            "tests/test_merchandise_inventory.py",
-            "tests/test_receiving.py"
-          ],
-          "id": "flds7t7Qf4bQibAje",
-          "name": "Status",
-          "recommendation": "Manual delete after backup",
-          "type": "singleSelect"
-        },
-        {
-          "dependencies": [
-            ".env.example",
-            "AGENTS.md",
-            "README.md",
-            "backend/config.py",
-            "backend/migrate_r2_only_images.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/DOMAIN_MODEL.md",
-            "docs/PRODUCT_VISION.md",
-            "docs/WORKSPACES.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "frontend/src/merchandiseRouting.js",
-            "tests/test_domain_table_mapping.py",
-            "tests/test_frontend_routing.py"
-          ],
-          "id": "fldPupvhigNmnZ5h9",
-          "name": "Shipments",
-          "recommendation": "Manual delete after backup",
-          "type": "multipleRecordLinks"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/migrate_r2_only_images.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/PRINCIPLES.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/merchandiseRouting.js",
-            "tests/test_frontend_routing.py",
-            "tests/test_merchandise_review.py"
-          ],
-          "id": "fldGGhPh80pNH4FcC",
-          "name": "Issues",
-          "recommendation": "Manual delete after backup",
-          "type": "multipleRecordLinks"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js"
-          ],
-          "id": "fldIKTVLS6Wma8aEi",
-          "name": "History",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "multipleRecordLinks"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "frontend/src/merchandiseRouting.js",
-            "tests/test_frontend_routing.py",
-            "tests/test_merchandise_inventory.py",
-            "tests/test_receiving.py"
-          ],
-          "id": "fldH4Lvl2K0p3585y",
-          "name": "Location",
-          "recommendation": "Manual delete after backup",
-          "type": "multipleRecordLinks"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "frontend/src/api.js"
-          ],
-          "id": "fldzb4TFbuvDPKgdn",
-          "name": "Artwork Received",
-          "recommendation": "Keep",
-          "type": "checkbox"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js"
-          ],
-          "id": "fldabPgphzAXQATgG",
-          "name": "Reference Data",
-          "recommendation": "Keep",
-          "type": "multilineText"
-        },
-        {
-          "dependencies": [
-            "docs/migrations/2026-07-20-airtable-domain-rename.md"
-          ],
-          "id": "fldP1IraFC316G2Z6",
-          "name": "CF Product Name",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "formula"
-        },
-        {
-          "dependencies": [
-            "docs/migrations/2026-07-20-airtable-domain-rename.md"
-          ],
-          "id": "fldj7Vp72PVoVxzGJ",
-          "name": "CF Category",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "formula"
-        },
-        {
-          "dependencies": [
-            ".env.example",
-            "AGENTS.md",
-            "README.md",
-            "backend/config.py",
-            "backend/ensure_intake_status_field.py",
-            "backend/ensure_merchandise_verified_fields.py",
-            "backend/ensure_release_to_production_fields.py",
-            "backend/migrate_r2_only_images.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/DOMAIN_MODEL.md",
-            "docs/PRINCIPLES.md",
-            "docs/PRODUCT_VISION.md",
-            "docs/WORKSPACES.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "frontend/src/merchandiseRouting.js",
-            "tests/test_domain_table_mapping.py",
-            "tests/test_frontend_routing.py",
-            "tests/test_merchandise_inventory.py",
-            "tests/test_merchandise_review.py",
-            "tests/test_release_to_production.py"
-          ],
-          "id": "fldCI6lq7AKn3ToP7",
-          "name": "Merchandise",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "multipleRecordLinks"
-        },
-        {
-          "dependencies": [
-            "backend/airtable.py",
-            "backend/migrate_r2_only_images.py",
-            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
-            "tests/test_frontend_routing.py",
-            "tests/test_receiving.py"
-          ],
-          "id": "fld518nperBoHn9yG",
-          "name": "Deprecated Airtable Photos - Do Not Use",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "multipleAttachments"
-        },
-        {
-          "dependencies": [
-            "AGENTS.md",
-            "README.md",
-            "backend/config.py",
-            "backend/migrate_r2_only_images.py",
-            "docs/DECISIONS.md",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
-            "tests/test_receiving.py"
-          ],
-          "id": "fldUXsdT6F6S5LZ8q",
-          "name": "Photo Metadata",
-          "recommendation": "Manual delete after backup",
-          "type": "multilineText"
-        }
-      ],
-      "hasRecords": true,
-      "id": "tblC9Tu69BEOIy6Q4",
-      "name": "Products",
-      "recommendation": "Keep"
-    },
     {
       "dependencies": [
         "AGENTS.md",
@@ -593,6 +17,7 @@
         "docs/WORKSPACES.md",
         "docs/migrations/2026-07-20-airtable-domain-rename.md",
         "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+        "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
         "frontend/src/App.jsx",
         "frontend/src/api.js",
         "tests/test_frontend_routing.py"
@@ -612,12 +37,14 @@
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
             "frontend/src/merchandiseRouting.js",
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/Smithfield Test.csv",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
             "tests/test_job_item_schema.py",
             "tests/test_spreadsheet_parsing.py"
@@ -629,18 +56,24 @@
         },
         {
           "dependencies": [
+            "AGENTS.md",
             "README.md",
             "backend/airtable.py",
             "backend/config.py",
+            "backend/ensure_client_photo_production_requirements.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
             "docs/DESIGN_PRINCIPLES.md",
             "docs/DOMAIN_MODEL.md",
             "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/merchandiseRouting.js",
@@ -676,9 +109,13 @@
           "dependencies": [
             "backend/config.py",
             "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
+            "tests/test_auth.py",
             "tests/test_merchandise_inventory.py"
           ],
           "id": "fldnOcRSw5w4F9QBH",
@@ -689,6 +126,7 @@
         {
           "dependencies": [
             "AGENTS.md",
+            "backend/audit_airtable_schema.py",
             "backend/config.py",
             "backend/ensure_intake_status_field.py",
             "backend/routes.py",
@@ -700,15 +138,19 @@
             "docs/PRODUCT_VISION.md",
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/design-system.jsx",
             "frontend/src/merchandiseRouting.js",
             "test-data/imports/UNFI Test.csv",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
             "tests/test_intake_decisions.py",
             "tests/test_intake_status.py",
             "tests/test_merchandise_inventory.py",
+            "tests/test_product_production_summary.py",
             "tests/test_receiving.py"
           ],
           "id": "fld9Ma5RyqRocZ0ny",
@@ -720,17 +162,22 @@
           "dependencies": [
             ".env.example",
             "README.md",
+            "backend/audit_airtable_schema.py",
             "backend/config.py",
             "backend/migrate_r2_only_images.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
             "docs/DECISIONS.md",
             "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
             "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
@@ -746,8 +193,11 @@
           "dependencies": [
             "backend/config.py",
             "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "frontend/src/App.jsx"
+            "frontend/src/App.jsx",
+            "tests/test_intake_decisions.py"
           ],
           "id": "fldk3kdBk0WWRXK0a",
           "name": "Created",
@@ -760,11 +210,16 @@
             "backend/migrate_r2_only_images.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
             "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/merchandiseRouting.js",
@@ -781,11 +236,17 @@
             "backend/config.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRODUCT_VISION.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js"
+            "frontend/src/domainVocabulary.js",
+            "tests/test_frontend_routing.py"
           ],
           "id": "fldNkfmhb77kYkq9j",
           "name": "History",
@@ -802,28 +263,9 @@
           "name": "Period",
           "recommendation": "Keep or rename after dependency review",
           "type": "singleLineText"
-        },
-        {
-          "dependencies": [
-            ".env.example",
-            "AGENTS.md",
-            "README.md",
-            "backend/audit_airtable_schema.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/DOMAIN_MODEL.md",
-            "docs/PRODUCT_VISION.md",
-            "docs/WORKSPACES.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md"
-          ],
-          "id": "fldBhvmbf2p3sW4Wk",
-          "name": "Work Orders",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "singleLineText"
         }
       ],
-      "hasRecords": true,
+      "hasRecords": false,
       "id": "tbliPzjwAh96ZA4vS",
       "name": "Jobs",
       "recommendation": "Keep"
@@ -834,11 +276,13 @@
         "backend/config.py",
         "backend/routes.py",
         "docs/CURRENT_STATE.md",
-        "docs/DESIGN_PRINCIPLES.md",
+        "docs/DECISIONS.md",
         "docs/PRINCIPLES.md",
         "docs/WORKSPACES.md",
         "docs/migrations/2026-07-20-airtable-domain-rename.md",
         "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+        "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+        "docs/migrations/2026-08-03-topco-activations.md",
         "frontend/src/App.jsx",
         "frontend/src/api.js",
         "tests/test_auth.py",
@@ -853,18 +297,24 @@
       "fields": [
         {
           "dependencies": [
+            "AGENTS.md",
             "README.md",
             "backend/airtable.py",
             "backend/config.py",
+            "backend/ensure_client_photo_production_requirements.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
             "docs/DESIGN_PRINCIPLES.md",
             "docs/DOMAIN_MODEL.md",
             "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/merchandiseRouting.js",
@@ -885,16 +335,6 @@
         },
         {
           "dependencies": [
-            "backend/config.py",
-            "frontend/src/api.js"
-          ],
-          "id": "fldMycolmfMPd2URa",
-          "name": "Job Prefix",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "singleLineText"
-        },
-        {
-          "dependencies": [
             "AGENTS.md",
             "README.md",
             "backend/config.py",
@@ -907,6 +347,7 @@
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "tests/test_frontend_routing.py"
@@ -917,26 +358,6 @@
           "type": "multipleRecordLinks"
         },
         {
-          "dependencies": [
-            "backend/config.py",
-            "frontend/src/api.js"
-          ],
-          "id": "fldyhgWgxoQG178cS",
-          "name": "Hold Days",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "number"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "frontend/src/api.js"
-          ],
-          "id": "fldvG0EfULtJrb8y5",
-          "name": "Dispo Days",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "number"
-        },
-        {
           "dependencies": [],
           "id": "fld9JXedxAja1VJcF",
           "name": "FTP Path",
@@ -945,13 +366,17 @@
         },
         {
           "dependencies": [
-            "backend/audit_airtable_schema.py",
             "backend/config.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
             "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py"
           ],
           "id": "fldQGrE6btp3XS7Eq",
@@ -963,17 +388,22 @@
           "dependencies": [
             ".env.example",
             "README.md",
+            "backend/audit_airtable_schema.py",
             "backend/config.py",
             "backend/migrate_r2_only_images.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
             "docs/DECISIONS.md",
             "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
             "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
@@ -1003,6 +433,7 @@
             "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
@@ -1021,10 +452,12 @@
             "backend/config.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
             "docs/PRINCIPLES.md",
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "tests/test_release_to_production.py"
@@ -1039,9 +472,11 @@
             "backend/config.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
             "docs/PRINCIPLES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "tests/test_frontend_routing.py"
@@ -1055,7 +490,7 @@
           "dependencies": [
             "backend/config.py",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "frontend/src/App.jsx",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/api.js"
           ],
           "id": "fldjah1GyyuaDsQbC",
@@ -1076,10 +511,21 @@
         {
           "dependencies": [
             "backend/config.py",
-            "frontend/src/api.js"
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "tests/test_frontend_routing.py"
           ],
           "id": "fld724noRrEednjZU",
-          "name": "Required Photography Fields",
+          "name": "Required to Shoot",
           "recommendation": "Keep or rename after dependency review",
           "type": "multipleSelects"
         },
@@ -1102,6 +548,51 @@
           "name": "Merchandise Required",
           "recommendation": "Keep or rename after dependency review",
           "type": "checkbox"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fldgG5nQXYrOMKgMP",
+          "name": "Activations",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "tests/test_auth.py"
+          ],
+          "id": "fld0Q1TqcUd0f9qQ4",
+          "name": "Product Import Profiles",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multilineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx",
+            "tests/test_auth.py",
+            "tests/test_product_production_summary.py"
+          ],
+          "id": "fldNJyH9EtBXsaodk",
+          "name": "Photo Production Requirements",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multilineText"
         }
       ],
       "hasRecords": true,
@@ -1111,317 +602,34 @@
     },
     {
       "dependencies": [
-        ".env.example",
-        "AGENTS.md",
-        "README.md",
         "backend/config.py",
-        "backend/migrate_r2_only_images.py",
         "backend/routes.py",
         "docs/CURRENT_STATE.md",
         "docs/DECISIONS.md",
-        "docs/DESIGN_PRINCIPLES.md",
-        "docs/DOMAIN_MODEL.md",
-        "docs/PRODUCT_VISION.md",
-        "docs/WORKSPACES.md",
         "docs/migrations/2026-07-20-airtable-domain-rename.md",
-        "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
-        "docs/migrations/2026-07-20-r2-only-image-storage.md",
         "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+        "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
         "frontend/src/App.jsx",
         "frontend/src/api.js",
-        "frontend/src/domainVocabulary.js",
-        "frontend/src/merchandiseRouting.js",
-        "tests/test_domain_table_mapping.py",
         "tests/test_frontend_routing.py"
       ],
       "fields": [
         {
           "dependencies": [
-            ".env.example",
-            "AGENTS.md",
-            "README.md",
             "backend/config.py",
-            "backend/migrate_r2_only_images.py",
-            "backend/receiving_photo_storage.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
             "docs/DECISIONS.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/DOMAIN_MODEL.md",
-            "docs/PRODUCT_VISION.md",
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
-            "frontend/src/merchandiseRouting.js",
-            "tests/test_domain_table_mapping.py",
-            "tests/test_frontend_routing.py",
-            "tests/test_intake_decisions.py",
-            "tests/test_merchandise_inventory.py",
-            "tests/test_merchandise_review.py",
-            "tests/test_receiving.py",
-            "tests/test_release_to_production.py"
-          ],
-          "id": "fldmc1GLRF7aADXQJ",
-          "name": "Shipment",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "singleLineText"
-        },
-        {
-          "dependencies": [
-            "README.md",
-            "backend/airtable.py",
-            "backend/config.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/DOMAIN_MODEL.md",
-            "docs/PRINCIPLES.md",
-            "docs/WORKSPACES.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
             "frontend/src/merchandiseRouting.js",
             "tests/test_auth.py",
-            "tests/test_domain_table_mapping.py",
-            "tests/test_frontend_routing.py",
-            "tests/test_intake_decisions.py",
-            "tests/test_job_item_schema.py",
-            "tests/test_merchandise_inventory.py",
-            "tests/test_merchandise_review.py",
-            "tests/test_receiving.py",
-            "tests/test_release_to_production.py"
-          ],
-          "id": "fldWPVeBLY41l0a9Q",
-          "name": "Client",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "multipleRecordLinks"
-        },
-        {
-          "dependencies": [
-            ".env.example",
-            "README.md",
-            "backend/config.py",
-            "backend/migrate_r2_only_images.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/PRINCIPLES.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "tests/test_domain_table_mapping.py",
-            "tests/test_frontend_routing.py"
-          ],
-          "id": "fld8A5fMivNJYSYEV",
-          "name": "Products",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "multipleRecordLinks"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "frontend/src/App.jsx",
-            "tests/test_receiving.py"
-          ],
-          "id": "fldGYNlugvyTlS1YK",
-          "name": "Carrier",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "singleSelect"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "frontend/src/App.jsx",
-            "tests/test_frontend_routing.py"
-          ],
-          "id": "fldE94R3iTDsVlJiA",
-          "name": "Tracking",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "singleLineText"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "frontend/src/App.jsx",
-            "tests/test_receiving.py"
-          ],
-          "id": "fldo6hy8UhvKHon2r",
-          "name": "Box Quantity",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "number"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/ensure_intake_status_field.py",
-            "backend/routes.py",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/merchandiseRouting.js",
-            "test-data/imports/Kroger Test.csv",
-            "tests/test_frontend_routing.py",
-            "tests/test_intake_decisions.py",
-            "tests/test_intake_status.py",
-            "tests/test_job_item_schema.py",
-            "tests/test_merchandise_inventory.py",
-            "tests/test_merchandise_review.py",
-            "tests/test_receiving.py",
-            "tests/test_required_to_shoot.py",
-            "tests/test_spreadsheet_parsing.py"
-          ],
-          "id": "fldyWdsRL6eiiinTy",
-          "name": "Received",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "dateTime"
-        },
-        {
-          "dependencies": [
-            "backend/airtable.py",
-            "backend/migrate_r2_only_images.py",
-            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
-            "tests/test_frontend_routing.py",
-            "tests/test_receiving.py"
-          ],
-          "id": "fldlDpgrtKRTpBWla",
-          "name": "Deprecated Airtable Photos - Do Not Use",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "multipleAttachments"
-        },
-        {
-          "dependencies": [
-            "AGENTS.md",
-            "backend/config.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "test-data/imports/Kroger Test.csv",
-            "test-data/imports/Smithfield Test.csv",
-            "test-data/imports/UNFI Test.csv"
-          ],
-          "id": "fldt6SQZNLesVwH3x",
-          "name": "Notes",
-          "recommendation": "Consolidate into Conversation review",
-          "type": "multilineText"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "frontend/src/App.jsx",
-            "tests/test_frontend_routing.py",
-            "tests/test_intake_decisions.py",
-            "tests/test_intake_status.py",
-            "tests/test_merchandise_review.py"
-          ],
-          "id": "flducFL7O3VB7cGEV",
-          "name": "Receiver",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "multipleRecordLinks"
-        },
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "frontend/src/merchandiseRouting.js",
-            "tests/test_frontend_routing.py",
-            "tests/test_merchandise_inventory.py",
-            "tests/test_receiving.py"
-          ],
-          "id": "fldv6PRu1hVF6ewe8",
-          "name": "Location",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "multipleRecordLinks"
-        },
-        {
-          "dependencies": [
-            ".env.example",
-            "AGENTS.md",
-            "README.md",
-            "backend/config.py",
-            "backend/ensure_intake_status_field.py",
-            "backend/ensure_merchandise_verified_fields.py",
-            "backend/ensure_release_to_production_fields.py",
-            "backend/migrate_r2_only_images.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/DOMAIN_MODEL.md",
-            "docs/PRINCIPLES.md",
-            "docs/PRODUCT_VISION.md",
-            "docs/WORKSPACES.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "frontend/src/merchandiseRouting.js",
-            "tests/test_domain_table_mapping.py",
-            "tests/test_frontend_routing.py",
-            "tests/test_merchandise_inventory.py",
-            "tests/test_merchandise_review.py",
-            "tests/test_release_to_production.py"
-          ],
-          "id": "fldC57ZWMcCljOb0L",
-          "name": "Merchandise",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "multipleRecordLinks"
-        }
-      ],
-      "hasRecords": true,
-      "id": "tblnDJYWtYvgEunVM",
-      "name": "Shipments",
-      "recommendation": "Keep"
-    },
-    {
-      "dependencies": [
-        "backend/config.py",
-        "backend/routes.py",
-        "docs/CURRENT_STATE.md",
-        "docs/migrations/2026-07-20-airtable-domain-rename.md",
-        "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-        "frontend/src/App.jsx",
-        "frontend/src/api.js",
-        "tests/test_frontend_routing.py"
-      ],
-      "fields": [
-        {
-          "dependencies": [
-            "backend/config.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "frontend/src/merchandiseRouting.js",
             "tests/test_frontend_routing.py",
             "tests/test_merchandise_inventory.py",
             "tests/test_receiving.py"
@@ -1438,6 +646,7 @@
             "backend/airtable_schema.py",
             "backend/audit_airtable_schema.py",
             "backend/config.py",
+            "backend/ensure_creative_force_product_feed.py",
             "backend/migrate_r2_only_images.py",
             "backend/receiving_photo_storage.py",
             "backend/routes.py",
@@ -1450,6 +659,8 @@
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
@@ -1457,10 +668,13 @@
             "frontend/src/tableExport.js",
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/UNFI Test.csv",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
             "tests/test_job_item_schema.py",
+            "tests/test_product_production_summary.py",
             "tests/test_receiving.py",
-            "tests/test_required_to_shoot.py"
+            "tests/test_required_to_shoot.py",
+            "tests/test_spreadsheet_parsing.py"
           ],
           "id": "fldMRmgKKcJFTiRhe",
           "name": "Type",
@@ -1469,13 +683,17 @@
         },
         {
           "dependencies": [
-            "backend/audit_airtable_schema.py",
             "backend/config.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
             "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py"
           ],
           "id": "fldDy94D2W8Xwt646",
@@ -1490,43 +708,20 @@
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
             "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/Smithfield Test.csv",
-            "test-data/imports/UNFI Test.csv"
+            "test-data/imports/UNFI Test.csv",
+            "tests/test_frontend_routing.py"
           ],
           "id": "fldAyNcSnao7Kq1YC",
           "name": "Notes",
           "recommendation": "Consolidate into Conversation review",
           "type": "multilineText"
-        },
-        {
-          "dependencies": [
-            ".env.example",
-            "README.md",
-            "backend/config.py",
-            "backend/migrate_r2_only_images.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/PRINCIPLES.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
-            "tests/test_domain_table_mapping.py",
-            "tests/test_frontend_routing.py"
-          ],
-          "id": "fldElZA0o3YcwFM2N",
-          "name": "Products",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "multipleRecordLinks"
         },
         {
           "dependencies": [
@@ -1546,6 +741,7 @@
             "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
@@ -1580,14 +776,19 @@
             "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
             "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
             "tests/test_domain_table_mapping.py",
             "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
             "tests/test_merchandise_inventory.py",
             "tests/test_merchandise_review.py",
+            "tests/test_product_production_summary.py",
             "tests/test_release_to_production.py"
           ],
           "id": "fldoqX20NZlHx9HXF",
@@ -1607,10 +808,12 @@
         "backend/config.py",
         "backend/routes.py",
         "docs/CURRENT_STATE.md",
+        "docs/DECISIONS.md",
         "docs/PRINCIPLES.md",
         "docs/WORKSPACES.md",
         "docs/migrations/2026-07-20-airtable-domain-rename.md",
         "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+        "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
         "frontend/src/App.jsx",
         "frontend/src/api.js",
         "tests/test_release_to_production.py"
@@ -1627,10 +830,12 @@
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "tests/test_auth.py",
             "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
             "tests/test_intake_decisions.py",
             "tests/test_merchandise_inventory.py",
             "tests/test_merchandise_review.py",
@@ -1645,8 +850,11 @@
         {
           "dependencies": [
             "backend/config.py",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
-            "frontend/src/merchandiseRouting.js"
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_frontend_routing.py"
           ],
           "id": "fld4jFXudukfIIgI6",
           "name": "Email",
@@ -1667,13 +875,17 @@
         },
         {
           "dependencies": [
-            "backend/audit_airtable_schema.py",
             "backend/config.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
             "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py"
           ],
           "id": "fldf4fqbNoLzvQBTz",
@@ -1687,11 +899,16 @@
             "backend/migrate_r2_only_images.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
             "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/merchandiseRouting.js",
@@ -1708,11 +925,17 @@
             "backend/config.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRODUCT_VISION.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js"
+            "frontend/src/domainVocabulary.js",
+            "tests/test_frontend_routing.py"
           ],
           "id": "fldvvMKX5BDN4QACf",
           "name": "History",
@@ -1737,6 +960,7 @@
             "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
@@ -1764,11 +988,13 @@
             "backend/config.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
-            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DECISIONS.md",
             "docs/PRINCIPLES.md",
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "tests/test_auth.py",
@@ -1790,9 +1016,11 @@
             "backend/config.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
             "docs/PRINCIPLES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "tests/test_frontend_routing.py"
@@ -1874,14 +1102,19 @@
             "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
             "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
             "tests/test_domain_table_mapping.py",
             "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
             "tests/test_merchandise_inventory.py",
             "tests/test_merchandise_review.py",
+            "tests/test_product_production_summary.py",
             "tests/test_release_to_production.py"
           ],
           "id": "fldVEDQJRp2FqMCDv",
@@ -1895,6 +1128,20 @@
           "name": "Merchandise 2",
           "recommendation": "Delete review",
           "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fld4JJjTOAs3lMLC2",
+          "name": "Comments",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
         }
       ],
       "hasRecords": true,
@@ -1904,15 +1151,461 @@
     },
     {
       "dependencies": [
+        ".env.example",
+        "README.md",
+        "backend/audit_airtable_schema.py",
         "backend/config.py",
         "backend/migrate_r2_only_images.py",
         "backend/routes.py",
         "docs/CURRENT_STATE.md",
+        "docs/DECISIONS.md",
+        "docs/DESIGN_PRINCIPLES.md",
+        "docs/DOMAIN_MODEL.md",
         "docs/PRINCIPLES.md",
+        "docs/PRODUCT_VISION.md",
+        "docs/WORKSPACES.md",
         "docs/migrations/2026-07-20-airtable-domain-rename.md",
         "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
         "docs/migrations/2026-07-20-r2-only-image-storage.md",
         "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+        "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+        "frontend/src/App.jsx",
+        "frontend/src/api.js",
+        "frontend/src/domainVocabulary.js",
+        "tests/test_domain_table_mapping.py",
+        "tests/test_frontend_routing.py"
+      ],
+      "fields": [
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "tests/test_frontend_routing.py",
+            "tests/test_release_to_production.py",
+            "tests/test_required_to_shoot.py"
+          ],
+          "id": "fld96N7hMpncFfXhJ",
+          "name": "Product Name",
+          "recommendation": "Keep",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "AGENTS.md",
+            "README.md",
+            "backend/airtable.py",
+            "backend/config.py",
+            "backend/ensure_client_photo_production_requirements.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-20-r2-only-image-storage.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
+            "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_job_item_schema.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_merchandise_review.py",
+            "tests/test_receiving.py",
+            "tests/test_release_to_production.py"
+          ],
+          "id": "fldEO5eq2KZXF0lvJ",
+          "name": "Client",
+          "recommendation": "Keep",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "AGENTS.md",
+            "README.md",
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRINCIPLES.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "frontend/src/merchandiseRouting.js",
+            "test-data/imports/Kroger Test.csv",
+            "test-data/imports/Smithfield Test.csv",
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_job_item_schema.py",
+            "tests/test_spreadsheet_parsing.py"
+          ],
+          "id": "fldTkQ5R14otWYKfb",
+          "name": "Job",
+          "recommendation": "Keep for reporting/integration review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/api.js"
+          ],
+          "id": "fld1ZqlcmXfTmitIj",
+          "name": "Identifier Type",
+          "recommendation": "Keep",
+          "type": "multipleLookupValues"
+        },
+        {
+          "dependencies": [
+            "backend/audit_airtable_schema.py",
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_product_production_summary.py"
+          ],
+          "id": "fldGpdbhZt2lCXm9j",
+          "name": "CVID",
+          "recommendation": "Keep",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/audit_airtable_schema.py",
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "package-lock.json",
+            "test-data/imports/Kroger Test.csv",
+            "test-data/imports/UNFI Test.csv",
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_job_item_schema.py",
+            "tests/test_product_production_summary.py",
+            "tests/test_receiving.py",
+            "tests/test_required_to_shoot.py",
+            "tests/test_spreadsheet_parsing.py"
+          ],
+          "id": "fld4NHkV4cEqtxx4F",
+          "name": "UPC",
+          "recommendation": "Keep",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "tests/test_product_production_summary.py"
+          ],
+          "id": "fldjXorVmESIHhTRv",
+          "name": "Brand Prefix",
+          "recommendation": "Keep",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fldkwjjpo0p7sLnsq",
+          "name": "Request Type",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleSelect"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fld6iyeag2tF1Ui4G",
+          "name": "Project Status",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleSelect"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldPnxQQUZXdzkTTi",
+          "name": "WKFT Job Number",
+          "recommendation": "Keep for reporting/integration review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldEyQlGyTmtT7FmS",
+          "name": "Mbox Number",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldGCCXbrRnR8WU2T",
+          "name": "Product Type",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleSelect"
+        },
+        {
+          "dependencies": [
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md"
+          ],
+          "id": "fldMwJKUTnh2UMlI1",
+          "name": "Studio Destination",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md"
+          ],
+          "id": "fldrnqGfwXeAuhCCW",
+          "name": "Vendor",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldEh2CgBQX6ovigh",
+          "name": "Link to Prepro/Overlays",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "url"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "test-data/imports/Smithfield Test.csv"
+          ],
+          "id": "fldtaJEzWpmAN02sk",
+          "name": "Product Description",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldJkPvdTZPdqWvGN",
+          "name": "Ecomm Photo Notes",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multilineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fldIKTVLS6Wma8aEi",
+          "name": "History",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fld7rqSwp9VNVz0VA",
+          "name": "Path to Art",
+          "recommendation": "Keep",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js"
+          ],
+          "id": "fldabPgphzAXQATgG",
+          "name": "Reference Data",
+          "recommendation": "Keep",
+          "type": "multilineText"
+        },
+        {
+          "dependencies": [
+            ".env.example",
+            "AGENTS.md",
+            "README.md",
+            "backend/config.py",
+            "backend/ensure_intake_status_field.py",
+            "backend/ensure_merchandise_verified_fields.py",
+            "backend/ensure_release_to_production_fields.py",
+            "backend/migrate_r2_only_images.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
+            "docs/migrations/2026-07-20-r2-only-image-storage.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
+            "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_merchandise_review.py",
+            "tests/test_product_production_summary.py",
+            "tests/test_release_to_production.py"
+          ],
+          "id": "fldCI6lq7AKn3ToP7",
+          "name": "Merchandise",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldSH8lkFeU3Wehp1",
+          "name": "Workstream Cards",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fld6Cr6kZepDgQC0J",
+          "name": "THR3D Shipping Items",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        }
+      ],
+      "hasRecords": true,
+      "id": "tblC9Tu69BEOIy6Q4",
+      "name": "Products",
+      "recommendation": "Keep"
+    },
+    {
+      "dependencies": [
+        "backend/config.py",
+        "backend/migrate_r2_only_images.py",
+        "backend/routes.py",
+        "docs/CURRENT_STATE.md",
+        "docs/DECISIONS.md",
+        "docs/DESIGN_PRINCIPLES.md",
+        "docs/DOMAIN_MODEL.md",
+        "docs/PRINCIPLES.md",
+        "docs/PRODUCT_VISION.md",
+        "docs/migrations/2026-07-20-airtable-domain-rename.md",
+        "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
+        "docs/migrations/2026-07-20-r2-only-image-storage.md",
+        "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+        "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
         "frontend/src/App.jsx",
         "frontend/src/api.js",
         "frontend/src/merchandiseRouting.js",
@@ -1922,34 +1615,6 @@
       "fields": [
         {
           "dependencies": [
-            "backend/config.py",
-            "backend/ensure_intake_status_field.py",
-            "backend/migrate_r2_only_images.py",
-            "backend/routes.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DOMAIN_MODEL.md",
-            "docs/PRINCIPLES.md",
-            "docs/migrations/2026-07-20-airtable-domain-rename.md",
-            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "frontend/src/App.jsx",
-            "frontend/src/api.js",
-            "frontend/src/merchandiseRouting.js",
-            "tests/test_frontend_routing.py",
-            "tests/test_intake_status.py",
-            "tests/test_merchandise_review.py"
-          ],
-          "id": "fldWwmrws5sV5ko9A",
-          "name": "Issue",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "singleLineText"
-        },
-        {
-          "dependencies": [
-            ".env.example",
-            "AGENTS.md",
-            "README.md",
             "backend/config.py",
             "backend/ensure_intake_status_field.py",
             "backend/migrate_r2_only_images.py",
@@ -1965,28 +1630,19 @@
             "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
-            "frontend/src/domainVocabulary.js",
             "frontend/src/merchandiseRouting.js",
-            "test-data/imports/Kroger Test.csv",
-            "test-data/imports/Smithfield Test.csv",
-            "tests/test_domain_table_mapping.py",
             "tests/test_frontend_routing.py",
-            "tests/test_intake_decisions.py",
             "tests/test_intake_status.py",
-            "tests/test_job_item_schema.py",
-            "tests/test_merchandise_inventory.py",
             "tests/test_merchandise_review.py",
-            "tests/test_receiving.py",
-            "tests/test_release_to_production.py",
-            "tests/test_required_to_shoot.py",
-            "tests/test_spreadsheet_parsing.py"
+            "tests/test_product_production_summary.py"
           ],
-          "id": "fldqzXcECgj1HIIrS",
-          "name": "Product",
+          "id": "fldWwmrws5sV5ko9A",
+          "name": "Issue",
           "recommendation": "Keep or rename after dependency review",
-          "type": "multipleRecordLinks"
+          "type": "singleLineText"
         },
         {
           "dependencies": [
@@ -2002,12 +1658,14 @@
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
             "frontend/src/merchandiseRouting.js",
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/Smithfield Test.csv",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
             "tests/test_job_item_schema.py",
             "tests/test_spreadsheet_parsing.py"
@@ -2024,6 +1682,7 @@
             "backend/airtable_schema.py",
             "backend/audit_airtable_schema.py",
             "backend/config.py",
+            "backend/ensure_creative_force_product_feed.py",
             "backend/migrate_r2_only_images.py",
             "backend/receiving_photo_storage.py",
             "backend/routes.py",
@@ -2036,6 +1695,8 @@
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
@@ -2043,10 +1704,13 @@
             "frontend/src/tableExport.js",
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/UNFI Test.csv",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
             "tests/test_job_item_schema.py",
+            "tests/test_product_production_summary.py",
             "tests/test_receiving.py",
-            "tests/test_required_to_shoot.py"
+            "tests/test_required_to_shoot.py",
+            "tests/test_spreadsheet_parsing.py"
           ],
           "id": "fldm8j6XiJUgoTmoD",
           "name": "Type",
@@ -2056,6 +1720,7 @@
         {
           "dependencies": [
             "AGENTS.md",
+            "backend/audit_airtable_schema.py",
             "backend/config.py",
             "backend/ensure_intake_status_field.py",
             "backend/routes.py",
@@ -2067,15 +1732,19 @@
             "docs/PRODUCT_VISION.md",
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/design-system.jsx",
             "frontend/src/merchandiseRouting.js",
             "test-data/imports/UNFI Test.csv",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
             "tests/test_intake_decisions.py",
             "tests/test_intake_status.py",
             "tests/test_merchandise_inventory.py",
+            "tests/test_product_production_summary.py",
             "tests/test_receiving.py"
           ],
           "id": "fldgTVU7nxxtdNZPo",
@@ -2094,7 +1763,10 @@
         },
         {
           "dependencies": [
-            "backend/config.py"
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "frontend/src/App.jsx",
+            "tests/test_frontend_routing.py"
           ],
           "id": "fldv3fX99bnktsy2U",
           "name": "Assigned",
@@ -2103,7 +1775,8 @@
         },
         {
           "dependencies": [
-            "backend/config.py"
+            "backend/config.py",
+            "docs/DECISIONS.md"
           ],
           "id": "fldZWIasXo4Y2ycKG",
           "name": "Opened",
@@ -2113,7 +1786,8 @@
         {
           "dependencies": [
             "backend/config.py",
-            "backend/ensure_intake_status_field.py"
+            "backend/ensure_intake_status_field.py",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md"
           ],
           "id": "fldXBMYPvZNG5em2L",
           "name": "Closed",
@@ -2122,31 +1796,20 @@
         },
         {
           "dependencies": [
-            "backend/airtable.py",
-            "backend/migrate_r2_only_images.py",
-            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
-            "docs/migrations/2026-07-20-r2-only-image-storage.md",
-            "tests/test_frontend_routing.py",
-            "tests/test_receiving.py"
-          ],
-          "id": "fldBqWeFeXoFPo2Ws",
-          "name": "Deprecated Airtable Photos - Do Not Use",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "multipleAttachments"
-        },
-        {
-          "dependencies": [
             "AGENTS.md",
             "backend/config.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
             "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/Smithfield Test.csv",
-            "test-data/imports/UNFI Test.csv"
+            "test-data/imports/UNFI Test.csv",
+            "tests/test_frontend_routing.py"
           ],
           "id": "fldq9qItirj37Pi3Q",
           "name": "Notes",
@@ -2154,7 +1817,7 @@
           "type": "multilineText"
         }
       ],
-      "hasRecords": true,
+      "hasRecords": false,
       "id": "tblKdfmqPpFe9cZXN",
       "name": "Issues",
       "recommendation": "Keep"
@@ -2164,17 +1827,25 @@
         "backend/config.py",
         "backend/routes.py",
         "docs/CURRENT_STATE.md",
+        "docs/DECISIONS.md",
+        "docs/DESIGN_PRINCIPLES.md",
+        "docs/DOMAIN_MODEL.md",
+        "docs/PRODUCT_VISION.md",
         "docs/migrations/2026-07-20-airtable-domain-rename.md",
         "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+        "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
         "frontend/src/App.jsx",
         "frontend/src/api.js",
-        "frontend/src/domainVocabulary.js"
+        "frontend/src/domainVocabulary.js",
+        "tests/test_frontend_routing.py"
       ],
       "fields": [
         {
           "dependencies": [
             "backend/config.py",
-            "frontend/src/App.jsx"
+            "backend/routes.py",
+            "frontend/src/App.jsx",
+            "tests/test_auth.py"
           ],
           "id": "fldUUJB4kzvLS6pfP",
           "name": "Event",
@@ -2186,7 +1857,9 @@
             ".env.example",
             "AGENTS.md",
             "README.md",
+            "backend/audit_airtable_schema.py",
             "backend/config.py",
+            "backend/ensure_creative_force_product_feed.py",
             "backend/ensure_intake_status_field.py",
             "backend/migrate_r2_only_images.py",
             "backend/routes.py",
@@ -2201,12 +1874,14 @@
             "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
             "frontend/src/merchandiseRouting.js",
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/Smithfield Test.csv",
+            "tests/test_auth.py",
             "tests/test_domain_table_mapping.py",
             "tests/test_frontend_routing.py",
             "tests/test_intake_decisions.py",
@@ -2214,6 +1889,7 @@
             "tests/test_job_item_schema.py",
             "tests/test_merchandise_inventory.py",
             "tests/test_merchandise_review.py",
+            "tests/test_product_production_summary.py",
             "tests/test_receiving.py",
             "tests/test_release_to_production.py",
             "tests/test_required_to_shoot.py",
@@ -2238,12 +1914,14 @@
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
             "frontend/src/merchandiseRouting.js",
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/Smithfield Test.csv",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
             "tests/test_job_item_schema.py",
             "tests/test_spreadsheet_parsing.py"
@@ -2264,10 +1942,12 @@
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "tests/test_auth.py",
             "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
             "tests/test_intake_decisions.py",
             "tests/test_merchandise_inventory.py",
             "tests/test_merchandise_review.py",
@@ -2286,6 +1966,7 @@
             "backend/airtable_schema.py",
             "backend/audit_airtable_schema.py",
             "backend/config.py",
+            "backend/ensure_creative_force_product_feed.py",
             "backend/migrate_r2_only_images.py",
             "backend/receiving_photo_storage.py",
             "backend/routes.py",
@@ -2298,6 +1979,8 @@
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
@@ -2305,10 +1988,13 @@
             "frontend/src/tableExport.js",
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/UNFI Test.csv",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
             "tests/test_job_item_schema.py",
+            "tests/test_product_production_summary.py",
             "tests/test_receiving.py",
-            "tests/test_required_to_shoot.py"
+            "tests/test_required_to_shoot.py",
+            "tests/test_spreadsheet_parsing.py"
           ],
           "id": "fldO0cyLoM1ZjLGpS",
           "name": "Type",
@@ -2319,10 +2005,16 @@
           "dependencies": [
             "backend/config.py",
             "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/domainVocabulary.js",
             "frontend/src/tableExport.js",
             "test-data/imports/Kroger Test.csv",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
             "tests/test_merchandise_inventory.py"
           ],
@@ -2334,8 +2026,14 @@
         {
           "dependencies": [
             "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
-            "frontend/src/domainVocabulary.js"
+            "frontend/src/domainVocabulary.js",
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py"
           ],
           "id": "fldBj8LgwPodqKQEq",
           "name": "Details",
@@ -2346,10 +2044,13 @@
           "dependencies": [
             "backend/config.py",
             "backend/ensure_intake_status_field.py",
+            "backend/routes.py",
+            "docs/DECISIONS.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "frontend/src/App.jsx",
             "frontend/src/merchandiseRouting.js",
             "test-data/imports/Smithfield Test.csv",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py"
           ],
           "id": "fldrPVI2R4u9rIQYd",
@@ -2359,11 +2060,18 @@
         },
         {
           "dependencies": [
+            "AGENTS.md",
             "backend/config.py",
             "backend/routes.py",
+            "docs/CURRENT_STATE.md",
             "docs/DECISIONS.md",
             "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/package-lock.json",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
@@ -2372,9 +2080,13 @@
             "frontend/src/tableExport.js",
             "package-lock.json",
             "test-data/imports/Smithfield Test.csv",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_job_item_schema.py",
             "tests/test_merchandise_inventory.py",
             "tests/test_merchandise_review.py",
+            "tests/test_product_production_summary.py",
             "tests/test_release_to_production.py",
             "tests/test_required_to_shoot.py"
           ],
@@ -2387,18 +2099,24 @@
           "dependencies": [
             "backend/airtable.py",
             "backend/config.py",
+            "backend/ensure_creative_force_product_feed.py",
+            "backend/ensure_received_merch_workflow_schema.py",
             "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
             "docs/DESIGN_PRINCIPLES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
-            "frontend/src/api.js",
             "frontend/src/design-system.jsx",
             "frontend/src/domainVocabulary.js",
             "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
             "tests/test_job_item_schema.py",
-            "tests/test_required_to_shoot.py"
+            "tests/test_product_production_summary.py"
           ],
           "id": "fldv28aOTi1BwghT3",
           "name": "Field",
@@ -2406,7 +2124,7 @@
           "type": "singleLineText"
         }
       ],
-      "hasRecords": true,
+      "hasRecords": false,
       "id": "tbludoajTRWF5otCb",
       "name": "History",
       "recommendation": "Investigate"
@@ -2416,9 +2134,11 @@
         "backend/config.py",
         "backend/routes.py",
         "docs/CURRENT_STATE.md",
+        "docs/DECISIONS.md",
         "docs/PRINCIPLES.md",
         "docs/migrations/2026-07-20-airtable-domain-rename.md",
         "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+        "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
         "frontend/src/App.jsx",
         "frontend/src/api.js",
         "tests/test_frontend_routing.py"
@@ -2431,12 +2151,16 @@
             "backend/receiving_photo_storage.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DOMAIN_MODEL.md",
             "docs/PRINCIPLES.md",
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
             "tests/test_intake_status.py",
             "tests/test_merchandise_review.py",
@@ -2449,18 +2173,24 @@
         },
         {
           "dependencies": [
+            "AGENTS.md",
             "README.md",
             "backend/airtable.py",
             "backend/config.py",
+            "backend/ensure_client_photo_production_requirements.py",
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
             "docs/DESIGN_PRINCIPLES.md",
             "docs/DOMAIN_MODEL.md",
             "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/merchandiseRouting.js",
@@ -2490,10 +2220,12 @@
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "tests/test_auth.py",
             "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
             "tests/test_intake_decisions.py",
             "tests/test_merchandise_inventory.py",
             "tests/test_merchandise_review.py",
@@ -2510,6 +2242,9 @@
             "backend/config.py",
             "backend/migrate_r2_only_images.py",
             "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/design-system.jsx",
@@ -2518,7 +2253,9 @@
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/Smithfield Test.csv",
             "test-data/imports/UNFI Test.csv",
-            "tests/test_frontend_routing.py"
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_spreadsheet_parsing.py"
           ],
           "id": "fld4A7GqBrmPbVRtT",
           "name": "File",
@@ -2532,6 +2269,7 @@
             "backend/airtable_schema.py",
             "backend/audit_airtable_schema.py",
             "backend/config.py",
+            "backend/ensure_creative_force_product_feed.py",
             "backend/migrate_r2_only_images.py",
             "backend/receiving_photo_storage.py",
             "backend/routes.py",
@@ -2544,6 +2282,8 @@
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
@@ -2551,10 +2291,13 @@
             "frontend/src/tableExport.js",
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/UNFI Test.csv",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
             "tests/test_job_item_schema.py",
+            "tests/test_product_production_summary.py",
             "tests/test_receiving.py",
-            "tests/test_required_to_shoot.py"
+            "tests/test_required_to_shoot.py",
+            "tests/test_spreadsheet_parsing.py"
           ],
           "id": "fldcQO4MId3G1rl8p",
           "name": "Type",
@@ -2564,6 +2307,7 @@
         {
           "dependencies": [
             "AGENTS.md",
+            "backend/audit_airtable_schema.py",
             "backend/config.py",
             "backend/ensure_intake_status_field.py",
             "backend/routes.py",
@@ -2575,15 +2319,19 @@
             "docs/PRODUCT_VISION.md",
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/design-system.jsx",
             "frontend/src/merchandiseRouting.js",
             "test-data/imports/UNFI Test.csv",
+            "tests/test_auth.py",
             "tests/test_frontend_routing.py",
             "tests/test_intake_decisions.py",
             "tests/test_intake_status.py",
             "tests/test_merchandise_inventory.py",
+            "tests/test_product_production_summary.py",
             "tests/test_receiving.py"
           ],
           "id": "fldGO2UN2a5lsHUBt",
@@ -2605,8 +2353,7 @@
         {
           "dependencies": [
             "backend/config.py",
-            "frontend/src/App.jsx",
-            "tests/test_frontend_routing.py"
+            "frontend/src/App.jsx"
           ],
           "id": "fldeWpHO615C5C2VM",
           "name": "Finished",
@@ -2617,9 +2364,11 @@
           "dependencies": [
             "backend/config.py",
             "backend/routes.py",
+            "docs/DECISIONS.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
-            "frontend/src/tableExport.js"
+            "frontend/src/tableExport.js",
+            "tests/test_frontend_routing.py"
           ],
           "id": "fldaRv7m7sTsLkZv0",
           "name": "Rows",
@@ -2690,6 +2439,7 @@
         {
           "dependencies": [
             "backend/config.py",
+            "docs/DECISIONS.md",
             "frontend/src/App.jsx"
           ],
           "id": "fldKN6ikWVmmyeQFg",
@@ -2700,8 +2450,14 @@
         {
           "dependencies": [
             "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
-            "frontend/src/domainVocabulary.js"
+            "frontend/src/domainVocabulary.js",
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py"
           ],
           "id": "fldR5x8Q0asnLmroa",
           "name": "Details",
@@ -2709,9 +2465,306 @@
           "type": "multilineText"
         }
       ],
-      "hasRecords": true,
+      "hasRecords": false,
       "id": "tbll7KZWnwPWfNZrz",
       "name": "Imports",
+      "recommendation": "Keep"
+    },
+    {
+      "dependencies": [
+        ".env.example",
+        "AGENTS.md",
+        "README.md",
+        "backend/config.py",
+        "backend/migrate_r2_only_images.py",
+        "backend/routes.py",
+        "docs/CURRENT_STATE.md",
+        "docs/DECISIONS.md",
+        "docs/DESIGN_PRINCIPLES.md",
+        "docs/DOMAIN_MODEL.md",
+        "docs/PRODUCT_VISION.md",
+        "docs/WORKSPACES.md",
+        "docs/migrations/2026-07-20-airtable-domain-rename.md",
+        "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
+        "docs/migrations/2026-07-20-r2-only-image-storage.md",
+        "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+        "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+        "frontend/src/App.jsx",
+        "frontend/src/api.js",
+        "frontend/src/domainVocabulary.js",
+        "frontend/src/merchandiseRouting.js",
+        "tests/test_domain_table_mapping.py",
+        "tests/test_frontend_routing.py"
+      ],
+      "fields": [
+        {
+          "dependencies": [
+            ".env.example",
+            "AGENTS.md",
+            "README.md",
+            "backend/config.py",
+            "backend/migrate_r2_only_images.py",
+            "backend/receiving_photo_storage.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
+            "docs/migrations/2026-07-20-r2-only-image-storage.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
+            "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_merchandise_review.py",
+            "tests/test_receiving.py",
+            "tests/test_release_to_production.py"
+          ],
+          "id": "fldmc1GLRF7aADXQJ",
+          "name": "Shipment",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "AGENTS.md",
+            "README.md",
+            "backend/airtable.py",
+            "backend/config.py",
+            "backend/ensure_client_photo_production_requirements.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-20-r2-only-image-storage.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
+            "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_job_item_schema.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_merchandise_review.py",
+            "tests/test_receiving.py",
+            "tests/test_release_to_production.py"
+          ],
+          "id": "fldWPVeBLY41l0a9Q",
+          "name": "Client",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "frontend/src/App.jsx",
+            "tests/test_receiving.py"
+          ],
+          "id": "fldGYNlugvyTlS1YK",
+          "name": "Carrier",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleSelect"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "frontend/src/App.jsx",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fldE94R3iTDsVlJiA",
+          "name": "Tracking",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "frontend/src/App.jsx",
+            "tests/test_receiving.py"
+          ],
+          "id": "fldo6hy8UhvKHon2r",
+          "name": "Box Quantity",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "number"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/ensure_intake_status_field.py",
+            "backend/ensure_received_merch_workflow_schema.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/merchandiseRouting.js",
+            "test-data/imports/Kroger Test.csv",
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_intake_status.py",
+            "tests/test_job_item_schema.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_merchandise_review.py",
+            "tests/test_product_production_summary.py",
+            "tests/test_receiving.py",
+            "tests/test_release_to_production.py",
+            "tests/test_required_to_shoot.py",
+            "tests/test_spreadsheet_parsing.py"
+          ],
+          "id": "fldyWdsRL6eiiinTy",
+          "name": "Received",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "dateTime"
+        },
+        {
+          "dependencies": [
+            "AGENTS.md",
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "test-data/imports/Kroger Test.csv",
+            "test-data/imports/Smithfield Test.csv",
+            "test-data/imports/UNFI Test.csv",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fldt6SQZNLesVwH3x",
+          "name": "Notes",
+          "recommendation": "Consolidate into Conversation review",
+          "type": "multilineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "frontend/src/App.jsx",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_intake_status.py",
+            "tests/test_merchandise_review.py"
+          ],
+          "id": "flducFL7O3VB7cGEV",
+          "name": "Receiver",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_receiving.py"
+          ],
+          "id": "fldv6PRu1hVF6ewe8",
+          "name": "Location",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            ".env.example",
+            "AGENTS.md",
+            "README.md",
+            "backend/config.py",
+            "backend/ensure_intake_status_field.py",
+            "backend/ensure_merchandise_verified_fields.py",
+            "backend/ensure_release_to_production_fields.py",
+            "backend/migrate_r2_only_images.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
+            "docs/migrations/2026-07-20-r2-only-image-storage.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
+            "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_merchandise_review.py",
+            "tests/test_product_production_summary.py",
+            "tests/test_release_to_production.py"
+          ],
+          "id": "fldC57ZWMcCljOb0L",
+          "name": "Merchandise",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "flduGAKd1XwMWRSyk",
+          "name": "THR3D Shipping Items",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        }
+      ],
+      "hasRecords": true,
+      "id": "tblnDJYWtYvgEunVM",
+      "name": "Shipments",
       "recommendation": "Keep"
     },
     {
@@ -2736,20 +2789,27 @@
         "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
         "docs/migrations/2026-07-20-r2-only-image-storage.md",
         "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+        "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+        "docs/migrations/2026-08-03-topco-activations.md",
         "frontend/src/App.jsx",
         "frontend/src/api.js",
         "frontend/src/domainVocabulary.js",
         "frontend/src/merchandiseRouting.js",
+        "tests/test_auth.py",
         "tests/test_domain_table_mapping.py",
         "tests/test_frontend_routing.py",
+        "tests/test_intake_decisions.py",
         "tests/test_merchandise_inventory.py",
         "tests/test_merchandise_review.py",
+        "tests/test_product_production_summary.py",
         "tests/test_release_to_production.py"
       ],
       "fields": [
         {
           "dependencies": [
             "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
             "docs/migrations/2026-07-20-airtable-domain-rename.md",
             "frontend/src/domainVocabulary.js",
             "tests/test_frontend_routing.py"
@@ -2778,10 +2838,12 @@
             "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
             "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
             "tests/test_domain_table_mapping.py",
             "tests/test_frontend_routing.py",
             "tests/test_intake_decisions.py",
@@ -2797,10 +2859,50 @@
         },
         {
           "dependencies": [
+            "AGENTS.md",
+            "README.md",
+            "backend/airtable.py",
+            "backend/config.py",
+            "backend/ensure_client_photo_production_requirements.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-20-r2-only-image-storage.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
+            "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_job_item_schema.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_merchandise_review.py",
+            "tests/test_receiving.py",
+            "tests/test_release_to_production.py"
+          ],
+          "id": "fld64aFEXZg1xkUC5",
+          "name": "Client",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleLookupValues"
+        },
+        {
+          "dependencies": [
             ".env.example",
             "AGENTS.md",
             "README.md",
+            "backend/audit_airtable_schema.py",
             "backend/config.py",
+            "backend/ensure_creative_force_product_feed.py",
             "backend/ensure_intake_status_field.py",
             "backend/migrate_r2_only_images.py",
             "backend/routes.py",
@@ -2815,12 +2917,14 @@
             "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
             "frontend/src/merchandiseRouting.js",
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/Smithfield Test.csv",
+            "tests/test_auth.py",
             "tests/test_domain_table_mapping.py",
             "tests/test_frontend_routing.py",
             "tests/test_intake_decisions.py",
@@ -2828,6 +2932,7 @@
             "tests/test_job_item_schema.py",
             "tests/test_merchandise_inventory.py",
             "tests/test_merchandise_review.py",
+            "tests/test_product_production_summary.py",
             "tests/test_receiving.py",
             "tests/test_release_to_production.py",
             "tests/test_required_to_shoot.py",
@@ -2852,10 +2957,16 @@
         },
         {
           "dependencies": [
+            "AGENTS.md",
             "backend/config.py",
             "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
             "frontend/src/App.jsx",
             "frontend/src/domainVocabulary.js",
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py",
             "tests/test_receiving.py"
           ],
           "id": "fldOoUE1bqoH1IJu0",
@@ -2879,6 +2990,9 @@
         {
           "dependencies": [
             "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/domainVocabulary.js",
             "tests/test_frontend_routing.py"
@@ -2892,12 +3006,16 @@
           "dependencies": [
             "backend/config.py",
             "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/Smithfield Test.csv",
             "test-data/imports/UNFI Test.csv",
+            "tests/test_auth.py",
             "tests/test_job_item_schema.py",
             "tests/test_spreadsheet_parsing.py"
           ],
@@ -2913,12 +3031,15 @@
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
             "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/api.js",
             "frontend/src/domainVocabulary.js",
             "test-data/imports/Kroger Test.csv",
             "test-data/imports/Smithfield Test.csv",
-            "test-data/imports/UNFI Test.csv"
+            "test-data/imports/UNFI Test.csv",
+            "tests/test_frontend_routing.py"
           ],
           "id": "fldxZf3bzzBoaahhz",
           "name": "Notes",
@@ -2933,6 +3054,7 @@
             "backend/migrate_r2_only_images.py",
             "docs/DECISIONS.md",
             "docs/migrations/2026-07-20-r2-only-image-storage.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "tests/test_receiving.py"
           ],
           "id": "fldzqknIfwsoJr0RC",
@@ -2942,46 +3064,17 @@
         },
         {
           "dependencies": [
+            "backend/audit_airtable_schema.py",
             "backend/config.py",
             "backend/ensure_intake_status_field.py",
             "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md"
+            "docs/DECISIONS.md",
+            "docs/WORKSPACES.md",
+            "frontend/src/App.jsx",
+            "tests/test_product_production_summary.py"
           ],
           "id": "fldxby2XthCbknfNC",
           "name": "Merch Status",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "singleSelect"
-        },
-        {
-          "dependencies": [
-            ".env.example",
-            "AGENTS.md",
-            "README.md",
-            "backend/audit_airtable_schema.py",
-            "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/DOMAIN_MODEL.md",
-            "docs/PRODUCT_VISION.md",
-            "docs/WORKSPACES.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md"
-          ],
-          "id": "fldkhfsFwylhVxLOc",
-          "name": "Work Orders",
-          "recommendation": "Keep or rename after dependency review",
-          "type": "singleLineText"
-        },
-        {
-          "dependencies": [
-            "AGENTS.md",
-            "docs/CURRENT_STATE.md",
-            "docs/DECISIONS.md",
-            "docs/DESIGN_PRINCIPLES.md",
-            "docs/PRODUCT_VISION.md",
-            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md"
-          ],
-          "id": "fldbZ64EUZdWZS5nW",
-          "name": "Merchandise Resolution",
           "recommendation": "Keep or rename after dependency review",
           "type": "singleSelect"
         },
@@ -2993,9 +3086,13 @@
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
             "docs/DECISIONS.md",
+            "docs/PRODUCT_VISION.md",
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
-            "tests/test_intake_decisions.py"
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "tests/test_intake_decisions.py",
+            "tests/test_product_production_summary.py"
           ],
           "id": "fldPjABnLlNhZlmwY",
           "name": "Intake Status",
@@ -3007,9 +3104,12 @@
             "AGENTS.md",
             "backend/config.py",
             "backend/ensure_release_to_production_fields.py",
+            "backend/routes.py",
             "docs/CURRENT_STATE.md",
             "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
             "frontend/src/App.jsx",
+            "tests/test_auth.py",
             "tests/test_receiving.py"
           ],
           "id": "fldkoRrdLxg9kpcST",
@@ -3020,7 +3120,8 @@
         {
           "dependencies": [
             "backend/config.py",
-            "docs/CURRENT_STATE.md"
+            "docs/CURRENT_STATE.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md"
           ],
           "id": "fldiJsIx7TmAHee0r",
           "name": "Released At",
@@ -3031,7 +3132,8 @@
           "dependencies": [
             "backend/config.py",
             "backend/ensure_release_to_production_fields.py",
-            "docs/CURRENT_STATE.md"
+            "docs/CURRENT_STATE.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md"
           ],
           "id": "fldXcJ4bnd6YEhrKL",
           "name": "Released By",
@@ -3045,10 +3147,11 @@
             "backend/routes.py",
             "docs/CURRENT_STATE.md",
             "docs/DECISIONS.md",
-            "docs/DESIGN_PRINCIPLES.md",
             "docs/DOMAIN_MODEL.md",
             "docs/WORKSPACES.md",
             "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
             "frontend/src/App.jsx",
             "frontend/src/merchandiseRouting.js",
             "tests/test_frontend_routing.py",
@@ -3092,12 +3195,1077 @@
           "name": "Merchandise Verified By",
           "recommendation": "Keep or rename after dependency review",
           "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fldbQzo0lYTJJrIvr",
+          "name": "Comments",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fldtYKYX9C7SWJswl",
+          "name": "Activations",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md"
+          ],
+          "id": "fldtztZlnEXm39yVi",
+          "name": "New Merch Status",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleSelect"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md"
+          ],
+          "id": "fldvpaMfMCX4qt3k5",
+          "name": "Manual Product Info",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multilineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldaJygyvIFjdB4BG",
+          "name": "Workstream Cards",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fld3LLlSRa2atmhSS",
+          "name": "THR3D Shipping Items",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
         }
       ],
       "hasRecords": true,
       "id": "tblWALCoKwvT6Nl8A",
       "name": "Merchandise",
       "recommendation": "Keep"
+    },
+    {
+      "dependencies": [
+        "backend/config.py",
+        "docs/CURRENT_STATE.md",
+        "docs/DECISIONS.md",
+        "frontend/src/App.jsx",
+        "frontend/src/api.js",
+        "tests/test_frontend_routing.py"
+      ],
+      "fields": [
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "tests/test_frontend_routing.py",
+            "tests/test_merchandise_review.py"
+          ],
+          "id": "fldrBkHYb9L33OjPg",
+          "name": "Comment",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multilineText"
+        },
+        {
+          "dependencies": [
+            ".env.example",
+            "AGENTS.md",
+            "README.md",
+            "backend/config.py",
+            "backend/ensure_intake_status_field.py",
+            "backend/ensure_merchandise_verified_fields.py",
+            "backend/ensure_release_to_production_fields.py",
+            "backend/migrate_r2_only_images.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
+            "docs/migrations/2026-07-20-r2-only-image-storage.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
+            "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_merchandise_review.py",
+            "tests/test_product_production_summary.py",
+            "tests/test_release_to_production.py"
+          ],
+          "id": "fld6OZZ2uVbgBjjCO",
+          "name": "Merchandise",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            ".claude/settings.local.json",
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/PRINCIPLES.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "tests/test_auth.py",
+            "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_merchandise_review.py",
+            "tests/test_receiving.py",
+            "tests/test_release_to_production.py"
+          ],
+          "id": "fldv7lJBcJkVPCdfi",
+          "name": "User",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        }
+      ],
+      "hasRecords": false,
+      "id": "tblimL4PZgfrCGP3Y",
+      "name": "Comments",
+      "recommendation": "Investigate"
+    },
+    {
+      "dependencies": [
+        "backend/config.py",
+        "docs/CURRENT_STATE.md",
+        "docs/DECISIONS.md",
+        "docs/DOMAIN_MODEL.md",
+        "docs/WORKSPACES.md",
+        "docs/migrations/2026-08-03-topco-activations.md",
+        "frontend/src/App.jsx",
+        "frontend/src/api.js",
+        "tests/test_frontend_routing.py"
+      ],
+      "fields": [
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-20-r2-only-image-storage.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/design-system.jsx",
+            "frontend/src/domainVocabulary.js",
+            "frontend/src/merchandiseRouting.js",
+            "frontend/src/tableExport.js",
+            "test-data/imports/Smithfield Test.csv",
+            "test-data/imports/UNFI Test.csv",
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_job_item_schema.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_merchandise_review.py",
+            "tests/test_receiving.py",
+            "tests/test_release_to_production.py",
+            "tests/test_required_to_shoot.py"
+          ],
+          "id": "fldjpWxUPCEtOrOr8",
+          "name": "Name",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "AGENTS.md",
+            "README.md",
+            "backend/airtable.py",
+            "backend/config.py",
+            "backend/ensure_client_photo_production_requirements.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-20-r2-only-image-storage.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
+            "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_job_item_schema.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_merchandise_review.py",
+            "tests/test_receiving.py",
+            "tests/test_release_to_production.py"
+          ],
+          "id": "fldoTTOddKcWBAn2U",
+          "name": "Client",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "AGENTS.md",
+            "backend/audit_airtable_schema.py",
+            "backend/config.py",
+            "backend/ensure_intake_status_field.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/design-system.jsx",
+            "frontend/src/merchandiseRouting.js",
+            "test-data/imports/UNFI Test.csv",
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_intake_status.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_product_production_summary.py",
+            "tests/test_receiving.py"
+          ],
+          "id": "fldDF0dvyooiviYCz",
+          "name": "Status",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleSelect"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/migrations/2026-08-03-topco-activations.md"
+          ],
+          "id": "flduUnoBRe5dw4sqH",
+          "name": "Project Reference",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "tests/test_auth.py"
+          ],
+          "id": "flda0noXtTa6wC8yv",
+          "name": "Activation Package",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multilineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/migrations/2026-08-03-topco-activations.md"
+          ],
+          "id": "fldTgNShCXe8tgdvQ",
+          "name": "Activation Date",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "date"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldyz8KckRmqMwbal",
+          "name": "Due / Urgency",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldgJJ3Itz4PSzUwt",
+          "name": "Walnut Scope",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldw1GoDLikvvYGcc",
+          "name": "Number of SKUs",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "number"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/migrations/2026-08-03-topco-activations.md"
+          ],
+          "id": "fld7WBkUFoA87iQVC",
+          "name": "Images Per Bundle",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "number"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/migrations/2026-08-03-topco-activations.md"
+          ],
+          "id": "fldt9cpxHuoauCcF8",
+          "name": "Total Images",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "number"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldGPlnL3WO81sbx0",
+          "name": "Artwork Path",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multilineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldBU0pSfg378YkFZ",
+          "name": "Upload Location",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multilineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fld2sIchlLv69jDLh",
+          "name": "SKU Details JSON",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multilineText"
+        },
+        {
+          "dependencies": [
+            "AGENTS.md",
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_release_to_production.py"
+          ],
+          "id": "fldkOJLvW6g6yGsvn",
+          "name": "Deliverables",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleSelects"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fldi6wURnZ9eglYnX",
+          "name": "Linked Merchandise",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "AGENTS.md",
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "test-data/imports/Kroger Test.csv",
+            "test-data/imports/Smithfield Test.csv",
+            "test-data/imports/UNFI Test.csv",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fldaL9JAE6xL9piF2",
+          "name": "Notes",
+          "recommendation": "Consolidate into Conversation review",
+          "type": "multilineText"
+        }
+      ],
+      "hasRecords": true,
+      "id": "tbleD3EuIMJTG2OWT",
+      "name": "Activations",
+      "recommendation": "Investigate"
+    },
+    {
+      "dependencies": [
+        "backend/config.py",
+        "backend/routes.py",
+        "docs/CURRENT_STATE.md",
+        "docs/DECISIONS.md",
+        "frontend/src/App.jsx"
+      ],
+      "fields": [
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/ensure_creative_force_sync_field.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DOMAIN_MODEL.md",
+            "frontend/src/App.jsx",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py"
+          ],
+          "id": "fld1lm2d4RuCa5EdH",
+          "name": "Workstream Card",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/ensure_received_merch_workflow_schema.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "frontend/src/App.jsx",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "flddcM45DuxYGxPZs",
+          "name": "Received Merch",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fld7UiCLpyzN9GHR5",
+          "name": "Expected Product",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "tests/test_product_production_summary.py"
+          ],
+          "id": "fldGjoBUimY8p7H9t",
+          "name": "Workstream Type",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleSelect"
+        },
+        {
+          "dependencies": [
+            "AGENTS.md",
+            "backend/audit_airtable_schema.py",
+            "backend/config.py",
+            "backend/ensure_intake_status_field.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/design-system.jsx",
+            "frontend/src/merchandiseRouting.js",
+            "test-data/imports/UNFI Test.csv",
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_intake_status.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_product_production_summary.py",
+            "tests/test_receiving.py"
+          ],
+          "id": "fldG2d4XY23yh9aWk",
+          "name": "Status",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleSelect"
+        },
+        {
+          "dependencies": [
+            "AGENTS.md",
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx",
+            "frontend/src/domainVocabulary.js",
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_receiving.py"
+          ],
+          "id": "fldx1nte7dlp4UjmB",
+          "name": "Quantity",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "number"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md"
+          ],
+          "id": "fldeUyhVK0s0NpaPs",
+          "name": "Manual Product Info",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multilineText"
+        },
+        {
+          "dependencies": [
+            "AGENTS.md",
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "test-data/imports/Kroger Test.csv",
+            "test-data/imports/Smithfield Test.csv",
+            "test-data/imports/UNFI Test.csv",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fldjt15SWGAII3fbn",
+          "name": "Notes",
+          "recommendation": "Consolidate into Conversation review",
+          "type": "multilineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "tests/test_product_production_summary.py"
+          ],
+          "id": "fldPYIfrGIf0JcyyQ",
+          "name": "Creative Force Sync",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multilineText"
+        }
+      ],
+      "hasRecords": true,
+      "id": "tblG7PhiRblMNJmlZ",
+      "name": "Workstream Cards",
+      "recommendation": "Investigate"
+    },
+    {
+      "dependencies": [
+        "backend/config.py",
+        "docs/CURRENT_STATE.md",
+        "docs/DECISIONS.md",
+        "frontend/src/App.jsx"
+      ],
+      "fields": [
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DOMAIN_MODEL.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldIhzeXFXsiUPvoA",
+          "name": "THR3D Shipping Item",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/ensure_received_merch_workflow_schema.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "frontend/src/App.jsx",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fldsJUfIyyHqXd3Ci",
+          "name": "Received Merch",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fldVJElyvmLmK59Pt",
+          "name": "Expected Product",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/DECISIONS.md"
+          ],
+          "id": "fldC4Du4oWC6mWSU8",
+          "name": "Quantity to Ship",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "number"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md"
+          ],
+          "id": "fldNxB0of1hSoOI3x",
+          "name": "Shipping Status",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleSelect"
+        },
+        {
+          "dependencies": [
+            "backend/config.py"
+          ],
+          "id": "fldOw2jKxv4CcsVmx",
+          "name": "Outbound Shipment",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multipleRecordLinks"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md"
+          ],
+          "id": "fldBvcMRh3IXC3bQM",
+          "name": "Manual Product Info",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "multilineText"
+        },
+        {
+          "dependencies": [
+            "AGENTS.md",
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "test-data/imports/Kroger Test.csv",
+            "test-data/imports/Smithfield Test.csv",
+            "test-data/imports/UNFI Test.csv",
+            "tests/test_frontend_routing.py"
+          ],
+          "id": "fldKbepqvO65A5OqQ",
+          "name": "Notes",
+          "recommendation": "Consolidate into Conversation review",
+          "type": "multilineText"
+        }
+      ],
+      "hasRecords": false,
+      "id": "tblswAU8bQNvpHRiv",
+      "name": "THR3D Shipping Items",
+      "recommendation": "Investigate"
+    },
+    {
+      "dependencies": [
+        "backend/config.py",
+        "docs/CURRENT_STATE.md",
+        "docs/DECISIONS.md",
+        "frontend/src/App.jsx"
+      ],
+      "fields": [
+        {
+          "dependencies": [
+            ".env.example",
+            "AGENTS.md",
+            "README.md",
+            "backend/audit_airtable_schema.py",
+            "backend/config.py",
+            "backend/ensure_creative_force_product_feed.py",
+            "backend/ensure_intake_status_field.py",
+            "backend/migrate_r2_only_images.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-20-r2-only-image-storage-report.json",
+            "docs/migrations/2026-07-20-r2-only-image-storage.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "frontend/src/merchandiseRouting.js",
+            "test-data/imports/Kroger Test.csv",
+            "test-data/imports/Smithfield Test.csv",
+            "tests/test_auth.py",
+            "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_intake_status.py",
+            "tests/test_job_item_schema.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_merchandise_review.py",
+            "tests/test_product_production_summary.py",
+            "tests/test_receiving.py",
+            "tests/test_release_to_production.py",
+            "tests/test_required_to_shoot.py",
+            "tests/test_spreadsheet_parsing.py"
+          ],
+          "id": "fldJm0e6xcOCpUiQ4",
+          "name": "Product",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "AGENTS.md",
+            "README.md",
+            "backend/airtable.py",
+            "backend/config.py",
+            "backend/ensure_client_photo_production_requirements.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/DESIGN_PRINCIPLES.md",
+            "docs/DOMAIN_MODEL.md",
+            "docs/PRINCIPLES.md",
+            "docs/PRODUCT_VISION.md",
+            "docs/WORKSPACES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-20-r2-only-image-storage.md",
+            "docs/migrations/2026-07-22-legacy-architecture-cleanup.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "docs/migrations/2026-08-03-topco-activations.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/merchandiseRouting.js",
+            "tests/test_auth.py",
+            "tests/test_domain_table_mapping.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_intake_decisions.py",
+            "tests/test_job_item_schema.py",
+            "tests/test_merchandise_inventory.py",
+            "tests/test_merchandise_review.py",
+            "tests/test_receiving.py",
+            "tests/test_release_to_production.py"
+          ],
+          "id": "fldPv06MM0Owaq8Q9",
+          "name": "Client",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx",
+            "tests/test_auth.py",
+            "tests/test_product_production_summary.py"
+          ],
+          "id": "fldR0h1ywoAZaGN9D",
+          "name": "Product Code",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js"
+          ],
+          "id": "fldGviyiT2wPvIl9a",
+          "name": "Category",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py"
+          ],
+          "id": "fldAzd2HqPqvUd2DT",
+          "name": "Production Type",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "docs/DECISIONS.md",
+            "tests/test_product_production_summary.py"
+          ],
+          "id": "fld6hHVI0P4tJhwDa",
+          "name": "Source Key",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "tests/test_frontend_routing.py",
+            "tests/test_release_to_production.py",
+            "tests/test_required_to_shoot.py"
+          ],
+          "id": "fldRK6YKnWldMbiHe",
+          "name": "Product Name",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/audit_airtable_schema.py",
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "tests/test_auth.py",
+            "tests/test_frontend_routing.py",
+            "tests/test_product_production_summary.py"
+          ],
+          "id": "fldOd2DcFdvlBOFPs",
+          "name": "CVID",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx"
+          ],
+          "id": "fld7XSTHsksUeUFUh",
+          "name": "Valid Artwork Path",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx",
+            "tests/test_product_production_summary.py"
+          ],
+          "id": "fldoGayu4N91qhBRu",
+          "name": "UPC / Product ID",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "docs/PRINCIPLES.md",
+            "docs/migrations/2026-07-20-airtable-domain-rename.md",
+            "docs/migrations/2026-07-22-minimal-operating-model-cleanup.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "frontend/src/domainVocabulary.js",
+            "tests/test_frontend_routing.py",
+            "tests/test_job_item_schema.py"
+          ],
+          "id": "fldTdrGtTTagqbqvL",
+          "name": "Job Number",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx",
+            "frontend/src/api.js",
+            "tests/test_product_production_summary.py"
+          ],
+          "id": "fldkpLdncXJE5AK73",
+          "name": "Brand Prefix",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        },
+        {
+          "dependencies": [
+            "backend/config.py",
+            "backend/routes.py",
+            "docs/CURRENT_STATE.md",
+            "docs/DECISIONS.md",
+            "frontend/src/App.jsx",
+            "tests/test_auth.py"
+          ],
+          "id": "fldh882DSVrDUonKW",
+          "name": "File Name Description",
+          "recommendation": "Keep or rename after dependency review",
+          "type": "singleLineText"
+        }
+      ],
+      "hasRecords": false,
+      "id": "tblxEmSy1xZLHtEWW",
+      "name": "Creative Force Product Feed",
+      "recommendation": "Investigate"
     }
   ]
 }

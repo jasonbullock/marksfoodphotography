@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ensure the app-owned Workstream Card Creative Force sync field exists."""
+"""Ensure app-owned Workstream Card Creative Force fields exist."""
 
 import json
 
@@ -15,17 +15,22 @@ def main():
     workstream_cards = table_by_name(tables, Config.WORKSTREAM_CARDS_TABLE)
     if not workstream_cards:
         raise SystemExit(f"{Config.WORKSTREAM_CARDS_TABLE} table is required.")
-    existing = field_by_name(workstream_cards, Config.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC)
-    if existing:
-        if existing.get("type") != "multilineText":
-            raise SystemExit(
-                f"{Config.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC} exists but is {existing.get('type')}, not multilineText."
-            )
-        result = {"result": "reused", "id": existing.get("id", "")}
-    else:
-        created = create_field(workstream_cards["id"], {"name": Config.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC, "type": "multilineText"})
-        result = {"result": "created", "id": created.get("id", "")}
-    print(json.dumps({"table": Config.WORKSTREAM_CARDS_TABLE, "field": Config.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC, **result}, indent=2))
+    definitions = [
+        (Config.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC, "multilineText"),
+        (Config.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS, "singleLineText"),
+        (Config.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP, "singleLineText"),
+    ]
+    results = []
+    for name, field_type in definitions:
+        existing = field_by_name(workstream_cards, name)
+        if existing:
+            if existing.get("type") != field_type:
+                raise SystemExit(f"{name} exists but is {existing.get('type')}, not {field_type}.")
+            results.append({"field": name, "result": "reused", "id": existing.get("id", "")})
+        else:
+            created = create_field(workstream_cards["id"], {"name": name, "type": field_type})
+            results.append({"field": name, "result": "created", "id": created.get("id", "")})
+    print(json.dumps({"table": Config.WORKSTREAM_CARDS_TABLE, "fields": results}, indent=2))
 
 
 if __name__ == "__main__":

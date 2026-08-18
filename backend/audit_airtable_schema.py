@@ -41,12 +41,12 @@ CORE_PRODUCT_FIELDS = {
     C.F_ITEM_CLIENT,
     C.F_ITEM_IDENTIFIER,
     C.F_ITEM_IDENTIFIER_TYPE,
-    C.F_ITEM_PRODUCT,
     C.F_ITEM_DESCRIPTION,
-    C.F_ITEM_BRAND,
-    C.F_ITEM_ARTWORK_RECEIVED,
+    C.F_ITEM_CVID,
+    C.F_ITEM_UPC,
+    C.F_ITEM_BRAND_PREFIX,
+    C.F_ITEM_PATH_TO_ART,
     C.F_ITEM_REFERENCE_DATA,
-    C.F_ITEM_ACTIVE if hasattr(C, "F_ITEM_ACTIVE") else "Active",
 }
 
 REPORTING_PRODUCT_FIELDS = {
@@ -57,21 +57,11 @@ REPORTING_PRODUCT_FIELDS = {
     C.F_ITEM_CATEGORY,
 }
 
+# This is intentionally limited to fields that still exist on the live Products
+# table. Older Product field names remain in config as compatibility aliases for
+# historical routes, but they are not Airtable cleanup targets.
 OBSOLETE_PRODUCT_FIELDS = {
-    C.F_ITEM_RECEIVED,
-    C.F_ITEM_REC_DATE,
-    C.F_ITEM_LOCATION,
-    C.F_ITEM_CONDITION,
-    C.F_ITEM_STATUS,
-    C.F_ITEM_PHOTOS,
-    C.F_ITEM_PHOTO_METADATA,
-    C.F_ITEM_RECEIPTS,
-    C.F_ITEM_ISSUES,
-    C.F_ITEM_EXPORTED,
-    C.F_ITEM_EXPORTED_ON,
-    C.F_ITEM_EXPORT_ERROR,
-    "Workstream",
-    "Output Type",
+    "Merch Status",
 }
 
 
@@ -103,6 +93,10 @@ def repo_files():
         if not path.is_file():
             continue
         if any(part in {".git", "node_modules", ".venv", "dist", "__pycache__"} for part in path.parts):
+            continue
+        # Do not let this generated report create a dependency hit for every
+        # Airtable field on the next audit run.
+        if path.resolve() == OUTPUT.resolve():
             continue
         if path.suffix in TEXT_EXTENSIONS or path.name in {"AGENTS.md", "README.md"}:
             yield path
