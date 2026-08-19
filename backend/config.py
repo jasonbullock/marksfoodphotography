@@ -129,9 +129,6 @@ class Config:
     F_RECEIPT_ENTRY_ITEM = "Product"
     F_RECEIPT_ENTRY_MERCH_STATUS = "Merch Status"
     F_RECEIPT_ENTRY_PLANNING_STATUS = "Planning Status"
-    # API compatibility name only. Planning Status is the sole persisted queue field.
-    F_RECEIPT_ENTRY_INTAKE_STATUS = F_RECEIPT_ENTRY_PLANNING_STATUS
-    F_RECEIPT_ENTRY_NEW_MERCH_STATUS = "New Merch Status"
     F_RECEIPT_ENTRY_DELIVERABLES = "Deliverables"
     F_RECEIPT_ENTRY_MANUAL_PRODUCT_INFO = "Manual Product Info"
     F_RECEIPT_ENTRY_RELEASED = "Released"
@@ -140,9 +137,11 @@ class Config:
     F_RECEIPT_ENTRY_MERCH_VERIFIED = "Merchandise Verified"
     F_RECEIPT_ENTRY_MERCH_VERIFIED_AT = "Merchandise Verified At"
     F_RECEIPT_ENTRY_MERCH_VERIFIED_BY = "Merchandise Verified By"
-    INTAKE_STATUS_OPTIONS = ["New", "Needs More Information", "Awaiting Photo Release"]
     PLANNING_STATUS_OPTIONS = ["New", "Needs More Information", "Awaiting Photo Release"]
-    NEW_MERCH_STATUS_OPTIONS = ["Needs Review", "Workflows Created"]
+    # Workstream cards are only created after merchandise is accepted and
+    # deliverables are known, so they are born at Needs More Information and can
+    # never legitimately be New. New is a parent-merchandise concept.
+    WORKSTREAM_CARD_PLANNING_STATUS_OPTIONS = ["Needs More Information", "Awaiting Photo Release"]
     DELIVERABLE_OPTIONS = ["Packaging", "Ecomm", "Thr3d"]
 
     # Field names - Workstream Cards

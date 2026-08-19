@@ -33,7 +33,7 @@ class ReleaseToProductionTests(unittest.TestCase):
             C.F_RECEIPT_ENTRY_RECEIPT: ["recShipment"],
             C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Photo Release",
+            C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Awaiting Photo Release",
             C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm"],
             C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
         }
@@ -130,7 +130,7 @@ class ReleaseToProductionTests(unittest.TestCase):
         self.assertTrue(fields[C.F_RECEIPT_ENTRY_RELEASED])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_RELEASED_AT], "2026-07-20T12:00:00Z")
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_RELEASED_BY], ["recTestUser"])
-        self.assertNotIn(C.F_RECEIPT_ENTRY_INTAKE_STATUS, fields)
+        self.assertNotIn(C.F_RECEIPT_ENTRY_PLANNING_STATUS, fields)
         payload = response.get_json()
         self.assertTrue(payload["released"])
         self.assertTrue(payload["requiredToShoot"]["ready"])

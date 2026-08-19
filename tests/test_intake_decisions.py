@@ -246,13 +246,13 @@ class IntakeDecisionTests(unittest.TestCase):
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
-    def test_intake_state_waiting_info_uses_intake_status(self, get_record, update_record, _clients):
+    def test_intake_state_waiting_info_uses_planning_status(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry({C.F_RECEIPT_ENTRY_NOTES: "Receiver note"}), self.receipt()]
         update_record.return_value = self.entry({
             C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging"],
             C.F_RECEIPT_ENTRY_NOTES: "Receiver note",
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs More Information",
+            C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Needs More Information",
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
@@ -265,7 +265,7 @@ class IntakeDecisionTests(unittest.TestCase):
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging"])
         self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_STATUS, fields)
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Needs More Information")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Needs More Information")
         self.assertNotIn(C.F_RECEIPT_ENTRY_NOTES, fields)
         self.assertEqual(response.get_json()["reviewState"], "Waiting for Product Data")
 
@@ -280,7 +280,7 @@ class IntakeDecisionTests(unittest.TestCase):
         update_record.return_value = self.entry({
             C.F_RECEIPT_ENTRY_ITEM: [],
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Waiting on Information",
+            C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Waiting on Information",
             C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Needs More Information",
         })
 
@@ -294,7 +294,7 @@ class IntakeDecisionTests(unittest.TestCase):
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_ITEM], [])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Needs More Information")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Needs More Information")
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Needs More Information")
 
     @patch("routes._clients_by_id", return_value={})
@@ -330,7 +330,6 @@ class IntakeDecisionTests(unittest.TestCase):
         ]
         update_record.return_value = self.entry({
             C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
-            C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS: "Workflows Created",
             C.F_RECEIPT_ENTRY_MANUAL_PRODUCT_INFO: '{"upc": "000123"}',
         })
 
@@ -348,7 +347,9 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertEqual(create_record.call_args_list[0].args[0], C.WORKSTREAM_CARDS_TABLE)
         self.assertEqual(create_record.call_args_list[1].args[0], C.WORKSTREAM_CARDS_TABLE)
         update_fields = update_record.call_args.args[2]
-        self.assertEqual(update_fields[C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS], "Workflows Created")
+        # The parent leaves the board because child work exists, not via a status
+        # flag, and it must not be sent back to New now that it has been accepted.
+        self.assertEqual(update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Needs More Information")
         self.assertEqual(update_fields[C.F_RECEIPT_ENTRY_ITEM], ["recProduct"])
         self.assertEqual(update_fields[C.F_RECEIPT_ENTRY_MANUAL_PRODUCT_INFO], '{"upc": "000123"}')
         payload = response.get_json()
@@ -381,7 +382,7 @@ class IntakeDecisionTests(unittest.TestCase):
                 },
             },
         ]
-        update_record.return_value = self.entry({C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS: "Workflows Created"})
+        update_record.return_value = self.entry()
 
         response = self.app.post("/api/merchandise/recMerch/confirm-assign", json={
             "workstreams": [{"type": "Packaging", "quantity": 6}],
@@ -482,6 +483,65 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertTrue(update_record.call_args.kwargs["typecast"])
         self.assertEqual(response.get_json()["record"]["planningStatus"], "awaiting-photo-release")
         populate_feed.assert_not_called()
+
+    @staticmethod
+    def workstream_card(card_id, workstream_type):
+        return {
+            "id": card_id,
+            "fields": {
+                C.F_WORKSTREAM_CARD_NAME: f"Frozen Pizza - {workstream_type}",
+                C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+                C.F_WORKSTREAM_CARD_TYPE: workstream_type,
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Needs More Information",
+                C.F_WORKSTREAM_CARD_QUANTITY: 1,
+            },
+        }
+
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.delete_record")
+    @patch("routes._list_all_records")
+    @patch("routes.airtable.get_record")
+    def test_deleting_one_of_two_cards_keeps_parent_planning_status(
+        self, get_record, list_all_records, delete_record, update_record
+    ):
+        # Removing a sibling must not regress accepted merchandise back to New.
+        # The parent stays off-board because the remaining card represents it.
+        get_record.side_effect = [self.workstream_card("recPackaging", "Packaging"), self.receipt()]
+        list_all_records.return_value = [
+            self.workstream_card("recPackaging", "Packaging"),
+            self.workstream_card("recEcomm", "Ecomm"),
+        ]
+        update_record.return_value = self.entry()
+
+        with patch("routes._permitted_merchandise_or_error", return_value=(self.entry(), self.receipt(), None)):
+            response = self.app.delete("/api/workstream-cards/recPackaging")
+
+        self.assertEqual(response.status_code, 200)
+        delete_record.assert_called_once_with(C.WORKSTREAM_CARDS_TABLE, "recPackaging")
+        written = update_record.call_args.args[2]
+        self.assertEqual(written[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Ecomm"])
+        self.assertNotIn(C.F_RECEIPT_ENTRY_PLANNING_STATUS, written)
+        self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_VERIFIED, written)
+
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.delete_record")
+    @patch("routes._list_all_records")
+    @patch("routes.airtable.get_record")
+    def test_deleting_last_card_returns_parent_to_the_board(
+        self, get_record, list_all_records, delete_record, update_record
+    ):
+        get_record.side_effect = [self.workstream_card("recPackaging", "Packaging"), self.receipt()]
+        list_all_records.return_value = [self.workstream_card("recPackaging", "Packaging")]
+        update_record.return_value = self.entry()
+
+        with patch("routes._permitted_merchandise_or_error", return_value=(self.entry(), self.receipt(), None)):
+            response = self.app.delete("/api/workstream-cards/recPackaging")
+
+        self.assertEqual(response.status_code, 200)
+        written = update_record.call_args.args[2]
+        self.assertEqual(written[C.F_RECEIPT_ENTRY_DELIVERABLES], [])
+        self.assertEqual(written[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Needs More Information")
+        self.assertFalse(written[C.F_RECEIPT_ENTRY_MERCH_VERIFIED])
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
@@ -617,7 +677,9 @@ class IntakeDecisionTests(unittest.TestCase):
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Thr3d"])
         self.assertTrue(all("Resolution" not in key for key in fields))
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Awaiting Photo Release")
+        # THR3D work is never photographed, so it must not claim a photo-release
+        # status; it leaves Planning via its shipping item and Merch Status.
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Needs More Information")
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Ready to Ship")
 
     @patch("routes._clients_by_id", return_value={})
@@ -683,17 +745,17 @@ class IntakeDecisionTests(unittest.TestCase):
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging"])
         self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_STATUS, fields)
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Awaiting Photo Release")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Awaiting Photo Release")
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Awaiting Photo Release")
         self.assertNotIn(C.F_RECEIPT_ENTRY_NOTES, fields)
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
-    def test_explicit_invalid_intake_status_is_rejected(self, get_record, update_record, _clients):
+    def test_explicit_invalid_planning_status_is_rejected(self, get_record, update_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
 
-        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={"intakeStatus": "Blocked"})
+        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={"planningStatusLabel": "Blocked"})
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("Planning status must be one of", response.get_json()["error"])

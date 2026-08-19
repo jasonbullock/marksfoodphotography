@@ -21,6 +21,13 @@ LEGACY_READY_STATUSES = {
 }
 
 
+def _options_for(table_name):
+    """Workstream cards cannot be New; that state belongs to parent merchandise."""
+    if table_name == Config.WORKSTREAM_CARDS_TABLE:
+        return Config.WORKSTREAM_CARD_PLANNING_STATUS_OPTIONS
+    return Config.PLANNING_STATUS_OPTIONS
+
+
 def single_select_field(name, options):
     return {
         "name": name,
@@ -166,17 +173,18 @@ def run(*, dry_run=False, prune_extra_options=False):
         table = table_by_name(tables, table_name)
         if not table:
             raise SystemExit(f"{table_name} table is required.")
-        schema.append(ensure_field(table, field_name, Config.PLANNING_STATUS_OPTIONS, dry_run=dry_run))
+        schema.append(ensure_field(table, field_name, _options_for(table_name), dry_run=dry_run))
     for table_name, field_name in field_targets:
         migrations.append(migrate_middle_statuses(table_name, field_name, dry_run=dry_run))
     if prune_extra_options:
         tables = get_tables()
         for table_name, field_name in field_targets:
             table = table_by_name(tables, table_name)
-            pruned.append(prune_field_options(table, field_name, Config.PLANNING_STATUS_OPTIONS, dry_run=dry_run))
+            pruned.append(prune_field_options(table, field_name, _options_for(table_name), dry_run=dry_run))
     return {
         "dryRun": dry_run,
         "canonicalValues": Config.PLANNING_STATUS_OPTIONS,
+        "workstreamCardValues": Config.WORKSTREAM_CARD_PLANNING_STATUS_OPTIONS,
         "schema": schema,
         "migrations": migrations,
         "pruned": pruned,

@@ -1073,7 +1073,7 @@ def _move_removed_activation_merchandise_to_waiting(merchandise_ids):
         if fields.get(C.F_RECEIPT_ENTRY_PLANNING_STATUS) != PLANNING_STATUS_LABELS["awaiting-photo-release"]:
             continue
         update_fields = {
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New",
+            C.F_RECEIPT_ENTRY_PLANNING_STATUS: "New",
             C.F_RECEIPT_ENTRY_MERCH_VERIFIED: False,
             C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY: [],
         }
@@ -1183,7 +1183,6 @@ def move_activation_to_photo(activation_id):
             C.F_RECEIPT_ENTRY_MERCH_VERIFIED_AT: datetime.now(timezone.utc).isoformat(),
         }
         if not unreleased_siblings:
-            update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
             update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
         if _normalized_merch_status(fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS)) != fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS):
             update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = _normalized_merch_status(fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS))
@@ -1198,7 +1197,7 @@ def move_activation_to_photo(activation_id):
         # merchandise record, which performs unrelated linked-record lookups.
         moved.append({
             "id": updated.get("id", merchandise_id),
-            "intakeStatus": update_fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) or fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS, ""),
+            "planningStatusLabel": update_fields.get(C.F_RECEIPT_ENTRY_PLANNING_STATUS) or fields.get(C.F_RECEIPT_ENTRY_PLANNING_STATUS, ""),
             "deliverables": combined_deliverables,
         })
     # Release only the selected photo workstream types. Merchandise keeps the
@@ -3985,7 +3984,7 @@ def _link_merchandise_to_product(entry_id, item_id):
     entry_fields = entry.get("fields", {})
     updated = _update_receipt_entry_record(entry_id, {
         C.F_RECEIPT_ENTRY_ITEM: [item_id],
-        C.F_RECEIPT_ENTRY_INTAKE_STATUS: entry_fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) or "New",
+        C.F_RECEIPT_ENTRY_PLANNING_STATUS: entry_fields.get(C.F_RECEIPT_ENTRY_PLANNING_STATUS) or "New",
         **_merch_status_normalization_fields(entry_fields),
     })
     return updated, receipt, item, None
@@ -4332,7 +4331,7 @@ def _derive_product_production_summary(*, merchandise, workstreams, thr3d):
     }
     # Preserve the existing summary vocabulary while sourcing the queue from
     # the single canonical Planning Status field.
-    intake_statuses = {
+    planning_labels = {
         {
             "New": "Needs Review",
             "Needs More Information": "Waiting on Information",
@@ -4352,13 +4351,13 @@ def _derive_product_production_summary(*, merchandise, workstreams, thr3d):
         status = "No Merchandise"
     elif physical_issue:
         status = "Issue"
-    elif "Needs Review" in intake_statuses:
+    elif "Needs Review" in planning_labels:
         status = "Needs Review"
     elif any(value in {"In Production", "Complete"} for value in cf_statuses):
         status = "Complete" if work_units and all(value == "Complete" for value in cf_statuses) and (not thr3d_fields or shipping_statuses == {"Shipped"}) else "In Production"
     elif work_units == 0:
-        status = "Waiting on Information" if "Waiting on Information" in intake_statuses else "Work Not Defined"
-    elif {"Needs More Information", "Waiting on Information"} & card_statuses or "Waiting on Information" in intake_statuses:
+        status = "Waiting on Information" if "Waiting on Information" in planning_labels else "Work Not Defined"
+    elif {"Needs More Information", "Waiting on Information"} & card_statuses or "Waiting on Information" in planning_labels:
         status = "Waiting on Information"
     elif workstream_fields and all(value == "Awaiting Photo Release" for value in card_statuses):
         status = "Awaiting Photo Release"
@@ -4373,7 +4372,7 @@ def _derive_product_production_summary(*, merchandise, workstreams, thr3d):
         "workstreamCount": len(workstream_fields),
         "thr3dShippingCount": len(thr3d_fields),
         "merchStatuses": sorted({str(fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS) or "").strip() for fields in merchandise_fields if fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS)}),
-        "intakeStatuses": sorted(intake_statuses - {""}),
+        "planningStatusLabels": sorted(planning_labels - {""}),
         "workstreamStatuses": sorted(card_statuses - {""}),
         "creativeForceStatuses": sorted(cf_statuses),
         "shippingStatuses": sorted(shipping_statuses - {""}),
@@ -4431,7 +4430,7 @@ def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, required_to_sh
             "workstreamCount": 0,
             "thr3dShippingCount": 0,
             "merchStatuses": [],
-            "intakeStatuses": [],
+            "planningStatusLabels": [],
             "workstreamStatuses": [],
             "creativeForceStatuses": [],
             "shippingStatuses": [],
@@ -4862,27 +4861,6 @@ def list_receipts():
     return jsonify({"records": records})
 
 
-@api.get("/shipments/thr3d-outgoing")
-def list_thr3d_outgoing():
-    try:
-        entries = _list_all_records(C.MERCHANDISE_TABLE)
-        receipts = _list_all_records(C.SHIPMENTS_TABLE)
-    except requests.HTTPError as error:
-        return airtable_err(error)
-
-    receipts_by_id = {record["id"]: record for record in _filter_receipts_by_access(receipts)}
-    records = []
-    for entry in entries:
-        linked_receipts = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
-        receipt = next((receipts_by_id.get(receipt_id) for receipt_id in linked_receipts if receipt_id in receipts_by_id), None)
-        if linked_receipts and receipt is None:
-            continue
-        if _is_thr3d_outgoing_candidate(entry):
-            records.append(_shape_thr3d_outgoing_entry(entry, receipt))
-    records.sort(key=lambda record: (record.get("received") or "", record.get("name") or ""))
-    return jsonify({"records": records})
-
-
 @api.delete("/shipments/<shipment_id>")
 @api.delete("/receiving/<shipment_id>")
 def delete_shipment(shipment_id):
@@ -4987,21 +4965,6 @@ def _merch_status_normalization_fields(fields):
     return {C.F_RECEIPT_ENTRY_MERCH_STATUS: normalized} if normalized != current else {}
 
 
-def _is_thr3d_outgoing_candidate(entry):
-    fields = entry.get("fields", {})
-    deliverables = _deliverable_values(fields.get(C.F_RECEIPT_ENTRY_DELIVERABLES, ""))
-    if "Thr3d" not in deliverables:
-        return False
-    if any(value in {"Packaging", "Ecomm"} for value in deliverables):
-        return False
-    if fields.get(C.F_RECEIPT_ENTRY_RELEASED):
-        return False
-    intake_status = str(fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) or "").strip().lower()
-    if intake_status != "awaiting photo release":
-        return False
-    return _is_merchandise_physically_present(fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS, ""))
-
-
 def _intake_decision_value(body, *keys):
     for key in keys:
         if key in body:
@@ -5104,13 +5067,10 @@ def _validate_deliverables(value):
     return selected
 
 
-def _validate_intake_status(value):
+def _validate_planning_status_label(value):
     if value is None:
         return None
-    if value == "":
-        return err(f"Planning status must be one of: {', '.join(C.PLANNING_STATUS_OPTIONS)}.")
-    allowed = set(C.INTAKE_STATUS_OPTIONS) | set(C.PLANNING_STATUS_OPTIONS)
-    if value not in allowed:
+    if value not in C.PLANNING_STATUS_OPTIONS:
         return err(f"Planning status must be one of: {', '.join(C.PLANNING_STATUS_OPTIONS)}.")
     return value
 
@@ -5792,6 +5752,7 @@ def _photo_production_value_is_valid(key, value):
 
 
 PLANNING_STATUS_VALUES = ("new", "needs-more-information", "awaiting-photo-release")
+WORKSTREAM_CARD_PLANNING_STATUS_VALUES = ("needs-more-information", "awaiting-photo-release")
 PLANNING_STATUS_LABELS = {
     "new": "New",
     "needs-more-information": "Needs More Information",
@@ -5818,33 +5779,20 @@ def _planning_status_for_fields(fields=None):
     but callers should use this normalized value for queue placement.
     """
     fields = fields or {}
-    explicit_value = fields.get(C.F_RECEIPT_ENTRY_PLANNING_STATUS) or fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS, "")
-    explicit_planning_status = _normalized_planning_status(explicit_value)
+    explicit_planning_status = _normalized_planning_status(
+        fields.get(C.F_RECEIPT_ENTRY_PLANNING_STATUS)
+        or fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS, "")
+    )
     if explicit_planning_status in PLANNING_STATUS_VALUES:
         return explicit_planning_status
-    intake_status = str(fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS, "") or "").strip().lower()
-    item_ids = _as_list(
-        fields.get(C.F_RECEIPT_ENTRY_ITEM, fields.get(C.F_WORKSTREAM_CARD_EXPECTED_PRODUCT, []))
-    )
-    deliverables = _deliverable_values(
-        fields.get(C.F_RECEIPT_ENTRY_DELIVERABLES, fields.get(C.F_WORKSTREAM_CARD_TYPE, ""))
-    )
-    verified = bool(fields.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED, False))
-    new_merch_status = str(fields.get(C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS, "") or "").strip().lower()
-
     if explicit_planning_status:
+        # A stored value outside the canonical set has no board placement.
         return ""
-    # A newly received item stays in New Merch until a PM reviews it. Raw IDs or
-    # deliverable values can be present during intake and must not bypass that review.
-    if (
-        not verified
-        and new_merch_status != "workflows created"
-        and intake_status in {"", "new"}
-    ):
-        return "new"
-    if not item_ids or not deliverables:
-        return "needs-more-information"
-    return "needs-more-information"
+    # No stored Planning Status at all. A newly received item stays in New Merch
+    # until a PM accepts it; anything already accepted belongs in the review lane.
+    # Nothing else is inferred here: board placement follows the stored field and,
+    # for parent merchandise, whether child work exists.
+    return "needs-more-information" if fields.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED, False) else "new"
 
 
 def _shape_thr3d_shipping_item(record):
@@ -6590,14 +6538,12 @@ def create_workstream_card():
     except requests.HTTPError as error:
         return airtable_err(error)
     remaining_types = existing_types + [workstream_type]
-    parent_is_ready_for_photo = str(entry_fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) or "").strip().lower() == "awaiting photo release"
+    parent_is_ready_for_photo = str(entry_fields.get(C.F_RECEIPT_ENTRY_PLANNING_STATUS) or "").strip().lower() == "awaiting photo release"
     parent_update = {
         C.F_RECEIPT_ENTRY_DELIVERABLES: remaining_types,
     }
     if not (sibling_ready_for_photo or parent_is_ready_for_photo):
         parent_update.update({
-            C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS: "Workflows Created",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New",
             C.F_RECEIPT_ENTRY_PLANNING_STATUS: PLANNING_STATUS_LABELS["needs-more-information"],
             **_merch_status_normalization_fields(entry_fields),
         })
@@ -6612,8 +6558,14 @@ def create_workstream_card():
 def update_workstream_card(record_id):
     body = request.get_json(silent=True) or {}
     planning_status = _normalized_planning_status(body.get("planningStatus") or "")
-    if planning_status and planning_status not in PLANNING_STATUS_VALUES:
-        return err(f"planningStatus must be one of: {', '.join(PLANNING_STATUS_VALUES)}.", 400)
+    # A card is created only after merchandise is accepted and deliverables are
+    # known, so it is born at Needs More Information. New belongs to the parent
+    # merchandise and is not a reachable state for child work.
+    if planning_status and planning_status not in WORKSTREAM_CARD_PLANNING_STATUS_VALUES:
+        return err(
+            f"planningStatus must be one of: {', '.join(WORKSTREAM_CARD_PLANNING_STATUS_VALUES)}.",
+            400,
+        )
     if "status" in body:
         return err("Status is no longer used for Workstream Cards; use planningStatus.", 400)
     try:
@@ -6696,11 +6648,13 @@ def delete_workstream_card(record_id):
     if entry is not None:
         update_fields = {
             C.F_RECEIPT_ENTRY_DELIVERABLES: remaining_types,
-            C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS: "Workflows Created" if remaining_types else "Needs Review",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New" if remaining_types else "Needs More Information",
             **_merch_status_normalization_fields(entry.get("fields", {})),
         }
         if not remaining_types:
+            # Only removing the last card returns the parent to the board. While
+            # sibling cards remain the parent stays off-board, so rewriting its
+            # Planning Status here would regress accepted merchandise back to New.
+            update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["needs-more-information"]
             update_fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED] = False
         try:
             updated_entry = _update_receipt_entry_record(merchandise_id, update_fields)
@@ -6770,8 +6724,10 @@ def confirm_assign_merchandise(entry_id):
             thr3d_items.append(airtable.create_record(C.THR3D_SHIPPING_ITEMS_TABLE, thr3d_fields, by_field_id=False, typecast=True))
 
         update_fields = {
-            C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS: "Workflows Created",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New",
+            # The parent leaves the board because child work now exists, not because
+            # of a status write. It is accepted merchandise, so it must not be sent
+            # back to New: that is where it would land if the child work is removed.
+            C.F_RECEIPT_ENTRY_PLANNING_STATUS: PLANNING_STATUS_LABELS["needs-more-information"],
             **_merch_status_normalization_fields(entry.get("fields", {})),
         }
         if expected_product_ids:
@@ -6876,12 +6832,12 @@ def update_merchandise_intake_state(entry_id):
             return err(f"planningStatus must be one of: {', '.join(PLANNING_STATUS_VALUES)}.", 400)
         stage = planning_stage_map[planning_status]
     allowed_stages = {"new-review", "waiting-info", "send-thr3d", "waiting-activation", "ready-production"}
-    explicit_status = _intake_decision_value(body, "intakeStatus", "intake_status")
+    explicit_status = _intake_decision_value(body, "planningStatusLabel")
     if explicit_status is None and stage not in allowed_stages:
         return err("stage must be one of: new-review, waiting-info, send-thr3d, waiting-activation, ready-production.")
-    intake_status = _validate_intake_status(explicit_status)
-    if isinstance(intake_status, tuple):
-        return intake_status
+    planning_label_value = _validate_planning_status_label(explicit_status)
+    if isinstance(planning_label_value, tuple):
+        return planning_label_value
 
     try:
         entry = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
@@ -6904,23 +6860,20 @@ def update_merchandise_intake_state(entry_id):
         update_fields[C.F_RECEIPT_ENTRY_ITEM] = []
         update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Received"
     effective_fields = {**fields, **update_fields}
-    if intake_status:
-        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = intake_status
-        intake_to_planning = {
+    if planning_label_value:
+        label_to_planning_slug = {
             "new": "new",
             "needs more information": "needs-more-information",
             "awaiting photo release": "awaiting-photo-release",
         }
         update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS[
-            intake_to_planning.get(str(intake_status).strip().lower(), "needs-more-information")
+            label_to_planning_slug.get(str(planning_label_value).strip().lower(), "needs-more-information")
         ]
         update_fields.update(_merch_status_normalization_fields(fields))
     elif stage == "new-review":
-        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "New"
         update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["new"]
         update_fields.update(_merch_status_normalization_fields(fields))
     elif stage == "waiting-info":
-        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Needs More Information"
         update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS[
             planning_status if planning_status == "needs-more-information" else "needs-more-information"
         ]
@@ -6940,11 +6893,12 @@ def update_merchandise_intake_state(entry_id):
         if not requiredToShoot["ready"]:
             return err(f"Cannot move to Thr3d Shipment.\nMissing: {', '.join(requiredToShoot['missing'])}", 400)
         update_fields.update(_intake_decision_fields_from_body({"deliverables": deliverables}, effective_fields))
-        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
-        update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
+        # THR3D work is never photographed, so it must not claim a photo-release
+        # status. It leaves Planning because a THR3D shipping item exists, and the
+        # physical hand-off is expressed by Merch Status.
+        update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["needs-more-information"]
         update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Ready to Ship"
     elif stage == "waiting-activation":
-        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "New"
         update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["needs-more-information"]
         update_fields.update(_merch_status_normalization_fields(fields))
     elif stage == "ready-production":
@@ -6961,7 +6915,6 @@ def update_merchandise_intake_state(entry_id):
         issues = _issues_by_item_id().get(item_ids[0], [])
         if _blocking_merchandise_issues(issues):
             return err("Cannot move to Awaiting Photo Release.\nMissing: Resolved Merchandise Issues", 400)
-        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
         update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
         update_fields.update(_merch_status_normalization_fields(fields))
 
@@ -7133,7 +7086,7 @@ def match_verification_entry(entry_id):
     try:
         updated = _update_receipt_entry_record(entry_id, {
             C.F_RECEIPT_ENTRY_ITEM: [item_id],
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: entry_fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) or "New",
+            C.F_RECEIPT_ENTRY_PLANNING_STATUS: entry_fields.get(C.F_RECEIPT_ENTRY_PLANNING_STATUS) or "New",
             **_merch_status_normalization_fields(entry_fields),
         })
     except requests.HTTPError as error:
@@ -7236,7 +7189,7 @@ def validate_verification_entry(entry_id):
 
     update_fields = {}
     if status == "Validated":
-        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
+        update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
         update_fields.update(_merch_status_normalization_fields(fields))
     else:
         update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = status
@@ -7264,7 +7217,7 @@ def remove_merchandise_review_match(entry_id):
         updated = _update_receipt_entry_record(entry_id, {
             C.F_RECEIPT_ENTRY_ITEM: [],
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New",
+            C.F_RECEIPT_ENTRY_PLANNING_STATUS: "New",
         })
     except requests.HTTPError as error:
         return airtable_err(error)
@@ -7287,7 +7240,7 @@ def mark_merchandise_waiting_for_product_data(entry_id):
 
     update_fields = {
         C.F_RECEIPT_ENTRY_ITEM: [],
-        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs More Information",
+        C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Needs More Information",
         C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
     }
     if note:
@@ -8119,7 +8072,7 @@ def _receipt_entry_fields(entry, receipt_id, index, receipt_name):
         C.F_RECEIPT_ENTRY_RECEIPT: [receipt_id],
         C.F_RECEIPT_ENTRY_QUANTITY: quantity,
         C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New",
+        C.F_RECEIPT_ENTRY_PLANNING_STATUS: "New",
     }
     location_ids = entry.get("locationIds") or entry.get("locationId") or []
     condition = (entry.get("condition") or "").strip()
@@ -8216,32 +8169,39 @@ def _receipt_entry_update_fields_from_body(body):
             normalized = _normalized_merch_status(merch_status)
             if normalized in MERCH_STATUS_VALUES:
                 fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = normalized
-    if "intakeStatus" in body or "intake_status" in body:
-        intake_status = _validate_intake_status(_intake_decision_value(body, "intakeStatus", "intake_status"))
-        if isinstance(intake_status, tuple):
-            return intake_status
-        fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = intake_status
+    if "planningStatusLabel" in body:
+        planning_label_value = _validate_planning_status_label(_intake_decision_value(body, "planningStatusLabel"))
+        if isinstance(planning_label_value, tuple):
+            return planning_label_value
+        fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = planning_label_value
+    return fields
+
+
+def _canonical_planning_status_fields(fields):
+    """Normalize any Planning Status write to a canonical stored label."""
+    fields = dict(fields)
+    if C.F_RECEIPT_ENTRY_PLANNING_STATUS in fields:
+        fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS.get(
+            _normalized_planning_status(fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS]),
+            "New",
+        )
     return fields
 
 
 def _create_receipt_entry_record(fields):
-    fields = dict(fields)
-    if C.F_RECEIPT_ENTRY_INTAKE_STATUS in fields:
-        fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS.get(
-            _normalized_planning_status(fields.pop(C.F_RECEIPT_ENTRY_INTAKE_STATUS)),
-            "New",
-        )
-    return airtable.create_record(C.MERCHANDISE_TABLE, fields, by_field_id=False)
+    return airtable.create_record(
+        C.MERCHANDISE_TABLE, _canonical_planning_status_fields(fields), by_field_id=False
+    )
 
 
 def _update_receipt_entry_record(entry_id, fields):
-    fields = dict(fields)
-    if C.F_RECEIPT_ENTRY_INTAKE_STATUS in fields:
-        fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS.get(
-            _normalized_planning_status(fields.pop(C.F_RECEIPT_ENTRY_INTAKE_STATUS)),
-            "New",
-        )
-    return airtable.update_record(C.MERCHANDISE_TABLE, entry_id, fields, by_field_id=False)
+    # Deliberately no typecast: Planning Status writes are normalized above, so an
+    # Airtable rejection means something wrote a value outside the canonical set.
+    # typecast would silently invent the option instead, which is how stray choices
+    # appeared on Workstream Cards.
+    return airtable.update_record(
+        C.MERCHANDISE_TABLE, entry_id, _canonical_planning_status_fields(fields), by_field_id=False
+    )
 
 
 def _receipt_entries_by_receipt_id(receipt_ids):
@@ -8415,11 +8375,9 @@ def _shape_receipt_entry(r, *, products_by_id=None, clients_by_id=None):
         "matchedProduct": matched_product,
         "linkedProduct": matched_product,
         "merchStatus": merch_status,
-        "newMerchStatus": f.get(C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS, ""),
-        # Keep the old API aliases while sourcing both from the single persisted
-        # Planning Status field.
-        "intake_status": planning_label,
-        "intakeStatus": planning_label,
+        # planningStatus is the slug used for queue placement; planningStatusLabel
+        # is the stored Airtable label. Both come from the one Planning Status field.
+        "planningStatusLabel": planning_label,
         "planningStatus": planning_status,
         "released": bool(f.get(C.F_RECEIPT_ENTRY_RELEASED, False)),
         "released_at": f.get(C.F_RECEIPT_ENTRY_RELEASED_AT, ""),
@@ -8443,45 +8401,6 @@ def _shape_receipt_entry_with_linked_product(r):
     )
 
 
-def _shape_thr3d_outgoing_entry(entry, receipt=None):
-    shaped = _shape_receipt_entry(entry)
-    receipt_fields = receipt.get("fields", {}) if receipt else {}
-    received = receipt_fields.get(C.F_RECEIPT_RECEIVED, "") if receipt else ""
-    days_here = _days_here_from_received(received)
-    client_ids = receipt_fields.get(C.F_RECEIPT_CLIENT, []) if isinstance(receipt_fields.get(C.F_RECEIPT_CLIENT, []), list) else []
-    shipment = {
-        "id": receipt.get("id") if receipt else "",
-        "name": receipt_fields.get(C.F_RECEIPT_NAME, "") if receipt else "",
-        "carrier": receipt_fields.get(C.F_RECEIPT_CARRIER, "") if receipt else "",
-        "tracking": receipt_fields.get(C.F_RECEIPT_TRACKING, "") if receipt else "",
-        "received": received,
-    }
-    return {
-        **shaped,
-        "clientIds": client_ids,
-        "locationId": shaped.get("locationIds", [None])[0] if shaped.get("locationIds") else "",
-        "currentLocationId": shaped.get("locationIds", [None])[0] if shaped.get("locationIds") else "",
-        "received": received,
-        "dateReceived": received,
-        "daysHere": days_here,
-        "timeHere": _time_here_label(days_here),
-        "ageGroup": _age_group_for_days(days_here),
-        "shipment": shipment,
-        "shipmentLinkage": shipment,
-    }
-
-
-VERIFICATION_STATUS_LABELS = {
-    "Needs Review": "Awaiting Verification",
-    "Verified": "Verified",
-    "Issue": "Awaiting Product Import",
-}
-
-
-def _verification_status_label(status):
-    return VERIFICATION_STATUS_LABELS.get(status or "", status or "Awaiting Verification")
-
-
 def _first_permitted_receipt(receipt_ids):
     for receipt_id in _as_list(receipt_ids):
         try:
@@ -8493,14 +8412,18 @@ def _first_permitted_receipt(receipt_ids):
     return None
 
 
+def _verification_status_label(status):
+    return VERIFICATION_STATUS_LABELS.get(status or "", status or "Awaiting Verification")
+
+
 def _review_state_for_entry(shaped, linked_item=None, blocking_issues=None):
     merch_status = shaped.get("merchStatus") or ""
-    intake_status = shaped.get("intakeStatus") or ""
+    planning_label_value = shaped.get("planningStatusLabel") or ""
     if merch_status == "Issue" or blocking_issues:
         return "Issue"
-    if intake_status in {"Needs More Information", "Waiting on Information"}:
+    if planning_label_value in {"Needs More Information", "Waiting on Information"}:
         return "Waiting for Product Data"
-    if intake_status == "Awaiting Photo Release":
+    if planning_label_value == "Awaiting Photo Release":
         return "Validated"
     return "Needs Review"
 
@@ -8879,6 +8802,10 @@ def clear_core_tables():
         ("imports", C.IMPORTS_TABLE),
         ("merchandise", C.MERCHANDISE_TABLE),
         ("shipments", C.SHIPMENTS_TABLE),
+        # Products are test data too: they are re-importable from client source data,
+        # so a reset clears them. Clients, Users, and Locations are reference data and
+        # are preserved. See docs/DECISIONS.md 2026-08-19.
+        ("products", C.PRODUCTS_TABLE),
         ("jobs", C.JOBS_TABLE),
     ]
     summary = {}

@@ -173,7 +173,7 @@ class AuthTests(unittest.TestCase):
 
     @patch("routes.airtable.delete_records")
     @patch("routes.airtable.list_records")
-    def test_developer_reset_keeps_products_table(self, list_records, delete_records):
+    def test_developer_reset_clears_products_table(self, list_records, delete_records):
         self.authenticate(user_record(role="Admin", all_clients=True))
 
         def fake_list_records(table_name, params=None, by_field_id=False):
@@ -186,13 +186,18 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         listed_tables = [call.args[0] for call in list_records.call_args_list]
         deleted_tables = [call.args[0] for call in delete_records.call_args_list]
-        self.assertNotIn(C.PRODUCTS_TABLE, listed_tables)
-        self.assertNotIn(C.PRODUCTS_TABLE, deleted_tables)
+        # Products are re-importable from client source data, so a reset clears them.
+        self.assertIn(C.PRODUCTS_TABLE, listed_tables)
+        self.assertIn(C.PRODUCTS_TABLE, deleted_tables)
         self.assertIn(C.MERCHANDISE_TABLE, deleted_tables)
         self.assertIn(C.SHIPMENTS_TABLE, deleted_tables)
         self.assertIn(C.WORKSTREAM_CARDS_TABLE, deleted_tables)
         self.assertIn(C.THR3D_SHIPPING_ITEMS_TABLE, deleted_tables)
         self.assertIn(C.ACTIVATIONS_TABLE, deleted_tables)
+        # Reference data that must survive a reset.
+        self.assertNotIn(C.CLIENTS_TABLE, deleted_tables)
+        self.assertNotIn(C.USERS_TABLE, deleted_tables)
+        self.assertNotIn(C.LOCATIONS_TABLE, deleted_tables)
 
     @patch("routes.airtable.list_records")
     def test_non_admin_user_can_access_non_admin_users(self, list_records):
@@ -1020,7 +1025,7 @@ class AuthTests(unittest.TestCase):
             "id": "recRemoved",
             "fields": {
                 C.F_RECEIPT_ENTRY_NAME: "Dress 1",
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Photo Release",
+                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Awaiting Photo Release",
                 C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated",
                 C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
             },
@@ -1038,7 +1043,7 @@ class AuthTests(unittest.TestCase):
             "id": "recRemoved",
             "fields": {
                 **removed_merchandise["fields"],
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review",
+                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Needs Review",
                 C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
                 C.F_RECEIPT_ENTRY_MERCH_VERIFIED: False,
             },
@@ -1060,7 +1065,7 @@ class AuthTests(unittest.TestCase):
         activation_update = update_record.call_args_list[0].args[2]
         self.assertEqual(activation_update[C.F_ACTIVATION_MATCHED_MERCHANDISE], [])
         merchandise_update = update_record.call_args_list[1].args[2]
-        self.assertEqual(merchandise_update[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "New")
+        self.assertEqual(merchandise_update[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "New")
         self.assertEqual(merchandise_update[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
         self.assertFalse(merchandise_update[C.F_RECEIPT_ENTRY_MERCH_VERIFIED])
 
@@ -1099,7 +1104,7 @@ class AuthTests(unittest.TestCase):
             "fields": {
                 **merchandise["fields"],
                 C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm"],
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Photo Release",
+                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Awaiting Photo Release",
                 C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
             },
         }
@@ -1117,7 +1122,7 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(response.get_json()["movedCount"], 1)
         merch_update = update_record.call_args_list[0].args[2]
         self.assertEqual(merch_update[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Ecomm"])
-        self.assertEqual(merch_update[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Awaiting Photo Release")
+        self.assertEqual(merch_update[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Awaiting Photo Release")
         self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_STATUS, merch_update)
         populate_feed.assert_not_called()
 
@@ -1191,10 +1196,10 @@ class AuthTests(unittest.TestCase):
         response = self.client.post("/api/activations/recActivation/move-to-photo")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["moved"][0]["intakeStatus"], "Needs More Information")
+        self.assertEqual(response.get_json()["moved"][0]["planningStatusLabel"], "Needs More Information")
         merch_update = update_record.call_args_list[0].args[2]
         self.assertEqual(merch_update[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Ecomm", "Packaging"])
-        self.assertNotIn(C.F_RECEIPT_ENTRY_INTAKE_STATUS, merch_update)
+        self.assertNotIn(C.F_RECEIPT_ENTRY_PLANNING_STATUS, merch_update)
         self.assertEqual(update_record.call_args_list[1].args[0], C.WORKSTREAM_CARDS_TABLE)
         self.assertEqual(update_record.call_args_list[1].args[1], "recEcommCard")
         self.assertEqual(update_record.call_args_list[1].args[2], {
@@ -1243,7 +1248,7 @@ class AuthTests(unittest.TestCase):
             "fields": {
                 **merchandise["fields"],
                 C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm"],
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Photo Release",
+                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Awaiting Photo Release",
                 C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
             },
         }

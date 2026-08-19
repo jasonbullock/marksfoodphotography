@@ -341,7 +341,6 @@ api.listShipments = async ({ clientId, unassignedClient } = {}) => {
   if (unassignedClient) params.set('unassignedClient', 'true');
   return backend('GET', `/shipments${params.toString() ? `?${params.toString()}` : ''}`);
 };
-api.listThr3dOutgoing = async () => backend('GET', '/shipments/thr3d-outgoing');
 
 api.createReceipt = async (payload) => backend('POST', '/receiving', payload);
 api.startReceivingSession = async (payload) => backend('POST', '/receiving/sessions', payload);

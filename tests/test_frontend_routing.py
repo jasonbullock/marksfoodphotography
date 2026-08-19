@@ -279,8 +279,6 @@ class FrontendRoutingTests(unittest.TestCase):
         for text in [
             "New",
             "Waiting",
-            "Thr3d Shipment",
-            "Planning",
             "Awaiting Photo Release",
         ]:
             self.assertIn(text, self.merchandise_routing)
@@ -455,8 +453,6 @@ class FrontendRoutingTests(unittest.TestCase):
             "QUEUE_IDS",
             "WORKSPACE_SECTIONS",
             "CARD_FIELDS",
-            "BOARD_IDS",
-            "BOARD_STATE_MODEL",
             "PLANNING_BOARD_REGISTRY",
             "MERCHANDISE_PLANNING_BOARD",
             "evaluateMerchandiseReviewRequirements",
@@ -477,7 +473,6 @@ class FrontendRoutingTests(unittest.TestCase):
             "validatePlanningMove",
             "queuesForBoard",
             "ownerRole = PLANNING_OWNERS.projectManagement",
-            "deliverableRoute: DELIVERABLE_ROUTE_IDS.thr3d",
             "allowedNextQueues",
             "entryCriteria",
             "exitCriteria",
@@ -488,13 +483,6 @@ class FrontendRoutingTests(unittest.TestCase):
             "currentQueue",
             "currentOwner",
             "currentStatus",
-            "productionScheduled: 'production-scheduled'",
-            "productionInProgress: 'production-in-progress'",
-            "productionQc: 'production-qc'",
-            "productionComplete: 'production-complete'",
-            "label: 'Planning Board'",
-            "label: 'Production Board'",
-            "shared: [QUEUE_IDS.readyProduction]",
         ]:
             self.assertIn(text, self.merchandise_routing)
         self.assertIn("from './merchandiseRouting'", self.source)
@@ -1451,8 +1439,11 @@ class FrontendRoutingTests(unittest.TestCase):
             "requiredToShoot: undefined",
             "finishRegressionVerification",
             "setSelectedId('')",
-            "intakeStatus: 'Awaiting Photo Release'",
-            "stage: QUEUE_IDS.sendThr3d",
+            # THR3D-only work is never photographed, so it must not claim a
+            # photo-release status; the physical hand-off is Merch Status.
+            "planningStatusLabel: 'Needs More Information'",
+            "merchStatus: 'Ready to Ship'",
+            "stage: 'send-thr3d'",
             'data-testid="thr3d-outgoing-regression"',
             "THR3D / Outgoing",
             "disabled={Boolean(selectedItem)}",
@@ -1473,7 +1464,7 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn(".planning-list-view.is-frozen", self.styles)
         self.assertIn("pointer-events: none", self.styles)
 
-    def test_thr3d_planning_card_lookup_returns_current_queue_name(self):
+    def test_planning_card_lookup_returns_current_queue_name(self):
         script = """
 import {
   buildPlanningCard,
@@ -1492,15 +1483,15 @@ const record = {
 };
 const emptyBoard = { ...MERCHANDISE_PLANNING_BOARD, queues: [] };
 const assignment = evaluateMerchandiseReviewAssignment(record, {
-  requestedQueueId: QUEUE_IDS.sendThr3d,
+  requestedQueueId: QUEUE_IDS.readyProduction,
   planningBoard: emptyBoard,
 });
 const card = buildPlanningCard(record, { assignment, client: { name: 'Test Client' } });
-const queue = queueById(emptyBoard, QUEUE_IDS.sendThr3d);
+const queue = queueById(emptyBoard, QUEUE_IDS.readyProduction);
 
-if (queue.label !== 'Thr3d Shipment') throw new Error(`Expected Thr3d queue, got ${queue.label}`);
-if (card.planningCard.currentQueue !== QUEUE_IDS.sendThr3d) throw new Error(`Expected send-thr3d, got ${card.planningCard.currentQueue}`);
-if (card.planningCard.currentQueueName !== 'Thr3d Shipment') throw new Error(`Expected currentQueueName, got ${card.planningCard.currentQueueName}`);
+if (queue.label !== 'Awaiting Photo Release') throw new Error(`Expected release queue, got ${queue.label}`);
+if (card.planningCard.currentQueue !== QUEUE_IDS.readyProduction) throw new Error(`Expected ready-production, got ${card.planningCard.currentQueue}`);
+if (card.planningCard.currentQueueName !== 'Awaiting Photo Release') throw new Error(`Expected currentQueueName, got ${card.planningCard.currentQueueName}`);
 if (card.assignment !== card.planningCard) throw new Error('Planning card alias must match assignment');
 """
         result = subprocess.run(

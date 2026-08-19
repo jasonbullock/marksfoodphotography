@@ -194,12 +194,12 @@ class MerchandiseReviewTests(unittest.TestCase):
             }),
             self.entry("recWaiting", {
                 C.F_RECEIPT_ENTRY_NAME: "Imported later",
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs More Information",
+                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Needs More Information",
             }),
             self.entry("recValidated", {
                 C.F_RECEIPT_ENTRY_ITEM: ["recProductValidated"],
                 C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Photo Release",
+                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Awaiting Photo Release",
             }),
             self.entry("recIssueState", {
                 C.F_RECEIPT_ENTRY_ITEM: ["recProductIssue"],
@@ -332,7 +332,7 @@ class MerchandiseReviewTests(unittest.TestCase):
         update_record.return_value = self.entry("recEntry", {
             C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Photo Release",
+            C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Awaiting Photo Release",
         })
 
         response = self.app.post("/api/merchandise/review/recEntry/validate", json={"status": "Validated"})
@@ -358,12 +358,12 @@ class MerchandiseReviewTests(unittest.TestCase):
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
-    def test_waiting_for_product_data_uses_intake_status_and_preserves_notes(self, get_record, update_record):
+    def test_waiting_for_product_data_uses_planning_status_and_preserves_notes(self, get_record, update_record):
         get_record.side_effect = [self.entry("recEntry", {C.F_RECEIPT_ENTRY_NOTES: "Receiver note"}), self.receipt()]
         update_record.return_value = self.entry("recEntry", {
             C.F_RECEIPT_ENTRY_NOTES: "Receiver note\nImport missing",
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs More Information",
+                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Needs More Information",
         })
 
         response = self.app.post("/api/merchandise/review/recEntry/waiting-product-data", json={"note": "Import missing"})
@@ -371,7 +371,7 @@ class MerchandiseReviewTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_ITEM], [])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Needs More Information")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Needs More Information")
         self.assertNotIn("[Waiting for Product Data]", fields[C.F_RECEIPT_ENTRY_NOTES])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
         self.assertEqual(response.get_json()["reviewState"], "Waiting for Product Data")

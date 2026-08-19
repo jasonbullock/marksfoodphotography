@@ -81,46 +81,14 @@ export const REQUIREMENT_KEYS = {
   activationInformation: 'activation-information',
 };
 
+// The three Planning queues, matching the backend's canonical Planning Status.
+// Thr3d is not a queue: THR3D work becomes a shipping item and its parent leaves
+// the board structurally. Production queues are not modelled here until Production
+// is actually built; see docs/WORKSPACES.md on placeholder workspaces.
 export const QUEUE_IDS = {
   newReview: 'new-review',
   waitingInformation: 'waiting-info',
-  sendThr3d: 'send-thr3d',
-  waitingActivation: 'waiting-activation',
   readyProduction: 'ready-production',
-  productionScheduled: 'production-scheduled',
-  productionInProgress: 'production-in-progress',
-  productionQc: 'production-qc',
-  productionComplete: 'production-complete',
-};
-
-export const BOARD_IDS = {
-  planning: 'planning',
-  production: 'production',
-};
-
-export const BOARD_STATE_MODEL = {
-  [BOARD_IDS.planning]: {
-    id: BOARD_IDS.planning,
-    label: 'Planning Board',
-    owner: PLANNING_OWNERS.projectManagement,
-    owns: [QUEUE_IDS.newReview, QUEUE_IDS.waitingActivation, QUEUE_IDS.waitingInformation],
-    shared: [QUEUE_IDS.readyProduction],
-    columns: [QUEUE_IDS.newReview, QUEUE_IDS.waitingActivation, QUEUE_IDS.waitingInformation, QUEUE_IDS.readyProduction],
-  },
-  [BOARD_IDS.production]: {
-    id: BOARD_IDS.production,
-    label: 'Production Board',
-    owner: 'Production',
-    owns: [QUEUE_IDS.productionScheduled, QUEUE_IDS.productionInProgress, QUEUE_IDS.productionQc, QUEUE_IDS.productionComplete],
-    shared: [QUEUE_IDS.readyProduction],
-    columns: [
-      QUEUE_IDS.readyProduction,
-      QUEUE_IDS.productionScheduled,
-      QUEUE_IDS.productionInProgress,
-      QUEUE_IDS.productionQc,
-      QUEUE_IDS.productionComplete,
-    ],
-  },
 };
 
 export const WORKSPACE_SECTIONS = {
@@ -143,6 +111,7 @@ export const WORKSPACE_SECTIONS = {
   productSummary: 'product-summary',
 };
 
+
 export const CARD_FIELDS = {
   thumbnail: 'thumbnail',
   observedPackageName: 'observedPackageName',
@@ -154,6 +123,7 @@ export const CARD_FIELDS = {
   issueIndicator: 'issueIndicator',
   requiredToShoot: 'requiredToShoot',
 };
+
 
 function queueColumn({
   id,
@@ -203,6 +173,7 @@ function queueColumn({
   };
 }
 
+
 export const MERCHANDISE_PLANNING_BOARD = {
   id: 'merchandise-review',
   name: 'Planning Board',
@@ -216,7 +187,7 @@ export const MERCHANDISE_PLANNING_BOARD = {
       description: 'Newly received merchandise awaiting PM verification.',
       order: 10,
       exitCriteria: [REQUIREMENT_KEYS.merchandiseVerified],
-      allowedNextQueues: [QUEUE_IDS.waitingInformation, QUEUE_IDS.sendThr3d, QUEUE_IDS.waitingActivation, QUEUE_IDS.readyProduction],
+      allowedNextQueues: [QUEUE_IDS.waitingInformation, QUEUE_IDS.readyProduction],
       workspaceMode: WORKSPACE_MODES.modal,
       workspaceSections: [
         WORKSPACE_SECTIONS.merchandiseObservations,
@@ -232,47 +203,13 @@ export const MERCHANDISE_PLANNING_BOARD = {
       description: 'PM-owned queue for client answers, files, or decisions.',
       order: 20,
       exitCriteria: [REQUIREMENT_KEYS.productInformation, REQUIREMENT_KEYS.artwork, REQUIREMENT_KEYS.activationInformation],
-      allowedNextQueues: [QUEUE_IDS.newReview, QUEUE_IDS.sendThr3d, QUEUE_IDS.waitingActivation, QUEUE_IDS.readyProduction],
+      allowedNextQueues: [QUEUE_IDS.newReview, QUEUE_IDS.readyProduction],
       workspaceSections: [
         WORKSPACE_SECTIONS.missingInformation,
         WORKSPACE_SECTIONS.productIdentification,
         WORKSPACE_SECTIONS.artwork,
         WORKSPACE_SECTIONS.activation,
         WORKSPACE_SECTIONS.notes,
-        WORKSPACE_SECTIONS.requiredToShoot,
-      ],
-    }),
-    queueColumn({
-      id: QUEUE_IDS.sendThr3d,
-      label: 'Thr3d Shipment',
-      description: 'Verified merchandise ready for Shipments Outgoing.',
-      order: 30,
-      entryCriteria: [REQUIREMENT_KEYS.merchandiseVerified, REQUIREMENT_KEYS.deliverables],
-      exitCriteria: [REQUIREMENT_KEYS.merchandiseVerified, REQUIREMENT_KEYS.deliverables],
-      allowedNextQueues: [QUEUE_IDS.waitingActivation, QUEUE_IDS.readyProduction],
-      workspaceSections: [
-        WORKSPACE_SECTIONS.merchandiseObservations,
-        WORKSPACE_SECTIONS.photos,
-        WORKSPACE_SECTIONS.productIdentification,
-        WORKSPACE_SECTIONS.deliverables,
-        WORKSPACE_SECTIONS.thr3dRouting,
-        WORKSPACE_SECTIONS.requiredToShoot,
-      ],
-      deliverableRoute: DELIVERABLE_ROUTE_IDS.thr3d,
-    }),
-    queueColumn({
-      id: QUEUE_IDS.waitingActivation,
-      label: 'Planning',
-      description: 'PM-controlled planning queue.',
-      order: 40,
-      entryCriteria: [REQUIREMENT_KEYS.productInformation, REQUIREMENT_KEYS.artwork],
-      exitCriteria: [REQUIREMENT_KEYS.activationInformation],
-      allowedNextQueues: [QUEUE_IDS.readyProduction],
-      workspaceSections: [
-        WORKSPACE_SECTIONS.productIdentificationSummary,
-        WORKSPACE_SECTIONS.artworkSummary,
-        WORKSPACE_SECTIONS.activation,
-        WORKSPACE_SECTIONS.issues,
         WORKSPACE_SECTIONS.requiredToShoot,
       ],
     }),
@@ -739,7 +676,7 @@ export function queueById(planningBoard, queueId) {
     || MERCHANDISE_PLANNING_BOARD.queues.find(item => item.id === QUEUE_IDS.newReview);
 }
 
-export function deriveMerchandiseReviewQueue(record, requirements, requestedQueueId, reviewState, planningBoard = MERCHANDISE_PLANNING_BOARD) {
+export function deriveMerchandiseReviewQueue(record, requirements, requestedQueueId, planningBoard = MERCHANDISE_PLANNING_BOARD) {
   const visibleQueueIds = new Set(queuesForBoard(planningBoard).map(queueConfig => queueConfig.id));
   if (requestedQueueId && visibleQueueIds.has(requestedQueueId)) return requestedQueueId;
   if (record?.planningStatus === 'awaiting-photo-release' && visibleQueueIds.has(QUEUE_IDS.readyProduction)) return QUEUE_IDS.readyProduction;
@@ -775,10 +712,8 @@ export function createPlanningCard({ planningBoard = MERCHANDISE_PLANNING_BOARD,
 }
 
 function assignmentReason(queueId, requirements, record) {
-  if (queueId === QUEUE_IDS.sendThr3d) return 'Thr3d is selected and this belongs in Shipments Outgoing.';
   const blockers = requirements.filter(requirement => requirement.visible !== false && !requirement.satisfied);
   if (queueId === QUEUE_IDS.waitingInformation) return blockers.length ? `Still needed: ${blockers.map(item => item.label).join(', ')}.` : 'Waiting on a client answer.';
-  if (queueId === QUEUE_IDS.waitingActivation) return 'PM is actively working this card.';
   if (queueId === QUEUE_IDS.readyProduction) return 'All required information for photography is complete.';
   if (record?.reviewState) return `Existing review state: ${record.reviewState}.`;
   return 'New merchandise is ready for a PM to pick up.';
@@ -826,17 +761,17 @@ export function enrichPlanningCard(planningBoard, assignment) {
 
 export const enrichPlanningCardAlias = enrichPlanningCard;
 
-export function evaluateMerchandiseReviewAssignment(record, { artworkOverride, requestedQueueId, reviewState, client, planningBoard } = {}) {
+export function evaluateMerchandiseReviewAssignment(record, { artworkOverride, requestedQueueId, client, planningBoard } = {}) {
   const activeBoard = planningBoard || MERCHANDISE_PLANNING_BOARD;
   const requirements = evaluateMerchandiseReviewRequirements(record, { artworkOverride, client });
-  const queueId = deriveMerchandiseReviewQueue(record, requirements, requestedQueueId, reviewState, activeBoard);
+  const queueId = deriveMerchandiseReviewQueue(record, requirements, requestedQueueId, activeBoard);
   return enrichPlanningCard(activeBoard, createPlanningCard({ planningBoard: activeBoard, record, queueId, requirements }));
 }
 
-export function evaluateDeliverablePlanningCard(record, { deliverableRoute, persistedAssignment, artworkOverride, requestedQueueId, reviewState, client, planningBoard } = {}) {
+export function evaluateDeliverablePlanningCard(record, { deliverableRoute, persistedAssignment, artworkOverride, requestedQueueId, client, planningBoard } = {}) {
   const activeBoard = planningBoard || MERCHANDISE_PLANNING_BOARD;
   const requirements = evaluateMerchandiseReviewRequirements(record, { artworkOverride, client, deliverableRoute });
-  const queueId = persistedAssignment?.currentQueue || requestedQueueId || deriveMerchandiseReviewQueue(record, requirements, '', reviewState, activeBoard);
+  const queueId = persistedAssignment?.currentQueue || requestedQueueId || deriveMerchandiseReviewQueue(record, requirements, '', activeBoard);
   return enrichPlanningCard(activeBoard, createPlanningCard({
     planningBoard: activeBoard,
     record,

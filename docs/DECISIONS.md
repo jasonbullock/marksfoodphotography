@@ -1,5 +1,60 @@
 # Product Decisions
 
+## 2026-08-19 - The Routing Module Models Only What The Board Renders
+
+`frontend/src/merchandiseRouting.js` described a five-column planning board and a second production board while the app rendered three sections. Queue ids, board columns, and a two-board state model existed for surfaces that were never built.
+
+Only the three canonical Planning queues are modelled: `new-review`, `waiting-info`, and `ready-production`. `sendThr3d` and `waitingActivation` are gone, along with the four production queue ids and the `BOARD_IDS` / `BOARD_STATE_MODEL` pair, which nothing imported.
+
+THR3D is not a queue. THR3D work becomes a shipping item and its parent leaves the board structurally, so a Thr3d column would be a second way to express something the record graph already answers. `send-thr3d` survives as a backend API stage name; that is a transition verb, not a board position.
+
+Production queues stay unmodelled until Production is built. `docs/WORKSPACES.md` says not to add placeholder navigation for architected-but-unbuilt workspaces, and the same reasoning applies to placeholder queue ids: they invite code to route work into columns that cannot be rendered.
+
+V1 Merchandise Review vocabulary — `Needs Review`, `Waiting for Product Data`, `Validated`, `Issue` — belongs to the V1 `/merchandise/review` page and must not appear in the Planning path. It had leaked into three Planning call sites, where it was threaded into queue derivation as a parameter that was never read.
+
+## 2026-08-19 - Planning Board Membership Is Structural
+
+A parent Received Merch record belongs on the Planning board until child work actually exists for it. Board membership is decided by whether a Packaging or Ecomm workstream card links to that merchandise, not by a status flag that claims work was created.
+
+This replaces filtering on `New Merch Status = Workflows Created`. A flag can be set while no card exists, which hid merchandise in Planning with no route back onto the board. Record existence cannot drift from itself, so the structural check is self-correcting where the flag was not.
+
+Deriving from record existence or link fields is acceptable. Deriving planning state by inferring from a combination of flags such as `Merchandise Verified`, `Deliverables`, and `New Merch Status` is what produced competing sources of queue placement, and it should not be reintroduced.
+
+Child work means a Packaging or Ecomm workstream card **or** a THR3D shipping item. THR3D-only merchandise never produces a workstream card, so a board that checks only cards will pull THR3D-only merchandise back into New Merch after assignment.
+
+A consequence: removing a workstream card must not rewrite the parent's `Planning Status` while sibling cards remain, because the parent is off-board and its status is not what the board is reading. Only removing the last card returns the parent, and that reset writes `Needs More Information` with `Merchandise Verified` cleared. For the same reason, no path that creates child work may write `New` to the parent — it is accepted merchandise, and `New` is where it would land if the child work is later removed.
+
+`New Merch Status` is retired as of 2026-08-19. Its `Workflows Created` value only restated "a child record exists", which the link fields already answer directly, and a flag can drift from the records it claims to describe while a link field cannot. Planning-status derivation was collapsed at the same time: `Planning Status` is authoritative, and inference happens only when the field is completely empty.
+
+Workstream cards are created only after the merchandise is physically validated and deliverables are defined. Physical acceptance is the first PM step and must not create work; deliverable review is the second.
+
+### Resolved 2026-08-19
+
+- **Workstream cards cannot be `New`.** A card is created only after merchandise is accepted and deliverables are known, so it is born at `Needs More Information`; `New` was unreachable. `Workstream Cards.Planning Status` now offers two values, tracked separately from merchandise as `WORKSTREAM_CARD_PLANNING_STATUS_OPTIONS`, and the update endpoint rejects `New` for cards. `New` remains a parent-merchandise concept.
+- **THR3D-only merchandise never claims a photo-release status.** It stops at `Needs More Information` and leaves Planning because its THR3D shipping item exists; the physical hand-off is expressed by `Merch Status = Ready to Ship`. Previously it wrote `Awaiting Photo Release`, which made the shared release queue mean two different things. The only consumer of that write was `GET /shipments/thr3d-outgoing`, a merchandise-based read model with no frontend caller, superseded by `/thr3d-shipping-items`; that endpoint and its helpers were removed.
+
+### Still open
+
+- Whether a PM may enter Deliverables in the application when the client source sheet has no Request Type, or whether the source document must be corrected first. `Products.Request Type` is source-owned and `Merchandise.Deliverables` is app-owned, so these are two different facts rather than two sources for one fact, but the operating rule has not been chosen. If in-app entry is allowed, disagreement between the two fields should be flagged rather than auto-resolved, and the application must still never write `Request Type`.
+
+## 2026-08-19 - Planning Status Is The Only Persisted Queue Field
+
+`Intake Status` is gone as a name in the codebase. It survived as `F_RECEIPT_ENTRY_INTAKE_STATUS`, an alias assigned to the same `"Planning Status"` string, which meant paired writes silently discarded one value: `{INTAKE: "New", PLANNING: "Needs More Information"}` is one key, and the later assignment won. Dead writes therefore read as intentional in review. The alias is removed and every call site uses `F_RECEIPT_ENTRY_PLANNING_STATUS`.
+
+The API surface follows the same rule. Responses expose `planningStatus` (the slug used for queue placement) and `planningStatusLabel` (the stored Airtable label); the `intakeStatus` and `intake_status` aliases are gone from both requests and responses. Request payloads accept `planningStatus` or `planningStatusLabel`.
+
+Merchandise writes deliberately do **not** use Airtable `typecast`. Planning Status values are normalized before write, so a rejection means something produced a value outside the canonical set and should fail loudly. `typecast` would silently create the option instead, which is how stray choices accumulated on `Workstream Cards.Planning Status`.
+
+## 2026-08-19 - Reset Test Data Clears Products
+
+This supersedes `2026-08-09 - Reset Test Data Preserves Products`.
+
+Products are re-importable, not authored in Marks Photo. They are aggregated from client product-data sources through Excel upload, paste, and the Topco source sheet, so a cleared Products table can be rebuilt from the source of truth. That makes them test data for the purposes of a development reset, not reference data.
+
+`Reset Test Data` therefore deletes every `Products` record along with the workflow and shipment tables. Clients, Users, Locations, Airtable schema, field options, and client configuration remain preserved, because those are configured in Marks Photo and have no upstream source to restore from.
+
+The typed confirmation phrase is `DELETE TEST DATA AND PRODUCTS`. It names the wider blast radius explicitly so the prompt cannot be cleared by muscle memory from the previous `DELETE TEST DATA` phrasing.
+
 ## 2026-08-18 - Planning Status Moves Forward To Photo Release
 
 The persisted `Planning Status` dropdown should have three active values: `New`, `Needs More Information`, and `Awaiting Photo Release`. `Needs Product / Work`, `Awaiting Info`, `Awaiting Info/Activation`, and `Ready for Photo` are retired Planning labels, not active app values.
@@ -9,6 +64,8 @@ The persisted `Planning Status` dropdown should have three active values: `New`,
 Release completion is owned by the release audit fields (`Released`, `Released At`, `Released By`) and Creative Force feed projection, not by writing a fourth Planning Status such as `Complete`. The active Planning surface should hide released work through those release fields.
 
 Airtable may still show retired choices in the single-select dropdown until they are removed through Airtable's own field configuration UI. The metadata API rejected live choice-pruning requests with a 422 response, so the application must not depend on pruning being complete.
+
+Resolved 2026-08-19: the retired choices were removed manually from both `Merchandise.Planning Status` and `Workstream Cards.Planning Status`, which now offer only the three canonical values. The rule above still stands as a design constraint — app code must keep normalizing retired labels on input rather than assuming a clean dropdown, because pruning is a manual step that cannot be enforced from code.
 
 ## 2026-08-17 - Source Check Is Read-Only Evidence
 
@@ -147,6 +204,8 @@ The user-facing first-column label is `Needs Review` because cards in that queue
 Cards in this column should stay sparse and avoid repeating obvious workflow state as badges. The card should prioritize item photo, subtle remaining-image count, age, quiet client eyebrow, product name, UPC / ID, and one match marker. The image count badge means additional images beyond the visible thumbnail, so two total images displays `+1`. Do not show separate `Verify Merchandise` or `Needs Activation` badges on the first-column card. Matched state should be quiet: `Matched` with a green check when linked to a Product, and `Unmatched` without a check when no Product is linked.
 
 ## 2026-08-09 - Reset Test Data Preserves Products
+
+Superseded by `2026-08-19 - Reset Test Data Clears Products`. Retained for history; the Products exclusion described below is no longer the behavior.
 
 The development-only admin reset is a clean-slate tool for testing operational flows, not a catalog wipe.
 

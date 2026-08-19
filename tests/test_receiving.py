@@ -582,74 +582,6 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(response.get_json()["deleted"], True)
         delete_record.assert_called_once_with(C.PRODUCTS_TABLE, "recProduct")
 
-    @patch("routes.airtable.list_records")
-    def test_thr3d_outgoing_queue_filters_ready_unreleased_merchandise(self, list_records):
-        def merchandise_record(record_id, fields):
-            base = {
-                C.F_RECEIPT_ENTRY_NAME: f"Merch {record_id}",
-                C.F_RECEIPT_ENTRY_RECEIPT: ["recShipment"],
-                C.F_RECEIPT_ENTRY_QUANTITY: 1,
-                C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-                C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d"],
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Photo Release",
-            }
-            base.update(fields)
-            return {"id": record_id, "fields": base}
-
-        def list_side_effect(table, params=None, by_field_id=False):
-            if table == C.RECEIPT_ENTRIES_TABLE:
-                return {"records": [
-                    merchandise_record("recReady", {
-                        C.F_RECEIPT_ENTRY_NAME: "Frozen Pizza Box",
-                        C.F_RECEIPT_ENTRY_DELIVERABLES: ["thr3d"],
-                        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "awaiting photo release",
-                        C.F_RECEIPT_ENTRY_SKU_ID: "UPC-123",
-                        C.F_RECEIPT_ENTRY_LOCATION: ["recLocation"],
-                    }),
-                    merchandise_record("recMixedPhotoThr3d", {
-                        C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging", "Thr3d"],
-                    }),
-                    merchandise_record("recNeedsReview", {
-                        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review",
-                    }),
-                    merchandise_record("recReleased", {
-                        C.F_RECEIPT_ENTRY_RELEASED: True,
-                    }),
-                    merchandise_record("recShipped", {
-                        C.F_RECEIPT_ENTRY_MERCH_STATUS: "Shipped",
-                    }),
-                    merchandise_record("recPhoto", {
-                        C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm"],
-                    }),
-                ]}
-            if table == C.RECEIPTS_TABLE:
-                return {"records": [{
-                    "id": "recShipment",
-                    "fields": {
-                        C.F_RECEIPT_NAME: "Shipment 1",
-                        C.F_RECEIPT_CLIENT: ["recClient"],
-                        C.F_RECEIPT_CARRIER: "UPS",
-                        C.F_RECEIPT_TRACKING: "1Z999",
-                        C.F_RECEIPT_RECEIVED: "2026-07-12T12:00:00Z",
-                    },
-                }]}
-            return {"records": []}
-
-        list_records.side_effect = list_side_effect
-
-        response = self.app.get("/api/shipments/thr3d-outgoing")
-
-        self.assertEqual(response.status_code, 200)
-        records = response.get_json()["records"]
-        self.assertEqual([record["id"] for record in records], ["recReady"])
-        ready = records[0]
-        self.assertEqual(ready["productName"], "Frozen Pizza Box")
-        self.assertEqual(ready["clientIds"], ["recClient"])
-        self.assertEqual(ready["quantity"], 1)
-        self.assertEqual(ready["skuId"], "UPC-123")
-        self.assertEqual(ready["currentLocationId"], "recLocation")
-        self.assertEqual(ready["shipmentLinkage"]["name"], "Shipment 1")
-        self.assertEqual(ready["shipmentLinkage"]["tracking"], "1Z999")
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
@@ -694,7 +626,7 @@ class ReceivingTests(unittest.TestCase):
             "recEntry",
             {
                 C.F_RECEIPT_ENTRY_ITEM: ["recItem"],
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New",
+                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "New",
             },
             by_field_id=False,
         )

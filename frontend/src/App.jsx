@@ -931,7 +931,7 @@ function Dashboard({ navigate }) {
 
   // Shipments logged by the merchandise team and awaiting Merchandise Review.
   const reviewReceipts = receiptList
-    .filter(r => (r.entries ?? []).some(e => e.intakeStatus !== 'Complete'))
+    .filter(r => (r.entries ?? []).length > 0)
     .map(r => ({
       ...r,
       daysAgo: r.receivedDate ? Math.max(0, Math.floor((today - new Date(r.receivedDate)) / 86400000)) : null,
@@ -954,7 +954,6 @@ function Dashboard({ navigate }) {
         const planningBoard = planningBoardForClient(entry.clientIds?.[0] || receipt.clientIds?.[0]);
         const planningCard = evaluateMerchandiseReviewAssignment(entry, {
           requestedQueueId: intakeRequestedQueueForRecord(entry),
-          reviewState: reviewStateFor(entry),
           client,
           planningBoard,
         });
@@ -5942,8 +5941,9 @@ function SettingsPage({ cards = null } = {}) {
     const thr3dShippingItemsTable = s?.tables?.thr3dShippingItems || 'THR3D Shipping Items';
     const activationsTable = s?.tables?.activations || 'Activations';
     const commentsTable = s?.tables?.comments || 'Comments';
-    const typed = window.prompt(`This will delete testing/workflow rows from ${technicalTableLabel(merchandiseTable)}, ${technicalTableLabel(shipmentsTable)}, ${technicalTableLabel(workstreamCardsTable)}, ${technicalTableLabel(thr3dShippingItemsTable)}, ${technicalTableLabel(activationsTable)}, Issues, ${technicalTableLabel(commentsTable)}, History, Jobs, and Imports. Products, Clients, Users, and Locations will be kept. Type DELETE TEST DATA to continue.`);
-    if (typed !== 'DELETE TEST DATA') return;
+    const productsTable = s?.tables?.products || 'Products';
+    const typed = window.prompt(`This will delete testing/workflow rows from ${technicalTableLabel(merchandiseTable)}, ${technicalTableLabel(shipmentsTable)}, ${technicalTableLabel(workstreamCardsTable)}, ${technicalTableLabel(thr3dShippingItemsTable)}, ${technicalTableLabel(activationsTable)}, Issues, ${technicalTableLabel(commentsTable)}, History, Jobs, and Imports.\n\nThis ALSO deletes every ${technicalTableLabel(productsTable)} record, including imported Expected Product data. Clients, Users, and Locations will be kept. Type DELETE TEST DATA AND PRODUCTS to continue.`);
+    if (typed !== 'DELETE TEST DATA AND PRODUCTS') return;
     setClearing(true);
     setClearError('');
     setClearSummary(null);
@@ -6095,7 +6095,7 @@ function SettingsPage({ cards = null } = {}) {
             </div>
             <div className="setting-row setting-row-danger">
               <span className="setting-key">Reset Test Data</span>
-              <span className="setting-val">Delete workflow/testing rows from {technicalTableLabel(s.tables?.merchandise || s.tables?.receiptEntries || 'Merchandise')}, {technicalTableLabel(s.tables?.shipments || s.tables?.receipts || 'Shipments')}, Workstream Cards, THR3D Shipping Items, Activations, Issues, Comments, History, Jobs, Imports, and referenced uploaded photos. Products are kept.</span>
+              <span className="setting-val">Delete workflow/testing rows from {technicalTableLabel(s.tables?.merchandise || s.tables?.receiptEntries || 'Merchandise')}, {technicalTableLabel(s.tables?.shipments || s.tables?.receipts || 'Shipments')}, Workstream Cards, THR3D Shipping Items, Activations, Issues, Comments, History, Jobs, Imports, and referenced uploaded photos. Also deletes {technicalTableLabel(s.tables?.products || 'Products')}, which are re-importable from client source data. Clients, Users, and Locations are kept.</span>
               <button className="btn btn-danger" type="button" onClick={clearCoreTables} disabled={clearing}>
                 {clearing ? 'Deleting…' : 'Reset Test Data'}
               </button>
@@ -7910,14 +7910,9 @@ function normalizeDeliverableRouteSelection(decision = {}, fallbackDeliverableRo
 }
 
 function intakeRequestedQueueForRecord(record) {
-  if (record?.newMerchStatus === 'Workflows Created') return QUEUE_IDS.waitingInformation;
-  const deliverables = deliverablesForRecord(record);
-  if (deliverables.length === 1 && deliverables[0] === 'Thr3d') return QUEUE_IDS.sendThr3d;
   if (record?.planningStatus === 'needs-more-information') return QUEUE_IDS.waitingInformation;
   if (record?.planningStatus === 'awaiting-photo-release') return QUEUE_IDS.readyProduction;
   if (record?.planningStatus === 'new') return QUEUE_IDS.newReview;
-  const reviewState = reviewStateFor(record);
-  if (reviewState === 'Validated') return QUEUE_IDS.readyProduction;
   return QUEUE_IDS.newReview;
 }
 
@@ -8176,7 +8171,6 @@ function queueIdForPlanningStatus(status) {
 
 function planningStatusFromLegacyQueue(queueId) {
   if (queueId === QUEUE_IDS.newReview) return 'new';
-  if (queueId === QUEUE_IDS.waitingActivation) return 'needs-more-information';
   if (queueId === QUEUE_IDS.readyProduction) return 'awaiting-photo-release';
   return 'needs-more-information';
 }
@@ -11265,6 +11259,9 @@ function MerchandiseReviewV2Page() {
   const auth = authContext?.auth || {};
   const entries = useResource(() => api.listMerchandiseReviewEntries());
   const workstreamCards = useResource(() => api.listWorkstreamCards());
+  // Needed for board membership: a THR3D-only parent has no workstream card, so a
+  // shipping item is the only evidence that its child work exists.
+  const thr3dShippingItems = useResource(() => api.listThr3dShippingItems());
   const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
   const records = entries.data?.records ?? [];
@@ -11348,7 +11345,11 @@ function MerchandiseReviewV2Page() {
   ];
   const linkedActivationByMerchandiseId = activationByMerchandiseId(activationRecords);
   const activationLinksLoaded = Boolean(activations.data);
-  const activePlanningRecords = records.filter(record => record.newMerchStatus !== 'Workflows Created');
+  // Parent merchandise leaves the board when child work actually exists, which is
+  // the structural check in childWorkMerchandiseIds below. There is deliberately no
+  // status-flag filter here: a flag can be set on merchandise that has no child
+  // work, which would hide it in Planning with no way back onto the board.
+  const activePlanningRecords = records;
   const selectedDeliverableRouteIdsByMerchandise = activePlanningRecords.reduce((map, record) => {
     const deliverableRoutes = deliverablesForRecord(record)
       .map(deliverable => DELIVERABLE_ROUTE_MAP[deliverable])
@@ -11366,7 +11367,6 @@ function MerchandiseReviewV2Page() {
     const planningCard = evaluateMerchandiseReviewAssignment(record, {
       artworkOverride: override,
       requestedQueueId: intakeRequestedQueueForRecord(record),
-      reviewState: reviewStateFor(record),
       client,
       planningBoard,
     });
@@ -11415,17 +11415,24 @@ function MerchandiseReviewV2Page() {
       activation: activationDriven ? (linkedActivationByMerchandiseId[item.merchandiseId] || null) : null,
     };
   });
-  // Child photo cards replace the parent board card once a workstream exists.
-  // Rendering both makes one Received Merch item look duplicated and prevents
-  // Ecomm and Packaging siblings from reading as one coherent set.
-  const photoWorkstreamMerchandiseIds = new Set(
-    workstreamItems
-      .filter(item => ['Packaging', 'Ecomm'].includes(item.workstreamType))
-      .map(item => String(item.merchandiseId || item.record?.id || '').trim())
-      .filter(Boolean),
+  // A parent Received Merch card leaves the board once child work exists for it.
+  // Photo work becomes a workstream card that replaces the parent visually, so
+  // rendering both would duplicate one item and break up Ecomm/Packaging siblings.
+  // THR3D work becomes a shipping item and never produces a card, so it has to be
+  // checked too or THR3D-only merchandise reappears in New Merch after assignment.
+  const childWorkMerchandiseIds = new Set(
+    [
+      ...workstreamItems
+        .filter(item => ['Packaging', 'Ecomm'].includes(item.workstreamType))
+        .map(item => String(item.merchandiseId || item.record?.id || '').trim()),
+      ...[
+        ...(thr3dShippingItems.data?.records || []),
+        ...(thr3dShippingItems.data?.shipped || []),
+      ].flatMap(item => (item.receivedMerchIds || []).map(id => String(id || '').trim())),
+    ].filter(Boolean),
   );
   const boardItems = [
-    ...receivedMerchItems.filter(item => !photoWorkstreamMerchandiseIds.has(String(item.merchandiseId || item.record?.id || '').trim())),
+    ...receivedMerchItems.filter(item => !childWorkMerchandiseIds.has(String(item.merchandiseId || item.record?.id || '').trim())),
     ...workstreamItems,
   ];
   const workstreamPhotoCardCounts = workstreamItems.reduce((counts, item) => {
@@ -11440,10 +11447,12 @@ function MerchandiseReviewV2Page() {
     }
     return types;
   }, {});
-  const clientOptions = [...new Set(activePlanningRecords.map(record => record.clientIds?.[0]).filter(Boolean))]
+  // Filter options come from what is actually on the board, so a client whose
+  // merchandise is all represented by workstream cards still appears.
+  const clientOptions = [...new Set(boardItems.map(item => item.record?.clientIds?.[0]).filter(Boolean))]
     .map(id => ({ id, name: clientMap[id]?.name || 'Unknown client' }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const locationOptions = [...new Set(activePlanningRecords.map(record => record.locationId).filter(Boolean))]
+  const locationOptions = [...new Set(boardItems.map(item => item.record?.locationId).filter(Boolean))]
     .map(id => ({ id, name: locationMap[id]?.name || 'Unknown location' }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const searchText = search.trim().toLowerCase();
@@ -11601,6 +11610,7 @@ function MerchandiseReviewV2Page() {
     await Promise.all([
       entries.reload({ quiet }),
       workstreamCards.reload({ quiet }),
+      thr3dShippingItems.reload({ quiet }),
     ]);
   }
 
@@ -11912,7 +11922,7 @@ function MerchandiseReviewV2Page() {
     }
   }
 
-  if (entries.loading || workstreamCards.loading) return <div className="empty-state">Loading Planning board...</div>;
+  if (entries.loading || workstreamCards.loading || thr3dShippingItems.loading) return <div className="empty-state">Loading Planning board...</div>;
   if (entries.error) return <div className="error-state">{entries.error}</div>;
   if (workstreamCards.error) return <div className="error-state">{workstreamCards.error}</div>;
 
@@ -12049,7 +12059,7 @@ function PlanningThr3dRegressionPage() {
     clientIds: ['test-client'],
     client: 'Test Client',
     merchStatus: 'Received',
-    intakeStatus: finishedRecord?.intakeStatus || 'Needs Review',
+    planningStatusLabel: finishedRecord?.planningStatusLabel || 'New',
     deliverables: finishedRecord?.deliverables || [],
     itemPhotos: [
       {
@@ -12069,7 +12079,7 @@ function PlanningThr3dRegressionPage() {
   };
   const record = {
     ...baseRecord,
-    intakeStatus: finishedRecord?.intakeStatus || baseRecord.intakeStatus,
+    planningStatusLabel: finishedRecord?.planningStatusLabel || baseRecord.planningStatusLabel,
     deliverables: finishedRecord?.deliverables || baseRecord.deliverables,
   };
   const planningCard = evaluateMerchandiseReviewAssignment(record, {
@@ -12095,7 +12105,7 @@ function PlanningThr3dRegressionPage() {
   };
   const selectedItem = selectedId ? item : null;
   const photos = recordPhotos(record);
-  const outgoingRecords = finishedRecord?.intakeStatus === 'Awaiting Photo Release'
+  const outgoingRecords = finishedRecord?.merchStatus === 'Ready to Ship'
     && finishedRecord.deliverables?.length === 1
     && finishedRecord.deliverables[0] === 'Thr3d'
     ? [finishedRecord]
@@ -12105,7 +12115,7 @@ function PlanningThr3dRegressionPage() {
     const updatedRecord = {
       ...currentItem.record,
       deliverables: normalizeDeliverableList(state.deliverables),
-      intakeStatus: 'Awaiting Photo Release',
+      planningStatusLabel: 'Needs More Information',
       merchStatus: 'Ready to Ship',
       released: false,
     };
@@ -12114,7 +12124,7 @@ function PlanningThr3dRegressionPage() {
     return {
       ok: true,
       message: 'Verification finished. Routed to Thr3d Shipment.',
-      stage: QUEUE_IDS.sendThr3d,
+      stage: 'send-thr3d',
       record: updatedRecord,
     };
   }
@@ -12158,7 +12168,7 @@ function PlanningThr3dRegressionPage() {
           outgoingRecords.map(outgoing => (
             <article className="recv-outgoing-card" key={outgoing.id}>
               <strong>{outgoing.productName}</strong>
-              <span>Intake Status: {outgoing.intakeStatus}</span>
+              <span>Planning Status: {outgoing.planningStatusLabel}</span>
               <span>Released: {outgoing.released ? 'true' : 'false'}</span>
             </article>
           ))

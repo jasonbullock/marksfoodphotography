@@ -78,7 +78,6 @@ def ensure_received_merch_workflow_schema(*, dry_run=False):
         raise SystemExit(f"Missing required table(s): {', '.join(missing)}")
 
     merchandise_fields = [
-        single_select_field(Config.F_RECEIPT_ENTRY_NEW_MERCH_STATUS, Config.NEW_MERCH_STATUS_OPTIONS),
         multiline_text_field(Config.F_RECEIPT_ENTRY_MANUAL_PRODUCT_INFO),
     ]
     workstream_fields = [
