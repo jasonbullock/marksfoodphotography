@@ -591,7 +591,7 @@ class ReceivingTests(unittest.TestCase):
                 C.F_RECEIPT_ENTRY_QUANTITY: 1,
                 C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
                 C.F_RECEIPT_ENTRY_DELIVERABLES: ["Thr3d"],
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready for Photo",
+                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Photo Release",
             }
             base.update(fields)
             return {"id": record_id, "fields": base}
@@ -602,7 +602,7 @@ class ReceivingTests(unittest.TestCase):
                     merchandise_record("recReady", {
                         C.F_RECEIPT_ENTRY_NAME: "Frozen Pizza Box",
                         C.F_RECEIPT_ENTRY_DELIVERABLES: ["thr3d"],
-                        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "ready to release",
+                        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "awaiting photo release",
                         C.F_RECEIPT_ENTRY_SKU_ID: "UPC-123",
                         C.F_RECEIPT_ENTRY_LOCATION: ["recLocation"],
                     }),

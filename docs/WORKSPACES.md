@@ -143,7 +143,7 @@ Business Question:
 
 Purpose:
 
-Resolve uncertainty and prepare work for the shared Ready for Photo handoff.
+Resolve uncertainty and prepare work for the final photo release handoff.
 
 The primary Planning board is a freeform PM workspace organized by Queue, not an automatic workflow engine.
 
@@ -153,9 +153,9 @@ Queue answers:
 
 Queue is separate from Merchandise Status. Queue does not describe whether the physical sample is in house, at Thr3d, returned, disposed, or in production.
 
-The only system-owned Queue is `New`. The only gated Queue is `Ready for Photo`. Middle queues `Planning` and `Waiting` are PM-controlled.
+The only system-owned Queue is `New`. The only gated Queue is `Awaiting Photo Release`. Middle planning queues are PM-controlled.
 
-Merchandise `Intake Status` is the persisted intake state. Its active values are `Needs Review`, `Waiting on Information`, `Ready for Photo`, and `Complete`. Planning Queue is local PM organization and should not be treated as a separate Airtable workflow status.
+Merchandise `Planning Status` is the persisted planning state. Its active values are `New`, `Needs More Information`, and `Awaiting Photo Release`.
 
 The public checklist language is `Required to Shoot`, not `Readiness`.
 
@@ -180,7 +180,7 @@ Planning includes:
 - required information
 - exception handling
 - replacement requests
-- release to production
+- release to photo
 
 Planning should collapse "confirm identity", "match Expected Product when possible", "capture manual product info for unmatched exceptions", and "assign workstreams/shipping" into one continuous exception-resolution experience. Users should not experience database maintenance as the work.
 
@@ -204,13 +204,13 @@ The modal footer is the single commit area. It previews the destination with `Wi
 
 Planning decisions should produce one clear answer:
 
-> Is this merchandise ready to release to production?
+> Is this merchandise ready for the final photo release?
 
 If not, Planning should explain what is missing.
 
-`Ready for Photo` is the shared Planning-to-Production handoff queue. Moving a card there means Planning work is complete, but PM ownership remains until Production accepts it.
+`Awaiting Photo Release` is the PM-owned queue for work that is ready but waiting for the final release. The explicit `Release to Photo` action performs the handoff and removes the card from active Planning.
 
-When Production later moves a card from `Ready for Photo` to `Scheduled`, that acceptance should remove the card from Planning, show it on Production, transfer ownership to Production, and log Activity. This should happen without duplicating Merchandise records.
+After `Release to Photo`, downstream status belongs on Production/Creative Force surfaces. This should happen without duplicating Merchandise records.
 
 ## Production
 
@@ -222,11 +222,11 @@ Purpose:
 
 Plan and coordinate execution.
 
-Production begins by accepting shared `Ready for Photo` work. It is concerned with how ready work becomes scheduled, staffed, staged, and executed.
+Production begins from work that Planning has released to photo. It is concerned with how released work becomes scheduled, staffed, staged, and executed.
 
 Production includes:
 
-- accepting Ready for Photo work
+- accepting released photo work
 - scheduling
 - resources
 - studios
@@ -234,7 +234,7 @@ Production includes:
 - planning
 - Creative Force integration
 
-Future Production board states should be `Ready for Photo`, `Scheduled`, `In Production`, `QC`, and `Complete`. Planning and Production are related by the shared handoff queue, but they should not be modeled as one tightly coupled continuous workflow.
+Future Production board states should start from released photo work, then move through `Scheduled`, `In Production`, `QC`, and `Complete`. Planning and Production are related by the photo release handoff, but they should not be modeled as one tightly coupled continuous workflow.
 
 Production may display Creative Force state, but it should not recreate Creative Force. Marks Photo owns the readiness handoff and production context, while Creative Force owns detailed execution.
 

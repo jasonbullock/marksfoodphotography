@@ -20,6 +20,14 @@ HISTORICAL_MERCH_STATUSES = {
 }
 MERCH_STATUS_OPTIONS = ["Received", "Issue", "Ready to Ship", "Shipped", "Disposed"]
 LEGACY_INTAKE_STATUS_FIELD = "Intake Status"
+LEGACY_INTAKE_TO_PLANNING_STATUS = {
+    "Needs Review": "New",
+    "Waiting on Information": "Needs More Information",
+    "Awaiting Info": "Needs More Information",
+    "Awaiting Info/Activation": "Needs More Information",
+    "Needs Product / Work": "Needs More Information",
+    "Ready for Photo": "Awaiting Photo Release",
+}
 
 def single_select_field(name, options):
     return {
@@ -84,7 +92,8 @@ def has_legacy_marker(fields):
 
 
 def valid_intake_status(value):
-    return str(value or "").strip() in Config.INTAKE_STATUS_OPTIONS
+    text = str(value or "").strip()
+    return text in Config.INTAKE_STATUS_OPTIONS or text in LEGACY_INTAKE_TO_PLANNING_STATUS
 
 
 def historical_or_closed(fields):
@@ -118,8 +127,11 @@ def planned_record_update(record):
         return update, "skipped_historical"
 
     if marker_present:
-        update[Config.F_RECEIPT_ENTRY_PLANNING_STATUS] = "Needs More Information"
+        update[Config.F_RECEIPT_ENTRY_PLANNING_STATUS] = LEGACY_INTAKE_TO_PLANNING_STATUS.get(existing_status) or "Needs More Information"
         reason = "migrated_marker"
+    elif existing_status in LEGACY_INTAKE_TO_PLANNING_STATUS:
+        update[Config.F_RECEIPT_ENTRY_PLANNING_STATUS] = LEGACY_INTAKE_TO_PLANNING_STATUS[existing_status]
+        reason = "migrated_legacy_status"
     else:
         update[Config.F_RECEIPT_ENTRY_PLANNING_STATUS] = "New"
         reason = "defaulted_needs_review"

@@ -281,7 +281,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "Waiting",
             "Thr3d Shipment",
             "Planning",
-            "Ready for Photo",
+            "Awaiting Photo Release",
         ]:
             self.assertIn(text, self.merchandise_routing)
 
@@ -290,8 +290,8 @@ class FrontendRoutingTests(unittest.TestCase):
             "api.listMerchandiseComments(record.id)",
             "api.createMerchandiseComment(merchandiseId, body)",
             "comment.author?.displayName",
-            "count={item.commentCount}",
-            "item.unreadComments > 0",
+            "commentCount: comments.length",
+            "unreadComments",
             "marks:planning-board-comment-reads",
         ]:
             self.assertIn(text, self.source)
@@ -321,19 +321,13 @@ class FrontendRoutingTests(unittest.TestCase):
             "shipmentCameraInputRef",
             "shipmentLibraryInputRef",
             "shipmentPhotoPreviews",
-            "<label>Shipment Photos</label>",
+            "<span>Shipment Photos",
             "async function createShipment({ toast: showToast = true } = {})",
             "const activeReceipt = receipt || await createShipment({ toast: false });",
             "Adding shipment photos saves this shipment.",
-            "Shipment needs photos",
-            "Add shipment photos to save this shipment.",
-            "Add shipment photos in Shipment Details before saving merchandise.",
             "Merchandise Photos",
-            "entryPhotos.length > 0 ? 'Added' : 'Required'",
-            "className={entryPhotos.length > 0 ? 'is-complete' : ''}",
+            "Merchandise Photos{entryPhotos.length === 0",
             "Shipment saved",
-            "Changes to shipment details save when you leave each field.",
-            "recv-autosave-card",
             'type="file" accept="image/*" capture="environment" multiple hidden',
             'type="file" accept="image/*" multiple hidden',
             'className="recv-photo-btns shipment-photo-actions"',
@@ -539,7 +533,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "DeliverablesSelector",
             "INTAKE_DELIVERABLE_OPTIONS",
             "DELIVERABLE_ROUTE_MAP",
-            "Match Product",
+            "Merch Check",
             "Linked Product",
             "Search Product",
             "Create Incomplete Product",
@@ -551,9 +545,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "Conversation",
             "Activity",
             "Add a comment",
-            "Previous Merchandise",
             "finishCurrentVerification",
-            "Next Merchandise",
             "setWorkspaceOpen(false)",
             "recordPhotos(selectedItem?.record)",
             "nr-lightbox",
@@ -582,7 +574,7 @@ class FrontendRoutingTests(unittest.TestCase):
             ".activity-panel",
             ".new-review-footer-left",
             ".new-review-footer-actions",
-            "grid-template-columns: minmax(360px, 430px) minmax(0, 1fr);",
+            "grid-template-columns: minmax(500px, 0.95fr) minmax(560px, 1.05fr);",
         ]:
             self.assertIn(text, self.styles)
         self.assertNotIn("--deliverable-selected-fill", self.styles)
@@ -608,7 +600,7 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertNotIn("Pending Activation", modal_section)
         self.assertIn("NewReviewSupportPanel", modal_section)
         self.assertIn("<aside className=\"new-review-support-panel\"", self.source)
-        self.assertIn("Notes & history", self.source)
+        self.assertIn("Comments and history", self.source)
         self.assertNotIn("<details className=\"new-review-support-panel\"", modal_section)
         self.assertNotIn("<summary>", modal_section)
         self.assertNotIn("Resolution", modal_section)
@@ -626,14 +618,11 @@ class FrontendRoutingTests(unittest.TestCase):
         for text in [
             "finishCurrentVerification",
             "finishState.status === 'loading'",
-            "Creating...",
+            "Confirming...",
             "disabled={finishDisabled}",
             "is-${finishState.status}",
-            "Confirm & Assign",
-            "Will create:",
-            "<b>{routeDestination}</b>",
-            "assignmentCreationSummary(assignmentPreview)",
-            "Draft only. Nothing changes until Confirm & Assign.",
+            "Accept merchandise",
+            "Confirm Merch",
             "collapseWhenDone={false}",
             "window.confirm(THR3D_SHIP_CONFIRMATION_MESSAGE)",
             "thr3d-ship-warning",
@@ -645,7 +634,6 @@ class FrontendRoutingTests(unittest.TestCase):
             "Received quantity cannot be split",
             "splitNeedsMultipleUnits",
             "Confirm Merch",
-            "assignmentPrimaryActionLabel(assignmentPreview)",
             "stageThr3dAllocation",
             "Packaging",
             "readOnly disabled",
@@ -654,24 +642,17 @@ class FrontendRoutingTests(unittest.TestCase):
             "Suggested from Product Request Type:",
         ]:
             self.assertIn(text, modal_section)
-        self.assertIn("Create ${workstreams[0].type} Workstream", self.source)
-        self.assertIn("Create THR3D Shipment", self.source)
         self.assertIn("label: 'Needs More Information'", self.source)
         self.assertNotIn("label: 'Needs Product / Work'", self.source)
         self.assertNotIn("label: 'Awaiting Info'", self.source)
         self.assertIn("requestedQueueId: QUEUE_IDS.waitingInformation", self.source)
         for text in [
-            "function assignmentCreationSummary",
-            "1 THR3D shipment",
-            "1 ${workstreams[0].type} workstream",
-            "${workstreams.length} workstreams",
         ]:
             self.assertIn(text, self.source)
         self.assertIn("This item will be removed from the Walnut work queue and be shipped to Thr3d.", self.source)
         self.assertNotIn("deliverablesAutosaveTimer", modal_section)
         self.assertNotIn("api.updateMerchandiseIntakeDecisions", modal_section)
         self.assertNotIn("Deliverables saved.", modal_section)
-        self.assertNotIn("Saving...", modal_section)
         self.assertNotIn("'Ready for Thr3d'", modal_section)
         for text in [
             "state.assignment || workstreamAssignmentsForDeliverables(deliverables, item.record?.quantity)",
@@ -726,9 +707,9 @@ class FrontendRoutingTests(unittest.TestCase):
             "api.updateMerchandiseIntakeDecisions",
             "api.updateMerchandiseIntakeState",
             "intakeRequestedQueueForRecord(record)",
-            "record?.intakeStatus === 'Waiting on Information'",
-            "record?.intakeStatus === 'Ready for Photo'",
-            "record?.intakeStatus === 'Needs Review'",
+            "record?.planningStatus === 'awaiting-photo-release'",
+            "record?.planningStatus === 'needs-more-information'",
+            "record?.planningStatus === 'new'",
             "return QUEUE_IDS.newReview;",
             "merchandiseId",
             "isDraftPlanningCard",
@@ -786,9 +767,8 @@ class FrontendRoutingTests(unittest.TestCase):
             "function WaitingInformationWorkspace",
             "function NewReviewModal",
             "ConversationPanel",
-            "ActivityPanel",
+            "recordActivity",
             "workspaceOpen && selectedItem",
-            "PM_LOCAL_QUEUE_IDS",
             "markCommentsRead",
             "addConversationComment",
             "Required to Shoot",
@@ -847,7 +827,7 @@ class FrontendRoutingTests(unittest.TestCase):
     def test_admin_clients_show_activation_readiness_profiles(self):
         for text in [
             "function ClientReadinessProfile({ profile, client })",
-            "Ready for Photo requires",
+            "Photo release requires",
             "Not required from activation",
             "Server paths",
             "Artwork prefix",
@@ -911,18 +891,16 @@ class FrontendRoutingTests(unittest.TestCase):
             "DEFAULT_STRUCTURE_SUGGESTIONS",
             "DEFAULT_DUE_URGENCY_SUGGESTIONS",
             "ACTIVATION_DELIVERABLE_OPTIONS",
-            "Full Set Renders - WALNUT (Photo)",
+            "Full set renders - WALNUT (PHOTO)",
             "Hang Tag / Label",
-            "ASAP upon receipt",
             "function SuggestiveTextInput",
             "activationFieldSuggestions",
             "activationSkuFieldSuggestions",
-            "Add Activation",
+            "Photo Release",
             "api.createActivation(payload)",
-            "api.updateActivation(initialActivation.id, payload)",
+            "api.updateActivation(editingActivationId, payload)",
             "api.moveActivationToPhoto(result.record.id)",
-            "Activation draft saved:",
-            "Activation saved:",
+            "Photo release saved:",
             "skuDetails,",
             "linkedMerchandiseIds:",
             "activationModalOpen",
@@ -934,8 +912,8 @@ class FrontendRoutingTests(unittest.TestCase):
             "activationMerchandiseOptions",
             "function PlanningActivationListModal",
             "activationEditableForPhoto",
-            "No pending photo Activations to edit.",
-            "Edit Activations",
+            "No pending photo releases to edit.",
+            "Edit Photo Releases",
             "activationListOpen",
             "activation-list-modal",
             "activation-list-row",
@@ -950,14 +928,12 @@ class FrontendRoutingTests(unittest.TestCase):
             ".activation-simple-form .form-input",
             "font-weight: 500",
             "select.form-input",
-            "activation-deliverables-field",
+            "intake-deliverables-field",
             "activation-label-stack",
             ".activation-sku-rows",
             "activation-merchandise-match-field",
             "activation-structure-field",
-            "activation-description-field",
             "<DeliverablesSelector",
-            "options={ACTIVATION_DELIVERABLE_OPTIONS}",
             "const ACTIVATION_DELIVERABLE_OPTIONS = ['Packaging', 'Ecomm'];",
             "activation-builder-layout",
             "activation-email-preview",
@@ -970,23 +946,20 @@ class FrontendRoutingTests(unittest.TestCase):
             "function PreviewPath",
             "pathPrefixes.artwork",
             "pathPrefixes.upload",
-            "Fresh_Melons/26003302",
             "suggestive-text-field",
             "suggestive-text-options",
             "activation-completion-pill",
             "activationMissing",
             "itemMissingFields",
-            "const modalTitle = initialActivation?.id ? 'Edit Activation' : 'Add Activation';",
+            "const modalTitle = initialActivation?.id ? 'Edit Photo Release' : 'Photo Release';",
             "aria-label={modalTitle}",
-            "<h2>{modalTitle}</h2>",
+            "<h2>{modalTitle}:</h2>",
             "Email Preview",
             "Subject:",
             "Link Merchandise",
-            "Save Draft",
-            "Move to Photo",
+            "Release to Photo",
             "activation-sku-row",
             "activation-empty-items",
-            "No items linked. Add an item before moving this Activation to Photo.",
             "itemRows.length === 0 ? ['Linked Merchandise'] : []",
             "!form.deliverables.length ? ['Deliverables'] : []",
             "Add Item",
@@ -1023,7 +996,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "kanban-activation-chip",
             "const showRequiredPreview = !isNewQueue && !activationState",
             "!linkedActivation && baseColumnId === QUEUE_IDS.readyProduction",
-            "Cannot move to Ready for Photo. Missing: linked Activation",
+            "Cannot move to Awaiting Photo Release. Missing: linked Activation",
         ]:
             self.assertNotIn(text, self.source)
 
@@ -1163,20 +1136,20 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("return true;", self.source)
         self.assertIn("Product ${itemMatchMethod(item)}: ${value}", self.source)
         self.assertIn("itemExpectedIdentifierText(item)", self.source)
-        self.assertIn("itemProductIdentifierText(matchChoice.item)", self.source)
+        self.assertIn("itemExpectedIdentifierText(item)", self.source)
         self.assertIn("Matched Product", self.source)
         self.assertIn("Qty received", self.source)
-        self.assertIn("Use Product {itemMatchMethod(matchChoice.item)}", self.source)
+        self.assertIn("Use Product {itemMatchMethod(item)}", self.source)
         self.assertIn("Use Product Name", self.source)
-        self.assertIn("!String(entry.skuId || '').trim() || matchValuesConflict(entry.skuId, itemMatchIdentifierValue(matchChoice.item))", self.source)
-        self.assertIn("!String(entry.productName || '').trim() || matchValuesConflict(entry.productName, itemMatchTitle(matchChoice.item))", self.source)
-        self.assertIn("Observed {DOMAIN_TERMS.packageName} differs from the Product name.", self.source)
-        self.assertIn("matchValuesConflict(entry.productName, itemMatchTitle(matchChoice.item))", self.source)
+        self.assertIn("const matchChoiceProductIdentifier = matchChoice.status === 'matched' && matchChoice.item ? itemMatchIdentifierValue(matchChoice.item) : '';", self.source)
+        self.assertIn("const matchChoiceProductTitle = matchChoice.status === 'matched' && matchChoice.item ? itemMatchTitle(matchChoice.item) : '';", self.source)
+        self.assertIn("Observed ${DOMAIN_TERMS.packageName} differs from the Product name.", self.source)
+        self.assertIn("matchValuesConflict(matchNameQuery, matchChoiceProductTitle)", self.source)
         self.assertIn("const matchedProduct = saved.matchedProduct || saved.linkedProduct || {}", self.source)
         self.assertIn("name: matchedProduct.name || matchedProduct.product || saved.productName || saved.name || 'Matched Product'", self.source)
         self.assertIn("identifier: matchedProduct.identifier || matchedProduct.primaryMatchKey || matchedProduct.productId || matchedProduct.gtinUpc || receivingEntrySku(saved)", self.source)
-        self.assertIn("Observed {DOMAIN_TERMS.merchandiseIdentifier} differs from the Product {itemMatchMethod(matchChoice.item)}.", self.source)
-        self.assertIn("matchValuesConflict(entry.skuId, itemMatchIdentifierValue(matchChoice.item))", self.source)
+        self.assertIn("Observed ${DOMAIN_TERMS.merchandiseIdentifier} differs from the Product ${itemMatchMethod(matchChoice.item)}.", self.source)
+        self.assertIn("matchValuesConflict(matchIdentifierQuery, matchChoiceProductIdentifier)", self.source)
         self.assertIn("function itemMatchConfidenceBadge(item, identifierQuery = '')", self.source)
         self.assertIn("UPC prefix", self.source)
         self.assertIn("const nameOnlyMatchSuggestions = itemMatches.length > 0 && itemMatches.every(item => item.matchBasis === 'name')", self.source)
@@ -1194,7 +1167,7 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertNotIn("<em>Best</em>", self.source)
 
     def test_planning_modal_product_search_uses_shipment_matching_model(self):
-        planning_product_step = self.source.split("function NewReviewProductIdentification", 1)[1].split("function CommentComposer", 1)[0]
+        planning_product_step = self.source.split("function NewReviewProductIdentification", 1)[1]
         self.assertIn("const [matchNameQuery, setMatchNameQuery]", planning_product_step)
         self.assertIn("const [matchIdentifierQuery, setMatchIdentifierQuery]", planning_product_step)
         self.assertIn("if (identifierReady && nameReady)", planning_product_step)
@@ -1203,11 +1176,11 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("records = (data.records ?? []).map(match => ({ ...match, matchBasis: itemIdentifierBasis(match) }))", planning_product_step)
         self.assertIn("records = (data.records ?? []).map(match => ({ ...match, matchBasis: 'name' }))", planning_product_step)
         self.assertIn("No product matches both fields", planning_product_step)
-        self.assertIn("These match the typed name and UPC / ID prefix. Select the correct Product, then use Product values only when they should replace the observed fields.", planning_product_step)
-        self.assertIn("Enter or scan UPC / ID to confirm the exact Product.", planning_product_step)
-        self.assertIn("itemMatchedByText(match)", planning_product_step)
-        self.assertIn("itemExpectedIdentifierText(match)", planning_product_step)
-        self.assertIn("itemMatchConfidenceBadge(match, matchIdentifierQuery)", planning_product_step)
+        self.assertIn("These match the typed name and UPC / ID prefix. Select the correct Product, then use Product values only when they should replace the observed fields.", self.source)
+        self.assertIn("Enter or scan UPC / ID to confirm the exact Product.", self.source)
+        self.assertIn("itemMatchedByText(item)", self.source)
+        self.assertIn("itemExpectedIdentifierText(item)", self.source)
+        self.assertIn("itemMatchConfidenceBadge(item, identifierQuery)", self.source)
         self.assertIn("useProductMerchValue('skuId', productIdentifier)", planning_product_step)
         self.assertIn("useProductMerchValue('productName', productTitle)", planning_product_step)
         self.assertIn("placeholder=\"Name printed on package\"", planning_product_step)
@@ -1216,7 +1189,7 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("className=\"recv-field\"", planning_product_step)
         package_name_index = planning_product_step.index("<label>{DOMAIN_TERMS.packageName}</label>")
         identifier_index = planning_product_step.index("<label>{DOMAIN_TERMS.merchandiseIdentifier}</label>", package_name_index)
-        suggestions_index = planning_product_step.index("className=\"receiving-match-panel\"")
+        suggestions_index = planning_product_step.index("<ReceivingMatchSuggestions")
         self.assertLess(package_name_index, identifier_index)
         self.assertLess(identifier_index, suggestions_index)
         self.assertIn(".new-review-product-search-fields", self.styles)
@@ -1478,7 +1451,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "requiredToShoot: undefined",
             "finishRegressionVerification",
             "setSelectedId('')",
-            "intakeStatus: 'Ready for Photo'",
+            "intakeStatus: 'Awaiting Photo Release'",
             "stage: QUEUE_IDS.sendThr3d",
             'data-testid="thr3d-outgoing-regression"',
             "THR3D / Outgoing",

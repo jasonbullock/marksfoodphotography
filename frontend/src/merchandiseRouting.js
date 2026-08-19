@@ -278,8 +278,8 @@ export const MERCHANDISE_PLANNING_BOARD = {
     }),
     queueColumn({
       id: QUEUE_IDS.readyProduction,
-      label: 'Ready for Photo',
-      description: 'All required information for the selected photo deliverables is complete.',
+      label: 'Awaiting Photo Release',
+      description: 'Ready work waiting for the final photo release.',
       order: 50,
       workspaceMode: WORKSPACE_MODES.readonly,
       entryCriteria: [
@@ -742,8 +742,8 @@ export function queueById(planningBoard, queueId) {
 export function deriveMerchandiseReviewQueue(record, requirements, requestedQueueId, reviewState, planningBoard = MERCHANDISE_PLANNING_BOARD) {
   const visibleQueueIds = new Set(queuesForBoard(planningBoard).map(queueConfig => queueConfig.id));
   if (requestedQueueId && visibleQueueIds.has(requestedQueueId)) return requestedQueueId;
-  if ((reviewState === 'Validated' || record?.intakeStatus === 'Ready for Photo') && visibleQueueIds.has(QUEUE_IDS.readyProduction)) return QUEUE_IDS.readyProduction;
-  if (record?.intakeStatus === 'Waiting on Information' && visibleQueueIds.has(QUEUE_IDS.waitingInformation)) return QUEUE_IDS.waitingInformation;
+  if (record?.planningStatus === 'awaiting-photo-release' && visibleQueueIds.has(QUEUE_IDS.readyProduction)) return QUEUE_IDS.readyProduction;
+  if (record?.planningStatus === 'needs-more-information' && visibleQueueIds.has(QUEUE_IDS.waitingInformation)) return QUEUE_IDS.waitingInformation;
   return visibleQueueIds.has(QUEUE_IDS.newReview) ? QUEUE_IDS.newReview : [...visibleQueueIds][0];
 }
 

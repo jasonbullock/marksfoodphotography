@@ -1,10 +1,12 @@
 # Product Decisions
 
-## 2026-08-18 - Planning Status Uses One Middle State
+## 2026-08-18 - Planning Status Moves Forward To Photo Release
 
-The persisted `Planning Status` dropdown should have three active values: `New`, `Needs More Information`, and `Ready for Photo`. `Needs Product / Work` and `Awaiting Info` were remnants of the earlier four-lane board and now collapse into `Needs More Information`.
+The persisted `Planning Status` dropdown should have three active values: `New`, `Needs More Information`, and `Awaiting Photo Release`. `Needs Product / Work`, `Awaiting Info`, `Awaiting Info/Activation`, and `Ready for Photo` are retired Planning labels, not active app values.
 
-`Ready to Release` remains a derived UI section, not an Airtable status. The app may continue to accept old `needs-product-work`, `awaiting-info`, `Needs Product / Work`, `Awaiting Info`, and `Awaiting Info/Activation` values as compatibility aliases, but new writes should use `Needs More Information`.
+`Awaiting Photo Release` means the item is ready but waiting for the final official green light. The explicit `Release to Photo` action is the Creative Force handoff. Entering `Awaiting Photo Release` by itself must not be treated as the downstream Production state, and raw workstream-card status updates must not create Creative Force feed rows.
+
+Release completion is owned by the release audit fields (`Released`, `Released At`, `Released By`) and Creative Force feed projection, not by writing a fourth Planning Status such as `Complete`. The active Planning surface should hide released work through those release fields.
 
 Airtable may still show retired choices in the single-select dropdown until they are removed through Airtable's own field configuration UI. The metadata API rejected live choice-pruning requests with a 422 response, so the application must not depend on pruning being complete.
 

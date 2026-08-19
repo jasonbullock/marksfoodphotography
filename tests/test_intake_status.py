@@ -56,7 +56,7 @@ class PlanningStatusMigrationTests(unittest.TestCase):
         update, reason = self.utility.planned_record_update({
             "id": "rec1",
             "fields": {
-                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Ready for Photo",
+                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Awaiting Photo Release",
                 "Intake Status": "Waiting on Information",
                 C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
             },

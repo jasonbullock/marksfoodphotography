@@ -70,37 +70,37 @@ class ProductProductionSummaryTests(unittest.TestCase):
             _derive_product_production_summary(merchandise=merchandise, workstreams=[], thr3d=[])["status"],
             "Waiting on Information",
         )
-        ready = [record(**{"Workstream Type": "Ecomm", C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo"})]
+        ready = [record(**{"Workstream Type": "Ecomm", C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release"})]
         self.assertEqual(
             _derive_product_production_summary(
-                merchandise=[record(**{"Merch Status": "Received", "Planning Status": "Ready for Photo"})],
+                merchandise=[record(**{"Merch Status": "Received", "Planning Status": "Awaiting Photo Release"})],
                 workstreams=ready,
                 thr3d=[],
             )["status"],
-            "Ready for Photo",
+            "Awaiting Photo Release",
         )
 
     def test_creative_force_status_is_reported_without_overwriting_planning_status(self):
         summary = _derive_product_production_summary(
-            merchandise=[record(**{"Merch Status": "Received", "Planning Status": "Ready for Photo"})],
-            workstreams=[record(**{C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo", "Creative Force Sync": '{"status": "In Production"}'})],
+            merchandise=[record(**{"Merch Status": "Received", "Planning Status": "Awaiting Photo Release"})],
+            workstreams=[record(**{C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release", "Creative Force Sync": '{"status": "In Production"}'})],
             thr3d=[],
         )
         self.assertEqual(summary["status"], "In Production")
-        self.assertEqual(summary["workstreamStatuses"], ["Ready for Photo"])
+        self.assertEqual(summary["workstreamStatuses"], ["Awaiting Photo Release"])
         self.assertEqual(summary["creativeForceStatuses"], ["In Production"])
 
     def test_physical_issue_wins_over_production_summary(self):
         summary = _derive_product_production_summary(
-            merchandise=[record(**{"Merch Status": "Issue", "Planning Status": "Ready for Photo"})],
-            workstreams=[record(**{C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo"})],
+            merchandise=[record(**{"Merch Status": "Issue", "Planning Status": "Awaiting Photo Release"})],
+            workstreams=[record(**{C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release"})],
             thr3d=[],
         )
         self.assertEqual(summary["status"], "Issue")
 
     def test_feed_fields_are_flat_and_use_the_workstream_card_as_source_key(self):
         fields = _creative_force_feed_fields(
-            {"id": "recCard", "fields": {C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo", "Creative Force Sync": ""}},
+            {"id": "recCard", "fields": {C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release", "Creative Force Sync": ""}},
             {
                 "ready": True,
                 "payload": {
@@ -147,12 +147,12 @@ class ProductProductionSummaryTests(unittest.TestCase):
     @patch("routes.airtable.create_record")
     @patch("routes.airtable.list_records")
     @patch("routes._creative_force_handoff")
-    def test_ready_card_is_written_without_a_second_handoff_gate(self, handoff, list_records, create_record):
+    def test_photo_release_card_is_written_without_a_second_handoff_gate(self, handoff, list_records, create_record):
         card = {
             "id": "recReadyCard",
             "fields": {
                 "Workstream Type": "Ecomm",
-                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release",
             },
         }
         handoff.return_value = {

@@ -1070,10 +1070,10 @@ def _move_removed_activation_merchandise_to_waiting(merchandise_ids):
         linked_receipts = _as_list(fields.get(C.F_RECEIPT_ENTRY_RECEIPT, []))
         if linked_receipts and _first_permitted_receipt(linked_receipts) is None:
             return _forbidden()
-        if fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) != "Ready for Photo":
+        if fields.get(C.F_RECEIPT_ENTRY_PLANNING_STATUS) != PLANNING_STATUS_LABELS["awaiting-photo-release"]:
             continue
         update_fields = {
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New",
             C.F_RECEIPT_ENTRY_MERCH_VERIFIED: False,
             C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY: [],
         }
@@ -1134,10 +1134,10 @@ def move_activation_to_photo(activation_id):
     client = next((clients.get(client_id) for client_id in shaped["clientIds"] if clients.get(client_id)), None)
     missing = _activation_package_missing(shaped, client)
     if missing:
-        return err("Cannot move to Ready for Photo until the photo release is complete.", 400, missing=missing)
+        return err("Cannot release to photo until the photo release is complete.", 400, missing=missing)
     linked_merchandise_ids = _activation_linked_merchandise_ids(shaped)
     if not linked_merchandise_ids:
-        return err("Cannot move to Ready for Photo without linked Merchandise.", 400, missing=["Linked Merchandise"])
+        return err("Cannot release to photo without linked Merchandise.", 400, missing=["Linked Merchandise"])
     deliverables = _validate_deliverables(shaped.get("deliverables", []))
     if not isinstance(deliverables, list):
         return deliverables
@@ -1174,7 +1174,7 @@ def move_activation_to_photo(activation_id):
         unreleased_siblings = {
             str(card.get(C.F_WORKSTREAM_CARD_TYPE) or "").strip()
             for card in photo_cards
-            if str(card.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) or "").strip() != "Ready for Photo"
+            if str(card.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) or "").strip() != PLANNING_STATUS_LABELS["awaiting-photo-release"]
             and str(card.get(C.F_WORKSTREAM_CARD_TYPE) or "").strip() not in release_types
         }
         update_fields = {
@@ -1183,8 +1183,8 @@ def move_activation_to_photo(activation_id):
             C.F_RECEIPT_ENTRY_MERCH_VERIFIED_AT: datetime.now(timezone.utc).isoformat(),
         }
         if not unreleased_siblings:
-            update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Ready for Photo"
-            update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["ready-for-photo"]
+            update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
+            update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
         if _normalized_merch_status(fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS)) != fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS):
             update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = _normalized_merch_status(fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS))
         current_user_id = _current_user_id()
@@ -1211,7 +1211,7 @@ def move_activation_to_photo(activation_id):
         workstream_type = str(workstream_fields.get(C.F_WORKSTREAM_CARD_TYPE) or "").strip()
         if not set(received_merchandise).intersection(linked_merchandise_ids) or workstream_type not in linked_types:
             continue
-        if workstream_fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) == "Ready for Photo":
+        if workstream_fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) == PLANNING_STATUS_LABELS["awaiting-photo-release"]:
             # An already-ready card still needs to be projected into the CF
             # feed when this photo group is edited or released again.
             ready_workstream_cards.append(workstream_record)
@@ -1221,7 +1221,7 @@ def move_activation_to_photo(activation_id):
                 C.WORKSTREAM_CARDS_TABLE,
                 workstream_record.get("id"),
                 {
-                    C.F_WORKSTREAM_CARD_PLANNING_STATUS: PLANNING_STATUS_LABELS["ready-for-photo"],
+                    C.F_WORKSTREAM_CARD_PLANNING_STATUS: PLANNING_STATUS_LABELS["awaiting-photo-release"],
                 },
                 by_field_id=False,
                 typecast=True,
@@ -1331,7 +1331,7 @@ REQUIRED_TO_SHOOT_LABELS = {
     "waiting_for_merchandise": "Waiting for Merchandise",
     "missing_data": "Missing Data",
     "missing_artwork": "Missing Artwork",
-    "ready_for_photo": "Ready for Photo",
+    "ready_for_photo": "Ready",
 }
 MERCHANDISE_ISSUE_TYPES = {"Missing Merch", "Wrong Merch", "Damaged", "Unknown Item"}
 RESOLVED_ISSUE_STATUSES = {"Resolved", "Cancelled"}
@@ -3985,7 +3985,7 @@ def _link_merchandise_to_product(entry_id, item_id):
     entry_fields = entry.get("fields", {})
     updated = _update_receipt_entry_record(entry_id, {
         C.F_RECEIPT_ENTRY_ITEM: [item_id],
-        C.F_RECEIPT_ENTRY_INTAKE_STATUS: entry_fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) or "Needs Review",
+        C.F_RECEIPT_ENTRY_INTAKE_STATUS: entry_fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) or "New",
         **_merch_status_normalization_fields(entry_fields),
     })
     return updated, receipt, item, None
@@ -4336,11 +4336,7 @@ def _derive_product_production_summary(*, merchandise, workstreams, thr3d):
         {
             "New": "Needs Review",
             "Needs More Information": "Waiting on Information",
-            "Awaiting Info": "Waiting on Information",
-            "Needs Product / Work": "Waiting on Information",
-            "Awaiting Info/Activation": "Waiting on Information",
-            "Waiting on Information": "Waiting on Information",
-            "Ready for Photo": "Ready for Photo",
+            "Awaiting Photo Release": "Awaiting Photo Release",
         }.get(value, value)
         for value in planning_statuses
     }
@@ -4362,10 +4358,10 @@ def _derive_product_production_summary(*, merchandise, workstreams, thr3d):
         status = "Complete" if work_units and all(value == "Complete" for value in cf_statuses) and (not thr3d_fields or shipping_statuses == {"Shipped"}) else "In Production"
     elif work_units == 0:
         status = "Waiting on Information" if "Waiting on Information" in intake_statuses else "Work Not Defined"
-    elif {"Awaiting Info", "Awaiting Info/Activation", "Needs More Information", "Waiting on Information"} & card_statuses or "Waiting on Information" in intake_statuses:
+    elif {"Needs More Information", "Waiting on Information"} & card_statuses or "Waiting on Information" in intake_statuses:
         status = "Waiting on Information"
-    elif workstream_fields and all(value == "Ready for Photo" for value in card_statuses):
-        status = "Ready for Photo"
+    elif workstream_fields and all(value == "Awaiting Photo Release" for value in card_statuses):
+        status = "Awaiting Photo Release"
     elif thr3d_fields and shipping_statuses == {"Shipped"} and not workstream_fields:
         status = "Complete"
     else:
@@ -5001,7 +4997,7 @@ def _is_thr3d_outgoing_candidate(entry):
     if fields.get(C.F_RECEIPT_ENTRY_RELEASED):
         return False
     intake_status = str(fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) or "").strip().lower()
-    if intake_status != "ready to release":
+    if intake_status != "awaiting photo release":
         return False
     return _is_merchandise_physically_present(fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS, ""))
 
@@ -5467,7 +5463,7 @@ def _creative_force_product_feed_preview():
         handoff = _creative_force_handoff(card)
         if not isinstance(handoff, dict):
             continue
-        if card_fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) != "Ready for Photo":
+        if card_fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) != PLANNING_STATUS_LABELS["awaiting-photo-release"]:
             continue
         feed_fields = _creative_force_feed_fields(card, handoff)
         rows.append({
@@ -5479,7 +5475,7 @@ def _creative_force_product_feed_preview():
 
 
 def _sync_creative_force_product_feed_cards(cards):
-    """Upsert ready photo cards into the CF feed as part of the Ready transition."""
+    """Upsert photo-release cards into the CF feed as part of the release transition."""
     existing = _list_all_records(C.CREATIVE_FORCE_PRODUCT_FEED_TABLE)
     existing_by_key = {
         str(record.get("fields", {}).get(C.F_CF_FEED_SOURCE_KEY) or "").strip(): record
@@ -5493,7 +5489,7 @@ def _sync_creative_force_product_feed_cards(cards):
         handoff = _creative_force_handoff(card)
         if not isinstance(handoff, dict):
             continue
-        if card_fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) != "Ready for Photo":
+        if card_fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) != PLANNING_STATUS_LABELS["awaiting-photo-release"]:
             continue
         feed_fields = _creative_force_feed_fields(card, handoff)
         source_key = feed_fields[C.F_CF_FEED_SOURCE_KEY]
@@ -5795,13 +5791,11 @@ def _photo_production_value_is_valid(key, value):
     return True
 
 
-PLANNING_STATUS_VALUES = ("new", "needs-more-information", "ready-for-photo")
+PLANNING_STATUS_VALUES = ("new", "needs-more-information", "awaiting-photo-release")
 PLANNING_STATUS_LABELS = {
     "new": "New",
     "needs-more-information": "Needs More Information",
-    "needs-product-work": "Needs More Information",
-    "awaiting-info": "Needs More Information",
-    "ready-for-photo": "Ready for Photo",
+    "awaiting-photo-release": "Awaiting Photo Release",
 }
 
 
@@ -5811,15 +5805,8 @@ def _normalized_planning_status(value):
         return ""
     normalized = text.lower().replace("_", "-")
     aliases = {
-        "needs review": "new",
-        "needs product / work": "needs-more-information",
-        "needs-product / work": "needs-more-information",
         "needs more information": "needs-more-information",
-        "waiting on information": "needs-more-information",
-        "awaiting info/activation": "needs-more-information",
-        "awaiting info": "needs-more-information",
-        "ready for photo": "ready-for-photo",
-        "complete": "ready-for-photo",
+        "awaiting photo release": "awaiting-photo-release",
     }
     return aliases.get(normalized, normalized)
 
@@ -5845,14 +5832,14 @@ def _planning_status_for_fields(fields=None):
     verified = bool(fields.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED, False))
     new_merch_status = str(fields.get(C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS, "") or "").strip().lower()
 
-    if intake_status == "ready for photo":
-        return "ready-for-photo"
+    if explicit_planning_status:
+        return ""
     # A newly received item stays in New Merch until a PM reviews it. Raw IDs or
     # deliverable values can be present during intake and must not bypass that review.
     if (
         not verified
         and new_merch_status != "workflows created"
-        and intake_status in {"", "needs review"}
+        and intake_status in {"", "new"}
     ):
         return "new"
     if not item_ids or not deliverables:
@@ -6578,7 +6565,7 @@ def create_workstream_card():
         sibling_type = str(sibling_fields.get(C.F_WORKSTREAM_CARD_TYPE) or "").strip()
         if sibling_type and sibling_type not in existing_types:
             existing_types.append(sibling_type)
-        if str(sibling_fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) or "").strip().lower() == "ready for photo":
+        if str(sibling_fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) or "").strip().lower() == "awaiting photo release":
             sibling_ready_for_photo = True
     if workstream_type in existing_types:
         return err(f"{workstream_type} already exists for this merchandise.", 409)
@@ -6603,14 +6590,14 @@ def create_workstream_card():
     except requests.HTTPError as error:
         return airtable_err(error)
     remaining_types = existing_types + [workstream_type]
-    parent_is_ready_for_photo = str(entry_fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) or "").strip().lower() == "ready for photo"
+    parent_is_ready_for_photo = str(entry_fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) or "").strip().lower() == "awaiting photo release"
     parent_update = {
         C.F_RECEIPT_ENTRY_DELIVERABLES: remaining_types,
     }
     if not (sibling_ready_for_photo or parent_is_ready_for_photo):
         parent_update.update({
             C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS: "Workflows Created",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New",
             C.F_RECEIPT_ENTRY_PLANNING_STATUS: PLANNING_STATUS_LABELS["needs-more-information"],
             **_merch_status_normalization_fields(entry_fields),
         })
@@ -6666,11 +6653,6 @@ def update_workstream_card(record_id):
         )
     except requests.HTTPError as error:
         return airtable_err(error)
-    if effective_planning_status == "ready-for-photo" and workstream_type in {"Ecomm", "Packaging"}:
-        try:
-            _populate_creative_force_feed_for_ready_cards([updated])
-        except requests.HTTPError as error:
-            return airtable_err(error)
     return jsonify({"record": _shape_workstream_card(updated)})
 
 
@@ -6715,7 +6697,7 @@ def delete_workstream_card(record_id):
         update_fields = {
             C.F_RECEIPT_ENTRY_DELIVERABLES: remaining_types,
             C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS: "Workflows Created" if remaining_types else "Needs Review",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review" if remaining_types else "Waiting on Information",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New" if remaining_types else "Needs More Information",
             **_merch_status_normalization_fields(entry.get("fields", {})),
         }
         if not remaining_types:
@@ -6789,7 +6771,7 @@ def confirm_assign_merchandise(entry_id):
 
         update_fields = {
             C.F_RECEIPT_ENTRY_NEW_MERCH_STATUS: "Workflows Created",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New",
             **_merch_status_normalization_fields(entry.get("fields", {})),
         }
         if expected_product_ids:
@@ -6888,9 +6870,7 @@ def update_merchandise_intake_state(entry_id):
         planning_stage_map = {
             "new": "new-review",
             "needs-more-information": "waiting-info",
-            "needs-product-work": "waiting-info",
-            "awaiting-info": "waiting-info",
-            "ready-for-photo": "ready-production",
+            "awaiting-photo-release": "ready-production",
         }
         if planning_status not in planning_stage_map:
             return err(f"planningStatus must be one of: {', '.join(PLANNING_STATUS_VALUES)}.", 400)
@@ -6927,20 +6907,20 @@ def update_merchandise_intake_state(entry_id):
     if intake_status:
         update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = intake_status
         intake_to_planning = {
-            "needs review": "new",
-            "waiting on information": "needs-more-information",
-            "ready for photo": "ready-for-photo",
+            "new": "new",
+            "needs more information": "needs-more-information",
+            "awaiting photo release": "awaiting-photo-release",
         }
         update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS[
             intake_to_planning.get(str(intake_status).strip().lower(), "needs-more-information")
         ]
         update_fields.update(_merch_status_normalization_fields(fields))
     elif stage == "new-review":
-        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Needs Review"
+        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "New"
         update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["new"]
         update_fields.update(_merch_status_normalization_fields(fields))
     elif stage == "waiting-info":
-        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Waiting on Information"
+        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Needs More Information"
         update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS[
             planning_status if planning_status == "needs-more-information" else "needs-more-information"
         ]
@@ -6960,11 +6940,11 @@ def update_merchandise_intake_state(entry_id):
         if not requiredToShoot["ready"]:
             return err(f"Cannot move to Thr3d Shipment.\nMissing: {', '.join(requiredToShoot['missing'])}", 400)
         update_fields.update(_intake_decision_fields_from_body({"deliverables": deliverables}, effective_fields))
-        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Ready for Photo"
-        update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["ready-for-photo"]
+        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
+        update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
         update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Ready to Ship"
     elif stage == "waiting-activation":
-        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Needs Review"
+        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "New"
         update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["needs-more-information"]
         update_fields.update(_merch_status_normalization_fields(fields))
     elif stage == "ready-production":
@@ -6977,12 +6957,12 @@ def update_merchandise_intake_state(entry_id):
                 return airtable_err(error)
         requiredToShoot = _evaluate_required_to_shoot_from_fields(effective_fields, item_record.get("fields", {}) if item_record else {})
         if not requiredToShoot["ready"]:
-            return err(f"Cannot move to Ready for Photo.\nMissing: {', '.join(requiredToShoot['missing'])}", 400)
+            return err(f"Cannot move to Awaiting Photo Release.\nMissing: {', '.join(requiredToShoot['missing'])}", 400)
         issues = _issues_by_item_id().get(item_ids[0], [])
         if _blocking_merchandise_issues(issues):
-            return err("Cannot move to Ready for Photo.\nMissing: Resolved Merchandise Issues", 400)
-        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Ready for Photo"
-        update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["ready-for-photo"]
+            return err("Cannot move to Awaiting Photo Release.\nMissing: Resolved Merchandise Issues", 400)
+        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
+        update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
         update_fields.update(_merch_status_normalization_fields(fields))
 
     try:
@@ -7022,7 +7002,7 @@ def release_merchandise_to_production(entry_id):
     if not requiredToShoot["ready"]:
         missing_text = ", ".join(requiredToShoot["missing"])
         return jsonify({
-            "error": f"Cannot release to production. Missing: {missing_text}",
+            "error": f"Cannot release to photo. Missing: {missing_text}",
             "missing": requiredToShoot["missing"],
             "requiredToShoot": requiredToShoot,
         }), 400
@@ -7030,7 +7010,6 @@ def release_merchandise_to_production(entry_id):
     update_fields = {
         C.F_RECEIPT_ENTRY_RELEASED: True,
         C.F_RECEIPT_ENTRY_RELEASED_AT: _now_iso(),
-        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Complete",
     }
     user_id = _current_user_id()
     if user_id:
@@ -7154,7 +7133,7 @@ def match_verification_entry(entry_id):
     try:
         updated = _update_receipt_entry_record(entry_id, {
             C.F_RECEIPT_ENTRY_ITEM: [item_id],
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: entry_fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) or "Needs Review",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: entry_fields.get(C.F_RECEIPT_ENTRY_INTAKE_STATUS) or "New",
             **_merch_status_normalization_fields(entry_fields),
         })
     except requests.HTTPError as error:
@@ -7257,7 +7236,7 @@ def validate_verification_entry(entry_id):
 
     update_fields = {}
     if status == "Validated":
-        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = "Ready for Photo"
+        update_fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
         update_fields.update(_merch_status_normalization_fields(fields))
     else:
         update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = status
@@ -7285,7 +7264,7 @@ def remove_merchandise_review_match(entry_id):
         updated = _update_receipt_entry_record(entry_id, {
             C.F_RECEIPT_ENTRY_ITEM: [],
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review",
+            C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New",
         })
     except requests.HTTPError as error:
         return airtable_err(error)
@@ -7308,7 +7287,7 @@ def mark_merchandise_waiting_for_product_data(entry_id):
 
     update_fields = {
         C.F_RECEIPT_ENTRY_ITEM: [],
-        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Waiting on Information",
+        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs More Information",
         C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
     }
     if note:
@@ -8140,7 +8119,7 @@ def _receipt_entry_fields(entry, receipt_id, index, receipt_name):
         C.F_RECEIPT_ENTRY_RECEIPT: [receipt_id],
         C.F_RECEIPT_ENTRY_QUANTITY: quantity,
         C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Needs Review",
+        C.F_RECEIPT_ENTRY_INTAKE_STATUS: "New",
     }
     location_ids = entry.get("locationIds") or entry.get("locationId") or []
     condition = (entry.get("condition") or "").strip()
@@ -8519,9 +8498,9 @@ def _review_state_for_entry(shaped, linked_item=None, blocking_issues=None):
     intake_status = shaped.get("intakeStatus") or ""
     if merch_status == "Issue" or blocking_issues:
         return "Issue"
-    if intake_status in {"Needs More Information", "Awaiting Info", "Awaiting Info/Activation", "Waiting on Information"}:
+    if intake_status in {"Needs More Information", "Waiting on Information"}:
         return "Waiting for Product Data"
-    if intake_status == "Ready for Photo":
+    if intake_status == "Awaiting Photo Release":
         return "Validated"
     return "Needs Review"
 

@@ -107,11 +107,11 @@ Queue is the PM-owned board placement for Planning work.
 
 Queue is not Merchandise Status. Queue describes where the PM wants the card to sit while work is being organized. Merchandise Status describes the physical or operational condition of the sample.
 
-Canonical Planning Queue values are New, Planning, Waiting, and Ready for Photo.
+Canonical Planning Queue values are New, Needs More Information, and Awaiting Photo Release.
 
-New is automatic. Ready for Photo is gated by Required to Shoot. Planning and Waiting are PM-controlled and should not be changed automatically because data was entered.
+New is automatic. Needs More Information is PM-controlled. Awaiting Photo Release is gated by Required to Shoot and means the work is ready but waiting for the explicit photo-release handoff.
 
-Ready for Photo is shared with the future Production board. In the split model it applies to Ecomm and Packaging workstream cards that link back to one Received Merch record; it should not duplicate the physical Received Merch or create separate Production Request records.
+Awaiting Photo Release is the shared Planning-to-Production handoff queue. In the split model it applies to Ecomm and Packaging workstream cards that link back to one Received Merch record; it should not duplicate the physical Received Merch or create separate Production Request records.
 
 Queue presentation is a user-experience concern, not a separate domain concept. Better card density, aging emphasis, comment signals, drag feedback, and checklist presentation should make Planning easier to use without creating new Queue values. Implementation names should preserve the distinction by using Queue and Planning Card terminology rather than Work Order, Workstream, or workflow-gate terminology.
 
@@ -177,19 +177,19 @@ deliverables helps determine readiness requirements, planning needs, resources, 
 
 Ecomm and THR3D are mutually exclusive GS1 paths. Packaging can pair with either path. Ecomm and Packaging become separate workstream cards after `Confirm & Assign`; THR3D becomes a shipping item.
 
-## Ready for Photo Handoff
+## Photo Release Handoff
 
-Ready for Photo is the shared Planning-to-Production handoff.
+Awaiting Photo Release is the shared Planning-to-Production handoff queue.
 
 It asks whether required Received Merch facts, Expected Product facts when matched, client requirements, workstream-specific dependencies, artwork, activation information, replacement decisions, and other blockers have been resolved.
 
-Ready for Photo is not the same as workflow. It is a business truth:
+Awaiting Photo Release is not the same as workflow. It is a business truth:
 
 > Can Production accept this work with confidence?
 
 If the answer is no, Marks Photo should explain what is missing.
 
-Production acceptance is a later action. When Production eventually moves shared `Ready for Photo` work to `Scheduled`, ownership should transfer from Project Management to Production and the workstream card should leave the Planning board.
+`Release to Photo` is the action that transfers ownership from Project Management to Production-facing systems and removes the workstream card from active Planning.
 
 ## Production
 
@@ -213,7 +213,7 @@ Job provides production or reporting grouping when needed.
 
 deliverables describes the kind of production work required.
 
-Ready for Photo determines whether an expected product/work unit can bridge from Planning into Production.
+Awaiting Photo Release determines whether an expected product/work unit can bridge from Planning into Production through the explicit `Release to Photo` action.
 
 Production executes the released work.
 

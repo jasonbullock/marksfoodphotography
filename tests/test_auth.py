@@ -419,7 +419,7 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(profile["pathPrefixes"]["artwork"], "smb://gfs-marks/Topco/_CGI/03 PROJECTS/")
         self.assertEqual(profile["pathPrefixes"]["upload"], "smb://gfs-marks/Topco/")
         self.assertIn("CVID", profile["deliverables"]["Ecomm"]["requiredFields"])
-        self.assertIn("Coordinator Description", profile["deliverables"]["Packaging"]["requiredFields"])
+        self.assertIn("File Name Description", profile["deliverables"]["Packaging"]["requiredFields"])
         self.assertIn("Quantity received", profile["notRequiredFromActivation"])
         photo_requirements = records["Topco"]["photoProductionRequirements"]
         self.assertEqual(photo_requirements["workstreams"]["Packaging"]["naming"]["template"], "{jobNumber}_{brandPrefix}_{fileNameDescription}")
@@ -1020,7 +1020,7 @@ class AuthTests(unittest.TestCase):
             "id": "recRemoved",
             "fields": {
                 C.F_RECEIPT_ENTRY_NAME: "Dress 1",
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready for Photo",
+                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Photo Release",
                 C.F_RECEIPT_ENTRY_MERCH_STATUS: "Validated",
                 C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
             },
@@ -1099,7 +1099,7 @@ class AuthTests(unittest.TestCase):
             "fields": {
                 **merchandise["fields"],
                 C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm"],
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready for Photo",
+                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Photo Release",
                 C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
             },
         }
@@ -1117,7 +1117,7 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(response.get_json()["movedCount"], 1)
         merch_update = update_record.call_args_list[0].args[2]
         self.assertEqual(merch_update[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Ecomm"])
-        self.assertEqual(merch_update[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Ready for Photo")
+        self.assertEqual(merch_update[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Awaiting Photo Release")
         self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_STATUS, merch_update)
         populate_feed.assert_not_called()
 
@@ -1147,7 +1147,7 @@ class AuthTests(unittest.TestCase):
                 C.F_RECEIPT_ENTRY_QUANTITY: 1,
                 C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
                 C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm", "Packaging"],
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Info/Activation",
+                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Needs More Information",
             },
         }
         ecomm_card = {
@@ -1155,7 +1155,7 @@ class AuthTests(unittest.TestCase):
             "fields": {
                 C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
                 C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
-                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Info/Activation",
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Needs More Information",
             },
         }
         packaging_card = {
@@ -1163,7 +1163,7 @@ class AuthTests(unittest.TestCase):
             "fields": {
                 C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
                 C.F_WORKSTREAM_CARD_TYPE: "Packaging",
-                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Info/Activation",
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Needs More Information",
             },
         }
         updated_merchandise = {
@@ -1177,7 +1177,7 @@ class AuthTests(unittest.TestCase):
             "id": "recEcommCard",
             "fields": {
                 **ecomm_card["fields"],
-                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release",
             },
         }
         released_activation = {
@@ -1191,15 +1191,14 @@ class AuthTests(unittest.TestCase):
         response = self.client.post("/api/activations/recActivation/move-to-photo")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["moved"][0]["intakeStatus"], "Awaiting Info/Activation")
+        self.assertEqual(response.get_json()["moved"][0]["intakeStatus"], "Needs More Information")
         merch_update = update_record.call_args_list[0].args[2]
         self.assertEqual(merch_update[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Ecomm", "Packaging"])
         self.assertNotIn(C.F_RECEIPT_ENTRY_INTAKE_STATUS, merch_update)
         self.assertEqual(update_record.call_args_list[1].args[0], C.WORKSTREAM_CARDS_TABLE)
         self.assertEqual(update_record.call_args_list[1].args[1], "recEcommCard")
         self.assertEqual(update_record.call_args_list[1].args[2], {
-            C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
-            C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
+            C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release",
         })
         self.assertEqual(update_record.call_count, 3)
         populate_feed.assert_called_once_with([updated_ecomm_card])
@@ -1236,7 +1235,7 @@ class AuthTests(unittest.TestCase):
             "fields": {
                 C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
                 C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
-            C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release",
             },
         }
         updated_merchandise = {
@@ -1244,7 +1243,7 @@ class AuthTests(unittest.TestCase):
             "fields": {
                 **merchandise["fields"],
                 C.F_RECEIPT_ENTRY_DELIVERABLES: ["Ecomm"],
-                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Ready for Photo",
+                C.F_RECEIPT_ENTRY_INTAKE_STATUS: "Awaiting Photo Release",
                 C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
             },
         }

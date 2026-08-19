@@ -16,6 +16,10 @@ LEGACY_MIDDLE_STATUSES = {
     "Waiting on Information",
 }
 
+LEGACY_READY_STATUSES = {
+    "Ready for Photo",
+}
+
 
 def single_select_field(name, options):
     return {
@@ -107,14 +111,15 @@ def migrate_middle_statuses(table_name, field_name, *, dry_run=False):
     updated = []
     for record in records:
         value = str((record.get("fields") or {}).get(field_name) or "").strip()
-        if value not in LEGACY_MIDDLE_STATUSES:
+        if value not in LEGACY_MIDDLE_STATUSES and value not in LEGACY_READY_STATUSES:
             continue
-        updated.append({"id": record.get("id", ""), "from": value, "to": "Needs More Information"})
+        target = "Awaiting Photo Release" if value in LEGACY_READY_STATUSES else "Needs More Information"
+        updated.append({"id": record.get("id", ""), "from": value, "to": target})
         if not dry_run:
             airtable.update_record(
                 table_name,
                 record["id"],
-                {field_name: "Needs More Information"},
+                {field_name: target},
                 by_field_id=False,
                 typecast=True,
             )

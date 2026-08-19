@@ -466,22 +466,22 @@ class IntakeDecisionTests(unittest.TestCase):
             "id": "recCard",
             "fields": {
                 **workstream_card["fields"],
-                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release",
             },
         }
 
-        response = self.app.patch("/api/workstream-cards/recCard", json={"planningStatus": "Ready for Photo"})
+        response = self.app.patch("/api/workstream-cards/recCard", json={"planningStatus": "Awaiting Photo Release"})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(update_record.call_args.args[0], C.WORKSTREAM_CARDS_TABLE)
         self.assertEqual(update_record.call_args.args[1], "recCard")
         self.assertEqual(update_record.call_args.args[2], {
             C.F_WORKSTREAM_CARD_TYPE: "Packaging",
-            C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Ready for Photo",
+            C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release",
         })
         self.assertTrue(update_record.call_args.kwargs["typecast"])
-        self.assertEqual(response.get_json()["record"]["planningStatus"], "ready-for-photo")
-        populate_feed.assert_called_once_with([update_record.return_value])
+        self.assertEqual(response.get_json()["record"]["planningStatus"], "awaiting-photo-release")
+        populate_feed.assert_not_called()
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
@@ -617,7 +617,7 @@ class IntakeDecisionTests(unittest.TestCase):
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Thr3d"])
         self.assertTrue(all("Resolution" not in key for key in fields))
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Ready for Photo")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Awaiting Photo Release")
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Ready to Ship")
 
     @patch("routes._clients_by_id", return_value={})
@@ -683,7 +683,8 @@ class IntakeDecisionTests(unittest.TestCase):
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_DELIVERABLES], ["Packaging"])
         self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_STATUS, fields)
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Ready for Photo")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_INTAKE_STATUS], "Awaiting Photo Release")
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Awaiting Photo Release")
         self.assertNotIn(C.F_RECEIPT_ENTRY_NOTES, fields)
 
     @patch("routes._clients_by_id", return_value={})

@@ -60,9 +60,9 @@ Do not put raw physical check-in facts, storage, condition, shipment photos, iss
 
 Unmatched merchandise is an exception path. It should be resolved by matching to Expected Product when possible or by collecting the minimum manual facts needed to move work forward.
 
-## 6. One Shared Ready For Photo Handoff
+## 6. One Shared Photo Release Handoff
 
-There should be one clear Ready for Photo handoff queue.
+There should be one clear Awaiting Photo Release handoff queue.
 
 Different clients or deliverables may require different checks, but the handoff should remain understandable: the merchandise is either ready for Production to accept or it is not.
 
@@ -102,7 +102,7 @@ Inventory should not become the PM decision workflow.
 
 Planning answers what must be decided before Production can accept the work.
 
-It owns product identification, client requirements, deliverables, blockers or exceptions, Required to Shoot, and movement into the shared Ready for Photo queue.
+It owns product identification, client requirements, deliverables, blockers or exceptions, Required to Shoot, and movement into `Awaiting Photo Release`.
 
 Planning should make uncertainty actionable.
 
@@ -126,7 +126,7 @@ For Planning and future workflow modals:
 - Closing, canceling, pressing Esc, or clicking outside discards uncommitted draft changes.
 - Cards animate or visibly move only after the commit save succeeds and fresh data is loaded.
 
-The footer should preview the outcome in business language, for example `Will move to Thr3d Shipment` or `Will move to Ready for Photo`, while keeping the primary button label stable as `Finish & Move`.
+The footer should preview the outcome in business language, for example `Will move to Thr3d Shipment` or `Will move to Awaiting Photo Release`, while keeping the primary button label stable as `Finish & Move`.
 
 ## 12. Production Is An Execution Perspective
 
@@ -136,7 +136,7 @@ It owns scheduling, resources, studios, pre-production, planning, and Creative F
 
 Production should not absorb Planning decisions, and it should not replace Creative Force.
 
-Production should begin by accepting shared `Ready for Photo` work. The future move from `Ready for Photo` to `Scheduled` should transfer ownership from PM to Production without creating duplicate Merchandise.
+Production should begin after the explicit `Release to Photo` handoff. That handoff should transfer ownership from PM to Production-facing systems without creating duplicate Merchandise.
 
 Production state should come from Creative Force or a deliberately scoped production sync, not from Product `Status` or hidden Planning gates.
 
@@ -176,7 +176,7 @@ For the Planning board, prefer:
 - Required to Shoot
 - Conversation
 - Activity
-- Ready for Photo
+- Awaiting Photo Release
 
 Avoid public board labels such as Board Status, Readiness, workflow gate, transition, and assignment. Active Planning implementation naming should follow the same direction: `planningCard`, `currentQueue`, `queues`, `deliverableRoute`, and `requiredToShoot` are acceptable; `workOrder`, `currentGate`, Product `workstream`, workflow assignment, and public Readiness naming are not.
 

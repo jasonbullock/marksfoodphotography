@@ -42,7 +42,7 @@ Inventory
 ↓
 Planning
 ↓
-Ready for Photo
+Awaiting Photo Release
 ↓
 Production
 ↓
@@ -101,15 +101,15 @@ Topco is the complex starting client, but the Product workspace must support cli
 
 Queue is separate from Merchandise Status. Queue organizes PM work; Merchandise Status describes the physical or operational state of the sample.
 
-Intake Status is intentionally small: `Needs Review`, `Waiting on Information`, `Ready for Photo`, and `Complete`. Planning Queue is PM organization, not a second persisted workflow state.
+Planning Status is intentionally small: `New`, `Needs More Information`, and `Awaiting Photo Release`.
 
-### Ready for Photo
+### Awaiting Photo Release
 
 Ownership: Project Management.
 
-Ready for Photo is the shared handoff queue between Planning and Production. It means the required merchandise facts, product facts, client requirements, deliverables, and production instructions are complete enough for Production to accept the work.
+Awaiting Photo Release is the PM-owned queue for work that has the required merchandise facts, product facts, client requirements, deliverables, and production instructions complete enough for the final photo release.
 
-There should be one shared Ready for Photo queue. Readiness paths may differ by client or deliverables, but the handoff should remain clear and should not duplicate Merchandise records.
+There should be one clear release point. Readiness paths may differ by client or deliverables, but the handoff should remain explicit and should not duplicate Merchandise records.
 
 ### Production
 
@@ -117,7 +117,7 @@ Ownership: Production coordination.
 
 Production determines how the work will be executed: schedule, resources, studio, pre-production, planning, and integration with Creative Force. Marks Photo may prepare and display production intent, but it should not become the system that manages every production task.
 
-Production begins by accepting shared `Ready for Photo` work. A future move from `Ready for Photo` to `Scheduled` should transfer ownership from Project Management to Production, remove the card from the Planning board, show it on the Production board, and log Activity.
+Production begins after Planning performs the explicit `Release to Photo` handoff. That handoff should transfer ownership from Project Management to Production-facing systems, remove the card from active Planning, show it on Production/Creative Force surfaces, and log Activity.
 
 ### Creative Force
 

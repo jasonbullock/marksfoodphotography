@@ -761,9 +761,9 @@ const DASHBOARD_QUEUES = [
   },
   {
     id: 'ready_for_photo',
-    title: 'Ready for Photo',
-    description: 'Products ready to send to Creative Force.',
-    empty: 'No products ready for photo.',
+    title: 'Awaiting Photo Release',
+    description: 'Products ready for final release to Creative Force.',
+    empty: 'No products awaiting photo release.',
     matches: item => isOpenFoodHubItem(item) && item.requiredToShoot?.state === 'ready_for_photo',
   },
   {
@@ -5507,7 +5507,7 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
         <div className="modal-header">
           <div>
             <div className="modal-title" id="client-photo-requirements-title">Photo Production Requirements</div>
-            <div className="modal-subtitle">{client.name} · Choose what must be present before each workstream is handed to Ready for Photo / Creative Force.</div>
+            <div className="modal-subtitle">{client.name} · Choose what must be present before each workstream is released to photo.</div>
           </div>
           <button className="modal-close" type="button" onClick={onClose} aria-label="Close">×</button>
         </div>
@@ -5720,7 +5720,7 @@ function CreativeForceAdminSection() {
             <div className="setting-row"><span className="setting-key">Rows ready for handoff</span><span className="setting-val">{counts.ready || 0} workstream{counts.ready === 1 ? '' : 's'}</span></div>
             <div className="setting-row"><span className="setting-key">Existing feed rows</span><span className="setting-val">{counts.existing || 0}</span></div>
           </div>
-          <div className="form-hint">Rows are populated automatically when an Ecomm or Packaging card moves to Ready for Photo.</div>
+          <div className="form-hint">Rows are populated automatically when an Ecomm or Packaging card is released to photo.</div>
           <div className="table-wrap requirements-table">
             <table>
               <thead><tr><th>Product</th><th>Workstream</th><th>Product Code</th><th>Category</th></tr></thead>
@@ -5853,7 +5853,7 @@ function SettingsPage({ cards = null } = {}) {
           <summary>Details</summary>
           <div className="client-readiness-grid">
             {profile && <div>
-              <span className="client-readiness-label">Ready for Photo requires</span>
+              <span className="client-readiness-label">Photo release requires</span>
               <div className="requirements-chips">
                 {(profile.readyForPhotoRequires || []).map(field => <span className="requirements-chip" key={field}>{field}</span>)}
               </div>
@@ -7727,7 +7727,7 @@ function MerchandiseReviewPage() {
                         <div><dt>Brand</dt><dd>{linkedProduct.brand || '-'}</dd></div>
                         <div><dt>Description</dt><dd>{linkedProduct.description || '-'}</dd></div>
                         <div><dt>Product Status</dt><dd>{linkedProduct.status || '-'}</dd></div>
-                        <div><dt>Required To Shoot</dt><dd>{linkedProduct.requiredToShoot?.ready ? 'Ready for Photo' : linkedProduct.requiredToShoot?.missing?.length ? `Missing ${linkedProduct.requiredToShoot.missing.join(', ')}` : 'Not calculated'}</dd></div>
+                        <div><dt>Required To Shoot</dt><dd>{linkedProduct.requiredToShoot?.ready ? 'Ready' : linkedProduct.requiredToShoot?.missing?.length ? `Missing ${linkedProduct.requiredToShoot.missing.join(', ')}` : 'Not calculated'}</dd></div>
                       </dl>
                     </div>
                   ) : (
@@ -7863,7 +7863,7 @@ const PM_COMMENT_READ_STORAGE_KEY = 'marks:planning-board-comment-reads';
 const PM_QUEUE_COLUMNS = [
   { id: QUEUE_IDS.newReview, label: 'New Merch', description: 'Brand-new received merchandise ready for PM review.' },
   { id: QUEUE_IDS.waitingInformation, label: 'Needs More Information', description: 'Reviewed merchandise waiting on Product, work, or required details.' },
-  { id: QUEUE_IDS.readyProduction, label: 'Ready for Photo', description: 'Shared handoff queue for Production.' },
+  { id: QUEUE_IDS.readyProduction, label: 'Awaiting Photo Release', description: 'Ready work waiting for the final photo release.' },
 ];
 const PLANNING_QUEUE_LABELS = Object.fromEntries(PM_QUEUE_COLUMNS.map(column => [column.id, column.label]));
 
@@ -7913,9 +7913,9 @@ function intakeRequestedQueueForRecord(record) {
   if (record?.newMerchStatus === 'Workflows Created') return QUEUE_IDS.waitingInformation;
   const deliverables = deliverablesForRecord(record);
   if (deliverables.length === 1 && deliverables[0] === 'Thr3d') return QUEUE_IDS.sendThr3d;
-  if (record?.intakeStatus === 'Waiting on Information') return QUEUE_IDS.waitingInformation;
-  if (record?.intakeStatus === 'Ready for Photo') return QUEUE_IDS.readyProduction;
-  if (record?.intakeStatus === 'Needs Review') return QUEUE_IDS.newReview;
+  if (record?.planningStatus === 'needs-more-information') return QUEUE_IDS.waitingInformation;
+  if (record?.planningStatus === 'awaiting-photo-release') return QUEUE_IDS.readyProduction;
+  if (record?.planningStatus === 'new') return QUEUE_IDS.newReview;
   const reviewState = reviewStateFor(record);
   if (reviewState === 'Validated') return QUEUE_IDS.readyProduction;
   return QUEUE_IDS.newReview;
@@ -8146,12 +8146,12 @@ function planningActionOutcomePreview({
       const count = photoProductionMissingCount || 1;
       return `Blocked by missing required info: ${count} product field${count === 1 ? '' : 's'} still needed.`;
     }
-    return 'Details complete. Ready to create a release from Ready to Release.';
+    return 'Details complete. Ready for photo release.';
   }
   if (splitNeedsMultipleUnits) return 'Blocked by missing required info: update Qty received or choose one deliverable.';
   const deliverables = normalizeDeliverableList(wizardState.deliverables || []);
   const hasPhotoDeliverable = deliverables.some(type => type === 'Packaging' || type === 'Ecomm');
-  if (wizardState.productIdentified && hasPhotoDeliverable && photoProductionReady) return 'Will move to Ready to Release.';
+  if (wizardState.productIdentified && hasPhotoDeliverable && photoProductionReady) return 'Will move to Awaiting Photo Release.';
   return 'Will move to Needs More Information.';
 }
 
@@ -8169,7 +8169,7 @@ function queueIdForPlanningStatus(status) {
     case 'needs-product-work':
     case 'awaiting-info':
       return QUEUE_IDS.waitingInformation;
-    case 'ready-for-photo': return QUEUE_IDS.readyProduction;
+    case 'awaiting-photo-release': return QUEUE_IDS.readyProduction;
     default: return QUEUE_IDS.waitingInformation;
   }
 }
@@ -8177,7 +8177,7 @@ function queueIdForPlanningStatus(status) {
 function planningStatusFromLegacyQueue(queueId) {
   if (queueId === QUEUE_IDS.newReview) return 'new';
   if (queueId === QUEUE_IDS.waitingActivation) return 'needs-more-information';
-  if (queueId === QUEUE_IDS.readyProduction) return 'ready-for-photo';
+  if (queueId === QUEUE_IDS.readyProduction) return 'awaiting-photo-release';
   return 'needs-more-information';
 }
 
@@ -8692,11 +8692,11 @@ function PlanningListView({ columns, itemsByColumn, selectedId, onSelect, disabl
 const PLANNING_RELEASE_SECTIONS = [
   { id: 'needsReview', label: 'Newly Received Merch', description: 'View and acknowledge newly received merchandise.' },
   { id: 'needsDetails', label: 'Needs More Information', description: 'Reviewed work with outstanding validation.' },
-  { id: 'readyToRelease', label: 'Ready to Release', description: 'Items waiting on Activation.' },
+  { id: 'readyToRelease', label: 'Awaiting Photo Release', description: 'Ready work waiting for release.' },
 ];
 
 function releaseSectionForPlanningItem(item = {}) {
-  if (item.columnId === QUEUE_IDS.readyProduction) return 'readyForPhoto';
+  if (item.columnId === QUEUE_IDS.readyProduction) return 'readyToRelease';
   if (item.columnId === QUEUE_IDS.newReview) return 'needsReview';
   if (releaseInfoCompleteForPlanningItem(item)) return 'readyToRelease';
   return 'needsDetails';
@@ -8739,8 +8739,7 @@ function releaseStatusTextForItem(item = {}, sectionId = '') {
   if (sectionId === 'needsReview') {
     return productLinkedForPlanningItem(item) ? 'Matched' : 'Unmatched';
   }
-  if (sectionId === 'readyToRelease') return 'Waiting on activation details';
-  if (sectionId === 'readyForPhoto') return 'Ready for Photo';
+  if (sectionId === 'readyToRelease') return 'Awaiting photo release';
   const missing = requiredToShootSummary(item).missing;
   return missing.length ? missing.slice(0, 3).join(' / ') : 'Needs more information';
 }
@@ -8860,7 +8859,7 @@ function PlanningReleaseView({
                 <strong>{sectionItems.length}</strong>
                 {section.id === 'readyToRelease' && selectedInSection.length > 0 && (
                   <button type="button" className="btn btn-primary btn-sm" onClick={() => onReleaseSelected?.(selectedInSection)} disabled={disabled}>
-                    Create Release ({selectedInSection.length})
+                    Release to Photo ({selectedInSection.length})
                   </button>
                 )}
               </div>
@@ -9050,9 +9049,9 @@ function ReleaseToProductionAction({ item, onRelease, busy }) {
   return (
     <div className="release-to-production-action">
       <button type="button" className="btn btn-primary" onClick={() => onRelease?.(item)} disabled={disabled}>
-        {busy ? 'Releasing...' : released ? 'Released to Production' : 'Release to Production'}
+        {busy ? 'Releasing...' : released ? 'Released to Photo' : 'Release to Photo'}
       </button>
-      {!released && !requiredToShoot.ready && <span>Complete all Required to Shoot requirements.</span>}
+      {!released && !requiredToShoot.ready && <span>Complete all required information.</span>}
       {released && <span>Released {formatInventoryDate(item.record?.releasedAt)}</span>}
     </div>
   );
@@ -11056,7 +11055,7 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
         ...(action === 'move' ? itemRows.flatMap((row, index) => itemMissingFields(row).map(field => `Item ${index + 1} ${field}`)) : []),
       ];
       if (localMissing.length) {
-        setError(`Complete before Ready for Photo: ${localMissing.join(', ')}.`);
+        setError(`Complete before Release to Photo: ${localMissing.join(', ')}.`);
         return;
       }
       const payload = buildActivationPayload(action === 'move' ? 'Active' : 'Draft');
@@ -11251,7 +11250,7 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
           <footer className="activation-modal-footer">
             <button type="button" className="btn" onClick={onClose}>Cancel</button>
             <button type="button" className="btn btn-primary" onClick={() => saveActivationPackage('move')} disabled={saving || !form.clientId}>
-              {saving && saveAction === 'move' ? 'Sending...' : 'Ready for Photo'}
+              {saving && saveAction === 'move' ? 'Releasing...' : 'Release to Photo'}
             </button>
           </footer>
         </form>
@@ -11634,7 +11633,7 @@ function MerchandiseReviewV2Page() {
       return true;
     } catch (error) {
       const missing = Array.isArray(error.missing) ? ` Missing: ${error.missing.join(', ')}` : '';
-      setFeedback(`${error.message || 'Cannot release to production.'}${missing}`);
+      setFeedback(`${error.message || 'Cannot release to photo.'}${missing}`);
       return false;
     } finally {
       setReleaseSavingId('');
@@ -11901,7 +11900,7 @@ function MerchandiseReviewV2Page() {
     }
     closeActivationModal();
     if (result.moved) {
-      setFeedback(`Moved ${result.movedCount || 0} linked card${result.movedCount === 1 ? '' : 's'} to Ready for Photo.`);
+      setFeedback(`Released ${result.movedCount || 0} linked card${result.movedCount === 1 ? '' : 's'} to photo.`);
       await activations.reload({ quiet: true }).catch(() => {});
       await refreshV2WorkflowData();
     } else {
@@ -12096,7 +12095,7 @@ function PlanningThr3dRegressionPage() {
   };
   const selectedItem = selectedId ? item : null;
   const photos = recordPhotos(record);
-  const outgoingRecords = finishedRecord?.intakeStatus === 'Ready for Photo'
+  const outgoingRecords = finishedRecord?.intakeStatus === 'Awaiting Photo Release'
     && finishedRecord.deliverables?.length === 1
     && finishedRecord.deliverables[0] === 'Thr3d'
     ? [finishedRecord]
@@ -12106,7 +12105,7 @@ function PlanningThr3dRegressionPage() {
     const updatedRecord = {
       ...currentItem.record,
       deliverables: normalizeDeliverableList(state.deliverables),
-      intakeStatus: 'Ready for Photo',
+      intakeStatus: 'Awaiting Photo Release',
       merchStatus: 'Ready to Ship',
       released: false,
     };
