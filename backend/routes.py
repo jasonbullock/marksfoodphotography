@@ -379,10 +379,28 @@ def _create_history_event(event, *, item_ids=None, user_ids=None, merchandise_id
 
 @api.get("/health")
 def health():
+    """Presence only. Never report a configured value, just whether it is set:
+    this endpoint is unauthenticated, and "which settings are missing" is the
+    question worth answering from outside the box."""
     return jsonify({
         "status": "ok",
         "service": "Marks Food Photography API",
         "airtableConfigured": C.airtable_ready(),
+        "configured": {
+            name: bool(getattr(C, name, ""))
+            for name in (
+                "AIRTABLE_API_KEY",
+                "AIRTABLE_BASE_ID",
+                "SECRET_KEY",
+                "R2_ACCOUNT_ID",
+                "R2_ACCESS_KEY_ID",
+                "R2_SECRET_ACCESS_KEY",
+                "R2_BUCKET_NAME",
+                "R2_PUBLIC_BASE_URL",
+                "CREATIVE_FORCE_WEBHOOK_SECRET",
+            )
+        },
+        "corsOrigins": C.cors_origins(),
     })
 
 
