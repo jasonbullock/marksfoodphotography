@@ -15,7 +15,11 @@ class Config:
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:5175")
     SECRET_KEY = os.getenv("SECRET_KEY", os.getenv("FLASK_SECRET_KEY", "marks-dev-secret-change-me"))
     SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SAMESITE = os.getenv(
+        "SESSION_COOKIE_SAMESITE",
+        "None" if (os.getenv("SESSION_COOKIE_SECURE", "").lower() == "true"
+                   or os.getenv("FLASK_ENV", "development") == "production") else "Lax",
+    )
     SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true" or FLASK_ENV == "production"
 
     # Photo release email, sent through Microsoft Graph with an app registration.
