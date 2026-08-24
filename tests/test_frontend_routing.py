@@ -46,8 +46,6 @@ class FrontendRoutingTests(unittest.TestCase):
             'path="/intake"',
             'path="/production"',
             'path="/products"',
-            'path="/jobs"',
-            'path="/jobs/new"',
             'path="/clients"',
             'path="/admin"',
             'path="/admin/:section"',
@@ -77,7 +75,6 @@ class FrontendRoutingTests(unittest.TestCase):
             "label: 'Merchandise'",
             "label: 'Planning'",
             "label: 'Products'",
-            "label: 'Jobs'",
         ]:
             self.assertIn(label, self.source)
         nav_section = self.source.split("const NAV_ITEMS = [", 1)[1].split("];", 1)[0]
@@ -123,7 +120,6 @@ class FrontendRoutingTests(unittest.TestCase):
             "NavMerchandise: () => <ClipboardList size={20} strokeWidth={1.5} />",
             "NavWork: () => <Columns3 size={20} strokeWidth={1.5} />",
             "NavProduction: () => <LayoutGrid size={20} strokeWidth={1.5} />",
-            "NavJobs: () => <Layers size={20} strokeWidth={1.5} />",
             "NavProducts: () => <Tag size={20} strokeWidth={1.5} />",
         ]:
             self.assertIn(text, self.source)
@@ -132,7 +128,6 @@ class FrontendRoutingTests(unittest.TestCase):
             "{ path: '/shipments', label: 'Shipments', icon: <Icon.NavShipments /> }",
             "{ path: '/merchandise', label: 'Merchandise', icon: <Icon.NavMerchandise /> }",
             "{ path: '/planning', label: 'Planning', icon: <Icon.NavWork /> }",
-            "{ path: '/jobs', label: 'Jobs', icon: <Icon.NavJobs /> }",
             "{ path: '/products', label: 'Products', icon: <Icon.NavProducts /> }",
         ]:
             self.assertIn(text, nav_section)
@@ -142,7 +137,6 @@ class FrontendRoutingTests(unittest.TestCase):
             "label: 'Shipments'",
             "label: 'Merchandise'",
             "label: 'Planning'",
-            "label: 'Jobs'",
             "label: 'Products'",
         ]
         positions = [nav_section.index(label) for label in expected_order]
@@ -197,7 +191,6 @@ class FrontendRoutingTests(unittest.TestCase):
             "function MerchandiseReviewV2Page",
             "requiredToShootSummary",
             "PlanningReleaseView",
-            "PlanningListView",
             "MERCHANDISE_PLANNING_BOARD",
             "evaluateMerchandiseReviewAssignment",
             "PlanningWorkspaceDrawer",
@@ -210,7 +203,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "PM_QUEUE_COLUMNS",
             "label: 'New Merch'",
             "label: 'Needs More Information'",
-            "Confirm Merch",
+            "'Move to Awaiting Photo Release'",
             "ConversationPanel",
             "NewReviewSupportPanel",
             "api.listMerchandiseReviewEntries()",
@@ -233,11 +226,14 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("api.createMerchandiseComment", api_source)
         self.assertIn(".work-board-page", self.styles)
         self.assertIn(".planning-release-view", self.styles)
-        self.assertIn(".planning-list-view", self.styles)
         self.assertNotIn(".kanban-card-action", self.styles)
         self.assertIn(".planning-comment-signal", self.styles)
         self.assertIn(".planning-comment-signal.has-recent", self.styles)
-        self.assertIn("background: rgba(255, 251, 235, 0.92);", self.styles)
+        # Comment state is a single hue. The amber "recent" treatment was removed
+        # because it collided with the age chip's amber and made a comment count the
+        # loudest thing on the card.
+        self.assertIn(".planning-comment-signal.has-unread", self.styles)
+        self.assertNotIn("background: rgba(255, 251, 235, 0.92);", self.styles)
         self.assertIn("function CommentCountChip", self.source)
         self.assertIn("<CommentCountChip", self.source)
         self.assertIn("<CommentCountChip count={comments.length} className=\"is-support\" />", self.source)
@@ -290,9 +286,13 @@ class FrontendRoutingTests(unittest.TestCase):
             "comment.author?.displayName",
             "commentCount: comments.length",
             "unreadComments",
-            "marks:planning-board-comment-reads",
+            "api.listCommentReads()",
+            "api.markCommentRead(merchandiseId)",
         ]:
             self.assertIn(text, self.source)
+        # Read state is per person, not per browser, so it must not fall back to
+        # localStorage: reading on a laptop has to clear the badge on a phone.
+        self.assertNotIn("marks:planning-board-comment-reads", self.source)
         self.assertNotIn("comment.author?.role", self.source)
         self.assertNotIn("PM_CONVERSATION_STORAGE_KEY", self.source)
         self.assertNotIn("authorName: pmCommentUserDisplayName", self.source)
@@ -307,7 +307,7 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertNotIn('title="Required to Shoot"', modal_section)
         self.assertNotIn("Complete required information", modal_section)
         self.assertIn("latestState.reviewOnly = latestState.productLinked && latestState.deliverables.length === 0", modal_section)
-        self.assertIn("'Confirm Merch'", modal_section)
+        self.assertIn("readyToAdvance ? 'Move to Awaiting Photo Release' : 'Save'", modal_section)
         self.assertNotIn("requiredToShoot-text", self.source)
         self.assertNotIn("new-review-requiredToShoot", self.source)
         self.assertNotIn("<small>{chip.hint}</small>", self.source)
@@ -367,7 +367,7 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("api.deleteShipmentPhoto", (ROOT / "frontend" / "src" / "api.js").read_text())
 
     def test_all_shipments_can_switch_list_date_and_open_for_edit(self):
-        shipments_section = self.source.split("function ShipmentsPage", 1)[1].split("function JobsPage", 1)[0]
+        shipments_section = self.source.split("function ShipmentsPage", 1)[1].split("// ── Products page ──", 1)[0]
         for text in [
             "useState('list'); // 'date' | 'list'",
             "allReceiptsDateScope",
@@ -531,7 +531,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "Product Name on Package",
             "UPC / ID",
             "Conversation",
-            "Activity",
+            "HistoryPanel",
             "Add a comment",
             "finishCurrentVerification",
             "setWorkspaceOpen(false)",
@@ -606,11 +606,11 @@ class FrontendRoutingTests(unittest.TestCase):
         for text in [
             "finishCurrentVerification",
             "finishState.status === 'loading'",
-            "Confirming...",
+            "Saving...",
             "disabled={finishDisabled}",
             "is-${finishState.status}",
             "Accept merchandise",
-            "Confirm Merch",
+            "'Move to Awaiting Photo Release'",
             "collapseWhenDone={false}",
             "window.confirm(THR3D_SHIP_CONFIRMATION_MESSAGE)",
             "thr3d-ship-warning",
@@ -621,7 +621,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "quantity-split-warning",
             "Received quantity cannot be split",
             "splitNeedsMultipleUnits",
-            "Confirm Merch",
+            "readyToAdvance",
             "stageThr3dAllocation",
             "Packaging",
             "readOnly disabled",
@@ -745,7 +745,7 @@ class FrontendRoutingTests(unittest.TestCase):
         planning_source = self.source.split("function MerchandiseReviewV2Page", 1)[1].split("function PlanningThr3dRegressionPage", 1)[0]
         self.assertNotIn("onDrop={event =>", planning_source)
         self.assertIn("function PlanningReleaseView", self.source)
-        self.assertIn("function PlanningListView", self.source)
+        self.assertNotIn("function PlanningListView", self.source)
         self.assertNotIn("function KanbanBoard", self.source)
         self.assertNotIn("function KanbanColumn", self.source)
         self.assertNotIn("KanbanCardComponent", self.source)
@@ -755,7 +755,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "function WaitingInformationWorkspace",
             "function NewReviewModal",
             "ConversationPanel",
-            "recordActivity",
+            "api.listMerchandiseHistory",
             "workspaceOpen && selectedItem",
             "markCommentsRead",
             "addConversationComment",
@@ -1112,7 +1112,7 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("if (records.length === 0 && matchNameReady && !matchIdentifierReady)", self.source)
         self.assertIn("function combineIdentifierAndNameMatches(identifierRecords = [], nameRecords = [], identifierQuery = '')", self.source)
         self.assertIn("matchBasis: itemIdentifierBasis(item, 'both')", self.source)
-        self.assertIn("No product matches both fields", self.source)
+        self.assertIn("No match on both fields", self.source)
         self.assertIn("Check the package name and UPC / ID. Clear one field to search by the other.", self.source)
         self.assertIn("matchBasis: 'name'", self.source)
         self.assertIn("Matches typed name + UPC prefix", self.source)
@@ -1127,22 +1127,27 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("itemExpectedIdentifierText(item)", self.source)
         self.assertIn("Matched Product", self.source)
         self.assertIn("Qty received", self.source)
-        self.assertIn("Use Product {itemMatchMethod(item)}", self.source)
-        self.assertIn("Use Product Name", self.source)
+        self.assertNotIn("Use Product {itemMatchMethod(item)}", self.source)
+        self.assertNotIn("Use Product Name", self.source)
         self.assertIn("const matchChoiceProductIdentifier = matchChoice.status === 'matched' && matchChoice.item ? itemMatchIdentifierValue(matchChoice.item) : '';", self.source)
         self.assertIn("const matchChoiceProductTitle = matchChoice.status === 'matched' && matchChoice.item ? itemMatchTitle(matchChoice.item) : '';", self.source)
-        self.assertIn("Observed ${DOMAIN_TERMS.packageName} differs from the Product name.", self.source)
         self.assertIn("matchValuesConflict(matchNameQuery, matchChoiceProductTitle)", self.source)
         self.assertIn("const matchedProduct = saved.matchedProduct || saved.linkedProduct || {}", self.source)
         self.assertIn("name: matchedProduct.name || matchedProduct.product || saved.productName || saved.name || 'Matched Product'", self.source)
         self.assertIn("identifier: matchedProduct.identifier || matchedProduct.primaryMatchKey || matchedProduct.productId || matchedProduct.gtinUpc || receivingEntrySku(saved)", self.source)
-        self.assertIn("Observed ${DOMAIN_TERMS.merchandiseIdentifier} differs from the Product ${itemMatchMethod(matchChoice.item)}.", self.source)
         self.assertIn("matchValuesConflict(matchIdentifierQuery, matchChoiceProductIdentifier)", self.source)
+        # A mismatch is not a problem to fix: production uses the Product either way.
+        # The only thing it may mean is that the wrong Product was linked.
+        self.assertNotIn("Check this is the right Product.", self.source)
+        self.assertNotIn("nameWarningText", self.source)
+        # Nothing found is the case that needs a decision, so it names the situation.
+        self.assertIn("The client may not have listed it yet.", self.source)
+        self.assertIn("Not enough detail from the package to search.", self.source)
         self.assertIn("function itemMatchConfidenceBadge(item, identifierQuery = '')", self.source)
         self.assertIn("UPC prefix", self.source)
         self.assertIn("const nameOnlyMatchSuggestions = itemMatches.length > 0 && itemMatches.every(item => item.matchBasis === 'name')", self.source)
         self.assertIn("const combinedPartialMatchSuggestions = itemMatches.length > 0 && itemMatches.every(item => String(item.matchBasis || '').startsWith('both-'))", self.source)
-        self.assertIn("(nameOnlyMatchSuggestions || combinedPartialMatchSuggestions) ? 'Possible products' : 'Suggested products'", self.source)
+        self.assertIn("(nameOnlyMatchSuggestions || combinedPartialMatchSuggestions) ? 'Possible matches' : 'Suggested matches'", self.source)
         self.assertIn("These match the typed name and UPC / ID prefix. Select the correct Product, then use Product values only when they should replace the observed fields.", self.source)
         self.assertIn("Enter or scan UPC / ID to confirm the exact Product.", self.source)
         self.assertIn("confidenceBadge && <em>{confidenceBadge}</em>", self.source)
@@ -1154,6 +1159,155 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn(".receiving-match-correction-actions", self.styles)
         self.assertNotIn("<em>Best</em>", self.source)
 
+    def test_image_counts_are_ecomm_only(self):
+        # A Packaging release shoots the package itself, so bundle and total
+        # image counts are neither asked for, stated, nor recorded.
+        self.assertIn("const showImageCounts = selectedDeliverables.includes('Ecomm');", self.source)
+        self.assertIn("{showImageCounts && (", self.source)
+        self.assertIn("...(showImageCounts && String(form.imagesPerBundle || '').trim()", self.source)
+        self.assertIn("...(showImageCounts && String(form.totalImages || '').trim()", self.source)
+        # A stored 9 on a packaging release would be a claim nobody made.
+        self.assertIn("imagesPerBundle: !showImageCounts || form.imagesPerBundle === '' ? null", self.source)
+        self.assertIn("totalImages: !showImageCounts || form.totalImages === '' ? null", self.source)
+
+    def test_photo_release_defaults_walnut_scope_to_the_deliverable(self):
+        # One sensible scope per deliverable, so the release does not make the
+        # user pick the only valid value every time.
+        self.assertIn("const ECOMM_WALNUT_SCOPE = 'Full set renders - WALNUT (PHOTO)'", self.source)
+        self.assertIn("const PACKAGING_WALNUT_SCOPE = 'Packaging Shots'", self.source)
+        self.assertIn("const DEFAULT_WALNUT_SCOPE_SUGGESTIONS = [ECOMM_WALNUT_SCOPE, PACKAGING_WALNUT_SCOPE]", self.source)
+        self.assertIn("return deliverableType === 'Packaging' ? PACKAGING_WALNUT_SCOPE : ECOMM_WALNUT_SCOPE;", self.source)
+        self.assertIn("walnutScope: activation?.walnutScope || defaultWalnutScope(deliverables[0])", self.source)
+
+    def test_release_email_carries_the_preview_styling(self):
+        # Mail clients strip stylesheets, so the preview's CSS is inlined. This
+        # is the email the user approved, not a plainer relative of it.
+        self.assertIn("const VALUE = 'color:#166534;';", self.source)
+        self.assertIn("background:#fffec7;", self.source)
+        self.assertIn("font-weight:900;text-transform:uppercase;", self.source)
+        self.assertIn('style="color:#2563eb;text-decoration:underline;"', self.source)
+        # The same values the preview uses on screen.
+        self.assertIn("color: #166534;", self.styles)
+        self.assertIn("background: #fffec7;", self.styles)
+
+    def test_email_can_be_copied_from_the_preview_itself(self):
+        # The post-release bar is transient and easy to miss, so the copy action
+        # also lives on the preview, where the user already is.
+        self.assertIn("async function copyPhotoReleaseEmail(email = {})", self.source)
+        self.assertIn("const releaseEmail = buildPhotoReleaseEmail({", self.source)
+        self.assertIn("emailSubject: releaseEmail.subject", self.source)
+        self.assertIn("setEmailCopied(await copyPhotoReleaseEmail(releaseEmail))", self.source)
+        self.assertIn("Copy email", self.source)
+        self.assertIn(".activation-email-preview-actions", self.styles)
+        # One routine, so the bar and the preview button cannot copy different things.
+        self.assertIn("setCopied(await copyPhotoReleaseEmail(email));", self.source)
+
+    def test_subject_rides_on_the_message_not_in_the_copied_body(self):
+        # The blank message carries the subject; the clipboard carries the body.
+        # A subject pasted into the body would land inside the message.
+        self.assertIn("function photoReleaseMailtoUrl({ subject = '', recipients = [] } = {})", self.source)
+        self.assertIn("if (subject) params.set('subject', subject);", self.source)
+        self.assertNotIn("params.set('body'", self.source)
+        self.assertNotIn("photoReleaseSubjectHtml", self.source)
+        self.assertIn("const html = email.html || '';", self.source)
+        self.assertIn("Copy the email and paste it into a new message.", self.source)
+
+    def test_unsent_release_hands_the_email_to_the_user(self):
+        # SGS will not grant tenant-wide Mail.Send, so an unsent release must
+        # still be sendable by hand rather than lost.
+        self.assertIn("function PhotoReleaseEmailHandoff({ email, onDismiss })", self.source)
+        self.assertIn("function photoReleaseEmailText(html)", self.source)
+        # text/html on the clipboard is what preserves the SKU table on paste.
+        self.assertIn("'text/html': new Blob([html], { type: 'text/html' })", self.source)
+        self.assertIn('href={photoReleaseMailtoUrl(email)}>Open blank message</a>', self.source)
+        self.assertIn(
+            "setPendingReleaseEmail(result.emailSent || result.keepOpen ? null : (result.email || null))",
+            self.source,
+        )
+        self.assertIn(".photo-release-handoff", self.styles)
+
+    def test_release_email_is_built_from_the_preview_inputs(self):
+        # One builder, fed the same arrays the preview renders, so the sent mail
+        # cannot drift from what the user approved on screen.
+        self.assertIn("function buildPhotoReleaseEmail({", self.source)
+        self.assertIn("const releaseEmail = buildPhotoReleaseEmail({", self.source)
+        self.assertIn("emailSubject: releaseEmail.subject", self.source)
+        self.assertIn("emailBodyHtml: releaseEmail.html", self.source)
+        # The summary lines are one list, rendered by both.
+        self.assertIn("const previewLines = [", self.source)
+        self.assertIn("{previewLines.map((line, index) => (", self.source)
+        # Values are escaped: descriptions and paths are user text.
+        self.assertIn("function escapeEmailHtml(value)", self.source)
+        self.assertIn("const text = value => escapeEmailHtml(String(value ?? '').trim());", self.source)
+        # A blank bullet in a vendor's inbox reads as a mistake.
+        self.assertIn("const pathSection = (title, field, prefix) => {", self.source)
+        self.assertIn(".filter(entry => entry.href);", self.source)
+        self.assertIn("if (!entries.length) return;", self.source)
+        # The outcome is reported either way.
+        self.assertIn("emailSent: Boolean(moved.emailSent)", self.source)
+        self.assertIn("`${released} Email sent.`", self.source)
+
+    def test_modal_stays_open_when_the_user_must_send_the_email(self):
+        # Releasing closes the modal only when nothing is left to do. If the mail
+        # did not send, the send is the user's, so the modal keeps it in front of
+        # them instead of pushing it to a bar on the board behind.
+        self.assertIn("const keepOpen = !moved.emailSent && Boolean(moved.email);", self.source)
+        self.assertIn("if (keepOpen) setReleased({ email: moved.email, movedCount: moved.movedCount });", self.source)
+        self.assertIn("if (!result.keepOpen) closeActivationModal();", self.source)
+        self.assertIn("activation-modal-released", self.source)
+        self.assertIn(".activation-modal-released", self.styles)
+        self.assertIn("onClick={onClose}>Done</button>", self.source)
+
+    def test_released_cards_carry_a_standing_mark(self):
+        # The transient badge flash only says it happened just now. A released
+        # card stays on the board, so it needs a mark that stays with it.
+        self.assertIn("planning-release-released-mark", self.source)
+        self.assertIn("title={`Released to photo${item.record?.releasedAt", self.source)
+        self.assertIn(".planning-release-released-mark", self.styles)
+        # Shares the badge line instead of claiming a grid row of its own.
+        self.assertIn('<span className="planning-release-badge-row">', self.source)
+        self.assertIn(".planning-release-badge-row", self.styles)
+
+    def test_release_board_buttons_use_the_site_palette(self):
+        # A neutral secondary beside the black primary is the site's own pairing.
+        self.assertIn('<button type="button" className="btn" onClick={() => setActivationListOpen(true)}>', self.source)
+        self.assertNotIn("btn btn-blue-outline", self.source)
+        # The card highlight covers the checkbox lane, not just the open button.
+        self.assertIn('.planning-release-card.is-selectable:has(.planning-release-card-open:hover)', self.styles)
+        self.assertNotIn(".planning-release-card.is-selectable .planning-release-card-open:hover", self.styles)
+
+    def test_release_marks_the_badge_briefly(self):
+        # The card stays on the board after release, so the badge confirms it
+        # for a few seconds instead of the board looking unchanged.
+        self.assertIn("movedIds: (moved.moved || []).map(entry => entry.id).filter(Boolean)", self.source)
+        self.assertIn("setJustReleasedIds(result.movedIds || [])", self.source)
+        self.assertIn("const timer = window.setTimeout(() => setJustReleasedIds([]), 6000);", self.source)
+        self.assertIn("justReleased={justReleasedSet.has(item.merchandiseId)}", self.source)
+        self.assertIn(".deliverable-badge.is-just-released", self.styles)
+        self.assertIn("@keyframes deliverable-badge-released", self.styles)
+        self.assertIn("prefers-reduced-motion: reduce", self.styles)
+        # The modal closes on success; the mark is the only lingering signal.
+        self.assertIn("closeActivationModal();", self.source)
+
+    def test_photo_release_prefills_project_name_from_the_product(self):
+        # Prefilled only when the whole release agrees, since one release can
+        # bundle merchandise from more than one project.
+        self.assertIn("projectName: item.record?.linkedItem?.projectName || ''", self.source)
+        self.assertIn("return names.size === 1 ? [...names][0] : '';", self.source)
+        self.assertIn(
+            "name: activation?.name || projectNameForSelection(initialRows.map(row => row.merchandiseId))",
+            self.source,
+        )
+
+    def test_photo_release_reads_file_name_description_through_shared_resolver(self):
+        # Planning and the release modal must agree about what is missing: the
+        # value usually lives in Product Description, not Reference Data.
+        self.assertIn(
+            "fileNameDescription: photoProductionProductValue(item.record?.linkedItem || {}, 'fileNameDescription')",
+            self.source,
+        )
+        self.assertNotIn("referenceData?.['File Name Description']", self.source)
+
     def test_planning_modal_product_search_uses_shipment_matching_model(self):
         planning_product_step = self.source.split("function NewReviewProductIdentification", 1)[1]
         self.assertIn("const [matchNameQuery, setMatchNameQuery]", planning_product_step)
@@ -1163,20 +1317,23 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("limit: 50", planning_product_step)
         self.assertIn("records = (data.records ?? []).map(match => ({ ...match, matchBasis: itemIdentifierBasis(match) }))", planning_product_step)
         self.assertIn("records = (data.records ?? []).map(match => ({ ...match, matchBasis: 'name' }))", planning_product_step)
-        self.assertIn("No product matches both fields", planning_product_step)
+        self.assertIn("No match on both fields", planning_product_step)
         self.assertIn("These match the typed name and UPC / ID prefix. Select the correct Product, then use Product values only when they should replace the observed fields.", self.source)
         self.assertIn("Enter or scan UPC / ID to confirm the exact Product.", self.source)
         self.assertIn("itemMatchedByText(item)", self.source)
         self.assertIn("itemExpectedIdentifierText(item)", self.source)
         self.assertIn("itemMatchConfidenceBadge(item, identifierQuery)", self.source)
-        self.assertIn("useProductMerchValue('skuId', productIdentifier)", planning_product_step)
-        self.assertIn("useProductMerchValue('productName', productTitle)", planning_product_step)
-        self.assertIn("placeholder=\"Name printed on package\"", planning_product_step)
-        self.assertIn("placeholder=\"Scan or enter UPC / ID\"", planning_product_step)
+        self.assertNotIn("useProductMerchValue", planning_product_step)
+        # Search inputs, not a restatement of the package: step 1 owns the recorded
+        # values and these are edited freely to find a Product.
+        self.assertIn("placeholder=\"Type part of the product name\"", planning_product_step)
+        self.assertIn("placeholder=\"Scan or type a UPC / ID\"", planning_product_step)
         self.assertIn("className=\"recv-field recv-field-product\"", planning_product_step)
         self.assertIn("className=\"recv-field\"", planning_product_step)
-        package_name_index = planning_product_step.index("<label>{DOMAIN_TERMS.packageName}</label>")
-        identifier_index = planning_product_step.index("<label>{DOMAIN_TERMS.merchandiseIdentifier}</label>", package_name_index)
+        # Literal labels, matching the same two facts in step 1. Shipments keeps the
+        # DOMAIN_TERMS receiver-facing wording.
+        package_name_index = planning_product_step.index("<label>Search by name</label>")
+        identifier_index = planning_product_step.index("<label>Search by UPC / ID</label>", package_name_index)
         suggestions_index = planning_product_step.index("<ReceivingMatchSuggestions")
         self.assertLess(package_name_index, identifier_index)
         self.assertLess(identifier_index, suggestions_index)
@@ -1189,7 +1346,7 @@ class FrontendRoutingTests(unittest.TestCase):
     def test_shipment_capture_shows_name_before_identifier_but_matches_after_identifier(self):
         receiving_form = self.source.split("function ShipmentsPage()", 1)[1].split("function ProductsPage", 1)[0]
         package_name_index = receiving_form.index("<label>{DOMAIN_TERMS.packageName}</label>")
-        identifier_index = receiving_form.index("<label>{DOMAIN_TERMS.merchandiseIdentifier}</label>", package_name_index)
+        identifier_index = receiving_form.index("<label>{DOMAIN_TERMS.merchandiseIdentifier} on Package</label>", package_name_index)
         suggestions_index = receiving_form.index("className=\"receiving-match-field\"")
         self.assertLess(package_name_index, identifier_index)
         self.assertLess(identifier_index, suggestions_index)
@@ -1249,9 +1406,9 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("item.path === '/shipments'", self.source)
 
     def test_role_navigation_uses_canonical_paths(self):
-        self.assertIn("Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/products', '/jobs']", self.source)
+        self.assertIn("Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/products']", self.source)
         self.assertIn("Receiver:     ['/shipments', '/merchandise']", self.source)
-        self.assertIn("PM:           ['/dashboard', '/merchandise', '/planning', '/products', '/jobs']", self.source)
+        self.assertIn("PM:           ['/dashboard', '/merchandise', '/planning', '/products']", self.source)
 
     def test_merchandise_inventory_page_has_required_filters(self):
         for text in [
@@ -1415,7 +1572,6 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("pad(now.getMinutes())", self.table_export)
         for filename in [
             "todayExportFilename('merchandise-inventory')",
-            "todayExportFilename('jobs')",
             "todayExportFilename('products')",
             "todayExportFilename('import-history')",
             "todayExportFilename('client-requirements')",
@@ -1456,12 +1612,9 @@ class FrontendRoutingTests(unittest.TestCase):
 
     def test_planning_views_freeze_while_modal_is_open(self):
         self.assertIn("function PlanningReleaseView({", self.source)
-        self.assertIn("function PlanningListView({ columns, itemsByColumn, selectedId, onSelect, disabled = false, showNewCardClient = true })", self.source)
         self.assertIn("className={`planning-release-view ${disabled ? 'is-frozen' : ''}`}", self.source)
-        self.assertIn("className={`planning-list-view ${disabled ? 'is-frozen' : ''}`}", self.source)
         self.assertIn("disabled={workspaceOpen}", self.source)
         self.assertIn(".planning-release-view.is-frozen", self.styles)
-        self.assertIn(".planning-list-view.is-frozen", self.styles)
         self.assertIn("pointer-events: none", self.styles)
 
     def test_planning_card_lookup_returns_current_queue_name(self):

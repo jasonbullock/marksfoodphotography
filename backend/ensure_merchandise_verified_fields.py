@@ -6,7 +6,7 @@ from config import Config
 from airtable_schema import CHECKBOX_OPTIONS, create_field, field_by_name, get_tables, load_env, table_by_name
 
 
-def verified_fields(users_table):
+def verified_fields():
     return [
         {
             "name": Config.F_RECEIPT_ENTRY_MERCH_VERIFIED,
@@ -19,15 +19,14 @@ def verified_fields(users_table):
         },
         {
             "name": Config.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY,
-            "type": "multipleRecordLinks",
-            "options": {"linkedTableId": users_table["id"]},
+            "type": "singleLineText",
         },
     ]
 
 
-def ensure_verified_fields(merchandise_table, users_table, *, dry_run=False):
+def ensure_verified_fields(merchandise_table, *, dry_run=False):
     results = []
-    for field in verified_fields(users_table):
+    for field in verified_fields():
         existing = field_by_name(merchandise_table, field["name"])
         if existing:
             results.append({
@@ -56,12 +55,9 @@ def run(*, dry_run=False):
         raise SystemExit("AIRTABLE_API_KEY and AIRTABLE_BASE_ID are required.")
     tables = get_tables()
     merchandise = table_by_name(tables, Config.MERCHANDISE_TABLE)
-    users = table_by_name(tables, Config.USERS_TABLE)
     if not merchandise:
         raise SystemExit(f"{Config.MERCHANDISE_TABLE} table is required.")
-    if not users:
-        raise SystemExit(f"{Config.USERS_TABLE} table is required for Merchandise Verified By.")
-    fields = ensure_verified_fields(merchandise, users, dry_run=dry_run)
+    fields = ensure_verified_fields(merchandise, dry_run=dry_run)
     return {
         "dryRun": dry_run,
         "table": Config.MERCHANDISE_TABLE,

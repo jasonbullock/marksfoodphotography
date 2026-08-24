@@ -1,8 +1,11 @@
 import csv
 import copy
+import time
 import hashlib
 import hmac
 import io
+import mailer
+import structure_form
 import json
 import os
 import random
@@ -30,6 +33,19 @@ from receiving_photo_storage import (
 api = Blueprint("api", __name__)
 
 _CREATIVE_FORCE_LAST_WEBHOOK = None
+# A reset in Creative Force fires one event per downstream step, so a single action
+# arrives as a burst. Keeping only the last one made the card's step effectively
+# arbitrary and left nothing to diagnose with.
+_CREATIVE_FORCE_RECENT_WEBHOOKS = []
+CREATIVE_FORCE_RECENT_LIMIT = 40
+
+
+def _record_creative_force_webhook(entry):
+    global _CREATIVE_FORCE_LAST_WEBHOOK
+    _CREATIVE_FORCE_LAST_WEBHOOK = entry
+    _CREATIVE_FORCE_RECENT_WEBHOOKS.insert(0, entry)
+    del _CREATIVE_FORCE_RECENT_WEBHOOKS[CREATIVE_FORCE_RECENT_LIMIT:]
+    return entry
 
 C = Config  # shorthand
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads" / "receiving"
@@ -125,6 +141,19 @@ def _current_user():
 def _current_user_id():
     user = _session_user()
     return user.get("id") if user else None
+
+
+def _current_user_display_name():
+    """Who is acting, as plain text.
+
+    "Merchandise Verified By" is a text field, not a link to Users: verification
+    is a stamp on the merchandise, and linking would put a Merchandise back-link
+    on every user record for no benefit.
+    """
+    user = _session_user()
+    if not user:
+        return ""
+    return user.get("displayName") or user.get("name") or ""
 
 
 def _permission_context():
@@ -223,8 +252,6 @@ def _record_client_ids(table, record_id):
     except requests.HTTPError:
         return []
     fields = record.get("fields", {})
-    if table == C.JOBS_TABLE:
-        return fields.get(C.F_JOB_CLIENT, []) or []
     if table == C.PRODUCTS_TABLE:
         return fields.get(C.F_ITEM_CLIENT, []) or []
     if table == C.SHIPMENTS_TABLE:
@@ -232,8 +259,6 @@ def _record_client_ids(table, record_id):
     return []
 
 
-def _job_client_ids(job_id):
-    return _record_client_ids(C.JOBS_TABLE, job_id)
 
 
 def _item_client_ids(item_id):
@@ -245,8 +270,6 @@ def _client_ids_for_issue(record):
     client_ids = set()
     for item_id in fields.get(C.F_ISSUE_ITEM, []) or []:
         client_ids.update(_item_client_ids(item_id))
-    for job_id in fields.get(C.F_ISSUE_JOB, []) or []:
-        client_ids.update(_job_client_ids(job_id))
     return list(client_ids)
 
 
@@ -255,8 +278,6 @@ def _client_ids_for_history(record):
     client_ids = set()
     for item_id in fields.get(C.F_HISTORY_ITEM, []) or []:
         client_ids.update(_item_client_ids(item_id))
-    for job_id in fields.get(C.F_HISTORY_JOB, []) or []:
-        client_ids.update(_job_client_ids(job_id))
     return list(client_ids)
 
 
@@ -290,11 +311,9 @@ def _linked_location_names(ids):
 
 def _history_signature(fields):
     parts = [
-        fields.get(C.F_HISTORY_TYPE, ""),
         fields.get(C.F_HISTORY_EVENT, ""),
         ",".join(fields.get(C.F_HISTORY_ITEM, []) or []),
-        ",".join(fields.get(C.F_HISTORY_JOB, []) or []),
-        fields.get(C.F_HISTORY_FIELD, ""),
+        ",".join(fields.get(C.F_HISTORY_MERCHANDISE, []) or []),
         fields.get(C.F_HISTORY_FROM, ""),
         fields.get(C.F_HISTORY_TO, ""),
     ]
@@ -323,9 +342,7 @@ def _history_exists(fields):
         existing_fields = {
             C.F_HISTORY_EVENT: existing.get(C.F_HISTORY_EVENT, ""),
             C.F_HISTORY_ITEM: existing.get(C.F_HISTORY_ITEM, []),
-            C.F_HISTORY_JOB: existing.get(C.F_HISTORY_JOB, []),
-            C.F_HISTORY_TYPE: existing.get(C.F_HISTORY_TYPE, ""),
-            C.F_HISTORY_FIELD: existing.get(C.F_HISTORY_FIELD, ""),
+            C.F_HISTORY_MERCHANDISE: existing.get(C.F_HISTORY_MERCHANDISE, []),
             C.F_HISTORY_FROM: existing.get(C.F_HISTORY_FROM, ""),
             C.F_HISTORY_TO: existing.get(C.F_HISTORY_TO, ""),
         }
@@ -334,26 +351,21 @@ def _history_exists(fields):
     return False
 
 
-def _create_history_event(event, event_type, *, item_ids=None, job_ids=None, user_ids=None, field=None, from_value=None, to_value=None, details=None):
+def _create_history_event(event, *, item_ids=None, user_ids=None, merchandise_ids=None, from_value=None, to_value=None):
     fields = {
         C.F_HISTORY_EVENT: event,
-        C.F_HISTORY_TYPE: event_type,
         C.F_HISTORY_DATE: _now_iso(),
     }
     if item_ids:
         fields[C.F_HISTORY_ITEM] = _as_list(item_ids)
-    if job_ids:
-        fields[C.F_HISTORY_JOB] = _as_list(job_ids)
+    if merchandise_ids:
+        fields[C.F_HISTORY_MERCHANDISE] = _as_list(merchandise_ids)
     if user_ids:
         fields[C.F_HISTORY_USER] = _as_list(user_ids)
-    if field:
-        fields[C.F_HISTORY_FIELD] = field
     if from_value not in (None, ""):
         fields[C.F_HISTORY_FROM] = str(from_value)
     if to_value not in (None, ""):
         fields[C.F_HISTORY_TO] = str(to_value)
-    if details:
-        fields[C.F_HISTORY_DETAILS] = details
 
     if _history_exists(fields):
         return None
@@ -641,14 +653,14 @@ def _shape_client(r):
         "id": r["id"],
         "name": name,
         "codeType": f.get(C.F_CLIENT_IDENTIFIER_TYPE, ""),
-        "identifierLabel": f.get(C.F_CLIENT_IDENTIFIER_LABEL, "") or "Primary Match Key",
-        "primaryMatchKeyLabel": f.get(C.F_CLIENT_IDENTIFIER_LABEL, "") or "Primary Match Key",
+        "identifierLabel": f.get(C.F_CLIENT_IDENTIFIER_LABEL, "") or "UPC / Product ID",
+        "primaryMatchKeyLabel": f.get(C.F_CLIENT_IDENTIFIER_LABEL, "") or "UPC / Product ID",
         "requiredToShoot": f.get(C.F_CLIENT_REQUIRED_TO_SHOOT, []) or ["Identifier"],
         "artworkRequirement": f.get(C.F_CLIENT_ARTWORK_REQUIREMENT, "") or "Optional",
         "merchandiseRequired": f.get(C.F_CLIENT_MERCHANDISE_REQUIRED, True),
+        "photoReleaseRecipients": f.get(C.F_CLIENT_PHOTO_RELEASE_RECIPIENTS, ""),
         "holdDays": f.get(C.F_CLIENT_HOLD_DAYS),
         "dispoDays": f.get(C.F_CLIENT_DISPO_DAYS),
-        "jobPrefix": f.get(C.F_CLIENT_JOB_PREFIX, ""),
         "active": f.get(C.F_CLIENT_ACTIVE, False),
         "productImportProfiles": product_import_profiles,
         "productImportProfilesRaw": f.get(C.F_CLIENT_PRODUCT_IMPORT_PROFILES, "") or "",
@@ -890,7 +902,6 @@ def _client_fields_from_body(body, *, creating=False):
         ("identifierLabel", C.F_CLIENT_IDENTIFIER_LABEL),
         ("primaryMatchKeyLabel", C.F_CLIENT_IDENTIFIER_LABEL),
         ("artworkRequirement", C.F_CLIENT_ARTWORK_REQUIREMENT),
-        ("jobPrefix", C.F_CLIENT_JOB_PREFIX),
     ]:
         if key in body and not (creating and const == C.F_CLIENT_NAME):
             fields[const] = (body.get(key) or "").strip()
@@ -962,6 +973,8 @@ def _shape_activation(r):
         "linkedMerchandiseIds": f.get(C.F_ACTIVATION_MATCHED_MERCHANDISE, []) or [],
         "matchedMerchandiseIds": f.get(C.F_ACTIVATION_MATCHED_MERCHANDISE, []) or [],
         "notes": f.get(C.F_ACTIVATION_NOTES, ""),
+        "emailSubject": f.get(C.F_ACTIVATION_EMAIL_SUBJECT, ""),
+        "emailBodyHtml": f.get(C.F_ACTIVATION_EMAIL_BODY_HTML, ""),
     }
 
 
@@ -1075,7 +1088,7 @@ def _move_removed_activation_merchandise_to_waiting(merchandise_ids):
         update_fields = {
             C.F_RECEIPT_ENTRY_PLANNING_STATUS: "New",
             C.F_RECEIPT_ENTRY_MERCH_VERIFIED: False,
-            C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY: [],
+            C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY: "",
         }
         if _normalized_merch_status(fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS)) != fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS):
             update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = _normalized_merch_status(fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS))
@@ -1184,11 +1197,19 @@ def move_activation_to_photo(activation_id):
         }
         if not unreleased_siblings:
             update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
+            # This is a release, so it is stamped like one. Without it the board
+            # could not tell a card released last week from one never released.
+            if not fields.get(C.F_RECEIPT_ENTRY_RELEASED):
+                update_fields[C.F_RECEIPT_ENTRY_RELEASED] = True
+                update_fields[C.F_RECEIPT_ENTRY_RELEASED_AT] = _now_iso()
+                releaser_id = _current_user_id()
+                if releaser_id:
+                    update_fields[C.F_RECEIPT_ENTRY_RELEASED_BY] = [releaser_id]
         if _normalized_merch_status(fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS)) != fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS):
             update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = _normalized_merch_status(fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS))
         current_user_id = _current_user_id()
         if current_user_id:
-            update_fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY] = [current_user_id]
+            update_fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY] = _current_user_display_name()
         try:
             updated = _update_receipt_entry_record(merchandise_id, update_fields)
         except requests.HTTPError as exc:
@@ -1242,7 +1263,34 @@ def move_activation_to_photo(activation_id):
         )
     except requests.HTTPError as exc:
         return airtable_err(exc)
-    return jsonify({"activation": _shape_activation(activation), "moved": moved, "movedCount": len(moved)})
+    shaped_activation = _shape_activation(activation)
+    # Sent last, and never fatal: the release is already recorded, so a mail
+    # failure must not leave merchandise stuck out of photo.
+    recipients = mailer.parse_recipients((client or {}).get("photoReleaseRecipients", ""))
+    email_sent, email_detail = False, ""
+    try:
+        email_sent, email_detail = mailer.send_photo_release_email(
+            shaped_activation.get("emailSubject", ""),
+            shaped_activation.get("emailBodyHtml", ""),
+            recipients,
+        )
+    except Exception:  # noqa: BLE001 - reported to the user, never raised
+        current_app.logger.exception("Could not send the photo release email")
+        email_detail = "The release was recorded but the email could not be sent."
+    return jsonify({
+        "activation": shaped_activation,
+        "moved": moved,
+        "movedCount": len(moved),
+        "emailSent": email_sent,
+        "emailDetail": email_detail,
+        # Returned whether or not it sent, so the board can hand an unsent
+        # release to the user's own mail client instead of losing it.
+        "email": {
+            "subject": shaped_activation.get("emailSubject", ""),
+            "html": shaped_activation.get("emailBodyHtml", ""),
+            "recipients": recipients,
+        },
+    })
 
 
 def _save_activation(activation_id=None):
@@ -1290,6 +1338,9 @@ def _save_activation(activation_id=None):
         C.F_ACTIVATION_SKU_DETAILS_JSON: _activation_json_text(sku_details),
         C.F_ACTIVATION_DELIVERABLES: deliverables,
         C.F_ACTIVATION_NOTES: _activation_text(body, "notes"),
+        # Stored as released so the record shows what was actually sent.
+        C.F_ACTIVATION_EMAIL_SUBJECT: _activation_text(body, "emailSubject"),
+        C.F_ACTIVATION_EMAIL_BODY_HTML: _activation_text(body, "emailBodyHtml"),
     }
     activation_date = _activation_text(body, "activationDate")
     if activation_date:
@@ -1338,7 +1389,7 @@ PRODUCTION_LOCK_STATUSES = {"Production", "Complete", "Cancelled"}
 
 
 def _identifier_label(client):
-    return (client or {}).get("identifierLabel") or "Primary Match Key"
+    return (client or {}).get("identifierLabel") or "UPC / Product ID"
 
 
 def _primary_match_key_value(item):
@@ -1524,14 +1575,10 @@ def _import_record_name(filename):
 
 def _import_summary_fields(result, status):
     summary = result.get("summary") or {}
-    jobs_to_create = sum(1 for job in result.get("jobsPreview", []) if not job.get("existingId"))
-    jobs_to_reuse = sum(1 for job in result.get("jobsPreview", []) if job.get("existingId"))
     if status == "Validated":
         return {
             C.F_IMPORT_STATUS: status,
             C.F_IMPORT_ROWS: result.get("totalRows", 0),
-            C.F_IMPORT_JOBS_CREATED: jobs_to_create,
-            C.F_IMPORT_JOBS_REUSED: jobs_to_reuse,
             C.F_IMPORT_ITEMS_CREATED: result.get("itemsToCreate", 0),
             C.F_IMPORT_ITEMS_UPDATED: result.get("itemsToUpdate", 0),
             C.F_IMPORT_ROWS_SKIPPED: sum(1 for row in result.get("rows", []) if row.get("errors")),
@@ -1541,8 +1588,6 @@ def _import_summary_fields(result, status):
     return {
         C.F_IMPORT_STATUS: status,
         C.F_IMPORT_ROWS: result.get("totalRows", 0),
-        C.F_IMPORT_JOBS_CREATED: summary.get("jobsCreated", jobs_to_create),
-        C.F_IMPORT_JOBS_REUSED: summary.get("jobsReused", jobs_to_reuse),
         C.F_IMPORT_ITEMS_CREATED: summary.get("itemsCreated", result.get("itemsToCreate", 0)),
         C.F_IMPORT_ITEMS_UPDATED: summary.get("itemsUpdated", result.get("itemsToUpdate", 0)),
         C.F_IMPORT_ROWS_SKIPPED: summary.get("rowsSkipped", 0),
@@ -1589,6 +1634,139 @@ def _fail_import_record(import_id, client_id, filename, message):
     if client_id and filename:
         return _create_import_record(client_id, filename, "Failed", details=message)
     return None
+
+
+@api.post("/intake/structure-form/preview")
+def structure_form_preview():
+    """Read one or more Structure Forms and return what they propose.
+
+    Preview only: nothing is written. A form describes expected work, not merchandise
+    in hand, so reading one never creates a Product until it is committed.
+    """
+    uploads = request.files.getlist("files") or (
+        [request.files["file"]] if "file" in request.files else []
+    )
+    if not uploads:
+        return err("Upload at least one Structure Form PDF.")
+
+    forms = []
+    for uploaded in uploads:
+        name = uploaded.filename or "form.pdf"
+        if not name.lower().endswith(".pdf"):
+            forms.append({"fileName": name, "error": "Not a PDF."})
+            continue
+        try:
+            fields = structure_form.extract_form_fields(io.BytesIO(uploaded.read()))
+        except ValueError as error:
+            forms.append({"fileName": name, "error": str(error)})
+            continue
+        except Exception:  # noqa: BLE001
+            current_app.logger.exception("Could not read structure form %s", name)
+            forms.append({"fileName": name, "error": "This PDF could not be read."})
+            continue
+        plan = structure_form.parse_structure_form(fields)
+        forms.append({"fileName": name, **plan})
+
+    return jsonify({
+        "forms": forms,
+        "counts": {
+            "forms": len(forms),
+            "unreadable": sum(1 for form in forms if form.get("error")),
+            "products": sum(len(form.get("rows") or []) for form in forms),
+        },
+    })
+
+
+@api.post("/intake/structure-form/commit")
+def structure_form_commit():
+    """Create or update Products from reviewed Structure Form rows.
+
+    Products only. A form says work is expected, not that merchandise has arrived, so
+    nothing here creates Merchandise or a match. When the box turns up, receiving
+    matches against the Products this created.
+
+    Existing Products are matched by UPC and updated rather than duplicated, so
+    re-reading a form is safe.
+    """
+    body = request.get_json(silent=True) or {}
+    client_id = str(body.get("clientId") or "").strip()
+    rows = body.get("rows") or []
+    if not client_id:
+        return err("Choose a Client before creating Products.")
+    if not _client_permitted(client_id):
+        return _forbidden()
+    if not rows:
+        return err("No rows to create.")
+
+    try:
+        existing_by_upc = {}
+        for record in _list_all_records(C.PRODUCTS_TABLE):
+            fields = record.get("fields", {})
+            if client_id not in (fields.get(C.F_ITEM_CLIENT, []) or []):
+                continue
+            upc = str(fields.get(C.F_ITEM_UPC, "") or "").strip()
+            if upc:
+                existing_by_upc[upc] = record
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    created, updated, skipped = [], [], []
+    for row in rows:
+        upc = str(row.get("upc") or "").strip()
+        name = str(row.get("productName") or "").strip()
+        if not upc or not name:
+            skipped.append({"upc": upc, "reason": "A product needs both a name and a UPC."})
+            continue
+
+        patch = {
+            "name": name,
+            "upc": upc,
+            "mboxNumber": str(row.get("mboxNumber") or "").strip(),
+            "wkftJobNumber": str(row.get("wkftJobNumber") or "").strip(),
+            "projectName": str(row.get("projectName") or "").strip(),
+            "studioDestination": str(row.get("studio") or "").strip(),
+            "vendor": str(row.get("supplier") or "").strip(),
+            "ecommPhotoNotes": str(row.get("ecommPhotoNotes") or "").strip(),
+        }
+        request_type = _normalize_product_request_type(row.get("requestType"))
+        if request_type:
+            patch["requestType"] = request_type
+        patch = {key: value for key, value in patch.items() if value}
+
+        record = existing_by_upc.get(upc)
+        try:
+            if record:
+                fields = {}
+                _apply_item_fields(fields, patch)
+                # A Product already known to the source sheet keeps the sheet's
+                # ownership of these fields; the form is only filling a gap.
+                if _source_snapshot_for_topco_product(record):
+                    fields.pop(C.F_ITEM_REQUEST_TYPE, None)
+                saved = airtable.update_record(C.PRODUCTS_TABLE, record["id"], fields,
+                                               by_field_id=False, typecast=True)
+                updated.append({"id": saved["id"], "upc": upc, "name": name})
+            else:
+                fields = {C.F_ITEM_CLIENT: [client_id]}
+                _apply_item_fields(fields, patch)
+                reference = {"_structureForm": {
+                    "fileName": str(row.get("fileName") or ""),
+                    "project": str(row.get("project") or ""),
+                    "importedAt": _now_iso(),
+                }}
+                fields[C.F_ITEM_REFERENCE_DATA] = _reference_data_json(reference)
+                saved = airtable.create_record(C.PRODUCTS_TABLE, fields,
+                                               by_field_id=False, typecast=True)
+                _create_history_event("Item Created", item_ids=[saved["id"]])
+                created.append({"id": saved["id"], "upc": upc, "name": name})
+        except requests.HTTPError as error:
+            return airtable_err(error)
+
+    return jsonify({
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "summary": {"created": len(created), "updated": len(updated), "skipped": len(skipped)},
+    }), 201
 
 
 @api.post("/intake/preview")
@@ -1856,8 +2034,6 @@ def _shape_import_record(record, client_names, user_names):
         "started": fields.get(C.F_IMPORT_STARTED, ""),
         "finished": fields.get(C.F_IMPORT_FINISHED, ""),
         "rows": fields.get(C.F_IMPORT_ROWS, 0),
-        "jobsCreated": fields.get(C.F_IMPORT_JOBS_CREATED, 0),
-        "jobsReused": fields.get(C.F_IMPORT_JOBS_REUSED, 0),
         "itemsCreated": fields.get(C.F_IMPORT_ITEMS_CREATED, 0),
         "itemsUpdated": fields.get(C.F_IMPORT_ITEMS_UPDATED, 0),
         "rowsSkipped": fields.get(C.F_IMPORT_ROWS_SKIPPED, 0),
@@ -2128,9 +2304,6 @@ def _client_name(client_record):
 
 def _intake_destination_field_map():
     return {
-        "Job Name": (C.JOBS_TABLE, C.F_JOB_NAME),
-        "Parent Job Number": (C.JOBS_TABLE, C.F_JOB_PARENT_NUMBER),
-        "Due Date": (C.JOBS_TABLE, C.F_JOB_DUE),
         "Product Name": (C.PRODUCTS_TABLE, C.F_ITEM_NAME),
         "Identifier": (C.PRODUCTS_TABLE, C.F_ITEM_IDENTIFIER),
         "UPC": (C.PRODUCTS_TABLE, C.F_ITEM_UPC),
@@ -2332,18 +2505,6 @@ def _mapping_from_ui_mapping(ui_mapping):
         raise ValueError("Invalid column mapping.")
 
     mapping = {"notes": [], "reference_data": []}
-    single_job_name = str(ui_mapping.get("__singleJobName") or "").strip()
-    if single_job_name:
-        mapping["single_job_name"] = single_job_name
-    existing_job_id = str(ui_mapping.get("__existingJobId") or "").strip()
-    if existing_job_id:
-        mapping["existing_job_id"] = existing_job_id
-        mapping["existing_job_name"] = str(ui_mapping.get("__existingJobName") or "").strip()
-    job_group_field = str(ui_mapping.get("__jobGroupField") or "").strip()
-    if job_group_field:
-        mapping["job_group"] = job_group_field
-    if ui_mapping.get("__noJob"):
-        mapping["no_job"] = True
     target_keys = {
         "Item Name": "item_name",
         "Product Name": "item_name",
@@ -2437,12 +2598,6 @@ def _mapping_from_ui_mapping(ui_mapping):
         if key and key not in mapping:
             mapping[key] = source_name
 
-    required_targets = []
-    if not mapping.get("no_job") and "single_job_name" not in mapping and "existing_job_id" not in mapping and "job_group" not in mapping:
-        required_targets.append("Job")
-    missing = required_targets
-    if missing:
-        raise ValueError(f"Missing required column mapping: {', '.join(missing)}.")
     return mapping
 
 
@@ -2556,13 +2711,6 @@ def _default_item_status(row):
     return "Pending"
 
 
-def _job_name_from_group_value(client_name, group_value):
-    value = str(group_value or "").strip()
-    if not value:
-        return ""
-    letters = re.sub(r"[^A-Za-z]+", "", value)
-    looks_like_code = len(letters) < 3 or bool(re.fullmatch(r"[A-Z]{0,4}[-_ ]?\d+[A-Z0-9-_. ]*", value, re.I))
-    return f"{client_name} {value}" if looks_like_code else value
 
 
 def _validate_identifier(identifier, code_type, label="Primary Match Key"):
@@ -2577,29 +2725,8 @@ def _normalized_required_fields(client_config):
     }
 
 
-def _existing_jobs_by_lookup(client_id):
-    data = airtable.list_records(C.JOBS_TABLE, by_field_id=False)
-    jobs = {}
-    for record in _filter_by_client_field(data.get("records", []), C.F_JOB_CLIENT):
-        fields = record.get("fields", {})
-        if client_id in (fields.get(C.F_JOB_CLIENT, []) or []):
-            parent_number = fields.get(C.F_JOB_PARENT_NUMBER, "")
-            name = fields.get(C.F_JOB_NAME, "")
-            if parent_number:
-                jobs[f"parent:{parent_number}"] = record
-            if name:
-                jobs[f"name:{name}"] = record
-    return jobs
 
 
-def _existing_job_for_import(existing_jobs, group_key, job_name, parent_number=""):
-    if parent_number and f"parent:{parent_number}" in existing_jobs:
-        return existing_jobs[f"parent:{parent_number}"]
-    if job_name and f"name:{job_name}" in existing_jobs:
-        return existing_jobs[f"name:{job_name}"]
-    if group_key and f"parent:{group_key}" in existing_jobs:
-        return existing_jobs[f"parent:{group_key}"]
-    return {}
 
 
 def _existing_items_by_identifier(client_id):
@@ -2626,18 +2753,13 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
     mapping = mapping or _mapping_for_client(client_name)
     headers = parsed.get("columnHeaders", [])
     rows = [_row_dict(headers, values) for values in parsed.get("rows", [])]
-    existing_jobs = _existing_jobs_by_lookup(client_id)
     existing_items = _existing_items_by_identifier(client_id)
     seen_ids = {}
     row_results = []
-    jobs = {}
     items_to_create = 0
     items_to_update = 0
     warning_count = 0
     error_count = 0
-    single_job_name = str(mapping.get("single_job_name") or "").strip()
-    existing_job_id = str(mapping.get("existing_job_id") or "").strip()
-    existing_job_name = str(mapping.get("existing_job_name") or "").strip()
 
     try:
         source_first_row_number = int(parsed.get("headerRow") or 1) + 1
@@ -2646,7 +2768,6 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
 
     for index, row in enumerate(rows, start=2):
         source_row_number = source_first_row_number + index - 2
-        ext_id = "" if mapping.get("no_job") else existing_job_id or single_job_name or _mapped_value(row, mapping, "job_group") or _mapped_value(row, mapping, "ext_id")
         identifier = _mapped_value(row, mapping, "id") or _mapped_value(row, mapping, "upc")
         upc = _mapped_value(row, mapping, "upc") or identifier
         cvid = _mapped_value(row, mapping, "cvid")
@@ -2664,13 +2785,10 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
         product_source = _source_value(row, mapping.get("product"))
         item_job_number = _normalize_item_job_number(_mapped_value(row, mapping, "item_job_number"))
         description = _normalize_description(_mapped_value(row, mapping, "description"))
-        parent_job_number = _normalize_item_job_number(_mapped_value(row, mapping, "parent_job_number"))
         brand = _mapped_value(row, mapping, "brand")
         category = _mapped_value(row, mapping, "category")
         master_or_variant = _normalize_master_or_variant(_mapped_value(row, mapping, "master_or_variant"))
         pickup_job_number = _normalize_item_job_number(_mapped_value(row, mapping, "pickup_job_number"))
-        job_name_text = existing_job_name or single_job_name or _mapped_value(row, mapping, "job_name")
-        job_due = _mapped_value(row, mapping, "due")
         notes = _mapped_notes(row, mapping)
         reference_data = _mapped_reference_data(row, mapping, headers)
         source_snapshot = None
@@ -2688,8 +2806,6 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
         problems = []
         warnings = []
 
-        if not ext_id and not mapping.get("no_job"):
-            problems.append("Missing Job")
         if identifier:
             validation_error = _validate_identifier(identifier, code_type, identifier_label)
             if validation_error:
@@ -2703,19 +2819,6 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
         if "Brand" in required_photo_fields and not brand:
             problems.append("Missing Brand")
 
-        if ext_id:
-            resolved_job_name = job_name_text or _job_name_from_group_value(client_name, ext_id)
-            existing_job = {"id": existing_job_id} if existing_job_id else _existing_job_for_import(existing_jobs, ext_id, resolved_job_name, parent_job_number)
-            job = jobs.setdefault(ext_id, {
-                "extId": ext_id,
-                "parentJobNumber": parent_job_number,
-                "jobName": resolved_job_name,
-                "due": job_due,
-                "existingId": existing_job.get("id"),
-                "rowCount": 0,
-            })
-            job["rowCount"] += 1
-
         existing_item = existing_items.get(identifier) if identifier else None
         action = "skip" if problems else ("update" if existing_item else "create")
         if action == "create":
@@ -2727,9 +2830,6 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
         row_results.append({
             "rowNumber": index,
             "action": action,
-            "extId": ext_id,
-            "existingJobId": existing_job_id,
-            "noJob": bool(mapping.get("no_job")),
             "id": identifier,
             "upc": upc,
             "cvid": cvid,
@@ -2743,14 +2843,12 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
             "preproOverlays": prepro_overlays,
             "ecommPhotoNotes": ecomm_photo_notes,
             "pathToArt": path_to_art,
-            "jobName": job_name_text or _job_name_from_group_value(client_name, ext_id),
             "itemName": item_name or _readable_item_name(brand, product, identifier),
             "product": product,
             "itemJobNumber": item_job_number,
             "description": description,
             "brand": brand,
             "category": category,
-            "due": job_due,
             "masterOrVariant": master_or_variant,
             "pickupJobNumber": pickup_job_number,
             "notes": notes,
@@ -2762,9 +2860,6 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
             "warnings": warnings,
         })
 
-    jobs_detected = list(jobs.values())
-    jobs_to_create = sum(1 for job in jobs_detected if not job.get("existingId"))
-    jobs_to_reuse = len(jobs_detected) - jobs_to_create
     return {
         "fileName": filename,
         "clientId": client_id,
@@ -2775,16 +2870,12 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
         "sheetNames": parsed.get("sheetNames", []),
         "selectedSheet": parsed.get("selectedSheet", ""),
         "totalRows": len(rows),
-        "jobsDetected": len(jobs_detected),
         "itemsToCreate": items_to_create,
         "itemsToUpdate": items_to_update,
         "warningCount": warning_count,
         "errorCount": error_count,
-        "jobsPreview": jobs_detected,
         "rows": row_results,
         "summary": {
-            "jobsCreated": 0,
-            "jobsReused": jobs_to_reuse,
             "itemsCreated": 0,
             "itemsUpdated": 0,
             "rowsSkipped": error_count and sum(1 for row in row_results if row["errors"]) or 0,
@@ -2812,20 +2903,15 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
     code_type = client_config.get("codeType", "")
     identifier_label = _identifier_label(client_config)
     required_photo_fields = _normalized_required_fields(client_config)
-    existing_jobs = _existing_jobs_by_lookup(client_id)
     existing_items = _existing_items_by_identifier(client_id)
     seen_ids = {}
     row_results = []
-    jobs = {}
     items_to_create = 0
     items_to_update = 0
     warning_count = 0
     error_count = 0
 
     for index, source in enumerate(rows, start=1):
-        no_job = bool(source.get("noJob"))
-        ext_id = "" if no_job else str(source.get("extId", "") or "").strip()
-        existing_job_id = str(source.get("existingJobId", "") or "").strip()
         identifier = str(source.get("id", "") or source.get("upc", "") or "").strip()
         upc = str(source.get("upc", "") or identifier).strip()
         cvid = str(source.get("cvid", "") or "").strip()
@@ -2842,13 +2928,11 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
         product = str(source.get("product", "") or "").strip()
         item_job_number = _normalize_item_job_number(source.get("itemJobNumber"))
         description = _normalize_description(source.get("description"))
-        parent_job_number = _normalize_item_job_number(source.get("parentJobNumber"))
         brand = str(source.get("brand", "") or "").strip()
         category = str(source.get("category", "") or "").strip()
         master_or_variant = _normalize_master_or_variant(source.get("masterOrVariant"))
         pickup_job_number = _normalize_item_job_number(source.get("pickupJobNumber"))
         notes = str(source.get("notes", "") or "").strip()
-        job_due = str(source.get("due", "") or "").strip()
         reference_data = _normalize_reference_data(source.get("referenceData") or {})
         source_snapshot = None
         if client_name.strip().casefold() == "topco":
@@ -2866,8 +2950,6 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
         problems = []
         warnings = []
 
-        if not ext_id and not no_job:
-            problems.append("Missing Job")
         if identifier:
             validation_error = _validate_identifier(identifier, code_type, identifier_label)
             if validation_error:
@@ -2881,19 +2963,6 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
         if "Brand" in required_photo_fields and not brand:
             problems.append("Missing Brand")
 
-        if ext_id:
-            resolved_job_name = source.get("jobName") or _job_name_from_group_value(client_name, ext_id)
-            existing_job = {"id": existing_job_id} if existing_job_id else _existing_job_for_import(existing_jobs, ext_id, resolved_job_name, parent_job_number)
-            job = jobs.setdefault(ext_id, {
-                "extId": ext_id,
-                "parentJobNumber": parent_job_number,
-                "jobName": resolved_job_name,
-                "due": job_due,
-                "existingId": existing_job.get("id"),
-                "rowCount": 0,
-            })
-            job["rowCount"] += 1
-
         existing_item = {"id": source.get("existingItemId")} if source.get("existingItemId") else (existing_items.get(identifier) if identifier else None)
         action = "skip" if problems else ("update" if existing_item else "create")
         if action == "create":
@@ -2905,9 +2974,6 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
         row_results.append({
             "rowNumber": source.get("rowNumber") or index,
             "action": action,
-            "extId": ext_id,
-            "existingJobId": existing_job_id,
-            "noJob": no_job,
             "id": identifier,
             "upc": upc,
             "cvid": cvid,
@@ -2921,14 +2987,12 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
             "preproOverlays": prepro_overlays,
             "ecommPhotoNotes": ecomm_photo_notes,
             "pathToArt": path_to_art,
-            "jobName": source.get("jobName") or _job_name_from_group_value(client_name, ext_id),
             "itemName": item_name or _readable_item_name(brand, product, identifier),
             "product": product,
             "itemJobNumber": item_job_number,
             "description": description,
             "brand": brand,
             "category": category,
-            "due": job_due,
             "masterOrVariant": master_or_variant,
             "pickupJobNumber": pickup_job_number,
             "notes": notes,
@@ -2940,9 +3004,6 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
             "warnings": warnings,
         })
 
-    jobs_detected = list(jobs.values())
-    jobs_to_create = sum(1 for job in jobs_detected if not job.get("existingId"))
-    jobs_to_reuse = len(jobs_detected) - jobs_to_create
     return {
         "fileName": filename,
         "clientId": client_id,
@@ -2953,16 +3014,12 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
         "sheetNames": [],
         "selectedSheet": "",
         "totalRows": len(rows),
-        "jobsDetected": len(jobs_detected),
         "itemsToCreate": items_to_create,
         "itemsToUpdate": items_to_update,
         "warningCount": warning_count,
         "errorCount": error_count,
-        "jobsPreview": jobs_detected,
         "rows": row_results,
         "summary": {
-            "jobsCreated": 0,
-            "jobsReused": jobs_to_reuse,
             "itemsCreated": 0,
             "itemsUpdated": 0,
             "rowsSkipped": sum(1 for row in row_results if row["errors"]),
@@ -2972,20 +3029,9 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
     }
 
 
-def _job_fields_from_plan(client_id, job):
-    fields = {
-        C.F_JOB_NAME: job["jobName"],
-        C.F_JOB_CLIENT: [client_id],
-        C.F_JOB_STATUS: "Active",
-    }
-    if job.get("parentJobNumber"):
-        fields[C.F_JOB_PARENT_NUMBER] = job["parentJobNumber"]
-    if job.get("due"):
-        fields[C.F_JOB_DUE] = job["due"]
-    return fields
 
 
-def _item_fields_from_row(client_id, job_id, row):
+def _item_fields_from_row(client_id, row):
     fields = {
         C.F_ITEM_NAME: row["itemName"],
         C.F_ITEM_CLIENT: [client_id],
@@ -2995,8 +3041,6 @@ def _item_fields_from_row(client_id, job_id, row):
         fields[C.F_ITEM_PRODUCT] = row["product"]
     if row.get("id"):
         fields[C.F_ITEM_IDENTIFIER] = row["id"]
-    if job_id:
-        fields[C.F_ITEM_JOB] = [job_id]
     if row.get("upc"):
         fields[C.F_ITEM_UPC] = row["upc"]
     if row.get("cvid"):
@@ -3007,6 +3051,7 @@ def _item_fields_from_row(client_id, job_id, row):
         "requestType": C.F_ITEM_REQUEST_TYPE,
         "wkftJobNumber": C.F_ITEM_WKFT_JOB_NUMBER,
         "mboxNumber": C.F_ITEM_MBOX_NUMBER,
+        "projectName": C.F_ITEM_PROJECT_NAME,
         "productType": C.F_ITEM_PRODUCT_TYPE,
         "productDescription": C.F_ITEM_PRODUCT_DESCRIPTION,
         "preproOverlays": C.F_ITEM_PREPRO_OVERLAYS,
@@ -3047,10 +3092,7 @@ def _item_fields_from_row(client_id, job_id, row):
 
 def _execute_intake_plan(plan):
     client_id = plan["clientId"]
-    job_ids = {}
     summary = {
-        "jobsCreated": 0,
-        "jobsReused": 0,
         "itemsCreated": 0,
         "itemsUpdated": 0,
         "rowsSkipped": 0,
@@ -3058,29 +3100,11 @@ def _execute_intake_plan(plan):
         "warnings": plan["warningCount"],
     }
 
-    for job in plan["jobsPreview"]:
-        fields = _job_fields_from_plan(client_id, job)
-        if job.get("existingId"):
-            data = airtable.update_record(C.JOBS_TABLE, job["existingId"], fields, by_field_id=False)
-            job_ids[job["extId"]] = data["id"]
-            summary["jobsReused"] += 1
-        else:
-            data = airtable.create_record(C.JOBS_TABLE, fields, by_field_id=False)
-            job_ids[job["extId"]] = data["id"]
-            job["existingId"] = data["id"]
-            summary["jobsCreated"] += 1
-
     for row in plan["rows"]:
         if row["errors"]:
             summary["rowsSkipped"] += 1
             continue
-        job_id = job_ids.get(row["extId"])
-        if not job_id and not row.get("noJob"):
-            row["errors"].append("Job was not available for this row")
-            summary["rowsSkipped"] += 1
-            summary["errors"] += 1
-            continue
-        fields = _item_fields_from_row(client_id, job_id, row)
+        fields = _item_fields_from_row(client_id, row)
         if row.get("existingItemId"):
             previous = airtable.get_record(C.PRODUCTS_TABLE, row["existingItemId"], by_field_id=False)
             data = airtable.update_record(C.PRODUCTS_TABLE, row["existingItemId"], fields, by_field_id=False)
@@ -3091,13 +3115,7 @@ def _execute_intake_plan(plan):
             data = airtable.create_record(C.PRODUCTS_TABLE, fields, by_field_id=False)
             row["existingItemId"] = data["id"]
             row["action"] = "created"
-            _create_history_event(
-                "Item Created",
-                "Item Created",
-                item_ids=[data["id"]],
-                job_ids=[job_id] if job_id else None,
-                details=f"Product created: {fields.get(C.F_ITEM_NAME, data['id'])}.",
-            )
+            _create_history_event("Item Created", item_ids=[data["id"]])
             summary["itemsCreated"] += 1
 
     plan["summary"] = summary
@@ -3465,124 +3483,6 @@ def update_user(user_id):
     return jsonify({"user": _shape_user(record)})
 
 
-# ── Jobs ──────────────────────────────────────────────────────────────────────
-
-@api.get("/jobs")
-def list_jobs():
-    params = {
-        "sort[0][field]": C.F_JOB_DUE,
-        "sort[0][direction]": "asc",
-    }
-    client_id = request.args.get("clientId")
-    data = airtable.list_records(C.JOBS_TABLE, params=params, by_field_id=False)
-    records = _filter_by_client_field(data.get("records", []), C.F_JOB_CLIENT)
-    if client_id:
-        if not _client_permitted(client_id):
-            return _forbidden()
-        records = [record for record in records if client_id in (record.get("fields", {}).get(C.F_JOB_CLIENT, []) or [])]
-    records = [_shape_job(r) for r in records]
-    return jsonify({"records": records})
-
-
-@api.post("/jobs")
-def create_job():
-    body = request.get_json(silent=True) or {}
-    client_id = body.get("clientId")
-    job = (body.get("job") or body.get("name") or body.get("sgsJobNum") or "").strip()
-    parent_job_number = (body.get("parentJobNumber") or body.get("extId") or body.get("jobNumber") or body.get("jobId") or "").strip()
-    period = (body.get("period") or "").strip()
-    status = (body.get("status") or "").strip()
-    due = body.get("due") or body.get("deadline") or ""
-
-    if not client_id:
-        return err("clientId is required")
-    if not _client_permitted(client_id):
-        return _forbidden()
-    if not job:
-        return err("job is required")
-
-    fields = {
-        C.F_JOB_NAME: job,
-        C.F_JOB_CLIENT: [client_id],
-    }
-    if parent_job_number:
-        fields[C.F_JOB_PARENT_NUMBER] = parent_job_number
-    if period:
-        fields[C.F_JOB_PERIOD] = period
-    if status:
-        fields[C.F_JOB_STATUS] = status
-    if due:
-        fields[C.F_JOB_DUE] = due
-    data = airtable.create_record(C.JOBS_TABLE, fields, by_field_id=False)
-    return jsonify(_shape_job(data)), 201
-
-
-@api.patch("/jobs/<record_id>")
-def update_job(record_id):
-    body = request.get_json(silent=True) or {}
-    previous = airtable.get_record(C.JOBS_TABLE, record_id, by_field_id=False)
-    if not _client_ids_permitted(previous.get("fields", {}).get(C.F_JOB_CLIENT, [])):
-        return _forbidden()
-    fields = {}
-    for key, field in {
-        "job": C.F_JOB_NAME,
-        "name": C.F_JOB_NAME,
-        "clientIds": C.F_JOB_CLIENT,
-        "parentJobNumber": C.F_JOB_PARENT_NUMBER,
-        "jobNumber": C.F_JOB_PARENT_NUMBER,
-        "extId": C.F_JOB_PARENT_NUMBER,
-        "period": C.F_JOB_PERIOD,
-        "status": C.F_JOB_STATUS,
-        "due": C.F_JOB_DUE,
-    }.items():
-        if key in body and body[key] not in (None, ""):
-            fields[field] = body[key]
-    if not fields:
-        return err("No updatable fields provided")
-    if C.F_JOB_CLIENT in fields and not _client_ids_permitted(fields[C.F_JOB_CLIENT]):
-        return _forbidden()
-
-    data = airtable.update_record(C.JOBS_TABLE, record_id, fields, by_field_id=False)
-    old_status = _field_value(previous, C.F_JOB_STATUS)
-    new_status = fields.get(C.F_JOB_STATUS)
-    if new_status and old_status != new_status:
-        _create_history_event(
-            "Status Changed",
-            "Status Changed",
-            job_ids=[record_id],
-            field="Status",
-            from_value=old_status,
-            to_value=new_status,
-            details=f"Job status changed from {old_status or 'blank'} to {new_status}.",
-        )
-    return jsonify(_shape_job(data))
-
-
-def _shape_job(r):
-    f = r.get("fields", {})
-    return {
-        "id": r["id"],
-        "name": f.get(C.F_JOB_NAME, ""),
-        "job": f.get(C.F_JOB_NAME, ""),
-        "clientIds": f.get(C.F_JOB_CLIENT, []),
-        "parentJobNumber": f.get(C.F_JOB_PARENT_NUMBER, ""),
-        "extId": f.get(C.F_JOB_PARENT_NUMBER, ""),
-        "period": f.get(C.F_JOB_PERIOD, ""),
-        "status": f.get(C.F_JOB_STATUS, ""),
-        "due": f.get(C.F_JOB_DUE, ""),
-        "deadline": f.get(C.F_JOB_DUE, ""),
-    }
-
-
-def _jobs_by_id():
-    try:
-        data = airtable.list_records(C.JOBS_TABLE, by_field_id=False)
-    except requests.HTTPError:
-        return {}
-    records = _filter_by_client_field(data.get("records", []), C.F_JOB_CLIENT)
-    return {record["id"]: _shape_job(record) for record in records}
-
-
 def _source_check_normalized_text(value):
     return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
 
@@ -3603,9 +3503,20 @@ def _source_check_sheet_range(limit):
     return f"{first_column}{header_row}:{last_column}{end_row}"
 
 
-def _fetch_topco_source_rows(limit):
+# Matching reads this sheet on every keystroke. Without a cache each one re-downloads
+# the whole CSV, which is why the read window had to stay small to stay usable. Caching
+# by range means the sheet is fetched at most once per refresh interval however much
+# typing happens, so the window can cover the whole list.
+_SOURCE_ROWS_CACHE = {}
+
+
+def _fetch_topco_source_rows(limit, *, max_age_seconds=None):
     row_limit = max(1, min(int(limit or 20), 1000))
     source_range = _source_check_sheet_range(row_limit)
+    ttl = C.TOPCO_SOURCE_REFRESH_INTERVAL_SECONDS if max_age_seconds is None else max_age_seconds
+    cached = _SOURCE_ROWS_CACHE.get(source_range)
+    if cached and ttl > 0 and (time.monotonic() - cached[0]) < ttl:
+        return list(cached[1]), source_range
     url = (
         f"https://docs.google.com/spreadsheets/d/{quote(C.TOPCO_SOURCE_SHEET_ID)}/export"
         f"?format=csv&gid={quote(str(C.TOPCO_SOURCE_SHEET_GID))}&range={quote(source_range)}"
@@ -3628,6 +3539,7 @@ def _fetch_topco_source_rows(limit):
             "sourceRowNumber": index,
             "sourceData": source_data,
         })
+    _SOURCE_ROWS_CACHE[source_range] = (time.monotonic(), list(rows))
     return rows, source_range
 
 
@@ -3739,6 +3651,32 @@ def _topco_client_record(client_id):
     return record if _client_name(record).strip().casefold() == "topco" else None
 
 
+# The first row in every merchandise history. Named for what happened to the physical
+# item rather than to the database row, matching how the rest of Planning reads.
+MERCHANDISE_CREATED_EVENT = "Merchandise received"
+
+
+def _record_merchandise_history(merchandise_id, event, *, from_value=None, to_value=None):
+    """Record one merchandise lifecycle event against the signed-in user.
+
+    Deliberately simple: what happened, who did it, when. Failures are swallowed
+    because losing an audit line must never block the action the user was taking.
+    """
+    if not merchandise_id:
+        return
+    user_id = _current_user_id()
+    try:
+        _create_history_event(
+            event,
+            merchandise_ids=[merchandise_id],
+            user_ids=[user_id] if user_id else None,
+            from_value=from_value,
+            to_value=to_value,
+        )
+    except Exception:  # noqa: BLE001 - history is never worth failing a request over
+        current_app.logger.exception("Could not record merchandise history event")
+
+
 def _topco_source_suggestion_score(source_data, *, product_name="", upc=""):
     source_name = _source_check_normalized_text(source_data.get("Product Name"))
     source_upc = _source_check_upc_key(source_data.get("UPC"))
@@ -3775,6 +3713,12 @@ def _topco_source_suggestion_score(source_data, *, product_name="", upc=""):
         score += name_score
     if upc_score and name_score:
         score += 35
+    # When the receiver supplied both clues, a row has to satisfy both. Scoring them
+    # additively meant a name-only hit still surfaced alongside real candidates even
+    # though its UPC shared nothing with what was typed. An exact UPC still stands on
+    # its own, because a whole-value barcode hit is stronger than any name text.
+    if upc_key and name and upc_score < 100 and not (upc_score and name_score):
+        return 0, []
     return score, basis
 
 
@@ -3792,7 +3736,7 @@ def _topco_source_suggestions(*, client_id="", product_name="", upc="", limit=8)
     except (TypeError, ValueError):
         result_limit = 8
     result_limit = max(1, min(result_limit, 20))
-    source_rows, _source_range = _fetch_topco_source_rows(100)
+    source_rows, _source_range = _fetch_topco_source_rows(C.TOPCO_SOURCE_MATCH_ROW_WINDOW)
     suggestions = []
     for row in source_rows:
         source_data = row.get("sourceData") or {}
@@ -3811,7 +3755,9 @@ def _topco_source_suggestions(*, client_id="", product_name="", upc="", limit=8)
 
 
 def _topco_source_row_by_number(source_row_number):
-    source_rows, _source_range = _fetch_topco_source_rows(max(100, source_row_number - C.TOPCO_SOURCE_HEADER_ROW))
+    source_rows, _source_range = _fetch_topco_source_rows(
+        max(C.TOPCO_SOURCE_MATCH_ROW_WINDOW, source_row_number - C.TOPCO_SOURCE_HEADER_ROW)
+    )
     source_row = next((row for row in source_rows if row.get("sourceRowNumber") == source_row_number), None)
     if not source_row:
         raise ValueError("That source row was not found in the current Topco source sheet read.")
@@ -3882,7 +3828,7 @@ def refresh_topco_source_linked_products(client_id, limit=100, enforce_permissio
         refresh_row["actionableReason"] = "source_refresh"
         if not str((source_row.get("sourceData") or {}).get("Product Name") or "").strip():
             refresh_row["itemName"] = record.get("fields", {}).get(C.F_ITEM_NAME) or refresh_row["itemName"]
-        fields = _item_fields_from_row(client_id, None, refresh_row)
+        fields = _item_fields_from_row(client_id, refresh_row)
         previous = airtable.get_record(C.PRODUCTS_TABLE, record["id"], by_field_id=False)
         updated = airtable.update_record(C.PRODUCTS_TABLE, record["id"], fields, by_field_id=False)
         _log_item_changes(record["id"], previous, updated, fields)
@@ -3993,7 +3939,10 @@ def _link_merchandise_to_product(entry_id, item_id):
 @api.get("/source-check/topco")
 def source_check_topco():
     try:
-        source_rows, source_range = _fetch_topco_source_rows(request.args.get("limit", "20"))
+        source_rows, source_range = _fetch_topco_source_rows(
+            request.args.get("limit", "20"),
+            max_age_seconds=0 if request.args.get("refresh") in ("1", "true", "yes") else None,
+        )
     except requests.RequestException as exc:
         current_app.logger.exception("Source Check source sheet read failed")
         return err(f"Could not read source sheet: {exc}", 502)
@@ -4133,11 +4082,8 @@ def list_items():
         "sort[0][field]": C.F_ITEM_NAME,
         "sort[0][direction]": "asc",
     }
-    job_id = request.args.get("jobId")
     data = airtable.list_records(C.PRODUCTS_TABLE, params=params, by_field_id=False)
     records = _filter_by_client_field(data.get("records", []), C.F_ITEM_CLIENT)
-    if job_id:
-        records = [record for record in records if job_id in (record.get("fields", {}).get(C.F_ITEM_JOB, []) or [])]
     clients_by_id = _clients_by_id()
     issues_by_item_id = _issues_by_item_id()
     try:
@@ -4179,10 +4125,7 @@ def get_item(record_id):
 def create_item():
     body = request.get_json(silent=True) or {}
     client_id = body.get("clientId")
-    job_id = body.get("jobId")
     if client_id and not _client_permitted(client_id):
-        return _forbidden()
-    if job_id and not _client_ids_permitted(_job_client_ids(job_id)):
         return _forbidden()
     identifier = (body.get("primaryMatchKey") or body.get("productId") or body.get("id") or body.get("gtinUpc") or "").strip()
     client_config = _client_config(client_id) if client_id else {}
@@ -4197,19 +4140,11 @@ def create_item():
     }
     if client_id:
         fields[C.F_ITEM_CLIENT] = [client_id]
-    if job_id:
-        fields[C.F_ITEM_JOB] = [job_id]
     _apply_item_fields(fields, body)
 
     data = airtable.create_record(C.PRODUCTS_TABLE, fields, by_field_id=False)
     item_id = data["id"]
-    _create_history_event(
-        "Item Created",
-        "Item Created",
-        item_ids=[item_id],
-        job_ids=[job_id] if job_id else None,
-        details=f"Product created: {fields.get(C.F_ITEM_NAME, item_id)}.",
-    )
+    _create_history_event("Item Created", item_ids=[item_id])
     return jsonify(_shape_item(data, clients_by_id=_clients_by_id(), issues_by_item_id=_issues_by_item_id())), 201
 
 
@@ -4234,12 +4169,6 @@ def update_item(record_id):
         if not _client_permitted(body["clientId"]):
             return _forbidden()
         fields[C.F_ITEM_CLIENT] = [body["clientId"]]
-    if body.get("jobId"):
-        if not _client_ids_permitted(_job_client_ids(body["jobId"])):
-            return _forbidden()
-        fields[C.F_ITEM_JOB] = [body["jobId"]]
-    if "fileNameDescription" in body:
-        fields[C.F_ITEM_REFERENCE_DATA] = previous.get("fields", {}).get(C.F_ITEM_REFERENCE_DATA, "") or ""
     _apply_item_fields(fields, body)
     if not fields:
         return err("No updatable fields provided")
@@ -4393,7 +4322,6 @@ def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, required_to_sh
         "name": f.get(C.F_ITEM_NAME, ""),
         "clientIds": client_ids,
         "clientName": client.get("name", "") if client else "",
-        "jobIds": f.get(C.F_ITEM_JOB, []),
         "productId": f.get(C.F_ITEM_IDENTIFIER, ""),
         "identifier": f.get(C.F_ITEM_IDENTIFIER, ""),
         "gtinUpc": f.get(C.F_ITEM_IDENTIFIER, ""),
@@ -4409,8 +4337,10 @@ def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, required_to_sh
         "projectStatus": f.get(C.F_ITEM_PROJECT_STATUS, ""),
         "wkftJobNumber": f.get(C.F_ITEM_WKFT_JOB_NUMBER, ""),
         "mboxNumber": f.get(C.F_ITEM_MBOX_NUMBER, ""),
+        "projectName": f.get(C.F_ITEM_PROJECT_NAME, ""),
         "productType": f.get(C.F_ITEM_PRODUCT_TYPE, ""),
         "productDescription": f.get(C.F_ITEM_PRODUCT_DESCRIPTION, ""),
+        "fileNameDescription": f.get(C.F_ITEM_PRODUCT_DESCRIPTION, ""),
         "preproOverlays": f.get(C.F_ITEM_PREPRO_OVERLAYS, ""),
         "ecommPhotoNotes": f.get(C.F_ITEM_ECOMM_PHOTO_NOTES, ""),
         "pathToArt": f.get(C.F_ITEM_PATH_TO_ART, ""),
@@ -4465,11 +4395,14 @@ def _apply_item_fields(fields, body):
         "requestType": C.F_ITEM_REQUEST_TYPE,
         "wkftJobNumber": C.F_ITEM_WKFT_JOB_NUMBER,
         "mboxNumber": C.F_ITEM_MBOX_NUMBER,
+        "projectName": C.F_ITEM_PROJECT_NAME,
         "productType": C.F_ITEM_PRODUCT_TYPE,
         "productDescription": C.F_ITEM_PRODUCT_DESCRIPTION,
         "preproOverlays": C.F_ITEM_PREPRO_OVERLAYS,
         "ecommPhotoNotes": C.F_ITEM_ECOMM_PHOTO_NOTES,
         "pathToArt": C.F_ITEM_PATH_TO_ART,
+        "studioDestination": C.F_ITEM_STUDIO_DESTINATION,
+        "vendor": C.F_ITEM_VENDOR,
     }.items():
         if key in body and body[key] is not None:
             value = body.get(key)
@@ -4484,9 +4417,7 @@ def _apply_item_fields(fields, body):
             else:
                 fields[field] = str(value or "").strip()
     if "fileNameDescription" in body and body["fileNameDescription"] is not None:
-        reference_data = _parse_reference_data(fields.get(C.F_ITEM_REFERENCE_DATA, ""))
-        reference_data["File Name Description"] = str(body.get("fileNameDescription") or "").strip()
-        fields[C.F_ITEM_REFERENCE_DATA] = _reference_data_json(reference_data)
+        fields[C.F_ITEM_PRODUCT_DESCRIPTION] = str(body.get("fileNameDescription") or "").strip()
     if "masterOrVariant" in body and body["masterOrVariant"] is not None:
         normalized = _normalize_master_or_variant(body.get("masterOrVariant"))
         if normalized:
@@ -4518,7 +4449,9 @@ def _client_config(client_id):
         return {}
     try:
         return _shape_client(airtable.get_record(C.CLIENTS_TABLE, client_id, by_field_id=False))
-    except requests.HTTPError:
+    except Exception:  # noqa: BLE001
+        # Readiness and naming fall back to their defaults rather than failing the
+        # request outright when the client record cannot be read.
         return {}
 
 
@@ -4590,7 +4523,6 @@ def _find_matching_skus(query, *, client_id="", include_item_id="", limit=8):
         return []
 
     data = airtable.list_records(C.PRODUCTS_TABLE, params={"sort[0][field]": C.F_ITEM_NAME, "sort[0][direction]": "asc"}, by_field_id=False)
-    jobs_by_id = _jobs_by_id()
     matches = []
     for record in _filter_by_client_field(data.get("records", []), C.F_ITEM_CLIENT):
         if client_id and client_id not in _as_list(record.get("fields", {}).get(C.F_ITEM_CLIENT, [])):
@@ -4598,13 +4530,14 @@ def _find_matching_skus(query, *, client_id="", include_item_id="", limit=8):
         sku = _shape_item(record)
         score = _item_match_score(sku, cleaned)
         if score:
-            job_ids = sku.get("jobIds") or []
-            jobs = [jobs_by_id[job_id] for job_id in job_ids if job_id in jobs_by_id]
             matches.append({
                 **sku,
                 "score": score,
-                "jobNumber": sku.get("itemJobNumber") or (jobs[0].get("job") if jobs else ""),
-                "parentJobNumber": jobs[0].get("parentJobNumber") if jobs else "",
+                "jobNumber": sku.get("itemJobNumber") or "",
+                # A Product with no merchandise linked is still expecting some. One
+                # that already has merchandise is more likely a coincidental name
+                # match than the thing in the receiver's hands.
+                "awaitingMerchandise": not _as_list(record.get("fields", {}).get(C.F_RECEIPT_ENTRY_ITEM_MERCHANDISE, [])),
             })
     try:
         result_limit = int(limit)
@@ -4614,6 +4547,7 @@ def _find_matching_skus(query, *, client_id="", include_item_id="", limit=8):
     return sorted(
         matches,
         key=lambda sku: (
+            not sku.get("awaitingMerchandise"),
             -sku["score"],
             sku.get("gtinUpc") or sku.get("name") or "",
         ),
@@ -4643,13 +4577,9 @@ def create_issue():
 
     fields = {C.F_ISSUE_NAME: issue}
     item_ids = _as_list(body.get("itemId") or body.get("itemIds"))
-    job_ids = _as_list(body.get("jobId") or body.get("jobIds"))
     if item_ids and not _all_linked_records_permitted(C.PRODUCTS_TABLE, item_ids):
         return _forbidden()
-    if job_ids and not _all_linked_records_permitted(C.JOBS_TABLE, job_ids):
-        return _forbidden()
     _set_link_field(fields, C.F_ISSUE_ITEM, body.get("itemId") or body.get("itemIds"))
-    _set_link_field(fields, C.F_ISSUE_JOB, body.get("jobId") or body.get("jobIds"))
     _set_link_field(fields, C.F_ISSUE_ASSIGNED, body.get("assignedId") or body.get("assignedIds"))
     for key, field in {
         "type": C.F_ISSUE_TYPE,
@@ -4667,11 +4597,8 @@ def create_issue():
     issue_fields = data.get("fields", {})
     _create_history_event(
         "Issue Created",
-        "Issue Created",
         item_ids=issue_fields.get(C.F_ISSUE_ITEM),
-        job_ids=issue_fields.get(C.F_ISSUE_JOB),
         user_ids=issue_fields.get(C.F_ISSUE_ASSIGNED),
-        details=f"Issue created: {issue_fields.get(C.F_ISSUE_NAME, issue_id)}.",
     )
     return jsonify(_shape_issue(data)), 201
 
@@ -4684,13 +4611,9 @@ def update_issue(record_id):
         return _forbidden()
     fields = {}
     item_ids = _as_list(body.get("itemId") or body.get("itemIds"))
-    job_ids = _as_list(body.get("jobId") or body.get("jobIds"))
     if item_ids and not _all_linked_records_permitted(C.PRODUCTS_TABLE, item_ids):
         return _forbidden()
-    if job_ids and not _all_linked_records_permitted(C.JOBS_TABLE, job_ids):
-        return _forbidden()
     _set_link_field(fields, C.F_ISSUE_ITEM, body.get("itemId") or body.get("itemIds"))
-    _set_link_field(fields, C.F_ISSUE_JOB, body.get("jobId") or body.get("jobIds"))
     _set_link_field(fields, C.F_ISSUE_ASSIGNED, body.get("assignedId") or body.get("assignedIds"))
     for key, field in {
         "issue": C.F_ISSUE_NAME,
@@ -4714,14 +4637,10 @@ def update_issue(record_id):
         issue_fields = data.get("fields", {})
         _create_history_event(
             "Issue Resolved",
-            "Issue Resolved",
             item_ids=issue_fields.get(C.F_ISSUE_ITEM),
-            job_ids=issue_fields.get(C.F_ISSUE_JOB),
-            user_ids=issue_fields.get(C.F_ISSUE_ASSIGNED),
-            field="Status",
+                user_ids=issue_fields.get(C.F_ISSUE_ASSIGNED),
             from_value=old_status,
             to_value="Resolved",
-            details=f"Issue resolved: {issue_fields.get(C.F_ISSUE_NAME, record_id)}.",
         )
     return jsonify(_shape_issue(data))
 
@@ -4733,7 +4652,6 @@ def _shape_issue(r):
         "name": f.get(C.F_ISSUE_NAME, ""),
         "issue": f.get(C.F_ISSUE_NAME, ""),
         "itemIds": f.get(C.F_ISSUE_ITEM, []),
-        "jobIds": f.get(C.F_ISSUE_JOB, []),
         "type": f.get(C.F_ISSUE_TYPE, ""),
         "status": f.get(C.F_ISSUE_STATUS, ""),
         "priority": f.get(C.F_ISSUE_PRIORITY, ""),
@@ -4750,7 +4668,6 @@ def _shape_issue(r):
 @api.get("/history")
 def list_history():
     item_id = request.args.get("itemId")
-    job_id = request.args.get("jobId")
     user_id = request.args.get("userId")
     limit = request.args.get("limit", "100")
     requested_limit = int(limit) if limit.isdigit() else 100
@@ -4766,11 +4683,10 @@ def list_history():
     )
     records = _filter_indirect_client_records(data.get("records", []), _client_ids_for_history)
     records = [_shape_history(record) for record in records]
-    if item_id or job_id or user_id:
+    if item_id or user_id:
         records = [
             record for record in records
             if (item_id and item_id in record.get("itemIds", []))
-            or (job_id and job_id in record.get("jobIds", []))
             or (user_id and user_id in record.get("userIds", []))
         ]
     records = records[:requested_limit]
@@ -4786,21 +4702,14 @@ def create_history():
 
     fields = {C.F_HISTORY_EVENT: event}
     item_ids = _as_list(body.get("itemId") or body.get("itemIds"))
-    job_ids = _as_list(body.get("jobId") or body.get("jobIds"))
     if item_ids and not _all_linked_records_permitted(C.PRODUCTS_TABLE, item_ids):
         return _forbidden()
-    if job_ids and not _all_linked_records_permitted(C.JOBS_TABLE, job_ids):
-        return _forbidden()
     _set_link_field(fields, C.F_HISTORY_ITEM, body.get("itemId") or body.get("itemIds"))
-    _set_link_field(fields, C.F_HISTORY_JOB, body.get("jobId") or body.get("jobIds"))
     _set_link_field(fields, C.F_HISTORY_USER, body.get("userId") or body.get("userIds"))
     for key, field in {
-        "type": C.F_HISTORY_TYPE,
         "date": C.F_HISTORY_DATE,
-        "field": C.F_HISTORY_FIELD,
         "from": C.F_HISTORY_FROM,
         "to": C.F_HISTORY_TO,
-        "details": C.F_HISTORY_DETAILS,
     }.items():
         if key in body and body[key] not in (None, ""):
             fields[field] = body[key]
@@ -4815,14 +4724,10 @@ def _shape_history(r):
         "id": r["id"],
         "event": f.get(C.F_HISTORY_EVENT, ""),
         "itemIds": f.get(C.F_HISTORY_ITEM, []),
-        "jobIds": f.get(C.F_HISTORY_JOB, []),
         "userIds": f.get(C.F_HISTORY_USER, []),
-        "type": f.get(C.F_HISTORY_TYPE, ""),
         "date": f.get(C.F_HISTORY_DATE, ""),
-        "field": f.get(C.F_HISTORY_FIELD, ""),
         "from": f.get(C.F_HISTORY_FROM, ""),
         "to": f.get(C.F_HISTORY_TO, ""),
-        "details": f.get(C.F_HISTORY_DETAILS, ""),
     }
 
 
@@ -5234,8 +5139,16 @@ def _creative_force_sync_from_payload(payload):
         "workUnitId": payload.get("WorkUnitId") or payload.get("workUnitId") or "",
         "productId": payload.get("ProductId") or payload.get("productId") or "",
         "productCode": payload.get("ProductCode") or payload.get("productCode") or "",
-        "productionTypeId": payload.get("ProductionTypeId") or payload.get("productionTypeId") or "",
-        "productionTypeName": payload.get("ProductionTypeName") or payload.get("productionTypeName") or "",
+        "productionTypeId": (payload.get("ProductionTypeId") or payload.get("productionTypeId")
+                             or payload.get("ShootingTypeId") or payload.get("shootingTypeId") or ""),
+        "productionTypeName": (payload.get("ProductionTypeName") or payload.get("productionTypeName")
+                               or payload.get("ShootingTypeName") or payload.get("shootingTypeName") or ""),
+        "taskId": payload.get("TaskId") or payload.get("taskId") or "",
+        "workflowId": payload.get("WorkflowId") or payload.get("workflowId") or "",
+        "workflowName": payload.get("WorkflowName") or payload.get("workflowName") or "",
+        "jobCode": payload.get("JobCode") or payload.get("jobCode") or "",
+        "stepId": payload.get("StepId") or payload.get("stepId") or "",
+        "eventGroup": payload.get("EventGroupName") or payload.get("eventGroupName") or "",
         "status": _creative_force_status(action, raw_status),
         "statusRaw": raw_status,
         "stepName": step_name,
@@ -5276,6 +5189,90 @@ def _creative_force_product_code_for_card(record):
         "brandPrefix": product_fields.get(C.F_ITEM_BRAND_PREFIX, ""),
     }
     return str(_photo_product_value(product, product_code_field) or "").strip()
+
+
+CREATIVE_FORCE_DONE_STATUSES = {"done", "completed", "complete", "approved"}
+
+
+def _creative_force_client_is_ours(payload):
+    """Creative Force sends every client's events to the same endpoint.
+
+    Without this, an event is only ignored because its Product Code happens not to
+    match one of our cards — which would stop being true the moment two clients share
+    a code. Configure by ClientId; the name is a fallback for readability.
+    """
+    allowed_ids = [value.casefold() for value in C.CREATIVE_FORCE_CLIENT_IDS]
+    allowed_names = [value.casefold() for value in C.CREATIVE_FORCE_CLIENT_NAMES]
+    if not allowed_ids and not allowed_names:
+        return True, ""
+    client_id = str(payload.get("ClientId") or payload.get("clientId") or "").strip()
+    client_name = str(payload.get("ClientName") or payload.get("clientName") or "").strip()
+    if client_id.casefold() in allowed_ids or client_name.casefold() in allowed_names:
+        return True, ""
+    return False, client_name or client_id or "unknown client"
+
+
+def _creative_force_steps_after_event(existing_steps, sync):
+    """Per-step state keyed by Creative Force's StepId, which orders the workflow."""
+    steps = {str(key): dict(value) for key, value in (existing_steps or {}).items()}
+    step_id = str(sync.get("stepId") or "").strip()
+    step_name = str(sync.get("stepName") or "").strip()
+    if not step_id and not step_name:
+        return steps
+    key = step_id or step_name
+    steps[key] = {
+        "name": step_name or steps.get(key, {}).get("name", ""),
+        "status": sync.get("stepStatusRaw") or "",
+        "reportedAt": sync.get("lastReportedAt") or sync.get("lastSyncedAt") or "",
+    }
+    return steps
+
+
+def _creative_force_current_step(steps):
+    """The earliest step not finished; if all are finished, the last one.
+
+    Ordered by StepId because that is the workflow's own ordering. Arrival order
+    cannot be used: one action fires the whole chain within the same second.
+    """
+    if not steps:
+        return {}
+
+    def order(item):
+        key = item[0]
+        try:
+            return (0, int(key))
+        except (TypeError, ValueError):
+            return (1, 0)
+
+    ordered = sorted(steps.items(), key=order)
+    for _, step in ordered:
+        if str(step.get("status") or "").strip().casefold() not in CREATIVE_FORCE_DONE_STATUSES:
+            return step
+    return ordered[-1][1]
+
+
+def _creative_force_event_is_derived(sync, existing):
+    """True when an event belongs to a workflow other than the item's main one.
+
+    Creative Force sends an all-zero WorkflowId for derived workflows as well as
+    the main one, so only the name separates them. `CREATIVE_FORCE_MAIN_WORKFLOW_NAME`
+    names the main workflow when it is known; otherwise Creative Force's own default
+    naming for derived workflows is used.
+
+    Events without a workflow name are judged against the main work unit a named
+    event has already identified. Before anything is known nothing is rejected,
+    or the card would stay blank waiting for a named event to arrive first.
+    """
+    workflow_name = str(sync.get("workflowName") or "").strip().casefold()
+    if workflow_name:
+        configured_main = str(C.CREATIVE_FORCE_MAIN_WORKFLOW_NAME or "").strip().casefold()
+        if configured_main:
+            return workflow_name != configured_main
+        return workflow_name.startswith("derived workflow")
+    main_work_unit = str(existing.get("mainWorkUnitId") or "").strip()
+    if not main_work_unit:
+        return False
+    return str(sync.get("workUnitId") or "").strip() != main_work_unit
 
 
 def _find_creative_force_card(records, sync):
@@ -5373,9 +5370,13 @@ def _creative_force_handoff(record):
             "upc": product.get("upc", ""),
             "cvid": product.get("cvid", ""),
             "jobNumber": _photo_product_value(product, "jobNumber"),
+            # Only what this client's workstream configuration asks for. The
+            # feed table is built from the same list, so projecting every known
+            # field instead writes columns that do not exist and fails the
+            # release outright.
             "requiredFields": {
                 key: _photo_product_value(product, key)
-                for key in PHOTO_PRODUCTION_REQUIREMENT_FIELDS
+                for key in _configured_product_field_keys(client, workstream_type)
             },
         },
         "creativeForce": {
@@ -5392,6 +5393,16 @@ def _creative_force_handoff(record):
         "validation": status,
         "payload": payload,
     }
+
+
+def _configured_product_field_keys(client, workstream_type):
+    """The product fields this client requires for one workstream."""
+    workstreams = ((client or {}).get("photoProductionRequirements") or {}).get("workstreams") or {}
+    config = workstreams.get(workstream_type) or {}
+    return [
+        key for key in (config.get("requiredProductFields") or [])
+        if key in PHOTO_PRODUCTION_REQUIREMENT_FIELDS
+    ]
 
 
 def _creative_force_feed_fields(record, handoff):
@@ -5432,6 +5443,16 @@ def _creative_force_product_feed_preview():
             "fields": feed_fields,
         })
     return rows
+
+
+def _workstream_cards_for_merchandise(entry_id):
+    """Photo cards belonging to one merchandise record."""
+    cards = []
+    for record in _list_all_records(C.WORKSTREAM_CARDS_TABLE):
+        linked = _as_list(record.get("fields", {}).get(C.F_WORKSTREAM_CARD_RECEIVED_MERCH, []))
+        if entry_id in linked:
+            cards.append(record)
+    return cards
 
 
 def _sync_creative_force_product_feed_cards(cards):
@@ -5506,7 +5527,6 @@ def preview_creative_force_product_feed():
 
 @api.post("/integrations/creative-force/webhook")
 def creative_force_webhook():
-    global _CREATIVE_FORCE_LAST_WEBHOOK
     secret = str(C.CREATIVE_FORCE_WEBHOOK_SECRET or "")
     signature = request.headers.get("X-CF-Signature", "")
     if not secret:
@@ -5517,31 +5537,38 @@ def creative_force_webhook():
     payload = request.get_json(silent=True) or {}
     sync = _creative_force_sync_from_payload(payload)
     received_at = _now_iso()
+    ours, other_client = _creative_force_client_is_ours(payload)
+    if not ours:
+        _record_creative_force_webhook({
+            "receivedAt": received_at, "payload": payload, "sync": sync,
+            "accepted": True, "ignored": f"Event belongs to {other_client}.",
+        })
+        return jsonify({"accepted": True, "ignored": "other-client", "client": other_client})
     work_unit_id = sync.get("workUnitId")
     if not work_unit_id:
-        _CREATIVE_FORCE_LAST_WEBHOOK = {
+        _record_creative_force_webhook({
             "receivedAt": received_at,
             "payload": payload,
             "sync": sync,
             "accepted": False,
             "reason": "Missing WorkUnitId.",
-        }
+        })
         return jsonify({"accepted": False, "reason": "Missing WorkUnitId."})
     records = _list_all_records(C.WORKSTREAM_CARDS_TABLE)
     target = _find_creative_force_card(records, sync)
     if not target:
-        _CREATIVE_FORCE_LAST_WEBHOOK = {
+        _record_creative_force_webhook({
             "receivedAt": received_at,
             "payload": payload,
             "sync": sync,
             "accepted": False,
             "reason": "No unique matching workstream card.",
             "workUnitId": work_unit_id,
-        }
+        })
         return jsonify({"accepted": False, "reason": "No unique matching workstream card.", "workUnitId": work_unit_id})
     existing = _parse_creative_force_sync(target.get("fields", {}).get(C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC, ""))
     if sync.get("payloadId") and sync.get("payloadId") == existing.get("payloadId"):
-        _CREATIVE_FORCE_LAST_WEBHOOK = {
+        _record_creative_force_webhook({
             "receivedAt": received_at,
             "payload": payload,
             "sync": sync,
@@ -5549,29 +5576,53 @@ def creative_force_webhook():
             "duplicate": True,
             "workUnitId": work_unit_id,
             "workstreamCardId": target.get("id", ""),
-        }
+        })
         return jsonify({"accepted": True, "duplicate": True, "workUnitId": work_unit_id})
+    if _creative_force_event_is_derived(sync, existing):
+        _record_creative_force_webhook({
+            "receivedAt": received_at, "payload": payload, "sync": sync,
+            "accepted": True, "ignored": "Event belongs to a derived workflow.",
+            "workUnitId": work_unit_id, "workstreamCardId": target.get("id", ""),
+        })
+        return jsonify({"accepted": True, "ignored": "derived-workflow", "workUnitId": work_unit_id})
+
+    if str(sync.get("workflowName") or "").strip():
+        sync["mainWorkUnitId"] = sync.get("workUnitId") or ""
+    same_work_unit = str(existing.get("workUnitId") or "").strip() == str(sync.get("workUnitId") or "").strip()
+    carried = existing if same_work_unit else {}
+    merged = {**carried, **{key: value for key, value in sync.items() if value not in ("", None)}}
+    merged["steps"] = _creative_force_steps_after_event(carried.get("steps"), sync)
+    current = _creative_force_current_step(merged["steps"])
+    if current:
+        merged["stepName"] = current.get("name") or merged.get("stepName", "")
+        merged["stepStatusRaw"] = current.get("status") or ""
+        merged["stepReportedAt"] = current.get("reportedAt") or ""
+    if not same_work_unit and existing.get("mainWorkUnitId"):
+        merged.setdefault("mainWorkUnitId", existing["mainWorkUnitId"])
     updated = airtable.update_record(
         C.WORKSTREAM_CARDS_TABLE,
         target["id"],
         {
-            C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC: json.dumps(sync, sort_keys=True),
-            C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS: sync.get("statusRaw", ""),
-            C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP: sync.get("stepName", ""),
+            C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC: json.dumps(merged, sort_keys=True),
+            C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS: (
+                merged.get("stepStatusRaw") or merged.get("statusRaw", "")
+            ),
+            C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP: merged.get("stepName", ""),
         },
         by_field_id=False,
         typecast=True,
     )
-    _CREATIVE_FORCE_LAST_WEBHOOK = {
+    _record_creative_force_webhook({
         "receivedAt": received_at,
         "payload": payload,
         "sync": sync,
         "accepted": True,
         "workUnitId": work_unit_id,
         "workstreamCardId": target.get("id", ""),
-        "creativeForceStatus": sync.get("statusRaw", ""),
-        "creativeForceStep": sync.get("stepName", ""),
-    }
+        "creativeForceStatus": merged.get("stepStatusRaw") or merged.get("statusRaw", ""),
+        "workUnitStatus": merged.get("statusRaw", ""),
+        "creativeForceStep": merged.get("stepName", ""),
+    })
     return jsonify({"accepted": True, "workUnitId": work_unit_id, "record": _shape_workstream_card(updated)})
 
 
@@ -5580,7 +5631,26 @@ def creative_force_webhook_diagnostics():
     admin_error = _require_admin()
     if admin_error:
         return admin_error
-    return jsonify({"webhook": _CREATIVE_FORCE_LAST_WEBHOOK})
+    return jsonify({
+        "webhook": _CREATIVE_FORCE_LAST_WEBHOOK,
+        "recent": [
+            {
+                "receivedAt": entry.get("receivedAt", ""),
+                "action": (entry.get("payload") or {}).get("Action", ""),
+                "eventGroup": (entry.get("payload") or {}).get("EventGroupName", ""),
+                "stepName": (entry.get("sync") or {}).get("stepName", ""),
+                "stepStatus": (entry.get("sync") or {}).get("stepStatusRaw", ""),
+                "workUnitStatus": (entry.get("sync") or {}).get("statusRaw", ""),
+                "workflowName": (entry.get("sync") or {}).get("workflowName", ""),
+                "outcome": (
+                    entry.get("ignored") or entry.get("reason")
+                    or ("Duplicate" if entry.get("duplicate") else None)
+                    or ("Written" if entry.get("accepted") else "Rejected")
+                ),
+            }
+            for entry in _CREATIVE_FORCE_RECENT_WEBHOOKS
+        ],
+    })
 
 
 @api.get("/workstream-cards/<record_id>/creative-force-handoff")
@@ -5635,6 +5705,24 @@ def link_creative_force_work_unit(record_id):
     except requests.HTTPError as error:
         return airtable_err(error)
     return jsonify({"record": _shape_workstream_card(updated), "handoff": handoff})
+
+
+def _product_view_for_requirements(product_fields):
+    """Raw Airtable Product fields in the shape the requirement resolver reads."""
+    fields = product_fields or {}
+    return {
+        "name": fields.get(C.F_ITEM_NAME, ""),
+        "upc": fields.get(C.F_ITEM_UPC, ""),
+        "identifier": fields.get(C.F_ITEM_IDENTIFIER, ""),
+        "cvid": fields.get(C.F_ITEM_CVID, ""),
+        "itemJobNumber": fields.get(C.F_ITEM_JOB_NUMBER, ""),
+        "brandPrefix": fields.get(C.F_ITEM_BRAND_PREFIX, ""),
+        "productDescription": fields.get(C.F_ITEM_PRODUCT_DESCRIPTION, ""),
+        "productType": fields.get(C.F_ITEM_PRODUCT_TYPE, ""),
+        "ecommPhotoNotes": fields.get(C.F_ITEM_ECOMM_PHOTO_NOTES, ""),
+        "pathToArt": fields.get(C.F_ITEM_PATH_TO_ART, ""),
+        "referenceData": _parse_reference_data(fields.get(C.F_ITEM_REFERENCE_DATA, "")),
+    }
 
 
 def _photo_product_value(product, key):
@@ -5950,8 +6038,9 @@ def _mark_thr3d_shipping_item_shipped(record_id, body):
     })
 
 
-def _confirm_assign_payload(body, entry, item_record=None):
+def _confirm_assign_payload(body, entry, item_record=None, card_planning_status=None):
     entry_fields = entry.get("fields", {})
+    card_status = card_planning_status or PLANNING_STATUS_LABELS["needs-more-information"]
     manual_product_info = _manual_product_info_from_body(body)
     expected_product_ids = []
     expected_product_id = str(body.get("expectedProductId") or body.get("productId") or body.get("itemId") or "").strip()
@@ -5976,7 +6065,7 @@ def _confirm_assign_payload(body, entry, item_record=None):
             C.F_WORKSTREAM_CARD_NAME: _workstream_name(entry_fields, workstream_type),
             C.F_WORKSTREAM_CARD_RECEIVED_MERCH: [entry["id"]],
             C.F_WORKSTREAM_CARD_TYPE: workstream_type,
-            C.F_WORKSTREAM_CARD_PLANNING_STATUS: PLANNING_STATUS_LABELS["needs-more-information"],
+            C.F_WORKSTREAM_CARD_PLANNING_STATUS: card_status,
             C.F_WORKSTREAM_CARD_QUANTITY: quantity,
             **({C.F_WORKSTREAM_CARD_EXPECTED_PRODUCT: expected_product_ids} if expected_product_ids else {}),
             **({C.F_WORKSTREAM_CARD_MANUAL_PRODUCT_INFO: manual_product_info} if manual_product_info else {}),
@@ -6040,13 +6129,37 @@ def _reference_data_value(product_fields, terms):
     return next((str(value or "").strip() for value in candidates if str(value or "").strip()), "")
 
 
-def _evaluate_required_to_shoot_from_fields(entry_fields, product_fields=None):
+def _client_config_for_entry(entry_fields, receipt=None):
+    client_ids = _as_list((receipt or {}).get("fields", {}).get(C.F_RECEIPT_CLIENT, []))
+    if not client_ids:
+        client_ids = _as_list(entry_fields.get(C.F_RECEIPT_CLIENT, []))
+    return _client_config(client_ids[0]) if client_ids else {}
+
+
+def _client_product_requirements(client_config, deliverables):
+    """Product fields the client requires for the chosen photo deliverables.
+
+    The client settings page already owns this list per workstream; the readiness
+    gate reads it rather than keeping a second, hard-coded copy that can disagree
+    with what the modal shows.
+    """
+    requirements = (client_config or {}).get("photoProductionRequirements") or {}
+    workstreams = requirements.get("workstreams") or {}
+    keys = []
+    for deliverable in deliverables:
+        for key in (workstreams.get(deliverable) or {}).get("requiredProductFields") or []:
+            if key not in keys:
+                keys.append(key)
+    return keys
+
+
+def _evaluate_required_to_shoot_from_fields(entry_fields, product_fields=None, client_config=None):
     product_fields = product_fields or {}
     item_ids = _as_list(entry_fields.get(C.F_RECEIPT_ENTRY_ITEM, []))
     merchandise_verified = bool(entry_fields.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED, False))
     product_name = str(product_fields.get(C.F_ITEM_NAME, "") or "").strip()
     identifier = str(product_fields.get(C.F_ITEM_IDENTIFIER, "") or "").strip()
-    artwork_received = bool(product_fields.get(C.F_ITEM_ARTWORK_RECEIVED, False))
+    identifier_label = (client_config or {}).get("identifierLabel") or "UPC / Product ID"
     deliverables = _deliverable_values(entry_fields.get(C.F_RECEIPT_ENTRY_DELIVERABLES, ""))
     requirements = [
         _required_to_shoot_requirement("merchandise-verified", "Merchandise Verified", merchandise_verified, "Verify the physical merchandise."),
@@ -6075,10 +6188,17 @@ def _evaluate_required_to_shoot_from_fields(entry_fields, product_fields=None):
         requirements.extend([
             _required_to_shoot_requirement("product-linked", "Product Linked", bool(item_ids and product_fields), "Link a Product."),
             _required_to_shoot_requirement("product-name", "Product Name", bool(product_name), "Add Product Name."),
-            _required_to_shoot_requirement("identifier", "Primary Match Key", bool(identifier), "Add the Product Primary Match Key."),
+            _required_to_shoot_requirement("identifier", identifier_label, bool(identifier), f"Add the Product {identifier_label}."),
         ])
-    if "Packaging" in photo_deliverables or "Ecomm" in photo_deliverables:
-        requirements.append(_required_to_shoot_requirement("artwork", "Artwork", artwork_received, "Confirm Artwork has been received."))
+    # Which Product fields are required is the client's configuration and nothing
+    # else. A client that has asked for no fields blocks on no fields.
+    product_view = _product_view_for_requirements(product_fields)
+    for key in _client_product_requirements(client_config, photo_deliverables):
+        if key in {"productName", "upc"}:
+            continue  # identity, already covered above and supplied by matching
+        label = PHOTO_PRODUCTION_REQUIREMENT_FIELDS.get(key, key)
+        present = _photo_production_value_is_valid(key, _photo_product_value(product_view, key))
+        requirements.append(_required_to_shoot_requirement(key, label, present, f"Add {label}."))
     complete_count = len([item for item in requirements if item["ready"]])
     missing = [item["label"] for item in requirements if not item["ready"]]
     return {
@@ -6416,6 +6536,116 @@ def _list_comments_for_merchandise(entry_id):
     ]
 
 
+def _comment_reads_for_user(user_id):
+    """Read the signed-in user's comment read-through map.
+
+    Stored as app-owned JSON on the Users record so unread state follows the person
+    across devices. Malformed JSON degrades to an empty map rather than failing the
+    request: losing read state shows extra unread badges, which is recoverable, while
+    a hard error would block the Planning board from loading at all.
+    """
+    if not user_id:
+        return {}
+    try:
+        record = airtable.get_record(C.USERS_TABLE, user_id, by_field_id=False)
+    except requests.HTTPError:
+        return {}
+    raw = (record.get("fields", {}) or {}).get(C.F_USER_COMMENT_READS) or ""
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        current_app.logger.warning("Malformed Comment Reads JSON for user %s", user_id)
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    return {str(key): str(value) for key, value in parsed.items() if key and value}
+
+
+@api.get("/comment-reads")
+def list_comment_reads():
+    user_id = _current_user_id()
+    if not user_id:
+        return err("Sign in to read comment state.", 401)
+    return jsonify({"reads": _comment_reads_for_user(user_id)})
+
+
+@api.post("/comment-reads/<entry_id>")
+def mark_comment_read(entry_id):
+    user_id = _current_user_id()
+    if not user_id:
+        return err("Sign in to update comment state.", 401)
+    _, _, access_error = _permitted_merchandise_or_error(entry_id)
+    if access_error:
+        return access_error
+    reads = _comment_reads_for_user(user_id)
+    reads[entry_id] = datetime.now(timezone.utc).isoformat()
+    try:
+        airtable.update_record(
+            C.USERS_TABLE,
+            user_id,
+            {C.F_USER_COMMENT_READS: json.dumps(reads, sort_keys=True)},
+            by_field_id=False,
+        )
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"reads": reads})
+
+
+@api.get("/merchandise/<entry_id>/history")
+def list_merchandise_history(entry_id):
+    """Lifecycle events for one merchandise record, newest first."""
+    entry, receipt, access_error = _permitted_merchandise_or_error(entry_id)
+    if access_error:
+        return access_error
+    history_ids = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_HISTORY, []))
+    records = []
+    for history_id in history_ids:
+        try:
+            records.append(airtable.get_record(C.HISTORY_TABLE, history_id, by_field_id=False))
+        except requests.HTTPError:
+            continue
+    user_ids = {
+        user_id
+        for record in records
+        for user_id in _as_list(record.get("fields", {}).get(C.F_HISTORY_USER, []))
+        if user_id
+    }
+    users_by_id = _users_by_id(user_ids)
+    events = []
+    for record in records:
+        fields = record.get("fields", {})
+        user_id = (_as_list(fields.get(C.F_HISTORY_USER, [])) or [""])[0]
+        user_record = users_by_id.get(user_id)
+        events.append({
+            "id": record.get("id", ""),
+            "action": fields.get(C.F_HISTORY_EVENT, ""),
+            "actor": _user_display_name(user_record) if user_record else "System",
+            "createdAt": fields.get(C.F_HISTORY_DATE) or record.get("createdTime") or "",
+            "from": fields.get(C.F_HISTORY_FROM, ""),
+            "to": fields.get(C.F_HISTORY_TO, ""),
+        })
+    events.sort(key=lambda event: event.get("createdAt") or "", reverse=True)
+
+    # Every item's history begins with its arrival. Records created before merchandise
+    # events were recorded have no such row, and the moment is already known from the
+    # shipment, so it is derived rather than backfilled as an invented audit line.
+    if not any(event["action"] == MERCHANDISE_CREATED_EVENT for event in events):
+        receipt_fields = (receipt or {}).get("fields", {})
+        created_at = receipt_fields.get(C.F_RECEIPT_RECEIVED) or entry.get("createdTime") or ""
+        if created_at:
+            events.append({
+                "id": f"{entry_id}:created",
+                "action": MERCHANDISE_CREATED_EVENT,
+                "actor": "",
+                "createdAt": created_at,
+                "from": "",
+                "to": "",
+            })
+    return jsonify({"records": events})
+
+
 @api.get("/merchandise/<entry_id>/comments")
 def list_merchandise_comments(entry_id):
     _, _, access_error = _permitted_merchandise_or_error(entry_id)
@@ -6709,7 +6939,33 @@ def confirm_assign_merchandise(entry_id):
         if receipt_client_ids and item_client_ids and not (set(receipt_client_ids) & set(item_client_ids)):
             return err("Product does not belong to this Shipment client.", 403)
 
-    parsed = _confirm_assign_payload(body, entry, item_record=item_record)
+    requested_status = _normalized_planning_status(body.get("planningStatus", ""))
+    card_planning_status = None
+    if requested_status == "awaiting-photo-release":
+        deliverable_names = [
+            str((raw or {}).get("type") or (raw or {}).get("workstreamType") or "").strip()
+            for raw in (body.get("workstreams") or body.get("workstreamCards") or [])
+        ]
+        effective_fields = {
+            **entry.get("fields", {}),
+            C.F_RECEIPT_ENTRY_DELIVERABLES: [name for name in deliverable_names if name],
+        }
+        if expected_product_id:
+            effective_fields[C.F_RECEIPT_ENTRY_ITEM] = [expected_product_id]
+        readiness = _evaluate_required_to_shoot_from_fields(
+            effective_fields,
+            item_record.get("fields", {}) if item_record else {},
+            client_config=_client_config_for_entry(entry.get("fields", {}), receipt),
+        )
+        if not readiness["ready"]:
+            return err(f"Cannot move to Awaiting Photo Release.\nMissing: {', '.join(readiness['missing'])}", 400)
+        if expected_product_id and _blocking_merchandise_issues(_issues_by_item_id().get(expected_product_id, [])):
+            return err("Cannot move to Awaiting Photo Release.\nMissing: Resolved Merchandise Issues", 400)
+        card_planning_status = PLANNING_STATUS_LABELS["awaiting-photo-release"]
+    elif requested_status and requested_status not in PLANNING_STATUS_VALUES:
+        return err("planningStatus must be one of: Needs More Information, Awaiting Photo Release.")
+
+    parsed = _confirm_assign_payload(body, entry, item_record=item_record, card_planning_status=card_planning_status)
     if isinstance(parsed, tuple) and len(parsed) == 2:
         return parsed
     workstream_fields, thr3d_fields, manual_product_info, expected_product_ids = parsed
@@ -6878,6 +7134,12 @@ def update_merchandise_intake_state(entry_id):
             planning_status if planning_status == "needs-more-information" else "needs-more-information"
         ]
         update_fields.update(_merch_status_normalization_fields(fields))
+        if not fields.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED, False):
+            update_fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED] = True
+            update_fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_AT] = _now_iso()
+            verifier_id = _current_user_id()
+            if verifier_id:
+                update_fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY] = _current_user_display_name()
     elif stage == "send-thr3d":
         deliverables = _deliverable_values(effective_fields.get(C.F_RECEIPT_ENTRY_DELIVERABLES, []))
         if "Thr3d" not in deliverables:
@@ -6909,7 +7171,11 @@ def update_merchandise_intake_state(entry_id):
                 item_record = airtable.get_record(C.PRODUCTS_TABLE, item_ids[0], by_field_id=False)
             except requests.HTTPError as error:
                 return airtable_err(error)
-        requiredToShoot = _evaluate_required_to_shoot_from_fields(effective_fields, item_record.get("fields", {}) if item_record else {})
+        requiredToShoot = _evaluate_required_to_shoot_from_fields(
+            effective_fields,
+            item_record.get("fields", {}) if item_record else {},
+            client_config=_client_config_for_entry(fields, receipt),
+        )
         if not requiredToShoot["ready"]:
             return err(f"Cannot move to Awaiting Photo Release.\nMissing: {', '.join(requiredToShoot['missing'])}", 400)
         issues = _issues_by_item_id().get(item_ids[0], [])
@@ -6922,6 +7188,18 @@ def update_merchandise_intake_state(entry_id):
         updated = _update_receipt_entry_record(entry_id, update_fields)
     except requests.HTTPError as error:
         return airtable_err(error)
+    next_status = update_fields.get(C.F_RECEIPT_ENTRY_PLANNING_STATUS)
+    previous_status = fields.get(C.F_RECEIPT_ENTRY_PLANNING_STATUS)
+    if next_status and next_status != previous_status:
+        # Accepting merchandise is the transition off New and is the event people
+        # most want attributed. Anything else reads as a plain queue move.
+        accepted = str(previous_status or "").strip() in ("", "New")
+        _record_merchandise_history(
+            entry_id,
+            "Merchandise accepted" if accepted else "Planning status changed",
+            from_value=previous_status or "New",
+            to_value=next_status,
+        )
     return jsonify(_shape_verification_entry(updated, receipt))
 
 
@@ -6951,7 +7229,9 @@ def release_merchandise_to_production(entry_id):
         return jsonify(_shape_verification_entry(entry, receipt, item_record=item_record))
 
     product_fields = item_record.get("fields", {}) if item_record else {}
-    requiredToShoot = _evaluate_required_to_shoot_from_fields(fields, product_fields)
+    requiredToShoot = _evaluate_required_to_shoot_from_fields(
+        fields, product_fields, client_config=_client_config_for_entry(fields, receipt)
+    )
     if not requiredToShoot["ready"]:
         missing_text = ", ".join(requiredToShoot["missing"])
         return jsonify({
@@ -6959,6 +7239,12 @@ def release_merchandise_to_production(entry_id):
             "missing": requiredToShoot["missing"],
             "requiredToShoot": requiredToShoot,
         }), 400
+
+    try:
+        cards = _workstream_cards_for_merchandise(entry_id)
+        synced = _populate_creative_force_feed_for_ready_cards(cards) if cards else []
+    except requests.HTTPError as error:
+        return airtable_err(error)
 
     update_fields = {
         C.F_RECEIPT_ENTRY_RELEASED: True,
@@ -6972,7 +7258,12 @@ def release_merchandise_to_production(entry_id):
         updated = _update_receipt_entry_record(entry_id, update_fields)
     except requests.HTTPError as error:
         return airtable_err(error)
-    return jsonify(_shape_verification_entry(updated, receipt, item_record=item_record))
+    _record_merchandise_history(entry_id, "Released to photo")
+    payload = _shape_verification_entry(updated, receipt, item_record=item_record)
+    payload["creativeForceFeed"] = [
+        {"sourceKey": entry["sourceKey"], "action": entry["action"]} for entry in synced
+    ]
+    return jsonify(payload)
 
 
 @api.post("/merchandise/<entry_id>/verify")
@@ -7017,7 +7308,7 @@ def verify_merchandise(entry_id):
     update_fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_AT] = _now_iso()
     user_id = _current_user_id()
     if user_id:
-        update_fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY] = [user_id]
+        update_fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY] = _current_user_display_name()
     # Clearing any prior physical issue is intentional: re-confirming the item resolves it.
     if fields.get(C.F_RECEIPT_ENTRY_MERCH_STATUS) == "Issue":
         update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Received"
@@ -7047,7 +7338,7 @@ def unverify_merchandise(entry_id):
     update_fields = {
         C.F_RECEIPT_ENTRY_MERCH_VERIFIED: False,
         C.F_RECEIPT_ENTRY_MERCH_VERIFIED_AT: "",
-        C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY: [],
+        C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY: "",
     }
     try:
         updated = _update_receipt_entry_record(entry_id, update_fields)
@@ -7092,6 +7383,169 @@ def match_verification_entry(entry_id):
     except requests.HTTPError as error:
         return airtable_err(error)
     return jsonify(_shape_verification_entry(updated, receipt, item_record=item))
+
+
+# A scan links on its own only when it is unambiguous: a full-length UPC resolving to
+# exactly one candidate. Anything shorter, or matching more than one row, is a
+# judgement call and belongs to a PM in Planning rather than a receiver holding a box.
+# Defined server-side so source-sheet and local-Product clients answer it identically.
+AUTO_MATCH_MIN_UPC_DIGITS = 8
+
+
+def _auto_match_source_candidates(upc_key):
+    """Source rows whose UPC equals this one exactly.
+
+    Exact means the whole normalized UPC is equal, never a prefix or substring. Prefix
+    matching is precisely what makes the suggestion list ambiguous.
+    """
+    source_rows, _range = _fetch_topco_source_rows(C.TOPCO_SOURCE_MATCH_ROW_WINDOW)
+    return [
+        row for row in source_rows
+        if _source_check_upc_key((row.get("sourceData") or {}).get("UPC")) == upc_key
+    ]
+
+
+def _auto_match_product_candidates(upc_key, client_id):
+    products = []
+    for record in _list_all_records(C.PRODUCTS_TABLE):
+        fields = record.get("fields", {})
+        if _source_check_upc_key(fields.get(C.F_ITEM_UPC)) != upc_key:
+            continue
+        product_clients = _as_list(fields.get(C.F_ITEM_CLIENT, []))
+        if client_id and product_clients and client_id not in product_clients:
+            continue
+        products.append(record)
+    return products
+
+
+def _resolve_unambiguous_upc(upc_key, client_id):
+    """Resolve a UPC to exactly one candidate, or nothing.
+
+    Returns (kind, candidate, reason, count). The count lets callers say how many rows
+    a scan hit, which is the difference between "unknown barcode" and "your sheet has
+    duplicates". Shared by the resolve and link endpoints so a scan means the same
+    thing whether the merchandise exists yet or not.
+    """
+    if len(upc_key) < AUTO_MATCH_MIN_UPC_DIGITS:
+        return None, None, "too-short", 0
+    source_client = _topco_client_record(client_id) if client_id else None
+    if source_client:
+        candidates = _auto_match_source_candidates(upc_key)
+        kind = "source"
+    else:
+        candidates = _auto_match_product_candidates(upc_key, client_id)
+        kind = "product"
+    if not candidates:
+        return kind, None, "no-match", 0
+    if len(candidates) > 1:
+        return kind, None, "ambiguous", len(candidates)
+    return kind, candidates[0], "", 1
+
+
+@api.get("/products/resolve-upc")
+def resolve_upc():
+    """Resolve a scanned UPC without linking anything.
+
+    Receiving stages merchandise before it has a record, so it needs the answer before
+    there is anything to link to. Read-only: it never activates a source row.
+    """
+    upc_key = _source_check_upc_key(request.args.get("upc") or request.args.get("identifier") or "")
+    client_id = (request.args.get("clientId") or "").strip()
+    try:
+        kind, candidate, reason, candidate_count = _resolve_unambiguous_upc(upc_key, client_id)
+    except requests.RequestException:
+        current_app.logger.exception("Resolve UPC source sheet read failed")
+        return jsonify({"resolved": False, "reason": "source-unavailable"})
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    if not candidate:
+        payload = {"resolved": False, "reason": reason}
+        if candidate_count > 1:
+            payload["candidateCount"] = candidate_count
+        return jsonify(payload)
+    if kind == "source":
+        # The source row is returned unactivated. Receiving stages it and activation
+        # happens on save, matching how a manually chosen row already behaves.
+        return jsonify({"resolved": True, "via": "source", "sourceRow": candidate})
+    return jsonify({
+        "resolved": True,
+        "via": "product",
+        "product": _shape_item(candidate, clients_by_id=_clients_by_id()),
+    })
+
+
+@api.post("/merchandise/<entry_id>/auto-match")
+def auto_match_merchandise(entry_id):
+    """Link Merchandise only when a scanned UPC resolves to exactly one candidate.
+
+    "No match" and "more than one" are ordinary outcomes, not errors: they leave the
+    merchandise unmatched so Planning can resolve it.
+    """
+    body = request.get_json(silent=True) or {}
+    upc_key = _source_check_upc_key(body.get("upc") or body.get("identifier") or "")
+    if len(upc_key) < AUTO_MATCH_MIN_UPC_DIGITS:
+        return jsonify({"matched": False, "reason": "too-short"})
+
+    entry, receipt, access_error = _permitted_merchandise_or_error(entry_id)
+    if access_error:
+        return access_error
+    client_ids = _as_list((receipt or {}).get("fields", {}).get(C.F_RECEIPT_CLIENT, []))
+    client_id = client_ids[0] if client_ids else ""
+
+    try:
+        kind, candidate, reason, candidate_count = _resolve_unambiguous_upc(upc_key, client_id)
+    except requests.RequestException:
+        current_app.logger.exception("Auto-match source sheet read failed")
+        return jsonify({"matched": False, "reason": "source-unavailable"})
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    if not candidate:
+        payload = {"matched": False, "reason": reason}
+        if candidate_count > 1:
+            payload["candidateCount"] = candidate_count
+        return jsonify(payload)
+
+    try:
+        if kind == "source":
+            source_row_number = candidate.get("sourceRowNumber")
+            product_record, _result, _row = _activate_topco_source_product(
+                client_id, source_row_number, source_row=candidate,
+            )
+            product_id = product_record.get("id")
+            if not product_id:
+                return jsonify({"matched": False, "reason": "no-match"})
+            updated, linked_receipt, linked_product, link_error = _link_merchandise_to_product(entry_id, product_id)
+            if link_error:
+                return link_error
+            return jsonify({
+                "matched": True,
+                "via": "source",
+                "sourceRowNumber": source_row_number,
+                "merchandise": _shape_verification_entry(
+                    updated, linked_receipt or receipt, item_record=linked_product or product_record,
+                ),
+            })
+        updated, linked_receipt, linked_product, link_error = _link_merchandise_to_product(
+            entry_id, candidate.get("id", ""),
+        )
+        if link_error:
+            return link_error
+    except requests.RequestException:
+        current_app.logger.exception("Auto-match source sheet read failed")
+        return jsonify({"matched": False, "reason": "source-unavailable"})
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    except (ValueError, RuntimeError):
+        current_app.logger.exception("Auto-match activation failed")
+        return jsonify({"matched": False, "reason": "no-match"})
+    return jsonify({
+        "matched": True,
+        "via": "product",
+        "merchandise": _shape_verification_entry(
+            updated, linked_receipt or receipt, item_record=linked_product,
+        ),
+    })
 
 
 @api.post("/merchandise/<entry_id>/activate-source-row")
@@ -7299,7 +7753,7 @@ def create_merchandise_review_issue(entry_id):
             C.F_RECEIPT_ENTRY_MERCH_STATUS: "Issue",
             C.F_RECEIPT_ENTRY_MERCH_VERIFIED: False,
             C.F_RECEIPT_ENTRY_MERCH_VERIFIED_AT: "",
-            C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY: [],
+            C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY: "",
         })
     except requests.HTTPError as error:
         return airtable_err(error)
@@ -7732,9 +8186,7 @@ def create_receiving_session():
     receipt_fields = data.get("fields", {})
     _create_history_event(
         "Receiving Logged",
-        "Receiving Logged",
         user_ids=receipt_fields.get(C.F_RECEIPT_RECEIVER),
-        details=f"Receiving session started: {receipt_fields.get(C.F_RECEIPT_NAME, data['id'])}.",
     )
     return jsonify(_shape_receipt(data, entries_by_receipt={data["id"]: []})), 201
 
@@ -7762,6 +8214,7 @@ def create_receiving_entry(record_id):
         entry_data = _create_receipt_entry_record(entry_fields)
     except requests.HTTPError as error:
         return airtable_err(error)
+    _record_merchandise_history(entry_data.get("id"), MERCHANDISE_CREATED_EVENT)
     return jsonify(_shape_receipt_entry_with_linked_product(entry_data)), 201
 
 
@@ -7847,6 +8300,7 @@ def create_receipt():
                 return match_fields
             entry_fields.update(match_fields)
             entry_data = _create_receipt_entry_record(entry_fields)
+            _record_merchandise_history(entry_data.get("id"), MERCHANDISE_CREATED_EVENT)
             created_entry_ids.append(entry_data["id"])
             shaped_entries.append(_shape_receipt_entry_with_linked_product(entry_data))
     except requests.HTTPError as error:
@@ -7865,9 +8319,7 @@ def create_receipt():
     receipt_fields = data.get("fields", {})
     _create_history_event(
         "Receiving Logged",
-        "Receiving Logged",
         user_ids=receipt_fields.get(C.F_RECEIPT_RECEIVER),
-        details=f"Receiving session logged: {receipt_fields.get(C.F_RECEIPT_NAME, data['id'])}.",
     )
     entries_by_receipt = {data["id"]: shaped_entries}
     return jsonify(_shape_receipt(data, entries_by_receipt=entries_by_receipt)), 201
@@ -8095,7 +8547,6 @@ def _receipt_entry_match_fields(body, receipt):
     fields = {}
     item_ids = _as_list(body.get("itemIds") or body.get("itemId"))
     item_id = item_ids[0] if item_ids else ""
-    job_id = (body.get("jobId") or "").strip()
     match_status = (body.get("matchStatus") or "").strip()
     if item_id:
         try:
@@ -8109,11 +8560,6 @@ def _receipt_entry_match_fields(body, receipt):
         if receipt_client_ids and item_client_ids and not (set(receipt_client_ids) & set(item_client_ids)):
             return err("Product does not belong to this Shipment client.", 403)
         fields[C.F_RECEIPT_ENTRY_ITEM] = [item_id]
-        if job_id:
-            try:
-                airtable.update_record(C.PRODUCTS_TABLE, item_id, {C.F_ITEM_JOB: [job_id]}, by_field_id=False)
-            except Exception:
-                pass  # don't fail the entry save if batch assignment fails
     elif body.get("noClearMatch") or match_status in {"Needs Match", "No Clear Match"}:
         fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Received"
     elif match_status == "Matched":
@@ -8266,17 +8712,6 @@ def _with_shipment_photos(shaped_entry, receipt):
     }
 
 
-def _job_ids_for_items(item_ids):
-    job_ids = []
-    for item_id in _as_list(item_ids):
-        try:
-            item = airtable.get_record(C.PRODUCTS_TABLE, item_id, by_field_id=False)
-        except requests.HTTPError:
-            continue
-        for job_id in item.get("fields", {}).get(C.F_ITEM_JOB, []) or []:
-            if job_id not in job_ids:
-                job_ids.append(job_id)
-    return job_ids
 
 
 def _shape_receipt(r, *, entries_by_receipt=None):
@@ -8385,7 +8820,7 @@ def _shape_receipt_entry(r, *, products_by_id=None, clients_by_id=None):
         "releasedByIds": f.get(C.F_RECEIPT_ENTRY_RELEASED_BY, []) if isinstance(f.get(C.F_RECEIPT_ENTRY_RELEASED_BY), list) else [],
         "merchandiseVerified": bool(f.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED, False)),
         "merchandiseVerifiedAt": f.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED_AT, ""),
-        "merchandiseVerifiedByIds": f.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY, []) if isinstance(f.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY), list) else [],
+        "merchandiseVerifiedBy": str(f.get(C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY, "") or ""),
         "deliverables": deliverables,
         "manualProductInfo": manual_product_info,
         "pendingSourceMatch": pending_source_match,
@@ -8806,7 +9241,6 @@ def clear_core_tables():
         # so a reset clears them. Clients, Users, and Locations are reference data and
         # are preserved. See docs/DECISIONS.md 2026-08-19.
         ("products", C.PRODUCTS_TABLE),
-        ("jobs", C.JOBS_TABLE),
     ]
     summary = {}
     try:
@@ -8865,7 +9299,6 @@ def settings():
             "base": C.AIRTABLE_BASE_ID,
             "tables": {
                 "clients": C.CLIENTS_TABLE,
-                "jobs":    C.JOBS_TABLE,
                 "products": C.PRODUCTS_TABLE,
                 "shipments": C.SHIPMENTS_TABLE,
                 "merchandise": C.MERCHANDISE_TABLE,

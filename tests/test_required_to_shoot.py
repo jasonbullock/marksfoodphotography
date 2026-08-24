@@ -98,6 +98,61 @@ class RequiredToShootTests(unittest.TestCase):
         self.assertEqual(result["state"], "ready_for_photo")
         self.assertTrue(result["ready"])
 
+    def test_artwork_is_required_only_when_the_client_asks_for_it(self):
+        from routes import _evaluate_required_to_shoot_from_fields
+        from config import Config as C
+
+        entry_fields = {
+            C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging"],
+            C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
+        }
+        product_fields = {C.F_ITEM_NAME: "Whole Milk", C.F_ITEM_IDENTIFIER: "012345678901"}
+        client_config = {"photoProductionRequirements": {"workstreams": {
+            "Packaging": {"requiredProductFields": ["pathToArt"]},
+        }}}
+
+        # Nothing is hard-coded: with no client configuration there is no artwork rule.
+        self.assertTrue(_evaluate_required_to_shoot_from_fields(entry_fields, product_fields)["ready"])
+
+        without_path = _evaluate_required_to_shoot_from_fields(entry_fields, product_fields, client_config=client_config)
+        self.assertIn("Valid Artwork Path", without_path["missing"])
+
+        with_path = _evaluate_required_to_shoot_from_fields(
+            entry_fields, {**product_fields, C.F_ITEM_PATH_TO_ART: "/art/milk.psd"}, client_config=client_config
+        )
+        self.assertTrue(with_path["ready"])
+
+    def test_required_product_fields_come_from_client_settings(self):
+        # The client settings page owns this list. The gate must follow it rather
+        # than keep its own copy, or the modal and the server disagree.
+        from routes import _evaluate_required_to_shoot_from_fields
+        from config import Config as C
+
+        entry_fields = {
+            C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
+            C.F_RECEIPT_ENTRY_DELIVERABLES: ["Packaging"],
+            C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
+        }
+        product_fields = {C.F_ITEM_NAME: "Whole Milk", C.F_ITEM_IDENTIFIER: "012345678901"}
+        client_config = {
+            "photoProductionRequirements": {
+                "workstreams": {"Packaging": {"requiredProductFields": ["productName", "upc", "brandPrefix"]}},
+            }
+        }
+
+        result = _evaluate_required_to_shoot_from_fields(entry_fields, product_fields, client_config=client_config)
+        labels = [item["label"] for item in result["requirements"]]
+        self.assertIn("Brand Prefix", labels)
+        # Not configured for this client, so not demanded.
+        self.assertNotIn("Artwork", labels)
+        self.assertEqual(result["missing"], ["Brand Prefix"])
+
+        with_prefix = _evaluate_required_to_shoot_from_fields(
+            entry_fields, {**product_fields, C.F_ITEM_BRAND_PREFIX: "KR"}, client_config=client_config
+        )
+        self.assertTrue(with_prefix["ready"])
+
 
 if __name__ == "__main__":
     unittest.main()

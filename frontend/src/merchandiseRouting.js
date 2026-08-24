@@ -38,7 +38,6 @@ export const DELIVERABLE_ROUTES = [
     planningName: 'Ecomm Review',
     initialQueue: 'new-review',
     requiredReviewData: ['product-information', 'artwork', 'activation-information'],
-    jobRequired: false,
     producerRequired: false,
     schedulingRequired: false,
     externalDestination: 'Creative Force',
@@ -52,7 +51,6 @@ export const DELIVERABLE_ROUTES = [
     planningName: 'Packaging Review',
     initialQueue: 'new-review',
     requiredReviewData: ['product-information', 'producer-preproduction'],
-    jobRequired: false,
     producerRequired: true,
     schedulingRequired: true,
     externalDestination: 'Creative Force',
@@ -66,7 +64,6 @@ export const DELIVERABLE_ROUTES = [
     planningName: 'Thr3d Review',
     initialQueue: 'new-review',
     requiredReviewData: ['product-information', 'thr3d-routing'],
-    jobRequired: false,
     producerRequired: false,
     schedulingRequired: false,
     externalDestination: 'Shipments Outgoing',
@@ -426,17 +423,14 @@ function deliverablesRequirement(record) {
   });
 }
 
+// Artwork is required only when the client's settings ask for the Valid Artwork
+// Path on a selected deliverable. There is no default: an unconfigured client
+// requires nothing.
 function artworkApplies(record, client) {
-  const product = record?.linkedItem || {};
-  const values = [
-    client?.artworkRequired,
-    client?.requiresArtwork,
-    product.artworkRequired,
-    product.referenceData?.['Artwork Required'],
-    product.referenceData?.Artwork,
-  ].filter(value => value !== undefined && value !== null && value !== '');
-  if (!values.length) return true;
-  return !values.some(value => /^(false|no|none|n\/a|not required)$/i.test(String(value).trim()));
+  const configured = client?.photoProductionRequirements?.workstreams || {};
+  return selectedPhotoDeliverables(record).some(
+    type => (configured[type]?.requiredProductFields || []).includes('pathToArt'),
+  );
 }
 
 function activationApplies(record, client) {
@@ -481,7 +475,7 @@ function artworkRequirement(record, { artworkOverride, client } = {}) {
   const product = record?.linkedItem || {};
   const missing = product.requiredToShoot?.missing || [];
   const artworkMissing = missing.find(item => /artwork/i.test(item));
-  if (product.artworkReceived) {
+  if (String(product.pathToArt || '').trim() || product.artworkReceived) {
     return requirementState({
       key: REQUIREMENT_KEYS.artwork,
       label: 'Artwork',
@@ -797,7 +791,9 @@ export function buildMerchandisePlanningCard(record, { assignment, client, locat
     planningCard: assignment,
     requiredToShoot: assignment.requirements,
     columnId: assignment.currentQueue,
-    title: record.productName || record.linkedItem?.product || record.linkedItem?.name || 'Unidentified Merchandise',
+    // Once a Product is matched it governs production, so it names the item
+    // everywhere. The observed package name only stands in until then.
+    title: record.linkedItem?.product || record.linkedItem?.name || record.productName || 'Unidentified Merchandise',
     client: client?.name || 'Unknown client',
     identifier: record.skuId || record.linkedItem?.identifier || record.linkedItem?.productId || '',
     location: location?.name || '',

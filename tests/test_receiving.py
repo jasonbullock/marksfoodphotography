@@ -20,6 +20,14 @@ from routes import AUTH_SESSION_KEY  # noqa: E402
 from receiving_photo_storage import ReceivingPhotoStorage, ReceivingPhotoConfigError, ReceivingPhotoValidationError  # noqa: E402
 
 
+def merchandise_create_fields(create_record):
+    """Creating merchandise also writes a History row, so the last create is not it."""
+    for call in create_record.call_args_list:
+        if call.args[0] == C.RECEIPT_ENTRIES_TABLE:
+            return call.args[1]
+    raise AssertionError("No merchandise record was created")
+
+
 SHIPMENT_PHOTO_METADATA_START = "[[MARKS_PHOTO_SHIPMENT_PHOTO_METADATA]]"
 SHIPMENT_PHOTO_METADATA_END = "[[/MARKS_PHOTO_SHIPMENT_PHOTO_METADATA]]"
 
@@ -145,9 +153,10 @@ class ReceivingTests(unittest.TestCase):
         self.assertNotIn(C.F_RECEIPT_ITEMS, receipt_call.args[1])
         self.assertEqual(receipt_call.args[1][C.F_RECEIPT_BOX_QUANTITY], 3)
 
-        entry_tables = [call.args[0] for call in create_record.call_args_list[1:]]
+        entry_calls = [call for call in create_record.call_args_list if call.args[0] == C.RECEIPT_ENTRIES_TABLE]
+        entry_tables = [call.args[0] for call in entry_calls]
         self.assertEqual(entry_tables, [C.RECEIPT_ENTRIES_TABLE, C.RECEIPT_ENTRIES_TABLE])
-        for call in create_record.call_args_list[1:]:
+        for call in entry_calls:
             fields = call.args[1]
             self.assertEqual(fields[C.F_RECEIPT_ENTRY_RECEIPT], ["recReceipt"])
             self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
@@ -155,7 +164,9 @@ class ReceivingTests(unittest.TestCase):
             self.assertNotIn(C.F_RECEIPT_ENTRY_ITEM, fields)
             self.assertNotIn(C.F_RECEIPT_BOX_QUANTITY, fields)
 
-        history.assert_called_once()
+        # One arrival event per item, plus the session-level receiving event.
+        history_events = [call.args[0] for call in history.call_args_list]
+        self.assertEqual(history_events, ["Merchandise received", "Merchandise received", "Receiving Logged"])
 
     @patch("routes.airtable.create_record")
     def test_receiving_requires_one_entry(self, create_record):
@@ -342,7 +353,7 @@ class ReceivingTests(unittest.TestCase):
         })
 
         self.assertEqual(response.status_code, 201)
-        fields = create_record.call_args.args[1]
+        fields = merchandise_create_fields(create_record)
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_RECEIPT], ["recReceipt"])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_NAME], "Ham Roast Unsliced")
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_SKU_ID], "BOX-7")
@@ -385,7 +396,7 @@ class ReceivingTests(unittest.TestCase):
         })
 
         self.assertEqual(response.status_code, 201)
-        fields = create_record.call_args.args[1]
+        fields = merchandise_create_fields(create_record)
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_ITEM], ["recItem"])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
         payload = response.get_json()

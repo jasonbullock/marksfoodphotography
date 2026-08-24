@@ -488,7 +488,7 @@ code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: v
   top: 0;
   z-index: 40;
   display: grid;
-  grid-template-columns: minmax(160px, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(160px, 1fr) auto minmax(160px, 1fr);
   align-items: center;
   gap: 12px;
   min-height: var(--topbar-h);
@@ -558,13 +558,11 @@ code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: v
 }
 
 .topbar-desktop-nav {
-  justify-content: flex-start;
+  justify-content: center;
   align-self: stretch;
   align-items: stretch;
   gap: 8px;
   min-width: 0;
-  /* ~100px from the wordmark (88px + 12px topbar grid gap) */
-  margin-left: 88px;
 }
 
 .topbar-primary-nav {
@@ -4008,6 +4006,41 @@ input[type="checkbox"]:disabled {
   background: rgba(240, 253, 244, 0.72);
 }
 
+/* A disabled button drops its hover state, so the row the user just clicked went flat
+   at the exact moment it started working. Hold the green affirmative state for the
+   duration of the request. */
+.receiving-match-option.is-activating,
+.receiving-match-option.is-activating:disabled {
+  border-color: rgba(22, 163, 74, 0.55);
+  background: rgba(240, 253, 244, 0.9);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  opacity: 1;
+  cursor: progress;
+}
+
+.receiving-match-option.is-activating em {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-color: rgba(22, 163, 74, 0.45);
+  color: #15803d;
+}
+
+.match-option-spinner {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid rgba(22, 163, 74, 0.28);
+  border-top-color: #15803d;
+  animation: intake-spin 0.7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .match-option-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
 .receiving-match-selected-note {
   color: var(--green-text) !important;
   font-weight: 850 !important;
@@ -4087,10 +4120,14 @@ input[type="checkbox"]:disabled {
 }
 
 .receiving-match-warning {
+  display: block;
   margin-top: 6px !important;
   color: #92400e !important;
   white-space: normal !important;
 }
+
+/* Quieter second line: the mismatch is the alert, this is the reassurance. */
+
 
 .receiving-match-option em {
   flex: 0 0 auto;
@@ -6440,156 +6477,14 @@ input[type="checkbox"]:disabled {
   outline-offset: 2px;
 }
 
-.planning-view-toggle {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid rgba(54, 82, 120, 0.58);
-  border-radius: 7px;
-  background: #142238;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.planning-view-toggle button {
-  display: inline-grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: #74849a;
-  cursor: pointer;
-  transition: background 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
-}
-
-.planning-view-toggle button:hover {
-  background: rgba(248, 250, 252, 0.1);
-  color: #c1ccda;
-}
-
-.planning-view-toggle button.is-active {
-  background: #aebccf;
-  color: #294f82;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
-}
-
-.planning-list-view {
-  display: grid;
-  gap: 0;
-  padding: 0 8px 8px;
-  border-radius: 8px;
-  background: #111827;
-}
-
-.planning-list-view.is-frozen {
-  opacity: 0.72;
-  pointer-events: none;
-}
-
-.planning-list-section {
-  overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background: #fff;
-}
-
-.planning-list-section + .planning-list-section {
-  margin-top: 12px;
-}
-
-.planning-list-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 38px;
-  padding: 7px 12px;
-  background: #4d6c98;
-  border-bottom: 0;
-  color: #f8fafc;
-}
-
-.planning-list-section-header h2 {
-  margin: 0;
-  color: #f8fafc;
-  font-size: 13px;
-  font-weight: 850;
-}
-
-.planning-list-section-header span {
-  display: none;
-}
-
-.planning-list-section-header strong {
-  min-width: 22px;
-  padding: 2px 6px;
-  border: 1px solid rgba(226, 232, 240, 0.26);
-  border-radius: 5px;
-  background: rgba(15, 23, 42, 0.42);
-  color: #f8fafc;
-  font-size: 11px;
-  text-align: center;
-}
-
-.planning-list-row {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) 150px 72px;
-  align-items: center;
-  gap: 18px;
-  width: 100%;
-  min-height: 50px;
-  padding: 8px 12px;
-  border: 0;
-  border-top: 1px solid #e2e8f0;
-  background: #fff;
-  color: var(--text-1);
-  text-align: left;
-  cursor: pointer;
-}
-
-.planning-list-row:hover,
-.planning-list-row.is-selected {
-  background: #eff6ff;
-}
-
-.planning-list-main,
-.planning-list-main > span {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.planning-list-main strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.planning-list-main > span,
-.planning-list-age {
-  color: var(--text-3);
-  font-size: 11px;
-}
-
-.planning-list-row > .deliverable-badge-row {
-  justify-content: flex-start;
-}
-
-.planning-list-age {
-  justify-self: end;
-  font-weight: 800;
-}
-
-.planning-list-empty {
-  padding: 10px 12px;
-  color: var(--text-3);
-  font-size: 12px;
-}
-
+/* Panels stay equal-width and stop short of the full viewport on very wide displays.
+   Sizing lanes by how full they are would move the board's geometry every time a card
+   changes queue, which breaks the spatial memory that makes a board scannable.
+   Tune the single max-width value to taste; the columns divide whatever it allows. */
 .planning-release-view {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 440px));
+  justify-content: center;
   gap: 10px;
   padding: 0 8px 8px;
   min-height: min(720px, calc(100vh - 170px));
@@ -6601,6 +6496,10 @@ input[type="checkbox"]:disabled {
   pointer-events: none;
 }
 
+/* The lane sits darker than both the white header above it and the white cards inside
+   it, so each reads as its own layer. Previously all three were within a couple of
+   percent of white and the cards looked printed into the column. Kept in the cool
+   blue-grey family to match the borders and chrome around it. */
 .planning-release-section {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -6608,7 +6507,7 @@ input[type="checkbox"]:disabled {
   overflow: hidden;
   border: 1px solid #d7dee8;
   border-radius: 8px;
-  background: #f8fafc;
+  background: #e9edf2;
 }
 
 .planning-release-section-header {
@@ -6640,13 +6539,19 @@ input[type="checkbox"]:disabled {
   line-height: 1.25;
 }
 
+/* The lane count is a fixed label; the age chip is a status signal that turns amber
+   at 7 days and red at 14. Both were filled pale pills, so a label and a signal read
+   as the same kind of thing. They stay distinguishable by weight of treatment rather
+   than by size: outlined means a static count, filled means a condition worth noticing. */
 .planning-release-section-header strong {
-  min-width: 24px;
-  padding: 3px 7px;
+  min-width: 22px;
+  padding: 2px 7px;
+  border: 1px solid #dbe3ee;
   border-radius: 999px;
-  background: #e8eef8;
-  color: #31537d;
+  color: var(--text-3);
   font-size: 11px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
   text-align: center;
 }
 
@@ -6674,9 +6579,17 @@ input[type="checkbox"]:disabled {
   overflow-y: auto;
 }
 
+/* Two different spacings that a single grid gap cannot express: cards need room from
+   each other so they read as separate items, while the header needs to sit tight to
+   the first card so it reads as labelling the group. The gap sets card-to-card and the
+   header pulls itself back up. */
 .planning-release-shipment-group {
   display: grid;
-  gap: 8px;
+  gap: 9px;
+}
+
+.planning-release-shipment-group > .planning-release-shipment-header {
+  margin-bottom: -4px;
 }
 
 .planning-release-shipment-header {
@@ -6691,7 +6604,6 @@ input[type="checkbox"]:disabled {
 .planning-release-shipment-header span,
 .planning-release-shipment-header a {
   flex: 0 0 auto;
-  margin-left: auto;
   font-size: 10px;
   font-weight: 750;
   color: inherit;
@@ -6701,6 +6613,56 @@ input[type="checkbox"]:disabled {
   white-space: nowrap;
 }
 
+/* Only the trailing item is pushed right, so a lone date still right-aligns while a
+   client label can occupy the left slot the flex row already reserves. */
+.planning-release-shipment-header > :last-child {
+  margin-left: auto;
+}
+
+.planning-release-group-select {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.planning-release-group-select:hover:not(:disabled) {
+  color: var(--text-2);
+}
+
+.planning-release-group-select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.planning-release-group-client {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The link previously inherited body colour, so nothing signalled it was clickable.
+   Colour alone carries that now: this is a standalone control rather than a link
+   buried in a sentence, and it is the only blue on the row. The underline would be
+   permanent visual noise on a 10px line, so it is kept for hover and focus. */
+.planning-release-shipment-header a {
+  /* Desaturated so the shipment line recedes behind the card titles: 38% saturation
+     down to 23%. Darkened at the same time because the obvious desaturation (#5b7290)
+     fell to 4.20 contrast on the lane — as did the original #4a6fa5 at 4.35, both under
+     the 4.5 AA floor. Hover restores a fuller blue, so the affordance sharpens on
+     interaction rather than shouting at rest. */
+  color: #506580;
+  /* Lighter than the 750 the header shares. On the darker lane the blue at full weight
+     out-shouted the card titles, and the shipment line is context, not the work. */
+  font-weight: 650;
+  text-underline-offset: 2px;
+}
+
 .planning-release-shipment-header a:hover,
 .planning-release-shipment-header a:focus-visible {
   color: #31537d;
@@ -6708,17 +6670,32 @@ input[type="checkbox"]:disabled {
   outline: none;
 }
 
+/* White cards sat on a near-white column, so the only separation was a pale border
+   and they read as flat rows. A small shadow lifts them off the lane without making
+   the board heavy. */
 .planning-release-card {
   position: relative;
-  display: block;
+  display: flex;
+  align-items: stretch;
   width: 100%;
   min-height: 68px;
   padding: 0;
-  border: 1px solid #dbe3ee;
+  border: 1px solid #d3dcea;
   border-radius: 8px;
   background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.07), 0 1px 3px rgba(15, 23, 42, 0.04);
   color: var(--text-1);
   text-align: left;
+  transition: box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.planning-release-card:hover {
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.1), 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.planning-release-card.is-selectable:has(input[type="checkbox"]:checked) {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 1px var(--blue), 0 2px 6px rgba(37, 99, 235, 0.14);
 }
 
 .planning-release-card-open {
@@ -6726,9 +6703,11 @@ input[type="checkbox"]:disabled {
   grid-template-columns: 52px minmax(0, 1fr) minmax(92px, auto);
   align-items: center;
   gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
   width: 100%;
   min-height: 68px;
-  padding: 7px 9px 7px 7px;
+  padding: 7px 9px 7px 5px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -6745,7 +6724,7 @@ input[type="checkbox"]:disabled {
 .planning-release-identity-line {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -6753,15 +6732,34 @@ input[type="checkbox"]:disabled {
   min-width: 0;
 }
 
-.planning-release-identity-line > span + span::before {
-  content: '·';
-  margin-right: 6px;
-  color: var(--text-3);
+.planning-release-identity-line > span:first-child {
+  color: var(--text-2);
+  font-weight: 650;
 }
 
+.planning-release-missing.is-verify {
+  color: #15803d;
+}
+
+.planning-release-missing-row {
+  display: flex;
+  min-width: 0;
+}
+
+/* Match state is carried by the glyph, not by hue. The age chip already owns amber and
+   red on this card, so colouring match state too would put two unrelated meanings in
+   one colour on the same card. Matched recedes because it needs no action. */
 .planning-release-identity-line .is-matched {
-  color: var(--green-dark);
+  color: var(--text-3);
   font-weight: 750;
+}
+
+/* Unmatched is the half that needs a decision, so it pulls harder than matched. That
+   contrast is made with value rather than hue, which keeps the card's colour budget
+   free for the age chip and stays legible without relying on colour perception. */
+.planning-release-identity-line .is-unmatched {
+  color: var(--text-1);
+  font-weight: 800;
 }
 
 .planning-release-card:hover,
@@ -6770,41 +6768,56 @@ input[type="checkbox"]:disabled {
   background: #f3f7ff;
 }
 
-.planning-release-card.is-selectable .planning-release-card-open {
-  padding-right: 56px;
+/* On the card, not the open button: tinting only the button left the checkbox
+   lane pale and the highlight looked like it stopped short of the edge. */
+.planning-release-card.is-selectable:has(.planning-release-card-open:hover),
+.planning-release-card.is-selectable:has(input[type="checkbox"]:checked) {
+  background: #eef4ff;
 }
 
-.planning-release-card.is-selectable .planning-release-card-open:hover {
-  background: rgba(37, 99, 235, 0.045);
+/* Its own lane at the leading edge. Nothing overlaps the photo, and the whole
+   strip is a click target so the box itself does not have to be hunted for. */
+/* The released mark shares the badge line rather than claiming a row of its own. */
+.planning-release-badge-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.planning-release-card.is-selectable .planning-release-card-open[aria-pressed="true"] {
-  background: #eff6ff;
-  box-shadow: inset 4px 0 0 #2563eb;
-}
-
-.planning-release-details-button {
-  position: absolute;
-  right: 10px;
-  top: 10px;
-  z-index: 2;
-  display: grid;
-  width: 28px;
-  height: 28px;
+/* A released card stays on the board, so it carries a standing mark rather than
+   the transient badge flash that only says it happened just now. */
+.planning-release-released-mark {
+  display: inline-grid;
   place-items: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: #94a3b8;
+  width: 17px;
+  height: 17px;
+  border: 1px solid #15803d;
+  border-radius: 999px;
+  background: #f0fdf4;
+  color: #15803d;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.planning-release-select {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  padding: 0px 0px 0 6px;
   cursor: pointer;
 }
 
-.planning-release-details-button:hover,
-.planning-release-details-button:focus-visible {
-  border-color: #bfdbfe;
-  background: #fff;
-  color: #1d4ed8;
+.planning-release-select input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  flex-basis: 15px;
+  border-radius: 4px;
+}
+
+.planning-release-select:hover input[type="checkbox"]:not(:checked):not(:disabled) {
+  border-color: var(--blue);
 }
 
 .planning-release-thumb,
@@ -6819,8 +6832,9 @@ input[type="checkbox"]:disabled {
 
 .planning-release-main {
   display: grid;
-  gap: 3px;
+  gap: 1px;
   min-width: 0;
+  line-height: 1.35;
 }
 
 .planning-release-main strong,
@@ -6836,6 +6850,16 @@ input[type="checkbox"]:disabled {
   font-weight: 850;
 }
 
+.planning-release-eyebrow {
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.planning-release-main .planning-release-identity-line,
 .planning-release-main > span:last-child {
   color: var(--text-3);
   font-size: 11px;
@@ -6865,19 +6889,44 @@ input[type="checkbox"]:disabled {
   text-transform: none;
 }
 
+/* Centred so the age pill reads against the card as a whole. Top-aligned it landed on
+   the same optical line as the first text row, which made it look like a property of
+   that row rather than of the item. */
 .planning-release-meta {
   display: grid;
-  align-self: start;
-  align-content: start;
+  align-self: center;
+  align-content: center;
   justify-items: end;
-  gap: 5px;
+  gap: 9px;
   min-width: 0;
+}
+
+/* Comment signal and age share a line, so the card gains a fact without gaining a row. */
+.planning-release-meta-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .planning-release-meta .deliverable-badge-row {
   max-width: 118px;
   flex-wrap: nowrap;
   justify-content: flex-end;
+}
+
+/* Text, not a chip. The age chip stays the only filled thing on the card, so the
+   blocker reads as a sentence about state rather than another container. */
+.planning-release-missing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: #b91c1c;
+  font-size: 10.5px;
+  font-weight: 750;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .planning-release-age {
@@ -6903,7 +6952,8 @@ input[type="checkbox"]:disabled {
 
 .planning-release-empty {
   padding: 12px;
-  border: 1px dashed #cbd5e1;
+  /* Darkened with the lane behind it; the old #cbd5e1 was near-invisible on #ededed. */
+  border: 1px dashed #bfc7d2;
   border-radius: 8px;
   color: var(--text-3);
   font-size: 12px;
@@ -6958,6 +7008,25 @@ input[type="checkbox"]:disabled {
   }
 }
 
+.photo-release-handoff {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: 10px;
+}
+
+.photo-release-handoff .btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.photo-release-handoff em {
+  color: var(--text-2);
+  font-size: 12px;
+  font-style: normal;
+}
+
 .planning-board-feedback {
   display: inline-flex;
   align-items: center;
@@ -6967,41 +7036,115 @@ input[type="checkbox"]:disabled {
   font-weight: 750;
 }
 
+/* Small and flat. The halo made a 6px dot read as a warning light. */
 .planning-unread-dot {
   flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
   background: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+}
+
+/* One list, one rhythm. Physical facts and observed identity used to be two different
+   shapes stacked together, which is what made the spacing look arbitrary. */
+.merch-facts {
+  display: grid;
+  gap: 0;
+  margin: 0 0 16px;
+}
+
+/* Line height carries the rhythm instead of a row gap, so the list reads as one
+   block rather than five separate rows. */
+.merch-facts > div {
+  display: grid;
+  grid-template-columns: 152px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+  line-height: 1.75;
+}
+
+.merch-facts dt {
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.merch-facts dd {
+  margin: 0;
+  color: var(--text-1);
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.merch-facts dd.is-attention {
+  color: #b45309;
+}
+
+.merch-facts dd a {
+  color: #1d4ed8;
+  text-decoration: none;
+}
+
+.merch-facts dd a:hover,
+.merch-facts dd a:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .planning-comment-signal {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-height: 21px;
+  min-height: 20px;
   padding: 2px 7px;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.32);
+  border: 1px solid rgba(148, 163, 184, 0.28);
   background: #fff;
-  color: var(--text-2);
+  color: var(--text-3);
   font-size: 10.5px;
-  font-weight: 850;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
+/* Three steps in one hue rather than two competing hues. The old "recent" state was
+   amber, which collided with the age chip's aging colour and made a comment count the
+   loudest thing on the card. Escalating by weight keeps recency legible while leaving
+   amber and red to mean age and blockers everywhere on this board.
+
+     quiet outline  = there is a conversation, you are caught up
+     blue tint      = unread
+     solid blue     = unread and still live (posted within the last four hours)  */
 .planning-comment-signal.has-unread {
-  border-color: rgba(37, 99, 235, 0.38);
-  background: rgba(239, 246, 255, 0.95);
+  border-color: rgba(37, 99, 235, 0.32);
+  background: #eff6ff;
   color: #1d4ed8;
 }
 
-.planning-comment-signal.has-recent {
-  border-color: rgba(251, 191, 36, 0.9);
-  background: rgba(255, 251, 235, 0.92);
-  color: #9a3412;
-  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.12);
+.planning-comment-signal.has-recent.has-unread {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.planning-comment-signal.has-recent.has-unread .planning-unread-dot {
+  background: #fff;
+}
+
+.planning-comment-signal.has-recent.has-unread svg {
+  opacity: 0.9;
+}
+
+/* Caught up, but the thread moved recently: worth noticing, not worth shouting. */
+.planning-comment-signal.has-recent:not(.has-unread) {
+  border-color: rgba(37, 99, 235, 0.34);
+  color: var(--text-2);
+}
+
+.planning-comment-signal svg {
+  opacity: 0.75;
+  transform: scaleX(-1);
 }
 
 .planning-comment-signal > span[aria-hidden="true"] {
@@ -7039,21 +7182,52 @@ input[type="checkbox"]:disabled {
   align-items: center;
   width: fit-content;
   max-width: 100%;
-  min-height: 19px;
-  padding: 2px 6px;
+  min-height: 17px;
+  padding: 1px 6px;
   border: 1px solid var(--deliverable-border);
   border-radius: 999px;
   background: var(--deliverable-fill);
   color: var(--deliverable-text);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14);
-  font-size: 10px;
-  font-weight: 900;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
   line-height: 1.1;
 }
 
 .deliverable-badge svg {
   flex: 0 0 auto;
-  margin-right: 3px;
+  margin-right: 2px;
+}
+
+/* A release leaves the card on the board, so the badge confirms the action for a
+   few seconds. It overrides the deliverable palette on purpose: this is a
+   transient state, not a fourth deliverable colour. */
+.deliverable-badge.is-just-released {
+  --deliverable-fill: #f0fdf4;
+  --deliverable-border: #15803d;
+  --deliverable-text: #15803d;
+  box-shadow: 0 0 0 2px rgba(21, 128, 61, 0.16);
+  animation: deliverable-badge-released 320ms ease-out;
+}
+
+@keyframes deliverable-badge-released {
+  from { transform: scale(0.9); opacity: 0.5; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deliverable-badge.is-just-released {
+    animation: none;
+  }
+}
+
+/* A suggestion is not a commitment: dashed and lighter, so it reads as a proposal
+   waiting on confirmation rather than a decision already recorded. */
+.deliverable-badge.is-suggested {
+  border-style: dashed;
+  box-shadow: none;
+  opacity: 0.75;
 }
 
 /* Shared workstream-card and Deliverables-modal palette. */
@@ -7763,6 +7937,17 @@ input[type="checkbox"]:disabled {
   line-height: 1.35;
 }
 
+.quantity-split-warning a {
+  color: inherit;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.quantity-split-warning a:hover {
+  color: #7c2d12;
+}
+
 .quantity-split-warning strong {
   color: #78350f;
   font-size: 12px;
@@ -8028,14 +8213,30 @@ input[type="checkbox"]:disabled {
 }
 
 .new-review-thumbnail-strip button {
-  flex: 0 0 42px;
-  width: 42px;
-  height: 42px;
+  position: relative;
+  flex: 0 0 54px;
+  width: 54px;
+  height: 54px;
   padding: 0;
   border: 2px solid transparent;
-  border-radius: 8px;
+  border-radius: 10px;
   overflow: hidden;
   background: #111827;
+  cursor: pointer;
+}
+
+.new-review-thumb-label {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 2px 3px 3px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #f8fafc;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .new-review-thumbnail-strip button.is-active {
@@ -8160,12 +8361,6 @@ input[type="checkbox"]:disabled {
   background: var(--surface);
 }
 
-.conversation-panel,
-.activity-panel {
-  display: grid;
-  gap: 10px;
-}
-
 .conversation-count {
   margin-left: auto;
   padding: 2px 7px;
@@ -8183,10 +8378,133 @@ input[type="checkbox"]:disabled {
 }
 
 .conversation-list {
-  max-height: 260px;
+  align-content: start;
+  gap: 9px;
+  min-height: 0;
   overflow-y: auto;
-  padding-right: 2px;
+  padding-right: 4px;
   scroll-behavior: smooth;
+}
+
+.activity-list {
+  align-content: start;
+}
+
+.conversation-panel,
+.activity-panel {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 0;
+}
+
+.activity-panel {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.activity-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.support-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.26);
+}
+
+.support-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  margin-bottom: -1px;
+  padding: 7px 2px 9px;
+  margin-right: 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.support-tabs button:hover {
+  color: var(--text-2);
+}
+
+.support-tabs button.is-active {
+  border-bottom-color: var(--text-1);
+  color: var(--text-1);
+}
+
+.support-tabs button:focus-visible {
+  outline: 2px solid rgba(147, 197, 253, 0.55);
+  outline-offset: 2px;
+}
+
+.support-tab-count {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.support-tabs button.is-active .support-tab-count {
+  background: rgba(15, 23, 42, 0.1);
+  color: var(--text-2);
+}
+
+.support-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #2563eb;
+}
+
+/* Blue, and outlined rather than filled: it belongs to the conversation column and
+   must not read as an alternative to the modal's black commit button. */
+.btn-comment {
+  border-color: rgba(37, 99, 235, 0.35);
+  background: #fff;
+  color: #1d4ed8;
+  font-weight: 750;
+}
+
+.btn-comment:hover:not(:disabled) {
+  border-color: rgba(37, 99, 235, 0.6);
+  background: #eff6ff;
+}
+
+.btn-comment:disabled {
+  border-color: rgba(148, 163, 184, 0.3);
+  background: #fff;
+  color: var(--text-3);
+}
+
+/* Declining to accept sits beside Accept, so it reads as the other outcome rather
+   than a destructive action competing with the primary one. */
+/* Outlined so it reads as a real action beside Accept, but hollow rather than filled
+   so the primary commit stays the heavier of the two. */
+.btn-ghost-danger {
+  border-color: rgba(180, 35, 24, 0.4);
+  background: #fff;
+  color: #b42318;
+  font-weight: 750;
+}
+
+.btn-ghost-danger:hover:not(:disabled) {
+  border-color: #b42318;
+  background: rgba(180, 35, 24, 0.06);
 }
 
 .conversation-empty {
@@ -8201,6 +8519,35 @@ input[type="checkbox"]:disabled {
   grid-template-columns: 28px minmax(0, 1fr);
   gap: 10px;
   align-items: start;
+}
+
+.conversation-comment.is-new .conversation-bubble {
+  position: relative;
+  padding-left: 9px;
+}
+
+.conversation-comment.is-new .conversation-bubble::before {
+  content: "";
+  position: absolute;
+  inset-block: 1px;
+  left: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: #2563eb;
+}
+
+.conversation-new-flag {
+  /* Pushed to the trailing edge so it reads as a marker on the comment rather than
+     part of the timestamp. */
+  margin-left: auto;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .conversation-avatar {
@@ -8219,12 +8566,13 @@ input[type="checkbox"]:disabled {
 
 .conversation-bubble {
   display: grid;
-  gap: 7px;
+  gap: 5px;
   min-width: 0;
-  padding: 10px 11px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.86);
+  padding: 9px 11px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.04);
 }
 
 .conversation-comment header {
@@ -8276,7 +8624,9 @@ input[type="checkbox"]:disabled {
 .conversation-composer {
   display: grid;
   gap: 8px;
-  padding-bottom: 12px;
+  padding-top: 11px;
+  padding-bottom: 4px;
+  border-top: 1px solid #dbe2ec;
 }
 
 .conversation-composer textarea {
@@ -8323,21 +8673,22 @@ input[type="checkbox"]:disabled {
 
 .new-review-support-panel {
   display: grid;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   padding: 16px;
-  border-left: 1px solid rgba(148, 163, 184, 0.26);
-  background: rgba(248, 250, 252, 0.72);
+  border-left: 1px solid #dbe2ec;
+  background: #f2f5f9;
 }
 
 .new-review-support-body {
   display: grid;
-  align-content: start;
+  grid-template-rows: minmax(0, 1fr);
   gap: 14px;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .new-review-support-body .review-step {
@@ -8357,8 +8708,10 @@ input[type="checkbox"]:disabled {
   display: none;
 }
 
+/* Was capped at 180px, which clipped the thread at roughly two comments while the
+   rest of the column sat empty. The list now takes whatever height the tab gives it. */
 .new-review-support-body .conversation-list {
-  max-height: 180px;
+  max-height: none;
 }
 
 .new-review-support-body .conversation-composer textarea {
@@ -8373,6 +8726,12 @@ input[type="checkbox"]:disabled {
 
 .new-review-support-body .activity-event time {
   white-space: normal;
+}
+
+.activity-event-change {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-3);
 }
 
 .merch-flag-form input { flex: 1; min-width: 140px; }
@@ -8523,10 +8882,35 @@ input[type="checkbox"]:disabled {
   line-height: 1.35;
 }
 
+/* Says what the two inputs below are for, so they are not read as a second copy of
+   the package values shown in step 1. */
+.new-review-search-hint {
+  margin: 0 0 9px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
 .new-review-product-search-fields {
   display: grid;
-  gap: 10px;
+  gap: 9px;
   margin-bottom: 12px;
+}
+
+/* These fields are shared with Shipments, where 18px text and tall targets are right
+   for a tablet on a receiving bench. Planning is a laptop workspace and inherited that
+   sizing, so the two search inputs dominated the decision column. Scoped here so the
+   Shipments sizing is untouched. */
+.new-review-product-search-fields .recv-field input,
+.new-review-product-search-fields .recv-field-product input {
+  padding: 8px 11px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.new-review-product-search-fields .recv-field label {
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
 }
 
 .new-review-inline-status {
@@ -8998,10 +9382,14 @@ input[type="checkbox"]:disabled {
 }
 
 .new-review-finish-summary {
-  margin-left: 0;
-  flex: 1 1 460px;
-  max-width: 680px;
+  grid-column: 2;
+  grid-row: 4;
+  justify-self: start;
+  max-width: 620px;
   min-width: 0;
+  margin: 0;
+  padding: 0 12px 10px 18px;
+  white-space: normal;
 }
 
 .new-review-finish-summary strong {
@@ -9778,28 +10166,50 @@ input[type="checkbox"]:disabled {
 
 .settings-list { padding: 0; }
 
-.webhook-diagnostics-details {
-  margin-top: 16px;
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
+.webhook-diagnostics-stack {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
 }
 
-.webhook-diagnostics-details summary {
-  cursor: pointer;
-  font-weight: 700;
+.webhook-diagnostics-reading {
+  min-width: 0;
 }
 
-.webhook-diagnostics-details pre {
-  max-height: 360px;
-  overflow: auto;
-  margin: 12px 0 0;
-  padding: 12px;
-  background: var(--surface-muted);
+.webhook-diagnostics-payload {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   border: 1px solid var(--line);
-  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  overflow: hidden;
 }
+
+.webhook-payload-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px 7px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.webhook-diagnostics-payload pre {
+  max-height: 60vh;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
+}
+
+
 .setting-row {
   display: flex;
   align-items: center;
@@ -10195,19 +10605,9 @@ input[type="checkbox"]:disabled {
   display: none;
 }
 
-.photo-production-fields-editor-header span,
-.photo-production-editor-note {
+.photo-production-fields-editor-header span {
   color: var(--muted, #748096);
   font-size: 13px;
-}
-
-.photo-production-editor-note {
-  margin-bottom: 10px;
-  padding: 8px 10px;
-  border: 1px solid #dbe3ee;
-  border-radius: 7px;
-  background: #f8fafc;
-  font-weight: 650;
 }
 
 .photo-production-fields-grid {
@@ -10259,20 +10659,6 @@ input[type="checkbox"]:disabled {
   background: #fff;
   color: var(--ink, #1d2736);
   font: inherit;
-}
-
-.photo-production-fields-editor-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
-  padding-bottom: 2px;
-}
-
-.photo-production-fields-editor .is-success,
-.photo-production-fields-editor .is-error {
-  display: block;
-  margin-top: 9px;
-  font-size: 13px;
 }
 
 @media (max-width: 720px) {
@@ -10868,6 +11254,21 @@ input[type="checkbox"]:disabled {
   gap: 10px;
 }
 
+.new-review-footer-scope {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+  max-width: 620px;
+  margin: 0;
+  padding: 0 12px 10px 18px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  opacity: 0.78;
+  text-align: left;
+}
+
 .new-review-footer-guidance {
   grid-column: 2;
   grid-row: 1;
@@ -11130,6 +11531,18 @@ input[type="checkbox"]:disabled {
   font-weight: 800;
 }
 
+.activation-email-preview-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.activation-email-preview-actions em {
+  color: var(--text-2);
+  font-size: 11px;
+  font-style: normal;
+}
+
 .activation-email-preview-body {
   max-height: min(68dvh, 760px);
   overflow: auto;
@@ -11231,6 +11644,38 @@ input[type="checkbox"]:disabled {
 .activation-preview-token.is-missing,
 .activation-email-preview-body td.is-missing {
   color: #b91c1c;
+}
+
+/* After a release the footer stops offering the release and starts offering the
+   one thing left to do: send the email. */
+.activation-modal-released {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(21, 128, 61, 0.28);
+  background: #f0fdf4;
+}
+
+.activation-modal-released p {
+  margin: 0;
+  color: #14532d;
+  font-size: 13px;
+}
+
+.activation-modal-released strong {
+  font-weight: 800;
+}
+
+.activation-released-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.activation-released-actions em {
+  color: #15803d;
+  font-size: 12px;
+  font-style: normal;
 }
 
 .activation-modal-footer {
@@ -13196,6 +13641,19 @@ select.intake-choice-control {
   background:
     url("data:image/svg+xml,%3Csvg width='10' height='8' viewBox='0 0 10 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 4l2.5 2.5L9 1' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 8px 7px no-repeat,
     #16a34a;
+}
+
+/* The dashboard mirrors the Planning Release section, so unmatched needs the same
+   marker treatment as matched. The base colour is already amber; only the dot was
+   missing, which left matched and unmatched looking like different kinds of fact. */
+.dash-new-merch-copy b.is-unmatched::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background:
+    url("data:image/svg+xml,%3Csvg width='8' height='8' viewBox='0 0 8 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1.6 1.6l4.8 4.8M6.4 1.6l-4.8 4.8' fill='none' stroke='%23fff' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E") center / 7px 7px no-repeat,
+    #d97706;
 }
 
 .dash-new-merch-age {
@@ -17062,4 +17520,269 @@ select.form-input {
     gap: 10px;
     font-size: 13px;
   }
+}
+
+/* Structure Form preview: the proposal and its evidence sit together, because the
+   guess is only trustworthy when the sentence behind it is visible. */
+.structure-form-card {
+  display: grid;
+  gap: 12px;
+}
+
+.structure-form-card > .form-hint,
+.structure-form-card > .empty-state {
+  margin: 0;
+  padding-left: 13px;
+}
+
+.structure-form-card > .notice-state {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid rgba(21, 128, 61, 0.3);
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #15803d;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.structure-form-card > .error-state {
+  margin: 0;
+  padding: 12px 16px;
+}
+
+.structure-form-result {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.structure-form-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.structure-form-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.structure-form-proposal-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.structure-form-proposal-edit select {
+  min-width: 152px;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--border-mid);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 650;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Editable in place: the guess is only useful if it is easy to correct. */
+.structure-form-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.structure-form-input:hover {
+  border-color: var(--border);
+}
+
+.structure-form-input:focus {
+  border-color: var(--blue);
+  background: #fff;
+  outline: none;
+}
+
+.structure-form-input.is-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.01em;
+}
+
+.structure-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.structure-form-client {
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.structure-form-client::before {
+  content: 'Client';
+  margin-right: 7px;
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.structure-form-error {
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.structure-form-reason {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.structure-form-evidence {
+  display: flex;
+  gap: 8px;
+  padding: 6px 9px;
+  border-left: 3px solid #b45309;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 11.5px;
+}
+
+.structure-form-evidence span {
+  flex: 0 0 auto;
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  padding-top: 1px;
+}
+
+/* Condensed once forms are loaded: still a drop target, no longer the headline. */
+.intake-dropzone.is-compact {
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 0;
+  padding: 10px 14px;
+}
+
+.intake-dropzone.is-compact .intake-drop-icon,
+.intake-dropzone.is-compact .intake-drop-or,
+.intake-dropzone.is-compact .intake-drop-helper {
+  display: none;
+}
+
+.intake-dropzone.is-compact .intake-drop-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-3);
+}
+
+.intake-dropzone.is-compact .intake-file-button {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+/* The create button sits at the end of a long list; without room beneath it the
+   page ends flush against it and it reads as cut off. */
+.intake-page.page-stack {
+  padding-bottom: 64px;
+}
+
+.structure-form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin-top: 4px;
+  padding: 14px 18px 14px 4px;
+  background: linear-gradient(180deg, rgba(238, 242, 247, 0) 0%, var(--surface-muted, #eef2f7) 38%);
+}
+
+/* Every field the same width in a single grid, labels above values, so the block
+   reads as a form rather than a run of inline pairs of differing length. */
+.structure-form-fields {
+  display: grid;
+  grid-template-columns: 260px 240px 120px 128px 128px;
+  justify-content: start;
+  gap: 10px 12px;
+  padding: 2px 0;
+}
+
+@media (max-width: 1080px) {
+  .structure-form-fields {
+    grid-template-columns: 260px 240px 120px;
+  }
+}
+
+.structure-form-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.structure-form-field > span {
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.structure-form-field .structure-form-input {
+  width: 100%;
+  border-color: var(--border);
+  background: #fff;
+}
+
+.structure-form-field .structure-form-input::placeholder {
+  color: var(--text-3);
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* The product table is the substance of the card, so it gets the emphasis. */
+.structure-form-result .table-wrap table {
+  width: 100%;
+}
+
+.structure-form-result th {
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.structure-form-result th:last-child,
+.structure-form-result td:last-child {
+  width: 190px;
+}
+
+.structure-form-result td {
+  vertical-align: middle;
 }

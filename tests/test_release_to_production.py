@@ -2,7 +2,10 @@ import importlib
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
+
+import requests
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
@@ -66,7 +69,7 @@ class ReleaseToProductionTests(unittest.TestCase):
     def test_readiness_evaluation_requires_each_baseline_field(self):
         ready = _evaluate_required_to_shoot_from_fields(self.entry()["fields"], self.product()["fields"])
         self.assertTrue(ready["ready"])
-        self.assertEqual(ready["summary"], "6 of 6 Complete")
+        self.assertEqual(ready["summary"], "5 of 5 Complete")
 
         missing_verification = _evaluate_required_to_shoot_from_fields({
             **self.entry()["fields"],
@@ -81,7 +84,7 @@ class ReleaseToProductionTests(unittest.TestCase):
         }, {})
         self.assertIn("Product Linked", missing_product["missing"])
         self.assertIn("Product Name", missing_product["missing"])
-        self.assertIn("Primary Match Key", missing_product["missing"])
+        self.assertIn("UPC / Product ID", missing_product["missing"])
 
         missing_decisions = _evaluate_required_to_shoot_from_fields({
             **self.entry()["fields"],
@@ -89,10 +92,22 @@ class ReleaseToProductionTests(unittest.TestCase):
         }, self.product()["fields"])
         self.assertIn("Deliverables", missing_decisions["missing"])
 
-        missing_artwork = _evaluate_required_to_shoot_from_fields(self.entry()["fields"], self.product({
+        # Artwork is not a baseline requirement; it appears only when the client
+        # asks for the Valid Artwork Path on a selected deliverable.
+        no_artwork_configured = _evaluate_required_to_shoot_from_fields(self.entry()["fields"], self.product({
             C.F_ITEM_ARTWORK_RECEIVED: False,
         })["fields"])
-        self.assertIn("Artwork", missing_artwork["missing"])
+        self.assertNotIn("Valid Artwork Path", no_artwork_configured["missing"])
+        self.assertTrue(no_artwork_configured["ready"])
+
+        artwork_client = {"photoProductionRequirements": {"workstreams": {
+            "Ecomm": {"requiredProductFields": ["pathToArt"]},
+        }}}
+        missing_artwork = _evaluate_required_to_shoot_from_fields(
+            self.entry()["fields"], self.product({C.F_ITEM_ARTWORK_RECEIVED: False})["fields"],
+            client_config=artwork_client,
+        )
+        self.assertIn("Valid Artwork Path", missing_artwork["missing"])
 
         without_reference_data = _evaluate_required_to_shoot_from_fields(self.entry()["fields"], self.product({
             C.F_ITEM_REFERENCE_DATA: "",
@@ -172,7 +187,7 @@ class ReleaseToProductionTests(unittest.TestCase):
         payload = response.get_json()
         self.assertIn("Product Linked", payload["missing"])
         self.assertIn("Product Name", payload["missing"])
-        self.assertIn("Primary Match Key", payload["missing"])
+        self.assertIn("UPC / Product ID", payload["missing"])
         update_record.assert_not_called()
 
     @patch("routes._clients_by_id", return_value={})
@@ -196,6 +211,51 @@ class ReleaseToProductionTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["releasedAt"], "2026-07-19T10:00:00Z")
         self.assertEqual(payload["releasedByIds"], ["recOriginalUser"])
+
+    @patch("routes._record_merchandise_history")
+    @patch("routes._populate_creative_force_feed_for_ready_cards")
+    @patch("routes._workstream_cards_for_merchandise")
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_release_writes_the_creative_force_feed_before_marking_released(
+        self, get_record, update_record, cards_for_merch, populate_feed, record_history
+    ):
+        entry = self.entry({C.F_RECEIPT_ENTRY_ITEM: ["recProduct"]})
+        get_record.side_effect = [entry, self.receipt(), self.product(), self.product()]
+        update_record.return_value = entry
+        card = {"id": "recCard", "fields": {C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"]}}
+        cards_for_merch.return_value = [card]
+        populate_feed.return_value = [{"sourceKey": "topco:recCard", "action": "created"}]
+
+        response = self.app.post("/api/merchandise/recMerch/release")
+
+        self.assertEqual(response.status_code, 200)
+        populate_feed.assert_called_once_with([card])
+        self.assertEqual(response.get_json()["creativeForceFeed"],
+                         [{"sourceKey": "topco:recCard", "action": "created"}])
+        self.assertTrue(update_record.call_args.args[2][C.F_RECEIPT_ENTRY_RELEASED])
+        record_history.assert_called_once()
+        self.assertEqual(record_history.call_args.args[1], "Released to photo")
+
+    @patch("routes._populate_creative_force_feed_for_ready_cards")
+    @patch("routes._workstream_cards_for_merchandise")
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_release_is_not_recorded_when_the_feed_write_fails(
+        self, get_record, update_record, cards_for_merch, populate_feed
+    ):
+        # Otherwise an item reads as released to production but never arrives there.
+        entry = self.entry({C.F_RECEIPT_ENTRY_ITEM: ["recProduct"]})
+        get_record.side_effect = [entry, self.receipt(), self.product(), self.product()]
+        cards_for_merch.return_value = [{"id": "recCard", "fields": {}}]
+        error = requests.HTTPError("boom")
+        error.response = SimpleNamespace(status_code=500, text="boom", json=lambda: {})
+        populate_feed.side_effect = error
+
+        response = self.app.post("/api/merchandise/recMerch/release")
+
+        self.assertNotEqual(response.status_code, 200)
+        update_record.assert_not_called()
 
 
 class VerifyMerchandiseTests(unittest.TestCase):
@@ -233,7 +293,8 @@ class VerifyMerchandiseTests(unittest.TestCase):
         fields = update_record.call_args.args[2]
         self.assertTrue(fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED])
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_AT], "2026-07-21T09:00:00Z")
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY], ["recTestUser"])
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY], "Test User")
+        self.assertIsInstance(fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY], str)
         payload = response.get_json()
         self.assertTrue(payload["merchandiseVerified"])
 
@@ -271,7 +332,36 @@ class VerifyMerchandiseTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
         self.assertFalse(fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY], [])
+        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_BY], "")
+
+
+class ActivationReleaseStampTests(unittest.TestCase):
+    """Releasing through a photo release is a release, so it stamps like one.
+    Without the stamp the board cannot tell a card released last week from one
+    that was never released."""
+
+    def test_release_stamp_is_written_when_the_card_moves(self):
+        import routes
+        source = open(routes.__file__, encoding="utf-8").read()
+        move = source.split("def move_activation_to_photo", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("update_fields[C.F_RECEIPT_ENTRY_RELEASED] = True", move)
+        self.assertIn("update_fields[C.F_RECEIPT_ENTRY_RELEASED_AT] = _now_iso()", move)
+        self.assertIn("update_fields[C.F_RECEIPT_ENTRY_RELEASED_BY] = [releaser_id]", move)
+
+    def test_an_existing_stamp_is_not_overwritten(self):
+        # Re-releasing an edited photo release must not move the original date.
+        import routes
+        source = open(routes.__file__, encoding="utf-8").read()
+        move = source.split("def move_activation_to_photo", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("if not fields.get(C.F_RECEIPT_ENTRY_RELEASED):", move)
+
+    def test_stamp_waits_for_every_sibling_workstream(self):
+        # Merchandise with a sibling card still unreleased is not released yet.
+        import routes
+        source = open(routes.__file__, encoding="utf-8").read()
+        move = source.split("def move_activation_to_photo", 1)[1].split("\ndef ", 1)[0]
+        stamped = move.split("if not unreleased_siblings:", 1)[1]
+        self.assertIn("C.F_RECEIPT_ENTRY_RELEASED", stamped)
 
 
 class ReleaseSchemaUtilityTests(unittest.TestCase):

@@ -101,7 +101,8 @@ class AuthTests(unittest.TestCase):
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_ITEM_JOB_NUMBER], "JOB-1")
         self.assertEqual(fields[C.F_ITEM_BRAND_PREFIX], "FX")
-        self.assertEqual(json.loads(fields[C.F_ITEM_REFERENCE_DATA])["File Name Description"], "Bacon")
+        self.assertEqual(fields[C.F_ITEM_PRODUCT_DESCRIPTION], "Bacon")
+        self.assertNotIn(C.F_ITEM_REFERENCE_DATA, fields)
 
     @patch("routes.airtable.get_record")
     def test_successful_login_creates_authenticated_session(self, get_record):
@@ -537,8 +538,9 @@ class AuthTests(unittest.TestCase):
         saved = json.loads(update_record.call_args.args[2][C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC])
         self.assertEqual(saved["status"], "In Production")
         self.assertEqual(saved["workUnitId"], "cf-work-1")
-        self.assertEqual(update_record.call_args.args[2][C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS], "InProgress")
+        self.assertEqual(update_record.call_args.args[2][C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS], "Ready To Work")
         self.assertEqual(update_record.call_args.args[2][C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP], "Capture")
+        self.assertEqual(saved["statusRaw"], "InProgress")
 
     def test_creative_force_webhook_rejects_invalid_signature(self):
         with patch.object(C, "CREATIVE_FORCE_WEBHOOK_SECRET", "secret"):

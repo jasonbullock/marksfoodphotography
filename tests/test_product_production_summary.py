@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from routes import (  # noqa: E402
     _creative_force_feed_fields,
+    _configured_product_field_keys,
     _derive_product_production_summary,
     _planning_status_for_fields,
     _sync_creative_force_product_feed_cards,
@@ -171,6 +172,44 @@ class ProductProductionSummaryTests(unittest.TestCase):
         self.assertEqual(synced[0]["action"], "created")
         self.assertEqual(create_record.call_args.args[0], routes.C.CREATIVE_FORCE_PRODUCT_FEED_TABLE)
         self.assertEqual(create_record.call_args.args[1]["Source Key"], "recReadyCard")
+
+
+
+class ConfiguredProductFieldKeysTests(unittest.TestCase):
+    """The feed table is built from the client's configured fields, so the writer
+    must project the same list. Projecting anything else writes a column that does
+    not exist and fails the release outright."""
+
+    client = {"photoProductionRequirements": {"workstreams": {
+        "Packaging": {"requiredProductFields": ["productName", "upc", "jobNumber", "brandPrefix", "fileNameDescription"]},
+        "Ecomm": {"requiredProductFields": ["productName", "upc", "cvid"]},
+    }}}
+
+    def test_returns_only_what_the_workstream_configures(self):
+        self.assertEqual(
+            _configured_product_field_keys(self.client, "Packaging"),
+            ["productName", "upc", "jobNumber", "brandPrefix", "fileNameDescription"],
+        )
+        self.assertEqual(
+            _configured_product_field_keys(self.client, "Ecomm"),
+            ["productName", "upc", "cvid"],
+        )
+
+    def test_product_description_is_not_projected_unless_configured(self):
+        # This is the regression: a Product with a Product Description failed the
+        # release because the feed table has no such column.
+        self.assertNotIn("productDescription", _configured_product_field_keys(self.client, "Packaging"))
+
+    def test_unknown_and_unconfigured_shapes_yield_nothing(self):
+        self.assertEqual(_configured_product_field_keys(self.client, "Thr3d"), [])
+        self.assertEqual(_configured_product_field_keys(None, "Packaging"), [])
+        self.assertEqual(_configured_product_field_keys({}, "Packaging"), [])
+
+    def test_keys_with_no_feed_column_are_dropped(self):
+        client = {"photoProductionRequirements": {"workstreams": {
+            "Packaging": {"requiredProductFields": ["productName", "somethingInvented"]},
+        }}}
+        self.assertEqual(_configured_product_field_keys(client, "Packaging"), ["productName"])
 
 
 if __name__ == "__main__":

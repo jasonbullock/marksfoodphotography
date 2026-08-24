@@ -4,6 +4,8 @@ import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation, use
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import {
   Camera,
+  Check,
+  SquarePen,
   ChevronDown,
   ChevronUp,
   Columns3,
@@ -13,12 +15,12 @@ import {
   GripVertical,
   Group as GroupIcon,
   Images,
-  List as ListIcon,
   LayoutGrid,
   Layers,
+  MessageSquare,
   PackageOpen,
-  Pencil,
   RefreshCw,
+  Rotate3d,
   Tag,
   Trash2,
   X,
@@ -104,7 +106,6 @@ const Icon = {
   NavMerchandise: () => <ClipboardList size={20} strokeWidth={1.5} />,
   NavWork: () => <Columns3 size={20} strokeWidth={1.5} />,
   NavProduction: () => <LayoutGrid size={20} strokeWidth={1.5} />,
-  NavJobs: () => <Layers size={20} strokeWidth={1.5} />,
   NavProducts: () => <Tag size={20} strokeWidth={1.5} />,
   Upload: () => (
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -186,7 +187,131 @@ function valueForExport(value) {
   return String(value);
 }
 
-const DEFAULT_WALNUT_SCOPE_SUGGESTIONS = ['Full set renders - WALNUT (PHOTO)'];
+// Outlook cannot be handed HTML through a mailto:, so the draft carries a plain
+// reading of the same email. The formatted copy action exists for the table,
+// which is the one thing this rendering loses.
+function photoReleaseEmailText(html) {
+  return String(html || '')
+    .replace(/<\/(p|div|ul|table|thead|tbody)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<li>/gi, '  - ')
+    .replace(/<\/(th|td)>/gi, '\t')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// Addressed and titled, with no body: a mailto: cannot carry the formatting, so
+// the body arrives by paste. The subject rides here rather than in the copied
+// block, where it would land inside the message instead of on it.
+function photoReleaseMailtoUrl({ subject = '', recipients = [] } = {}) {
+  const params = new URLSearchParams();
+  if (subject) params.set('subject', subject);
+  return `mailto:${encodeURIComponent(recipients.join(','))}?${params.toString().replace(/\+/g, '%20')}`;
+}
+
+function escapeEmailHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// The sent email is built from the same inputs the preview renders, so the two
+// cannot drift. It differs in one deliberate way: the preview marks missing
+// values with red placeholders to help the author, and an email that goes to a
+// vendor must never contain them. Release validation already requires those
+// values, so a complete release renders identically.
+function buildPhotoReleaseEmail({
+  clientName = 'Client',
+  label = 'Photo',
+  heading = '',
+  projectName = '',
+  itemRows = [],
+  lines = [],
+  columns = [],
+  showArtworkPath = false,
+  showUploadLocation = false,
+  pathPrefixes = {},
+  resolvePath = (value) => String(value || '').trim(),
+  notes = '',
+  deliverables = [],
+}) {
+  const subject = `${clientName} ${label} Photo Request - ${projectName}`.trim();
+  const text = value => escapeEmailHtml(String(value ?? '').trim());
+  const rowLabel = (row, index) => text(row.description) || `Item ${index + 1}`;
+  const link = (value, prefix) => {
+    const path = resolvePath(value, prefix);
+    return path ? `<a href="${escapeEmailHtml(path)}" style="color:#2563eb;text-decoration:underline;">${escapeEmailHtml(path)}</a>` : '';
+  };
+
+  // Inlined from the preview's own CSS (.activation-email-preview-body and
+  // friends), because mail clients strip stylesheets. Values are green and the
+  // SKU table is the yellow block for the same reason they are on screen: this
+  // is the email the user approved, not a plainer relative of it.
+  const VALUE = 'color:#166534;';
+  const P = 'margin:0 0 14px;';
+  const UL = 'margin:0 0 18px 22px;padding:0;';
+  const CELL = 'padding:5px 7px;border:1px solid #8b8f99;font-size:13px;line-height:1.2;text-align:center;';
+
+  const parts = [];
+  if (heading) parts.push(`<p style="${P}"><strong>${text(heading)}</strong></p>`);
+  if (itemRows.length) {
+    parts.push(`<ul style="${UL}">${itemRows.map((row, index) => {
+      const cvid = deliverables.includes('Ecomm') && String(row.cvid || '').trim() ? ` ${text(row.cvid)}` : '';
+      return `<li><span style="${VALUE}">${rowLabel(row, index)}${cvid}</span> - 1 SKU</li>`;
+    }).join('')}</ul>`);
+  }
+  if (lines.length) {
+    parts.push(`<p style="${P}">${lines
+      .map(line => `<strong>${text(line.label)}:</strong> <span style="${VALUE}">${text(line.value)}</span>`)
+      .join('<br />')}</p>`);
+  }
+  const pathSection = (title, field, prefix) => {
+    const entries = itemRows
+      .map((row, index) => ({ label: rowLabel(row, index), href: link(row[field], prefix) }))
+      .filter(entry => entry.href);
+    if (!entries.length) return;
+    parts.push(`<p style="margin:18px 0 6px;"><strong>${title}:</strong></p><ul style="${UL}">${entries
+      .map(entry => `<li><span style="${VALUE}">${entry.label}</span>: ${entry.href}</li>`).join('')}</ul>`);
+  };
+  if (showArtworkPath) pathSection('Path to artwork', 'artworkPath', pathPrefixes.artwork);
+  if (showUploadLocation) pathSection('Location for image uploads', 'uploadLocation', pathPrefixes.upload);
+  if (columns.length && itemRows.length) {
+    parts.push(`<p style="margin:0 0 6px;"><strong>Sku Details</strong></p>`
+      + `<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;margin:2px 0 18px;border-collapse:collapse;background:#fffec7;">`
+      + `<thead><tr>${columns.map(column =>
+        `<th style="${CELL}background:#ffffff;color:#111827;font-weight:900;text-transform:uppercase;">${text(column.label)}</th>`).join('')}</tr></thead>`
+      + `<tbody>${itemRows.map(row => `<tr>${columns
+        .map(column => `<td style="${CELL}${VALUE}">${text(column.getValue(row))}</td>`).join('')}</tr>`).join('')}</tbody>`
+      + `</table>`);
+  }
+  parts.push(`<p style="${P}">${text(notes) || 'Once completed, please send for review/approval. Thanks!'}</p>`);
+
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.36;color:#111827;">`
+    + parts.join('')
+    + `</div>`;
+  return { subject, html };
+}
+
+const ECOMM_WALNUT_SCOPE = 'Full set renders - WALNUT (PHOTO)';
+const PACKAGING_WALNUT_SCOPE = 'Packaging Shots';
+const DEFAULT_WALNUT_SCOPE_SUGGESTIONS = [ECOMM_WALNUT_SCOPE, PACKAGING_WALNUT_SCOPE];
+
+// The scope follows the deliverable, so the release opens on the right one
+// instead of making the user pick the only sensible value every time.
+function defaultWalnutScope(deliverableType) {
+  return deliverableType === 'Packaging' ? PACKAGING_WALNUT_SCOPE : ECOMM_WALNUT_SCOPE;
+}
 const DEFAULT_STRUCTURE_SUGGESTIONS = ['Hang Tag / Label', 'On Product (Label)'];
 const DEFAULT_DUE_URGENCY_SUGGESTIONS = [];
 
@@ -1219,7 +1344,6 @@ const emptyReceiptEntry = () => ({
   condition: 'Good',
   description: '',
   notes: '',
-  jobId: '',
 });
 
 function defaultReceivingMode() {
@@ -1345,16 +1469,9 @@ function ProductMatchCard({
   status = 'matched',
   title,
   meta,
-  observedName = '',
-  observedIdentifier = '',
-  useWhenBlank = false,
   onChange,
-  onUseProductName,
-  onUseProductIdentifier,
   changeDisabled = false,
   actionDisabled = false,
-  nameWarningText,
-  identifierWarningText,
 }) {
   if (status === 'unmatched') {
     return (
@@ -1372,11 +1489,6 @@ function ProductMatchCard({
 
   const productTitle = itemMatchTitle(item);
   const productIdentifier = itemMatchIdentifierValue(item);
-  const nameDiffers = matchValuesConflict(observedName, productTitle);
-  const identifierDiffers = matchValuesConflict(observedIdentifier, productIdentifier);
-  const canUseProductName = Boolean(onUseProductName && productTitle && (nameDiffers || (useWhenBlank && !String(observedName || '').trim())));
-  const canUseProductIdentifier = Boolean(onUseProductIdentifier && productIdentifier && (identifierDiffers || (useWhenBlank && !String(observedIdentifier || '').trim())));
-  const showWarnings = nameDiffers || identifierDiffers || canUseProductName || canUseProductIdentifier;
 
   return (
     <div className="receiving-match-selected">
@@ -1391,7 +1503,7 @@ function ProductMatchCard({
               title="Copy product name"
               onClick={event => { event.stopPropagation(); navigator.clipboard.writeText(productTitle); }}
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
               </svg>
@@ -1408,7 +1520,7 @@ function ProductMatchCard({
                   aria-label={`Copy Product ${itemMatchMethod(item)}`}
                   onClick={event => { event.stopPropagation(); navigator.clipboard.writeText(productIdentifier); }}
                 >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                   </svg>
@@ -1422,26 +1534,6 @@ function ProductMatchCard({
         </span>
         {onChange && <button type="button" onClick={onChange} disabled={changeDisabled}>Change</button>}
       </div>
-      {showWarnings && (
-        <div className="receiving-match-warnings">
-          {(canUseProductIdentifier || canUseProductName) && (
-            <span className="receiving-match-correction-actions">
-              {canUseProductName && (
-                <button type="button" className="receiving-match-use-identifier" onClick={onUseProductName} disabled={actionDisabled}>
-                  Use Product Name
-                </button>
-              )}
-              {canUseProductIdentifier && (
-                <button type="button" className="receiving-match-use-identifier" onClick={onUseProductIdentifier} disabled={actionDisabled}>
-                  Use Product {itemMatchMethod(item)}
-                </button>
-              )}
-            </span>
-          )}
-          {nameDiffers && <small className="receiving-match-warning">{nameWarningText || 'Package name differs from the linked Product name.'}</small>}
-          {identifierDiffers && <small className="receiving-match-warning">{identifierWarningText || `Package UPC / ID differs from the linked Product ${itemMatchMethod(item)}.`}</small>}
-        </div>
-      )}
     </div>
   );
 }
@@ -1487,6 +1579,7 @@ function PhotoProductionChecklist({ production = {} }) {
 function ReceivingMatchSuggestions({
   title,
   matches = [],
+  limit = 5,
   identifierQuery = '',
   nameOnlyMatchSuggestions = false,
   combinedPartialMatchSuggestions = false,
@@ -1515,7 +1608,7 @@ function ReceivingMatchSuggestions({
       )}
       {matches.length > 0 ? (
         <div className="receiving-match-list">
-          {matches.slice(0, 5).map(item => {
+          {matches.slice(0, limit).map(item => {
             const confidenceBadge = itemMatchConfidenceBadge(item, identifierQuery);
             return (
               <button
@@ -1535,7 +1628,7 @@ function ReceivingMatchSuggestions({
           })}
         </div>
       ) : showEmptyState ? (
-        !matchLoading && <p className="merch-compare-empty">No matching Products found. Check the package name and UPC / ID, or mark this as no clear match.</p>
+        !matchLoading && <p className="merch-compare-empty">No matching Products found. Check the package name and UPC / ID.</p>
       ) : null}
       {showNoClearMatchAction && onNoClearMatch && (
         <div className="receiving-match-panel-footer">
@@ -1548,10 +1641,25 @@ function ReceivingMatchSuggestions({
   );
 }
 
+function noMatchGuidance({ name = '', identifier = '' } = {}) {
+  const upcDigits = String(identifier || '').replace(/\D+/g, '');
+  const usableName = String(name || '').trim().length >= 3;
+  if (upcDigits.length >= 8) {
+    return usableName
+      ? 'Nothing in the client product list matches this name or UPC. The client may not have listed it yet.'
+      : 'No product with this UPC. The client may not have listed it yet.';
+  }
+  return usableName
+    ? 'No match on name alone. Add the UPC from the package to search more precisely.'
+    : 'Not enough detail from the package to search. Add the name or UPC printed on it.';
+}
+
 function SourceSheetMatchSuggestions({
   title = 'Possible Product Matches',
   matches = [],
   client,
+  searchName = '',
+  searchIdentifier = '',
   matchLoading = false,
   activatingRowNumber = null,
   canActivate = false,
@@ -1573,10 +1681,11 @@ function SourceSheetMatchSuggestions({
             return (
               <button
                 type="button"
-                className={`receiving-match-option receiving-source-match-option ${selected ? 'is-selected' : ''}`}
+                className={`receiving-match-option receiving-source-match-option ${selected ? 'is-selected' : ''} ${activating ? 'is-activating' : ''}`.trim()}
                 key={`${rowNumber}-${source.UPC || source['Product Name']}`}
                 onClick={() => onActivate?.(row)}
                 disabled={activating}
+                aria-busy={activating || undefined}
               >
                 <span>
                   <strong>{source['Product Name'] || 'Unnamed source row'}</strong>
@@ -1585,13 +1694,16 @@ function SourceSheetMatchSuggestions({
                     source.UPC ? `UPC ${source.UPC}` : '',
                   ].filter(Boolean).join(' · ')}</small>
                 </span>
-                <em>{activating ? 'Matching...' : selected && !canActivate ? 'Selected' : 'Match'}</em>
+                <em>
+                  {activating && <span className="match-option-spinner" aria-hidden="true" />}
+                  {activating ? 'Matching' : selected && !canActivate ? 'Selected' : 'Match'}
+                </em>
               </button>
             );
           })}
         </div>
       ) : (
-        !matchLoading && <p className="merch-compare-empty">No product matches found for these package clues.</p>
+        !matchLoading && <p className="merch-compare-empty">{noMatchGuidance({ name: searchName, identifier: searchIdentifier })}</p>
       )}
     </div>
   );
@@ -1614,7 +1726,18 @@ function sourceRowMatchItem(row = {}) {
     identifierLabel: 'UPC',
     codeType: 'UPC',
     brand: '',
+    matchBasis: sourceRowMatchBasis(row.matchBasis),
   };
+}
+
+function sourceRowMatchBasis(basis) {
+  const value = String(basis || '').toLowerCase();
+  const hasName = value.includes('name');
+  const hasCode = value.includes('upc') || value.includes('id');
+  if (hasName && hasCode) return 'both-upc';
+  if (hasCode) return 'upc';
+  if (hasName) return 'name';
+  return '';
 }
 
 function itemMatchIdentifierLabel(item) {
@@ -1928,7 +2051,7 @@ function QuickReceivingCapture({ locationList }) {
         </div>
 
         <div className="mobile-field">
-          <label>{DOMAIN_TERMS.merchandiseIdentifier}</label>
+          <label>{DOMAIN_TERMS.merchandiseIdentifier} on Package</label>
           <div className="mobile-identifier-row">
             <input ref={skuIdRef} value={entry.skuId} onChange={event => setEntry('skuId', event.target.value)} placeholder="Scan or enter UPC / ID" />
             {barcodeSupported && <button type="button" className="btn btn-alt">Scan</button>}
@@ -2002,12 +2125,6 @@ function ShipmentsPage() {
   const [receipt, setReceipt] = useState(null);
   const [session, setSession] = useState({ clientId: '', carrier: '', tracking: '', boxQuantity: 1, received: toDatetimeLocal(), notes: '' });
 
-  const _jobClientId = receipt?.clientIds?.[0] || session.clientId || '';
-  const jobsResource = useResource(
-    () => _jobClientId ? api.listJobs(_jobClientId) : Promise.resolve({ records: [] }),
-    [_jobClientId]
-  );
-
   const [savedEntries, setSavedEntries] = useState([]);
 
   const [entry, setEntryState] = useState(() => ({
@@ -2075,7 +2192,6 @@ function ShipmentsPage() {
 
   const activeClientId = receipt?.clientIds?.[0] || session.clientId || '';
   const activeClient = clientList.find(client => client.id === activeClientId);
-  const jobList = jobsResource.data?.records ?? [];
   const matchIdentifierQuery = String(entry.skuId || '').trim();
   const matchNameQuery = String(entry.productName || '').trim();
   const matchIdentifierReady = matchIdentifierQuery.replace(/[^a-z0-9]+/gi, '').length >= 3;
@@ -2096,25 +2212,63 @@ function ShipmentsPage() {
     && matchChoice.status !== 'matched'
     && matchChoice.status !== 'needs'
     && (matchIdentifierReady || matchNameReady);
+  // A scanned barcode that resolves to exactly one row links itself. This is the one
+  // case where receiving is the cheapest place to match: the box is in hand and no
+  // judgement is involved. Anything ambiguous is left alone for a PM in Planning.
+  useEffect(() => {
+    const digits = String(entry.skuId || '').replace(/\D+/g, '');
+    const alreadyDecided = matchChoice.status === 'matched' || matchChoice.status === 'needs' || Boolean(stagedSourceRow);
+    if (alreadyDecided || digits.length < 8) return undefined;
+    let active = true;
+    const t = window.setTimeout(async () => {
+      try {
+        const data = await api.resolveUpc({ upc: digits, clientId: activeClientId });
+        if (!active || !data?.resolved) return;
+        if (data.via === 'source' && data.sourceRow) {
+          setStagedSourceRow(data.sourceRow);
+          setToast('Product matched from scan');
+        } else if (data.product) {
+          setMatchChoice({ status: 'matched', item: data.product });
+          setToast('Product matched from scan');
+        }
+      } catch {
+        // A scan that cannot be resolved is not an error: the item stays unmatched.
+      }
+    }, 320);
+    return () => { active = false; window.clearTimeout(t); };
+  }, [entry.skuId, activeClientId, matchChoice.status, stagedSourceRow]);
+
   const nameOnlyMatchSuggestions = itemMatches.length > 0 && itemMatches.every(item => item.matchBasis === 'name');
   const combinedPartialMatchSuggestions = itemMatches.length > 0 && itemMatches.every(item => String(item.matchBasis || '').startsWith('both-'));
   const combinedMatchSearch = matchIdentifierReady && matchNameReady;
-  const matchSuggestionsTitle = matchLoading
-    ? 'Searching products…'
-    : itemMatches.length
-      ? (nameOnlyMatchSuggestions || combinedPartialMatchSuggestions) ? 'Possible products' : 'Suggested products'
-      : combinedMatchSearch ? 'No product matches both fields' : 'No matches found';
   const sourceBackedMatching = Boolean(sourceCheckRulesForClient(activeClient));
+  const matchedUpcKeys = new Set(
+    itemMatches.map(item => String(item.primaryMatchKey || item.gtinUpc || '').replace(/\D+/g, '')).filter(Boolean),
+  );
+  const combinedMatches = [
+    ...itemMatches,
+    ...sourceMatches
+      // A source row whose UPC is already a Product would otherwise appear twice.
+      .filter(row => {
+        const upc = String(row.sourceData?.UPC || '').replace(/\D+/g, '');
+        return !upc || !matchedUpcKeys.has(upc);
+      })
+      .map(row => ({ ...sourceRowMatchItem(row), __sourceRow: row })),
+  ];
+  const matchSuggestionsTitle = (matchLoading || sourceMatchLoading)
+    ? 'Searching matches…'
+    : combinedMatches.length
+      ? (nameOnlyMatchSuggestions || combinedPartialMatchSuggestions) ? 'Possible matches' : 'Suggested matches'
+      : combinedMatchSearch ? 'No match on both fields' : 'No matches found';
   const showSourceMatchSuggestions = showMatchSuggestions && sourceBackedMatching;
-  const showSourceMatchPanel = showSourceMatchSuggestions && (sourceMatchLoading || sourceMatches.length > 0);
+  const showSourceMatchPanel = false;
   const showLocalMatchSuggestionPanel = showMatchSuggestions
-    && !sourceBackedMatching
-    && (itemMatches.length > 0 || (!showSourceMatchSuggestions && matchLoading));
+    && (combinedMatches.length > 0 || matchLoading || sourceMatchLoading);
   const sourceSuggestionsTitle = sourceMatchLoading
-    ? 'Finding product matches...'
+    ? 'Searching the source sheet…'
     : sourceMatches.length
-      ? 'Possible Product Matches'
-      : 'No product matches';
+      ? 'From the source sheet — not yet a Product'
+      : 'Nothing in the source sheet';
   const entryCount = savedEntries.length;
   const shipmentPhotos = recordPhotos(receipt);
   const headerReceived = receipt?.received || session.received;
@@ -2154,7 +2308,7 @@ function ShipmentsPage() {
 
   useEffect(() => {
     let active = true;
-    if (!showMatchSuggestions || sourceBackedMatching) {
+    if (!showMatchSuggestions) {
       setItemMatches([]);
       setMatchLoading(false);
       return () => { active = false; };
@@ -2371,7 +2525,6 @@ function ShipmentsPage() {
       ...emptyReceiptEntry(),
       locationId: defaultLocationId || '',
       condition: defaultCondition || 'Good',
-      jobId: entry.jobId || '',
     });
     setItemMatches([]);
     setSourceMatches([]);
@@ -2444,7 +2597,6 @@ function ShipmentsPage() {
         matchPayload.itemId = matchChoice.item?.id || '';
         matchPayload.matchStatus = 'Matched';
         matchPayload.noClearMatch = false;
-        if (entry.jobId) matchPayload.jobId = entry.jobId;
       } else if (matchChoice.status === 'needs' || (!editingEntryId && !stagedSourceRow)) {
         matchPayload.itemId = '';
         matchPayload.matchStatus = 'Needs Match';
@@ -2927,7 +3079,7 @@ function ShipmentsPage() {
                           <input ref={productNameRef} value={entry.productName} onChange={e => { setEntry('productName', e.target.value); if (error) setError(''); }} placeholder="Name printed on package" autoComplete="off" />
                         </div>
                         <div className="recv-field">
-                          <label>{DOMAIN_TERMS.merchandiseIdentifier}</label>
+                          <label>{DOMAIN_TERMS.merchandiseIdentifier} on Package</label>
                           <input ref={skuIdRef} value={entry.skuId} onChange={e => setEntry('skuId', e.target.value)} placeholder="Scan or enter UPC / ID" autoComplete="off" />
                         </div>
                       </>
@@ -2936,37 +3088,24 @@ function ShipmentsPage() {
                       {stagedSourceMatchItem ? (
                         <ProductMatchCard
                           item={stagedSourceMatchItem}
-                          observedName={entry.productName}
-                          observedIdentifier={entry.skuId}
-                          useWhenBlank
                           onChange={() => setStagedSourceRow(null)}
-                          onUseProductIdentifier={() => setEntry('skuId', itemMatchIdentifierValue(stagedSourceMatchItem), { preserveStagedSourceRow: true })}
-                          onUseProductName={() => setEntry('productName', itemMatchTitle(stagedSourceMatchItem), { preserveStagedSourceRow: true })}
-                          nameWarningText={`Observed ${DOMAIN_TERMS.packageName} differs from the matched Product name.`}
-                          identifierWarningText={`Observed ${DOMAIN_TERMS.merchandiseIdentifier} differs from the matched Product ${itemMatchMethod(stagedSourceMatchItem)}.`}
                         />
                       ) : matchChoice.status === 'matched' && matchChoice.item ? (
                         <>
                           <ProductMatchCard
                             item={matchChoice.item}
-                            observedName={entry.productName}
-                            observedIdentifier={entry.skuId}
-	                            useWhenBlank
 	                            onChange={() => {
 	                              setPrevMatchedItemId(matchChoice.item?.id || '');
 	                              setMatchChoice({ status: 'none', item: null });
                                 setStagedSourceRow(null);
 	                              setEditingMatchedEntryIdentity(false);
 	                            }}
-                            onUseProductIdentifier={() => setEntry('skuId', itemMatchIdentifierValue(matchChoice.item))}
-                            onUseProductName={() => setEntry('productName', itemMatchTitle(matchChoice.item))}
-                            nameWarningText={`Observed ${DOMAIN_TERMS.packageName} differs from the Product name.`}
-                            identifierWarningText={`Observed ${DOMAIN_TERMS.merchandiseIdentifier} differs from the Product ${itemMatchMethod(matchChoice.item)}.`}
                           />
                           {showLocalMatchSuggestionPanel && (
 	                            <ReceivingMatchSuggestions
 	                              title={matchSuggestionsTitle}
-	                              matches={itemMatches}
+	                              matches={combinedMatches}
+	                              limit={10}
                               identifierQuery={matchIdentifierQuery}
                               nameOnlyMatchSuggestions={nameOnlyMatchSuggestions}
                               combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
@@ -2976,6 +3115,11 @@ function ShipmentsPage() {
                               showNoClearMatchAction={false}
                               showEmptyState={false}
 	                              onSelect={item => {
+	                                if (item.__sourceRow) {
+	                                  // Not a Product yet — creating one is what matching means here.
+	                                  activateSourceRowForEntry(item.__sourceRow);
+	                                  return;
+	                                }
 	                                setMatchChoice({ status: 'matched', item });
                                   setStagedSourceRow(null);
 	                                setEditingMatchedEntryIdentity(false);
@@ -3009,16 +3153,22 @@ function ShipmentsPage() {
 	                      ) : showLocalMatchSuggestionPanel ? (
 	                        <ReceivingMatchSuggestions
 	                          title={matchSuggestionsTitle}
-	                          matches={itemMatches}
+	                          matches={combinedMatches}
+	                          limit={10}
                           identifierQuery={matchIdentifierQuery}
                           nameOnlyMatchSuggestions={nameOnlyMatchSuggestions}
                           combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
                           combinedMatchSearch={combinedMatchSearch}
-                          matchLoading={matchLoading}
+                          matchLoading={matchLoading || sourceMatchLoading}
                           onNoClearMatch={markEntryNoClearMatch}
                           showNoClearMatchAction={false}
                           showEmptyState={false}
 	                          onSelect={item => {
+	                            if (item.__sourceRow) {
+	                              // Not a Product yet — creating one is what matching means here.
+	                              activateSourceRowForEntry(item.__sourceRow);
+	                              return;
+	                            }
 	                            setMatchChoice({ status: 'matched', item });
                               setStagedSourceRow(null);
 	                            setPrevMatchedItemId('');
@@ -3441,176 +3591,11 @@ function ShipmentsPage() {
   );
 }
 
-function JobsPage({ navigate }) {
-  const clients = useResource(() => api.listClients());
-  const [clientFilter, setClientFilter] = useState('');
-  const jobs = useResource(
-    () => api.listJobs(clientFilter || undefined),
-    [clientFilter]
-  );
-
-  const clientList = clients.data?.records ?? [];
-  const jobList    = jobs.data?.records ?? [];
-  const jobExportColumns = [
-    { header: 'Client', value: job => clientList.find(c => job.clientIds?.includes(c.id))?.name || '' },
-    { header: 'Job', key: 'name' },
-    { header: 'Parent Job Number', value: job => job.parentJobNumber || job.extId || '' },
-    { header: 'Period', key: 'period' },
-    { header: 'Deadline', key: 'deadline' },
-    { header: 'Status', key: 'status' },
-  ];
-
-  return (
-    <div className="page-stack">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div className="filter-bar">
-          <select value={clientFilter} onChange={e => setClientFilter(e.target.value)}>
-            <option value="">All clients</option>
-            {clientList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-        <button className="btn btn-primary" onClick={() => navigate('new-job')}>
-          <Icon.Add /> New job
-        </button>
-      </div>
-
-      {jobs.error && <div className="error-state">{jobs.error}</div>}
-
-      <DataTableToolbar>
-        <ExcelExportButton
-          filename={todayExportFilename('jobs')}
-          columns={jobExportColumns}
-          rows={jobList}
-          disabled={jobs.loading}
-        />
-      </DataTableToolbar>
-
-      <div className="table-wrap products-grid-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Client</th>
-              <th>Job</th>
-              <th>Parent Job Number</th>
-              <th>Period</th>
-              <th>Deadline</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.loading && (
-              <tr><td colSpan="7" className="empty-state">Loading…</td></tr>
-            )}
-            {!jobs.loading && jobList.length === 0 && (
-              <tr><td colSpan="7" className="empty-state">No jobs found</td></tr>
-            )}
-            {jobList.map(job => {
-              const client = clientList.find(c => job.clientIds?.includes(c.id));
-              return (
-                <tr key={job.id}>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                      <ClientLogo clientId={client?.id} clientName={client?.name} size={24} />
-                      <span style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 500 }}>{client?.name || '—'}</span>
-                    </div>
-                  </td>
-                  <td style={{ fontWeight: 600 }}>{job.name}</td>
-                  <td><code>{job.parentJobNumber || job.extId || '—'}</code></td>
-                  <td>{job.period || '—'}</td>
-                  <td><DeadlineBadge date={job.deadline} /></td>
-                  <td><StatusBadge status={job.status} /></td>
-                  <td>
-                    <button className="btn btn-ghost" onClick={() => navigate('skus', { jobId: job.id })}>
-                      Products <Icon.ChevronRight />
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ── New Job form ──────────────────────────────────────────────────────────────
-function NewJobPage({ navigate }) {
-  const clients = useResource(() => api.listClients());
-  const clientList = clients.data?.records ?? [];
-
-  const [form, setForm] = useState({
-    clientId: '', job: '', parentJobNumber: '', period: '', deadline: '',
-  });
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState(null);
-
-  function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
-
-  async function submit(e) {
-    e.preventDefault();
-    if (!form.clientId)  { setError('Select a client'); return; }
-    if (!form.job) { setError('Job name is required'); return; }
-    setSaving(true); setError(null);
-    try {
-      await api.createJob(form);
-      navigate('jobs');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="form-wrap">
-      <div className="form-title">New Job</div>
-      {error && <div className="error-state">{error}</div>}
-      <form onSubmit={submit}>
-        <div className="form-grid">
-          <div className="field full">
-            <label>Client</label>
-            <select value={form.clientId} onChange={e => set('clientId', e.target.value)} required>
-              <option value="">Select client…</option>
-              {clientList.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div className="field">
-            <label>Job Name</label>
-            <input value={form.job} onChange={e => set('job', e.target.value)} placeholder="e.g. Kroger July Job" required />
-          </div>
-          <div className="field">
-            <label>Parent Job Number</label>
-            <input value={form.parentJobNumber} onChange={e => set('parentJobNumber', e.target.value)} placeholder="Optional" />
-          </div>
-          <div className="field">
-            <label>Period</label>
-            <input value={form.period} onChange={e => set('period', e.target.value)} placeholder="e.g. Q1 2024" />
-          </div>
-          <div className="field">
-            <label>Deadline</label>
-            <input type="date" value={form.deadline} onChange={e => set('deadline', e.target.value)} />
-          </div>
-        </div>
-        <div className="form-actions new-job-actions">
-          <button type="button" className="btn" onClick={() => navigate('jobs')}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving ? 'Creating…' : 'Create Job'}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
 // ── Products page ─────────────────────────────────────────────────────────────
 const DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS = [
   'client', 'name', 'upc', 'productionSummary', 'cvid', 'brandPrefix', 'requestType', 'projectStatus',
   'wkftJobNumber', 'mboxNumber', 'productType', 'productDescription',
-  'preproOverlays', 'ecommPhotoNotes', 'pathToArt', 'job',
+  'preproOverlays', 'ecommPhotoNotes', 'pathToArt',
 ];
 const PRODUCT_REQUEST_TYPE_OPTIONS = ['Ecomm only', 'Pack only', 'Thr3d only', 'Pack & Thr3d', 'Ecomm & Pack'];
 const PRODUCT_TYPE_OPTIONS = ['Shelf Stable', 'Fresh/Perishable', 'Refrigeration Req', 'Freezer Req', 'Non-Food'];
@@ -3938,21 +3923,13 @@ function normalizeProductGridCondition(condition, columns) {
   };
 }
 
-function ProductsPage({ navigate, jobId: initJobId }) {
+function ProductsPage({ navigate }) {
   const { auth } = useAuth();
-  const jobs = useResource(() => api.listJobs());
   const clients = useResource(() => api.listClients());
-  const [jobFilter, setJobFilter] = useState(initJobId ?? '');
-  const items = useResource(
-    () => api.listProducts(jobFilter || undefined),
-    [jobFilter]
-  );
+  const items = useResource(() => api.listProducts(), []);
 
-  const jobList = jobs.data?.records ?? [];
   const clientList = clients.data?.records ?? [];
-  const selectedJob = jobList.find(job => job.id === jobFilter);
-  const scopedClientId = selectedJob?.clientIds?.length === 1 ? selectedJob.clientIds[0] : '';
-  const primaryMatchKeyLabel = getPrimaryMatchKeyLabel({ clientId: scopedClientId, clients: clientList, allClients: !scopedClientId });
+  const primaryMatchKeyLabel = getPrimaryMatchKeyLabel({ clientId: '', clients: clientList, allClients: true });
   const userPreferenceKey = `marks:products-grid:${auth?.user?.id || auth?.id || auth?.email || 'local'}`;
   const [itemList, setItemList] = useState([]);
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
@@ -3989,10 +3966,6 @@ function ProductsPage({ navigate, jobId: initJobId }) {
   const filterMenuRef = useRef(null);
   const groupMenuRef = useRef(null);
   const columnsMenuRef = useRef(null);
-
-  useEffect(() => {
-    setJobFilter(initJobId ?? '');
-  }, [initJobId]);
 
   useEffect(() => {
     if (items.data?.records) {
@@ -4089,12 +4062,6 @@ function ProductsPage({ navigate, jobId: initJobId }) {
     };
   }, []);
 
-  function jobNames(item) {
-    const names = (item.jobIds ?? [])
-      .map(id => jobList.find(job => job.id === id)?.name)
-      .filter(Boolean);
-    return names.length ? names.join(', ') : '—';
-  }
   function clientNames(item) {
     const names = (item.clientIds ?? [])
       .map(id => clientList.find(client => client.id === id)?.name)
@@ -4117,7 +4084,6 @@ function ProductsPage({ navigate, jobId: initJobId }) {
     { id: 'preproOverlays', header: 'Link to Prepro/Overlays', key: 'preproOverlays', patchKey: 'preproOverlays', editable: true, defaultWidth: 240 },
     { id: 'ecommPhotoNotes', header: 'Ecomm Photo Notes', key: 'ecommPhotoNotes', patchKey: 'ecommPhotoNotes', editable: true, defaultWidth: 240 },
     { id: 'pathToArt', header: 'Path to Art', key: 'pathToArt', patchKey: 'pathToArt', editable: true, defaultWidth: 240 },
-    { id: 'job', header: 'Job', value: item => jobNames(item), editable: false, defaultWidth: 320, filterType: 'select' },
   ];
   const visibleColumnIds = columnPrefs.visibleColumnIds || DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS;
   const orderedColumnIds = normalizedProductColumnOrder(columnPrefs.columnOrder);
@@ -4549,10 +4515,6 @@ function ProductsPage({ navigate, jobId: initJobId }) {
 
       <DataTableToolbar>
         <div className="products-grid-toolbar">
-          <select className="products-job-filter" value={jobFilter} onChange={e => setJobFilter(e.target.value)} aria-label="Filter Products by job">
-            <option value="">All jobs</option>
-            {jobList.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
-          </select>
           <div className="products-grid-actions">
             {activeFilterChips.length > 0 && (
               <div className="products-active-filters" aria-label="Active Product filters">
@@ -5082,88 +5044,6 @@ function ProductsPage({ navigate, jobId: initJobId }) {
 }
 
 // ── Add Product form ─────────────────────────────────────────────────────────
-function AddSkuForm({ jobId, onSaved, onCancel, identifierLabel = DOMAIN_TERMS.primaryMatchKey }) {
-  const [form, setForm] = useState({
-    productId: '', product: '', itemJobNumber: '', description: '', brand: '',
-    category: '', masterOrVariant: '', pickupJobNumber: '', notes: '',
-  });
-  const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState(null);
-
-  function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
-
-  async function submit(e) {
-    e.preventDefault();
-    if (!form.productId) { setError(`${identifierLabel} is required`); return; }
-    setSaving(true); setError(null);
-    try {
-      const sku = await api.createSku({ jobId, ...form });
-      onSaved(sku);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="form-wrap" style={{ maxWidth: '100%' }}>
-      <div className="form-title">Add Product</div>
-      {error && <div className="error-state">{error}</div>}
-      <form onSubmit={submit}>
-        <div className="form-grid">
-          <div className="field">
-            <label>{identifierLabel} *</label>
-            <input value={form.productId} onChange={e => set('productId', e.target.value)} placeholder="012345678901" required />
-          </div>
-          <div className="field">
-            <label>Brand</label>
-            <input value={form.brand} onChange={e => set('brand', e.target.value)} />
-          </div>
-          <div className="field">
-            <label>Product or File Name</label>
-            <input value={form.product} onChange={e => set('product', e.target.value)} />
-          </div>
-          <div className="field">
-            <label>{DOMAIN_TERMS.productJobNumber}</label>
-            <input value={form.itemJobNumber} onChange={e => set('itemJobNumber', e.target.value)} />
-          </div>
-          <div className="field">
-            <label>Category</label>
-            <input value={form.category} onChange={e => set('category', e.target.value)} />
-          </div>
-          <div className="field">
-            <label>Master or Variant</label>
-            <select value={form.masterOrVariant} onChange={e => set('masterOrVariant', e.target.value)}>
-              <option value="">Select type...</option>
-              <option>Master</option>
-              <option>Variant</option>
-            </select>
-          </div>
-          <div className="field">
-            <label>Pickup Job Number</label>
-            <input value={form.pickupJobNumber} onChange={e => set('pickupJobNumber', e.target.value)} />
-          </div>
-          <div className="field full">
-            <label>Description</label>
-            <textarea value={form.description} onChange={e => set('description', e.target.value)} rows="3" />
-          </div>
-          <div className="field full">
-            <label>Notes</label>
-            <input value={form.notes} onChange={e => set('notes', e.target.value)} />
-          </div>
-        </div>
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving ? 'Saving…' : 'Add Product'}
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={onCancel}>Cancel</button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
 // ── Settings page ─────────────────────────────────────────────────────────────
 function ClientImportProfilesModal({ client, onClose, onSaved }) {
   const profileNames = Object.keys(client?.productImportProfiles?.profiles || {});
@@ -5706,6 +5586,46 @@ function CreativeForceAdminSection() {
       <div className="panel">
         <div className="panel-header">
           <div>
+            <span className="panel-title">Latest webhook delivery</span>
+            <p className="panel-subtitle">Admin-only troubleshooting view of the most recent signed Creative Force event received by Marks Photo.</p>
+          </div>
+          <button className="btn btn-ghost" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={diagnostics.loading}>Refresh</button>
+        </div>
+        {diagnostics.loading && <div className="empty-state">Loading webhook diagnostics…</div>}
+        {diagnostics.error && <div className="error-state">{diagnostics.error}</div>}
+        {!diagnostics.loading && !diagnostics.error && !webhook && <div className="empty-state">No signed Creative Force webhook has been received since the backend started.</div>}
+        {!diagnostics.loading && !diagnostics.error && webhook && (
+          <div className="webhook-diagnostics-stack">
+            <div className="webhook-diagnostics-payload">
+              <div className="webhook-payload-head">
+                <span>Payload</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => navigator.clipboard?.writeText(JSON.stringify(webhook.payload || {}, null, 2))}
+                >
+                  Copy
+                </button>
+              </div>
+              <pre>{JSON.stringify(webhook.payload || {}, null, 2)}</pre>
+            </div>
+            <div className="webhook-diagnostics-reading">
+              <div className="settings-list">
+                <div className="setting-row"><span className="setting-key">Received</span><span className="setting-val">{webhook.receivedAt || '—'}</span></div>
+                <div className="setting-row"><span className="setting-key">Result</span><span className="setting-val">{webhook.accepted ? (webhook.ignored ? 'Ignored — derived workflow' : webhook.duplicate ? 'Duplicate ignored' : 'Written to Workstream Card') : webhook.reason || 'Rejected'}</span></div>
+                <div className="setting-row"><span className="setting-key">Workflow</span><span className="setting-val">{webhook.sync?.workflowName || '—'}</span></div>
+                <div className="setting-row"><span className="setting-key">Work Unit ID</span><span className="setting-val">{webhook.workUnitId || webhook.sync?.workUnitId || '—'}</span></div>
+                <div className="setting-row"><span className="setting-key">Matched card</span><span className="setting-val">{webhook.workstreamCardId || '—'}</span></div>
+                <div className="setting-row"><span className="setting-key">Creative Force step</span><span className="setting-val">{webhook.creativeForceStep || webhook.sync?.stepName || '—'}{webhook.sync?.stepStatusRaw ? ` · ${webhook.sync.stepStatusRaw}` : ''}</span></div>
+                <div className="setting-row"><span className="setting-key">Work unit status</span><span className="setting-val">{webhook.workUnitStatus || webhook.sync?.statusRaw || '—'}</span></div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="panel">
+        <div className="panel-header">
+          <div>
             <span className="panel-title">Creative Force handoff</span>
             <p className="panel-subtitle">Review client-configured Product requirements and the work that can be sent to Creative Force.</p>
           </div>
@@ -5729,32 +5649,6 @@ function CreativeForceAdminSection() {
               </tbody>
             </table>
           </div>
-        </>}
-      </div>
-      <div className="panel">
-        <div className="panel-header">
-          <div>
-            <span className="panel-title">Latest webhook delivery</span>
-            <p className="panel-subtitle">Admin-only troubleshooting view of the most recent signed Creative Force event received by Marks Photo.</p>
-          </div>
-          <button className="btn btn-ghost" type="button" onClick={() => setRefreshKey(value => value + 1)} disabled={diagnostics.loading}>Refresh</button>
-        </div>
-        {diagnostics.loading && <div className="empty-state">Loading webhook diagnostics…</div>}
-        {diagnostics.error && <div className="error-state">{diagnostics.error}</div>}
-        {!diagnostics.loading && !diagnostics.error && !webhook && <div className="empty-state">No signed Creative Force webhook has been received since the backend started.</div>}
-        {!diagnostics.loading && !diagnostics.error && webhook && <>
-          <div className="settings-list">
-            <div className="setting-row"><span className="setting-key">Received</span><span className="setting-val">{webhook.receivedAt || '—'}</span></div>
-            <div className="setting-row"><span className="setting-key">Result</span><span className="setting-val">{webhook.accepted ? (webhook.duplicate ? 'Duplicate ignored' : 'Written to Workstream Card') : webhook.reason || 'Rejected'}</span></div>
-            <div className="setting-row"><span className="setting-key">Work Unit ID</span><span className="setting-val">{webhook.workUnitId || webhook.sync?.workUnitId || '—'}</span></div>
-            <div className="setting-row"><span className="setting-key">Matched card</span><span className="setting-val">{webhook.workstreamCardId || '—'}</span></div>
-            <div className="setting-row"><span className="setting-key">Raw Creative Force status</span><span className="setting-val">{webhook.creativeForceStatus || webhook.sync?.statusRaw || '—'}</span></div>
-            <div className="setting-row"><span className="setting-key">Creative Force step</span><span className="setting-val">{webhook.creativeForceStep || webhook.sync?.stepName || '—'}{webhook.sync?.stepStatusRaw ? ` · ${webhook.sync.stepStatusRaw}` : ''}</span></div>
-          </div>
-          <details className="webhook-diagnostics-details">
-            <summary>Show payload details</summary>
-            <pre>{JSON.stringify(webhook.payload || {}, null, 2)}</pre>
-          </details>
         </>}
       </div>
     </div>
@@ -5935,15 +5829,8 @@ function SettingsPage({ cards = null } = {}) {
   }
 
   async function clearCoreTables() {
-    const merchandiseTable = s?.tables?.merchandise || s?.tables?.receiptEntries || 'Merchandise';
-    const shipmentsTable = s?.tables?.shipments || s?.tables?.receipts || 'Shipments';
-    const workstreamCardsTable = s?.tables?.workstreamCards || 'Workstream Cards';
-    const thr3dShippingItemsTable = s?.tables?.thr3dShippingItems || 'THR3D Shipping Items';
-    const activationsTable = s?.tables?.activations || 'Activations';
-    const commentsTable = s?.tables?.comments || 'Comments';
-    const productsTable = s?.tables?.products || 'Products';
-    const typed = window.prompt(`This will delete testing/workflow rows from ${technicalTableLabel(merchandiseTable)}, ${technicalTableLabel(shipmentsTable)}, ${technicalTableLabel(workstreamCardsTable)}, ${technicalTableLabel(thr3dShippingItemsTable)}, ${technicalTableLabel(activationsTable)}, Issues, ${technicalTableLabel(commentsTable)}, History, Jobs, and Imports.\n\nThis ALSO deletes every ${technicalTableLabel(productsTable)} record, including imported Expected Product data. Clients, Users, and Locations will be kept. Type DELETE TEST DATA AND PRODUCTS to continue.`);
-    if (typed !== 'DELETE TEST DATA AND PRODUCTS') return;
+    const typed = window.prompt('Delete all test data and Products? Type DELETE to confirm.');
+    if (typed !== 'DELETE') return;
     setClearing(true);
     setClearError('');
     setClearSummary(null);
@@ -5981,10 +5868,6 @@ function SettingsPage({ cards = null } = {}) {
               <div className="setting-row">
                 <span className="setting-key">Clients</span>
                 <span className="setting-val">{s.tables?.clients}</span>
-              </div>
-              <div className="setting-row">
-                <span className="setting-key">Jobs</span>
-                <span className="setting-val">{s.tables?.jobs}</span>
               </div>
               <div className="setting-row">
                 <span className="setting-key">{DOMAIN_TERMS.products}</span>
@@ -6331,17 +6214,10 @@ function requiredMappingGaps(targetMapping) {
   const mapped = new Set(Object.entries(targetMapping || {}).filter(([, source]) => source).map(([target]) => target));
   return INTAKE_REQUIRED_TARGETS.filter(target => !mapped.has(target));
 }
-function mappingForApi(sourceMapping, targetMapping, importSettings = {}) {
+function mappingForApi(sourceMapping, targetMapping) {
   return {
     ...sourceMapping,
     __targetMapping: targetMapping,
-    ...(importSettings.mode === 'none' ? { __noJob: true } : {}),
-    ...(importSettings.mode === 'existing' ? {
-      __existingJobId: importSettings.existingJobId,
-      __existingJobName: importSettings.existingJobName || '',
-    } : {}),
-    ...(importSettings.mode === 'single' ? { __singleJobName: importSettings.singleJobName } : {}),
-    ...(importSettings.mode === 'group' ? { __jobGroupField: importSettings.groupField } : {}),
   };
 }
 function MappingHeader({ children, target, showUnmapped = false }) {
@@ -6364,14 +6240,205 @@ function MappingTargetHelp({ target, description, identifierLabel }) {
   );
 }
 
+const STRUCTURE_FORM_REQUEST_TYPES = ['', 'Pack only', 'Ecomm & Pack', 'Pack & Thr3d', 'Thr3d only'];
+
+function StructureFormPreview({ clients = [], files = null, onClose }) {
+  const [forms, setForms] = useState(null);
+  const [counts, setCounts] = useState(null);
+  // Only Topco uses these forms, so there is nothing to choose.
+  const topcoClient = clients.find(client => String(client.name || '').trim().toLowerCase() === 'topco');
+  const clientId = topcoClient?.id || '';
+  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    if (files?.length) readForms(files);
+  }, [files]);
+
+  async function readForms(fileList) {
+    const incoming = Array.from(fileList || []);
+    if (!incoming.length) return;
+    setBusy(true); setError(''); setResult(null); setForms(null);
+    try {
+      const data = await api.previewStructureForms(incoming);
+      setForms((data.forms || []).map(form => ({
+        ...form,
+        requestType: form.requestTypeProposed || '',
+        rows: (form.rows || []).map(row => ({ ...row })),
+      })));
+      setCounts(data.counts || null);
+    } catch (err) {
+      setError(err.message || 'Could not read those forms.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function editHeader(formIndex, patch) {
+    setForms(current => current.map((form, index) => index !== formIndex ? form : {
+      ...form,
+      header: { ...(form.header || {}), ...patch },
+    }));
+  }
+
+  function editRow(formIndex, rowIndex, patch) {
+    setForms(current => current.map((form, fi) => fi !== formIndex ? form : {
+      ...form,
+      rows: form.rows.map((row, ri) => ri !== rowIndex ? row : { ...row, ...patch }),
+    }));
+  }
+
+  const readable = (forms || []).filter(form => !form.error);
+  const productCount = readable.reduce((total, form) => total + form.rows.length, 0);
+
+  async function createProducts() {
+    setSaving(true); setError(''); setResult(null);
+    try {
+      const rows = readable.flatMap(form => form.rows.map(row => ({
+        ...row,
+        ...(form.header || {}),
+        fileName: form.fileName,
+        project: form.header?.project || '',
+        requestType: form.requestType,
+      })));
+      setResult(await api.commitStructureForms({ clientId, rows }));
+    } catch (err) {
+      setError(err.message || 'Could not create Products.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="intake-card structure-form-card">
+      <div className="panel-header">
+        <div>
+          <span className="panel-title">Structure Forms</span>
+          <p className="panel-subtitle">
+            Read Topco checklists and create the Products they describe. A form says work is
+            expected, not that merchandise has arrived — no shipment or match is created.
+          </p>
+        </div>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>Close</button>
+      </div>
+      {busy && <div className="empty-state">Reading forms…</div>}
+      {error && <div className="error-state">{error}</div>}
+      {result && (
+        <div className="notice-state">
+          {result.summary.created} created · {result.summary.updated} updated
+          {result.summary.skipped ? ` · ${result.summary.skipped} skipped` : ''}
+        </div>
+      )}
+      {counts && !result && (
+        <div className="form-hint">
+          {counts.forms} form{counts.forms === 1 ? '' : 's'} · {productCount} product{productCount === 1 ? '' : 's'}
+          {counts.unreadable ? ` · ${counts.unreadable} unreadable` : ''} · check each row before creating
+        </div>
+      )}
+      {(forms || []).map((form, formIndex) => (
+        <div className="structure-form-result" key={form.fileName}>
+          <div className="structure-form-head">
+            <strong title={form.fileName}>{form.fileName}</strong>
+            {form.error
+              ? <span className="structure-form-error">{form.error}</span>
+              : (
+                <label className="structure-form-proposal-edit">
+                  Request Type
+                  <select
+                    value={form.requestType}
+                    onChange={event => setForms(current => current.map((item, index) =>
+                      index === formIndex ? { ...item, requestType: event.target.value } : item))}
+                  >
+                    {STRUCTURE_FORM_REQUEST_TYPES.map(option => (
+                      <option key={option} value={option}>{option || 'Not set'}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+          </div>
+          {!form.error && (
+            <>
+              <div className="structure-form-fields">
+                {[
+                  ['Project', 'projectName', false],
+                  ['Supplier', 'supplier', false],
+                  ['Studio', 'studio', false],
+                  ['Mbox', 'mboxNumber', true],
+                  ['WKFT', 'wkftJobNumber', true],
+                ].map(([label, key, mono]) => (
+                  <label className="structure-form-field" key={key}>
+                    <span>{label}</span>
+                    <input
+                      className={`structure-form-input ${mono ? 'is-code' : ''}`}
+                      value={form.header?.[key] || ''}
+                      placeholder="Not on form"
+                      onChange={event => editHeader(formIndex, { [key]: event.target.value })}
+                    />
+                  </label>
+                ))}
+              </div>
+              <div className="structure-form-reason">{form.requestTypeReason}</div>
+              {(form.thr3dEvidence || []).map((item, index) => (
+                <div className="structure-form-evidence" key={index}>
+                  <span>{item.field}</span>{item.text}
+                </div>
+              ))}
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>Product Name</th><th>UPC</th></tr></thead>
+                  <tbody>
+                    {form.rows.map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        <td>
+                          <input
+                            className="structure-form-input"
+                            value={row.productName}
+                            onChange={event => editRow(formIndex, rowIndex, { productName: event.target.value })}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="structure-form-input is-code"
+                            value={row.upc}
+                            onChange={event => editRow(formIndex, rowIndex, { upc: event.target.value })}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+      {productCount > 0 && !result && (
+        <div className="structure-form-actions">
+          {clientId
+            ? <span className="structure-form-client">Topco</span>
+            : <span className="structure-form-error">No active Topco client found.</span>}
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={createProducts}
+            disabled={saving || !clientId}
+          >
+            {saving ? 'Creating…' : `Create ${productCount} Product${productCount === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IntakePage({ navigate }) {
   const clients = useResource(() => api.intakeListClients());
   const mappingTargets = useResource(() => api.intakeMappingTargets());
   const clientList = clients.data?.records ?? [];
   const [clientOverrides, setClientOverrides] = useState({});
   const [clientId, setClientId] = useState('');
-  const intakeJobs = useResource(() => clientId ? api.listJobs(clientId) : Promise.resolve({ records: [] }), [clientId]);
-  const intakeJobList = intakeJobs.data?.records ?? [];
   const selectedClientBase = clientList.find(client => client.id === clientId);
   const selectedClient = selectedClientBase ? { ...selectedClientBase, ...(clientOverrides[clientId] || {}) } : null;
   const identifierLabel = getPrimaryMatchKeyLabel({ client: selectedClient });
@@ -6390,7 +6457,6 @@ function IntakePage({ navigate }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [showImportSettings, setShowImportSettings] = useState(false);
-  const [importSettings, setImportSettings] = useState({ mode: '', existingJobId: '', existingJobName: '', groupField: '', singleJobName: '' });
   const [profileName, setProfileName] = useState('');
   const [activeProfileName, setActiveProfileName] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
@@ -6409,6 +6475,20 @@ function IntakePage({ navigate }) {
     setColumnMapping({}); setTargetMapping({}); setError(''); setNotice(''); setHeaderRow(''); setShowImportSettings(false); setImportSettings({ mode: '', existingJobId: '', existingJobName: '', groupField: '', singleJobName: '' });
     setProfileName(''); setActiveProfileName(''); setSavingProfile(false);
   }
+  const [structureFiles, setStructureFiles] = useState(null);
+
+  function acceptFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const pdfs = files.filter(item => /\.pdf$/i.test(item.name));
+    if (pdfs.length) {
+      setError(''); setNotice('');
+      setStructureFiles(pdfs);
+      return;
+    }
+    parseFile(files[0]);
+  }
+
   async function parseFile(nextFile) {
     setError(''); setNotice(''); setReview(null); setSummary(null);
     if (!nextFile) return;
@@ -6455,7 +6535,7 @@ function IntakePage({ navigate }) {
     if (missingMandatoryTargets.length) { setNotice(`Map required columns before validating: ${missingMandatoryTargets.map(target => mappingTargetLabel(target, identifierLabel)).join(', ')}.`); setStep('map'); return; }
     setError(''); setNotice(''); setBusy(true);
     try {
-      const data = await api.reviewSpreadsheetSourceRows({ clientId, fileName: preview.fileName, columnHeaders: preview.columnHeaders || [], sourceRows: preview.rows || [], mapping: mappingForApi(columnMapping, targetMapping, importSettings), importId });
+      const data = await api.reviewSpreadsheetSourceRows({ clientId, fileName: preview.fileName, columnHeaders: preview.columnHeaders || [], sourceRows: preview.rows || [], mapping: mappingForApi(columnMapping, targetMapping), importId });
       setReview(data); setEditableRows(data.rows ?? []); setImportId(data.importId || importId); setStep('validate');
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
@@ -6475,7 +6555,6 @@ function IntakePage({ navigate }) {
       const identifier = String(row.id || '').trim();
       const errors = [];
       const warnings = [];
-      if (importSettings.mode !== 'none' && !String(row.extId || row.existingJobId || '').trim()) errors.push('Missing Job');
       if (identifier) {
         const identifierError = validateEditedIdentifier(identifier);
         if (identifierError) errors.push(identifierError);
@@ -6507,7 +6586,7 @@ function IntakePage({ navigate }) {
       setSummary(data.summary || {}); setReview(data); setStep('summary');
     } catch (err) { setError(err.message); } finally { setImporting(false); }
   }
-  function onDrop(event) { event.preventDefault(); parseFile(event.dataTransfer.files?.[0]); }
+  function onDrop(event) { event.preventDefault(); acceptFiles(event.dataTransfer.files); }
   function targetsForSource(header) { return Object.entries(targetMapping).filter(([, source]) => source === header).map(([target]) => target); }
   function renderValidateCell(row, header, columnIndex) {
     const fields = targetsForSource(header).map(target => INTAKE_TARGET_FIELDS[target]).filter(Boolean);
@@ -6551,14 +6630,7 @@ function IntakePage({ navigate }) {
     errorCount: 0,
     warningCount: 0,
   });
-  const importModeReady = importSettings.mode === 'existing'
-    ? Boolean(importSettings.existingJobId)
-    : importSettings.mode === 'group'
-      ? Boolean(importSettings.groupField)
-    : importSettings.mode === 'single'
-      ? Boolean(importSettings.singleJobName.trim())
-      : importSettings.mode === 'none';
-  const importSettingsReady = Boolean(clientId) && importModeReady;
+  const importSettingsReady = Boolean(clientId);
 
   function chooseImportClient(nextClientId) {
     setClientId(nextClientId);
@@ -6646,16 +6718,6 @@ function IntakePage({ navigate }) {
     }
   }
 
-  function chooseImportMode(mode) {
-    setImportSettings(settings => ({
-      mode,
-      existingJobId: mode === 'existing' ? settings.existingJobId : '',
-      existingJobName: mode === 'existing' ? settings.existingJobName : '',
-      groupField: mode === 'group' ? settings.groupField : '',
-      singleJobName: mode === 'single' ? settings.singleJobName : '',
-    }));
-  }
-
   async function applyImportSettings() {
     if (!importSettingsReady) return;
     setShowImportSettings(false);
@@ -6737,8 +6799,15 @@ function IntakePage({ navigate }) {
       </div>
       <div className="intake-card intake-upload-card">
         {clients.error && <div className="error-state">Unable to load active Clients. {clients.error}</div>}{error && <div className="error-state">{error}</div>}{notice && <div className="notice-state">{notice}</div>}
-        {(!preview || showImportSettings) && <div className="intake-dropzone" onDragOver={event => event.preventDefault()} onDrop={onDrop}><div className="intake-drop-icon"><Icon.Upload /></div><div className="intake-drop-title">Drop your spreadsheet here</div><div className="intake-drop-or">or</div><label className="btn btn-primary intake-file-button">Choose File<input type="file" accept=".xlsx,.xls,.csv" onChange={event => parseFile(event.target.files?.[0])} /></label><div className="intake-drop-helper">Supports .xlsx, .xls, .csv files</div>{file && <div className="intake-file-note">{file.name}</div>}{busy && <div className="empty-state">Parsing spreadsheet...</div>}</div>}
+        {(!preview || showImportSettings) && <div className={`intake-dropzone ${structureFiles ? 'is-compact' : ''}`} onDragOver={event => event.preventDefault()} onDrop={onDrop}><div className="intake-drop-icon"><Icon.Upload /></div><div className="intake-drop-title">Drop a spreadsheet or Structure Forms here</div><div className="intake-drop-or">or</div><label className="btn btn-primary intake-file-button">Choose Files<input type="file" accept=".xlsx,.xls,.csv,.pdf" multiple onChange={event => acceptFiles(event.target.files)} /></label><div className="intake-drop-helper">Spreadsheets (.xlsx, .xls, .csv) build the master list · Structure Form PDFs create expected Products</div>{file && <div className="intake-file-note">{file.name}</div>}{busy && <div className="empty-state">Parsing spreadsheet...</div>}</div>}
       </div>
+      {structureFiles && (
+        <StructureFormPreview
+          clients={clientList}
+          files={structureFiles}
+          onClose={() => setStructureFiles(null)}
+        />
+      )}
       {showImportSettings && preview && (
         <div className="intake-modal-backdrop">
           <div className="intake-settings-modal" role="dialog" aria-modal="true" aria-labelledby="intake-settings-title">
@@ -6760,67 +6829,6 @@ function IntakePage({ navigate }) {
                 </select>
                 <small>Choose the spreadsheet row containing the column names.</small>
               </div>
-              <label className={`intake-choice-row ${importSettings.mode === 'existing' ? 'is-selected' : ''}`}>
-                <input type="radio" name="import-mode" checked={importSettings.mode === 'existing'} onChange={() => chooseImportMode('existing')} />
-                <span>
-                  <strong>Use Existing Job</strong>
-                  <small>Put all imported products into an existing job.</small>
-                  <select
-                    className="intake-choice-control"
-                    value={importSettings.existingJobId}
-                    onChange={event => {
-                      const job = intakeJobList.find(item => item.id === event.target.value);
-                      setImportSettings(settings => ({ ...settings, mode: 'existing', existingJobId: event.target.value, existingJobName: job?.name || '' }));
-                    }}
-                    onFocus={() => chooseImportMode('existing')}
-                    disabled={importSettings.mode !== 'existing' || !clientId}
-                  >
-                    <option value="">{intakeJobs.loading ? 'Loading jobs...' : 'Select job...'}</option>
-                    {intakeJobList.map(job => <option value={job.id} key={job.id}>{job.name || job.parentJobNumber || job.id}</option>)}
-                  </select>
-                </span>
-              </label>
-
-              <label className={`intake-choice-row ${importSettings.mode === 'group' ? 'is-selected' : ''}`}>
-                <input type="radio" name="import-mode" checked={importSettings.mode === 'group'} onChange={() => chooseImportMode('group')} />
-                <span>
-                  <strong>Create Jobs From Field</strong>
-                  <small>Create or reuse jobs from matching spreadsheet values.</small>
-                  <select
-                    className="intake-choice-control"
-                    value={importSettings.groupField}
-                    onChange={event => setImportSettings(settings => ({ ...settings, mode: 'group', groupField: event.target.value }))}
-                    onFocus={() => chooseImportMode('group')}
-                    disabled={importSettings.mode !== 'group'}
-                  >
-                    <option value="">Select field to group by...</option>
-                    {headers.map((header, index) => <option value={header} key={`${header}-${index}`}>{header || '(blank)'}</option>)}
-                  </select>
-                </span>
-              </label>
-
-              <label className={`intake-choice-row ${importSettings.mode === 'single' ? 'is-selected' : ''}`}>
-                <input type="radio" name="import-mode" checked={importSettings.mode === 'single'} onChange={() => chooseImportMode('single')} />
-                <span>
-                  <strong>Create New Job</strong>
-                  <small>Put all imported products into a new job.</small>
-                  <input
-                    className="intake-choice-control"
-                    value={importSettings.singleJobName}
-                    onChange={event => setImportSettings(settings => ({ ...settings, mode: 'single', singleJobName: event.target.value }))}
-                    onFocus={() => chooseImportMode('single')}
-                    disabled={importSettings.mode !== 'single'}
-                    placeholder="Job Name"
-                  />
-                </span>
-              </label>
-              <label className={`intake-choice-row ${importSettings.mode === 'none' ? 'is-selected' : ''}`}>
-                <input type="radio" name="import-mode" checked={importSettings.mode === 'none'} onChange={() => chooseImportMode('none')} />
-                <span>
-                  <strong>Import Products Only</strong>
-                  <small>Create Products without creating or linking them to a Job.</small>
-                </span>
-              </label>
             </div>
             <div className="form-actions intake-settings-actions">
               <button className="btn" type="button" onClick={resetIntake}>Cancel</button>
@@ -6920,8 +6928,8 @@ function IntakePage({ navigate }) {
           </div>
         </div>
       )}
-      {step === 'validate' && review && <div className="intake-card intake-preview-card"><div className="intake-preview-head"><div><div className="intake-preview-title">Validate & Fix</div><div className="intake-preview-sub">Fix highlighted rows or import only the valid rows.</div></div></div><div className="intake-summary-grid is-six"><div className="intake-summary-item"><span>Total rows</span><strong>{review.totalRows}</strong></div><div className="intake-summary-item"><span>Jobs detected</span><strong>{review.jobsDetected}</strong></div><div className="intake-summary-item"><span>Products to create</span><strong>{liveReviewStats.itemsToCreate}</strong></div><div className="intake-summary-item"><span>Products to update</span><strong>{liveReviewStats.itemsToUpdate}</strong></div><div className="intake-summary-item"><span>Errors</span><strong className="metric-error">{liveReviewStats.errorCount}</strong></div><div className="intake-summary-item"><span>Warnings</span><strong className="metric-warning">{liveReviewStats.warningCount}</strong></div></div>{hasErrors ? <div className="intake-callout danger"><div className="intake-callout-icon">!</div><div><div className="intake-callout-title">Errors Found</div><div className="intake-callout-text">Rows with unresolved errors will be skipped during import.</div></div></div> : <div className="intake-callout success"><div className="intake-callout-icon">✓</div><div><div className="intake-callout-title">Success</div><div className="intake-callout-text">All rows passed validation.</div></div></div>}<div className="intake-inline-actions"><button className="btn" type="button" onClick={resetIntake}>Cancel</button><button className="btn btn-alt" type="button" onClick={() => setStep('map')}>Map Columns</button><button className="btn btn-primary" type="button" onClick={executeImport} disabled={importing || validImportRowCount === 0}>{importing ? 'Importing...' : 'Import'}</button></div><div className="table-wrap intake-preview-table"><table><thead><tr>{headers.map((header, index) => <MappingHeader target={sourceColumnMappings[header]} showUnmapped key={`${header}-${index}`}>{header || '(blank)'}</MappingHeader>)}<th className="problem-column-header">Alerts</th></tr></thead><tbody>{editableRows.map(row => <tr className={(row.errors ?? []).length ? 'row-error' : (row.warnings ?? []).length ? 'row-warning' : ''} key={row.rowNumber}>{headers.map((header, columnIndex) => <td key={`${row.rowNumber}-${header}-${columnIndex}`}>{renderValidateCell(row, header, columnIndex)}</td>)}<td className="problem-column-cell"><div className="problem-row-alerts">{[...(row.errors ?? []), ...(row.warnings ?? [])].map((problem, index) => <span className={`badge problem-badge ${(row.errors ?? []).includes(problem) ? 'badge-red' : 'badge-amber'}`} key={`${row.rowNumber}-${index}`}><span className="problem-badge-icon">!</span>{problem}</span>)}</div></td></tr>)}</tbody></table></div><div className="form-actions"><button className="btn" type="button" onClick={resetIntake}>Cancel</button><button className="btn btn-alt" type="button" onClick={() => setStep('map')}>Map Columns</button><button className="btn btn-primary" type="button" onClick={executeImport} disabled={importing || validImportRowCount === 0}>{importing ? 'Importing...' : 'Import'}</button></div></div>}
-      {step === 'summary' && summary && <div className="intake-card intake-preview-card"><div className="intake-preview-head"><div><div className="intake-preview-title">Import Complete</div><div className="intake-preview-sub">{preview?.fileName}</div></div><span className="badge badge-green">Success</span></div><div className="intake-summary-grid is-six"><div className="intake-summary-item"><span>Rows skipped</span><strong>{summary.rowsSkipped}</strong></div><div className="intake-summary-item"><span>Jobs created</span><strong>{summary.jobsCreated}</strong></div><div className="intake-summary-item"><span>Jobs reused</span><strong>{summary.jobsReused}</strong></div><div className="intake-summary-item"><span>Products created</span><strong>{summary.itemsCreated}</strong></div><div className="intake-summary-item"><span>Products updated</span><strong>{summary.itemsUpdated}</strong></div><div className="intake-summary-item"><span>Errors</span><strong className="metric-error">{summary.errors}</strong></div></div><div className="form-actions"><button className="btn btn-primary" type="button" onClick={resetIntake}>New Import</button></div></div>}
+      {step === 'validate' && review && <div className="intake-card intake-preview-card"><div className="intake-preview-head"><div><div className="intake-preview-title">Validate & Fix</div><div className="intake-preview-sub">Fix highlighted rows or import only the valid rows.</div></div></div><div className="intake-summary-grid is-five"><div className="intake-summary-item"><span>Total rows</span><strong>{review.totalRows}</strong></div><div className="intake-summary-item"><span>Products to create</span><strong>{liveReviewStats.itemsToCreate}</strong></div><div className="intake-summary-item"><span>Products to update</span><strong>{liveReviewStats.itemsToUpdate}</strong></div><div className="intake-summary-item"><span>Errors</span><strong className="metric-error">{liveReviewStats.errorCount}</strong></div><div className="intake-summary-item"><span>Warnings</span><strong className="metric-warning">{liveReviewStats.warningCount}</strong></div></div>{hasErrors ? <div className="intake-callout danger"><div className="intake-callout-icon">!</div><div><div className="intake-callout-title">Errors Found</div><div className="intake-callout-text">Rows with unresolved errors will be skipped during import.</div></div></div> : <div className="intake-callout success"><div className="intake-callout-icon">✓</div><div><div className="intake-callout-title">Success</div><div className="intake-callout-text">All rows passed validation.</div></div></div>}<div className="intake-inline-actions"><button className="btn" type="button" onClick={resetIntake}>Cancel</button><button className="btn btn-alt" type="button" onClick={() => setStep('map')}>Map Columns</button><button className="btn btn-primary" type="button" onClick={executeImport} disabled={importing || validImportRowCount === 0}>{importing ? 'Importing...' : 'Import'}</button></div><div className="table-wrap intake-preview-table"><table><thead><tr>{headers.map((header, index) => <MappingHeader target={sourceColumnMappings[header]} showUnmapped key={`${header}-${index}`}>{header || '(blank)'}</MappingHeader>)}<th className="problem-column-header">Alerts</th></tr></thead><tbody>{editableRows.map(row => <tr className={(row.errors ?? []).length ? 'row-error' : (row.warnings ?? []).length ? 'row-warning' : ''} key={row.rowNumber}>{headers.map((header, columnIndex) => <td key={`${row.rowNumber}-${header}-${columnIndex}`}>{renderValidateCell(row, header, columnIndex)}</td>)}<td className="problem-column-cell"><div className="problem-row-alerts">{[...(row.errors ?? []), ...(row.warnings ?? [])].map((problem, index) => <span className={`badge problem-badge ${(row.errors ?? []).includes(problem) ? 'badge-red' : 'badge-amber'}`} key={`${row.rowNumber}-${index}`}><span className="problem-badge-icon">!</span>{problem}</span>)}</div></td></tr>)}</tbody></table></div><div className="form-actions"><button className="btn" type="button" onClick={resetIntake}>Cancel</button><button className="btn btn-alt" type="button" onClick={() => setStep('map')}>Map Columns</button><button className="btn btn-primary" type="button" onClick={executeImport} disabled={importing || validImportRowCount === 0}>{importing ? 'Importing...' : 'Import'}</button></div></div>}
+      {step === 'summary' && summary && <div className="intake-card intake-preview-card"><div className="intake-preview-head"><div><div className="intake-preview-title">Import Complete</div><div className="intake-preview-sub">{preview?.fileName}</div></div><span className="badge badge-green">Success</span></div><div className="intake-summary-grid is-four"><div className="intake-summary-item"><span>Rows skipped</span><strong>{summary.rowsSkipped}</strong></div><div className="intake-summary-item"><span>Products created</span><strong>{summary.itemsCreated}</strong></div><div className="intake-summary-item"><span>Products updated</span><strong>{summary.itemsUpdated}</strong></div><div className="intake-summary-item"><span>Errors</span><strong className="metric-error">{summary.errors}</strong></div></div><div className="form-actions"><button className="btn btn-primary" type="button" onClick={resetIntake}>New Import</button></div></div>}
       {importing && <div className="intake-modal-backdrop" role="status" aria-live="polite"><div className="intake-modal"><div className="intake-modal-spinner" /><div className="intake-modal-title">Importing spreadsheet...</div><div className="intake-modal-sub">Creating and updating Jobs and Products in Airtable.</div></div></div>}
     </div>
   );
@@ -6949,8 +6957,6 @@ function ImportHistoryPage({ importId }) {
     { header: 'User', key: 'user' },
     { header: 'Status', key: 'status' },
     { header: 'Rows', key: 'rows' },
-    { header: 'Jobs Created', key: 'jobsCreated' },
-    { header: 'Jobs Reused', key: 'jobsReused' },
     { header: 'Products Created', key: 'itemsCreated' },
     { header: 'Products Updated', key: 'itemsUpdated' },
     { header: 'Errors', key: 'errors' },
@@ -6982,8 +6988,6 @@ function ImportHistoryPage({ importId }) {
                 <th>User</th>
                 <th>Status</th>
                 <th>Rows</th>
-                <th>Jobs Created</th>
-                <th>Jobs Reused</th>
                 <th>Products Created</th>
                 <th>Products Updated</th>
                 <th>Errors</th>
@@ -7001,8 +7005,6 @@ function ImportHistoryPage({ importId }) {
                   <td>{record.user || '—'}</td>
                   <td><StatusBadge status={record.status} /></td>
                   <td>{record.rows ?? 0}</td>
-                  <td>{record.jobsCreated ?? 0}</td>
-                  <td>{record.jobsReused ?? 0}</td>
                   <td>{record.itemsCreated ?? 0}</td>
                   <td>{record.itemsUpdated ?? 0}</td>
                   <td>{record.errors ?? 0}</td>
@@ -7858,8 +7860,6 @@ const MERCH_REVIEW_V2_STORAGE_KEY = 'marks:work-board-board';
 const MERCH_REVIEW_V2_ARTWORK_KEY = 'marks:work-board-artwork-overrides';
 const MERCH_REVIEW_V2_DECISIONS_KEY = 'marks:planning-board-deliverable-decisions';
 const MERCH_REVIEW_V2_LEGACY_DECISIONS_KEY = 'marks:work-board-production-decisions';
-const PM_ACTIVITY_STORAGE_KEY = 'marks:planning-board-activity';
-const PM_COMMENT_READ_STORAGE_KEY = 'marks:planning-board-comment-reads';
 const PM_QUEUE_COLUMNS = [
   { id: QUEUE_IDS.newReview, label: 'New Merch', description: 'Brand-new received merchandise ready for PM review.' },
   { id: QUEUE_IDS.waitingInformation, label: 'Needs More Information', description: 'Reviewed merchandise waiting on Product, work, or required details.' },
@@ -8127,13 +8127,16 @@ function workstreamAssignmentsForDeliverables(deliverables = [], quantity = 1, a
 
 function planningActionOutcomePreview({
   isWorkstreamCard = false,
+  isMerchAcceptanceReview = false,
   stepFlagged = false,
   splitNeedsMultipleUnits = false,
   wizardState = {},
   photoProductionMissingCount = 0,
   photoProductionReady = false,
+  requirementBlockers = [],
 } = {}) {
   if (stepFlagged) return 'Issue will keep this item out of release until resolved.';
+  if (isMerchAcceptanceReview) return 'Confirms the merchandise arrived as expected and moves it to Needs More Information.';
   if (isWorkstreamCard) {
     const hasPhotoDeliverable = (wizardState.deliverables || []).some(type => type === 'Packaging' || type === 'Ecomm');
     if (!hasPhotoDeliverable) return 'Blocked by missing required info: choose Ecomm or Packaging.';
@@ -8146,8 +8149,17 @@ function planningActionOutcomePreview({
   if (splitNeedsMultipleUnits) return 'Blocked by missing required info: update Qty received or choose one deliverable.';
   const deliverables = normalizeDeliverableList(wizardState.deliverables || []);
   const hasPhotoDeliverable = deliverables.some(type => type === 'Packaging' || type === 'Ecomm');
-  if (wizardState.productIdentified && hasPhotoDeliverable && photoProductionReady) return 'Will move to Awaiting Photo Release.';
-  return 'Will move to Needs More Information.';
+  if (wizardState.productIdentified && hasPhotoDeliverable && photoProductionReady && !requirementBlockers.length) return '';
+  if (!wizardState.productIdentified) return 'Match a Product before this can move on.';
+  if (!hasPhotoDeliverable) return 'Choose Ecomm or Packaging before this can move on.';
+  if (requirementBlockers.some(blocker => blocker.key === 'deliverables') && deliverables.length) {
+    return 'Save to confirm these deliverables before this can move on.';
+  }
+  if (!photoProductionReady) {
+    const count = photoProductionMissingCount || 1;
+    return `${count} product field${count === 1 ? '' : 's'} still needed before this can move on.`;
+  }
+  return `Still needed before this can move on: ${requirementBlockers.map(requirementLabelForUser).join(', ')}.`;
 }
 
 function enforceExclusiveGs1Deliverables(values = [], changedOption = '') {
@@ -8205,7 +8217,9 @@ function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = 
     merchandiseId: record.id,
     workstreamCardId: card.id,
     subjectType: 'workstream-card',
-    title: record.productName || record.description || card.name || 'Received Merch',
+    title: card.expectedProduct?.product || card.expectedProduct?.name
+      || record.linkedItem?.product || record.linkedItem?.name
+      || record.productName || record.description || card.name || 'Received Merch',
     columnId,
     queueLabel: PLANNING_QUEUE_LABELS[columnId] || 'Needs More Information',
     deliverables: [type],
@@ -8242,16 +8256,66 @@ function deliverableToneClass(value) {
   }[normalizeDeliverableValue(value)] || 'is-neutral';
 }
 
-function DeliverableBadges({ values = [], overlay = false }) {
+const DELIVERABLE_SHORT_LABELS = { Packaging: 'Pack', Ecomm: 'Ecom', Thr3d: 'Thr3d' };
+
+// text/html is what preserves the SKU table when pasted into Outlook; the plain
+// alternative is there for clients that take only text.
+async function copyPhotoReleaseEmail(email = {}) {
+  const html = email.html || '';
+  const plain = photoReleaseEmailText(email.html);
+  try {
+    if (navigator.clipboard?.write && window.ClipboardItem) {
+      await navigator.clipboard.write([new window.ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([plain], { type: 'text/plain' }),
+      })]);
+    } else {
+      await navigator.clipboard.writeText(plain);
+    }
+    return 'Copied. Paste into a new message.';
+  } catch {
+    return 'Could not copy.';
+  }
+}
+
+function PhotoReleaseEmailHandoff({ email, onDismiss }) {
+  const [copied, setCopied] = useState('');
+  const recipients = email.recipients || [];
+
+  async function copyFormatted() {
+    setCopied(await copyPhotoReleaseEmail(email));
+  }
+
+  return (
+    <span className="photo-release-handoff">
+      <button type="button" className="btn btn-primary" onClick={copyFormatted}>Copy email</button>
+      <a className="btn" href={photoReleaseMailtoUrl(email)}>Open blank message</a>
+      <button type="button" className="btn btn-ghost" onClick={onDismiss}>Dismiss</button>
+      <em>
+        {copied || (recipients.length
+          ? 'Copy the email and paste it into a new message.'
+          : 'No recipients set for this client.')}
+      </em>
+    </span>
+  );
+}
+
+function DeliverableBadges({ values = [], overlay = false, suggested = false, justReleased = false }) {
   const deliverables = normalizeDeliverableList(values);
   if (!deliverables.length) return null;
   return (
-    <div className={`deliverable-badge-row ${overlay ? 'is-overlay' : ''}`} aria-label="Deliverables">
+    <div className={`deliverable-badge-row ${overlay ? 'is-overlay' : ''}`} aria-label={suggested ? 'Suggested deliverables' : 'Deliverables'}>
       {deliverables.map(deliverable => (
-        <span className={`deliverable-badge ${deliverableToneClass(deliverable)}`} key={deliverable}>
-          {deliverable === 'Packaging' && <PackageOpen size={12} strokeWidth={2.2} aria-hidden="true" />}
-          {deliverable === 'Ecomm' && <Camera size={12} strokeWidth={2.2} aria-hidden="true" />}
-          {deliverable}
+        <span
+          className={`deliverable-badge ${deliverableToneClass(deliverable)} ${suggested ? 'is-suggested' : ''} ${justReleased ? 'is-just-released' : ''}`}
+          key={deliverable}
+          title={justReleased ? `${deliverable} - just released to photo` : suggested ? `${deliverable} (suggested, not yet confirmed)` : deliverable}
+        >
+          {justReleased && <Check size={11} strokeWidth={3} aria-hidden="true" />}
+          {deliverable === 'Packaging' && <PackageOpen size={11} strokeWidth={2.2} aria-hidden="true" />}
+          {deliverable === 'Ecomm' && <Camera size={11} strokeWidth={2.2} aria-hidden="true" />}
+          {deliverable === 'Thr3d' && <Rotate3d size={11} strokeWidth={2.2} aria-hidden="true" />}
+          {DELIVERABLE_SHORT_LABELS[deliverable] || deliverable}
         </span>
       ))}
     </div>
@@ -8300,7 +8364,7 @@ function CommentCountChip({ count = 0, unread = 0, recent = false, className = '
       title={title || undefined}
     >
       {unread > 0 && <span className="planning-unread-dot" aria-hidden="true" />}
-      <span aria-hidden="true">💬</span>
+      <MessageSquare size={11} strokeWidth={2.4} aria-hidden="true" />
       {count || 0}
     </span>
   );
@@ -8415,6 +8479,16 @@ const PHOTO_PRODUCTION_EDITABLE_FIELDS = {
   pathToArt: { label: 'Valid Artwork Path', patch: 'pathToArt' },
 };
 
+function productPatchFromPhotoDraft(draft = {}) {
+  const patch = {};
+  Object.entries(draft).forEach(([field, value]) => {
+    const definition = PHOTO_PRODUCTION_EDITABLE_FIELDS[field];
+    if (!definition) return;
+    patch[definition.patch] = String(value ?? '').trim();
+  });
+  return patch;
+}
+
 function normalizedIdentityValue(value) {
   return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
@@ -8470,73 +8544,44 @@ function photoProductionValuePresent(field, value) {
   return Boolean(text);
 }
 
-function PhotoProductionFieldsEditor({ item, production, onRefresh, onDraftChange }) {
+function PhotoProductionFieldsEditor({ item, production, onDraftChange }) {
   const product = item?.record?.linkedItem || {};
   const productDataSource = productDataSourceForPlanningItem(item);
   const entries = production?.workstreamType
     ? [[production.workstreamType, production]]
     : Object.entries(production || {});
-  const fields = [...new Set([
-    ...photoProductionChecks(production, item).map(check => check.key),
-    ...entries.map(([, status]) => status.creativeForce?.productCodeField),
-  ].filter(field => PHOTO_PRODUCTION_EDITABLE_FIELDS[field]))];
+  const fields = [...new Set(
+    photoProductionChecks(production, item)
+      .map(check => check.key)
+      .filter(field => PHOTO_PRODUCTION_EDITABLE_FIELDS[field]),
+  )];
+  // Name and UPC are settled by matching or by receiving, never authored here, so
+  // they are dropped from the field list rather than shown as satisfied. Every other
+  // required field stays visible even when filled — people need to learn the shape of
+  // what the client requires, and a list that only appears when something is wrong
+  // never teaches it.
   const inheritedIdentityFields = fields.filter(field => (
-    !product.id
-    && ['productName', 'upc'].includes(field)
+    ['productName', 'upc'].includes(field)
     && photoProductionValuePresent(field, photoProductionProductValue(productDataSource, field))
   ));
   const inheritedIdentityFieldSet = new Set(inheritedIdentityFields);
   const editableFields = fields.filter(field => !inheritedIdentityFieldSet.has(field));
   const [draft, setDraft] = useState({});
-  const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState('');
 
   useEffect(() => {
     const nextDraft = Object.fromEntries(fields.map(field => [field, photoProductionProductValue(productDataSource, field)]));
     setDraft(nextDraft);
-    onDraftChange?.(nextDraft);
-    setFeedback('');
+    onDraftChange?.(Object.fromEntries(
+      Object.entries(nextDraft).filter(([field]) => !inheritedIdentityFieldSet.has(field)),
+    ));
   }, [item?.id, product.id, item?.manualProductInfo, item?.record?.manualProductInfo, item?.record?.productName, item?.record?.skuId, fields.join('|')]);
 
   if (!entries.length || !fields.length) return null;
-
-  async function save() {
-    setSaving(true);
-    setFeedback('');
-    try {
-      const values = {};
-      fields.forEach(field => {
-        values[field] = String(draft[field] || '').trim();
-      });
-      if (product.id) {
-        const patch = {};
-        fields.forEach(field => {
-          patch[PHOTO_PRODUCTION_EDITABLE_FIELDS[field].patch] = values[field];
-        });
-        await api.updateProduct(product.id, patch);
-      } else if (item?.subjectType === 'workstream-card' && item.workstreamCardId) {
-        await api.updateWorkstreamCard(item.workstreamCardId, { manualProductInfo: values });
-      } else {
-        await api.updateMerchandiseIntakeDecisions(item.merchandiseId, { manualProductInfo: values });
-      }
-      await onRefresh?.();
-      setFeedback(product.id ? 'Product data saved.' : 'Manual product data saved.');
-    } catch (error) {
-      setFeedback(error.message || 'Could not save Product data.');
-    } finally {
-      setSaving(false);
-    }
-  }
 
     return (
     <div className="photo-production-fields-editor">
       <div className="photo-production-fields-editor-header">
       </div>
-      {inheritedIdentityFields.length > 0 && (
-        <div className="photo-production-editor-note">
-          Using package name and UPC from merchandise identity.
-        </div>
-      )}
       {editableFields.length > 0 && <div className="photo-production-fields-grid">
         {editableFields.map(field => {
           const definition = PHOTO_PRODUCTION_EDITABLE_FIELDS[field];
@@ -8559,10 +8604,6 @@ function PhotoProductionFieldsEditor({ item, production, onRefresh, onDraftChang
           );
         })}
       </div>}
-      {editableFields.length > 0 && <div className="photo-production-fields-editor-actions">
-        <button type="button" className="btn btn-secondary btn-sm" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save Details'}</button>
-      </div>}
-      {feedback && <span className={feedback.includes('saved') ? 'is-success' : 'is-error'}>{feedback}</span>}
     </div>
   );
 }
@@ -8637,52 +8678,6 @@ function activationEditableForPhoto(activation = {}) {
   return !['Released', 'Cancelled', 'Complete'].includes(String(activation.status || '').trim());
 }
 
-function PlanningListView({ columns, itemsByColumn, selectedId, onSelect, disabled = false, showNewCardClient = true }) {
-  return (
-    <div className={`planning-list-view ${disabled ? 'is-frozen' : ''}`} aria-label="Planning list">
-      {columns.map(column => {
-        const items = itemsByColumn[column.id] || [];
-        return (
-          <section className="planning-list-section" key={column.id} aria-labelledby={`planning-list-${column.id}`}>
-            <header className="planning-list-section-header">
-              <div>
-                <h2 id={`planning-list-${column.id}`}>{column.label}</h2>
-                <span>{column.description}</span>
-              </div>
-              <strong>{items.length}</strong>
-            </header>
-            {items.length ? (
-              <div className="planning-list-rows">
-                {items.map(item => {
-                  const age = ageBucketForItem(item);
-                  return (
-                    <button
-                      type="button"
-                      className={`planning-list-row ${selectedId === item.id ? 'is-selected' : ''}`}
-                      key={item.id}
-                      onClick={() => !disabled && onSelect?.(item.id)}
-                      disabled={disabled}
-                    >
-                      <span className="planning-list-main">
-                        <strong>{item.title || 'Received Merchandise'}</strong>
-                        <span>{showNewCardClient && (item.client || item.record?.client)}{item.identifier ? ` · ${item.identifier}` : ''}</span>
-                      </span>
-                      <DeliverableBadges values={item.deliverables || item.record?.deliverables || []} />
-                      <span className="planning-list-age">{age.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="planning-list-empty">No cards in this queue.</div>
-            )}
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-
 const PLANNING_RELEASE_SECTIONS = [
   { id: 'needsReview', label: 'Newly Received Merch', description: 'View and acknowledge newly received merchandise.' },
   { id: 'needsDetails', label: 'Needs More Information', description: 'Reviewed work with outstanding validation.' },
@@ -8692,7 +8687,6 @@ const PLANNING_RELEASE_SECTIONS = [
 function releaseSectionForPlanningItem(item = {}) {
   if (item.columnId === QUEUE_IDS.readyProduction) return 'readyToRelease';
   if (item.columnId === QUEUE_IDS.newReview) return 'needsReview';
-  if (releaseInfoCompleteForPlanningItem(item)) return 'readyToRelease';
   return 'needsDetails';
 }
 
@@ -8729,29 +8723,14 @@ function photoProductionReadyForPlanningItem(item = {}) {
   return checks.every(check => photoProductionValuePresent(check.key, photoProductionProductValue(product, check.key)));
 }
 
-function releaseStatusTextForItem(item = {}, sectionId = '') {
-  if (sectionId === 'needsReview') {
-    return productLinkedForPlanningItem(item) ? 'Matched' : 'Unmatched';
-  }
-  if (sectionId === 'readyToRelease') return 'Awaiting photo release';
-  const missing = requiredToShootSummary(item).missing;
-  return missing.length ? missing.slice(0, 3).join(' / ') : 'Needs more information';
-}
 
-function releaseCardIdentifierLine(item = {}, identifier = '', sectionId = '') {
-  if (sectionId !== 'needsReview') return releaseStatusTextForItem(item, sectionId);
-  return [identifier || 'No UPC', releaseStatusTextForItem(item, sectionId)].filter(Boolean).join(' · ');
-}
 
 function ReleaseCardIdentifierLine({ item, identifier, sectionId }) {
-  if (sectionId !== 'needsReview') {
-    return <span>{releaseCardIdentifierLine(item, identifier, sectionId)}</span>;
-  }
   const matched = productLinkedForPlanningItem(item);
   return (
     <span className="planning-release-identity-line">
       <span>{identifier || 'No UPC'}</span>
-      <span className={matched ? 'is-matched' : ''}>{matched ? '✓ Matched' : 'Unmatched'}</span>
+      <span className={matched ? 'is-matched' : 'is-unmatched'}>{matched ? '✓ Matched' : '✗ Unmatched'}</span>
     </span>
   );
 }
@@ -8761,11 +8740,48 @@ function releaseCardDeliverables(item = {}, sectionId = '') {
   if (item.subjectType === 'workstream-card') {
     return normalizeDeliverableList(item.deliverables || item.record?.deliverables);
   }
-  return normalizeDeliverableList(item.record?.deliverables);
+  const committed = normalizeDeliverableList(item.record?.deliverables);
+  return committed.length ? committed : initialReviewDeliverables(item.record);
 }
 
 function planningShipmentDateValue(item = {}) {
   return item.record?.receipt?.received || item.record?.dateReceived || item.record?.received || item.receivedAt || '';
+}
+
+// Board cards show elapsed time rather than a bucket label. In the first column the
+// bucket label reads "New", which only restates the column title and hides the one
+// fact the card cannot otherwise convey: how long this has been sitting.
+function elapsedAgeForItem(item = {}) {
+  const received = planningShipmentDateValue(item);
+  const elapsedMs = received ? Date.now() - new Date(received).getTime() : Number.NaN;
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return ageBucketForItem(item);
+  const minutes = Math.floor(elapsedMs / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const label = days >= 1 ? `${days}d` : hours >= 1 ? `${hours}h` : `${Math.max(minutes, 1)}m`;
+  const tone = days >= 14 ? 'old' : days >= 7 ? 'aging' : 'fresh';
+  return { label, tone };
+}
+
+function groupClientName(group = {}) {
+  const first = (group.items || [])[0] || {};
+  return String(first.client || first.record?.client || '').trim();
+}
+
+// Carrier plus the last four of the tracking number is the handle people actually
+// read off a box or quote in an email, and it needs no schema of its own. The full
+// number is too long for a group header and lives in Shipments, one click away.
+function groupShipmentSummary(group = {}) {
+  const receipt = ((group.items || [])[0] || {}).record?.receipt || {};
+  const carrier = String(receipt.carrier || '').trim();
+  const tracking = String(receipt.tracking || '').trim();
+  const parcel = [carrier, tracking ? `···${tracking.slice(-4)}` : ''].filter(Boolean).join(' ');
+  const count = (group.items || []).length;
+  return [
+    parcel,
+    `${count} ${count === 1 ? 'item' : 'items'}`,
+    group.received ? formatInventoryDate(group.received) : '',
+  ].filter(Boolean).join(' · ');
 }
 
 function planningShipmentGroupLabel(item = {}) {
@@ -8822,8 +8838,11 @@ function PlanningReleaseView({
   groupByShipment = true,
   selectedReleaseIds = [],
   onToggleReleaseSelection,
+  onToggleReleaseGroup,
   onReleaseSelected,
+  justReleasedIds = [],
 }) {
+  const justReleasedSet = new Set(justReleasedIds);
   const itemsBySection = sections.reduce((groups, section) => ({ ...groups, [section.id]: [] }), {});
   const visibleSectionIds = new Set(sections.map(section => section.id));
   items.forEach(item => {
@@ -8838,7 +8857,7 @@ function PlanningReleaseView({
       {sections.map(section => {
         const sectionItems = itemsBySection[section.id] || [];
         const selectedInSection = sectionItems.filter(item => selectedReleaseSet.has(item.id));
-        const shouldGroupByShipment = groupByShipment && ['needsReview', 'needsDetails'].includes(section.id);
+        const shouldGroupByShipment = groupByShipment;
         const shipmentGroups = shouldGroupByShipment
           ? groupPlanningItemsByShipment(sectionItems)
           : [{ key: `${section.id}-all`, items: sectionItems, received: '' }];
@@ -8859,71 +8878,140 @@ function PlanningReleaseView({
               </div>
             </header>
             <div className="planning-release-card-list">
-              {shipmentGroups.length ? shipmentGroups.map(group => (
+              {/* Emptiness is a question about items, not groups. Ungrouped sections
+                  always produce one pseudo-group, so checking group count showed the
+                  empty state in grouped columns and nothing at all in ungrouped ones. */}
+              {sectionItems.length ? shipmentGroups.map(group => (
                 <div className="planning-release-shipment-group" key={group.key}>
                   {shouldGroupByShipment && (
                     <div className="planning-release-shipment-header">
+                      {showNewCardClient && groupClientName(group) && (
+                        <span className="planning-release-group-client">{groupClientName(group)}</span>
+                      )}
                       {group.shipmentId ? (
                         <Link to={`/shipments?shipmentId=${encodeURIComponent(group.shipmentId)}`}>
-                          {group.received ? formatInventoryDate(group.received) : 'Open shipment'}
+                          {groupShipmentSummary(group) || 'Open shipment'}
                         </Link>
                       ) : (
-                        <span>{group.received ? formatInventoryDate(group.received) : 'No received date'}</span>
+                        <span>{groupShipmentSummary(group) || 'No received date'}</span>
+                      )}
+                      {section.id === 'readyToRelease' && group.items.length > 1 && (
+                        <button
+                          type="button"
+                          className="planning-release-group-select"
+                          onClick={() => onToggleReleaseGroup?.(group.items.map(groupItem => groupItem.id))}
+                          disabled={disabled}
+                        >
+                          {group.items.every(groupItem => selectedReleaseSet.has(groupItem.id)) ? 'Clear' : 'Select all'}
+                        </button>
                       )}
                     </div>
                   )}
                   {group.items.map(item => {
-                    const age = ageBucketForItem(item);
+                    const age = elapsedAgeForItem(item);
+                    const clientName = String(item.client || item.record?.client || '').trim();
                     const identifier = item.identifier || item.record?.skuId || item.record?.linkedItem?.identifier || '';
                     const selectable = section.id === 'readyToRelease';
                     const checked = selectedReleaseSet.has(item.id);
                     const displayDeliverables = releaseCardDeliverables(item, section.id);
                     const showAge = Boolean(age.label);
+                    // Conversation happens on these items constantly, so the board has to
+                    // answer "has anything been said about this?" without opening the card.
+                    // The chip appears only when there is something to say, so its presence
+                    // is itself the signal and empty cards stay sparse.
+                    const commentCount = item.commentCount || 0;
+                    const showComments = commentCount > 0;
+                    const missingRequirements = section.id === 'needsReview' ? [] : requiredToShootSummary(item).missing;
+                    const otherRequirements = missingRequirements.filter(entry => entry !== 'Deliverables');
+                    const awaitingVerification = missingRequirements.includes('Deliverables')
+                      && otherRequirements.length === 0
+                      && initialReviewDeliverables(item.record).length > 0;
+                    const missingLabel = missingRequirements.length === 0
+                      ? ''
+                      : awaitingVerification
+                        ? 'Needs verification'
+                        : missingRequirements.includes('Deliverables')
+                          ? 'Missing Deliverables'
+                          : `Missing required data \u2013${missingRequirements.length}`;
                     return (
                       <div
                         className={`planning-release-card ${selectedId === item.id ? 'is-selected' : ''} ${selectable ? 'is-selectable' : ''}`}
                         key={item.id}
                       >
+                        {selectable && (
+                          <label
+                            className="planning-release-select"
+                            title={checked ? 'Deselect for release' : 'Select for release'}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => onToggleReleaseSelection?.(item.id)}
+                              disabled={disabled}
+                              aria-label={`Select ${item.title || 'merchandise'} for release`}
+                            />
+                          </label>
+                        )}
                         <button
                           type="button"
-                          className={`planning-release-card-open ${!(displayDeliverables.length || showAge) ? 'has-no-meta' : ''}`}
-                          onClick={() => {
-                            if (disabled) return;
-                            if (selectable) {
-                              onToggleReleaseSelection?.(item.id);
-                              return;
-                            }
-                            onSelect?.(item.id);
-                          }}
+                          className={`planning-release-card-open ${!(displayDeliverables.length || showAge || showComments) ? 'has-no-meta' : ''}`}
+                          onClick={() => !disabled && onSelect?.(item.id)}
                           disabled={disabled}
-                          aria-pressed={selectable ? checked : undefined}
                         >
                           <span className="planning-release-thumb">
                             <RecordThumbnail record={item.record} count={1} />
                           </span>
                           <span className="planning-release-main">
+                            {/* Client lives on the group header when grouping is on, so it
+                                appears once per shipment instead of on every card. The
+                                eyebrow is the fallback for ungrouped columns, where there
+                                is no header to carry it. */}
+                            {showNewCardClient && clientName && !shouldGroupByShipment && (
+                              <span className="planning-release-eyebrow">{clientName}</span>
+                            )}
                             <strong>{item.title || 'Received Merchandise'}</strong>
                             <ReleaseCardIdentifierLine item={item} identifier={identifier} sectionId={section.id} />
+                            {missingLabel && (
+                              <span className="planning-release-missing-row">
+                                <span
+                                  className={`planning-release-missing ${awaitingVerification ? 'is-verify' : ''}`}
+                                  title={missingRequirements.join(', ')}
+                                >
+                                  {missingLabel}
+                                </span>
+                              </span>
+                            )}
                           </span>
-                          {(displayDeliverables.length || showAge) && (
+                          {(displayDeliverables.length || showAge || showComments) && (
                             <span className="planning-release-meta">
-                              <DeliverableBadges values={displayDeliverables} />
-                              {showAge && <span className={`planning-release-age is-${age.tone}`}>{age.label}</span>}
+                              <span className="planning-release-badge-row">
+                                {item.record?.released && (
+                                  <span
+                                    className="planning-release-released-mark"
+                                    title={`Released to photo${item.record?.releasedAt ? ` ${formatInventoryDate(item.record.releasedAt)}` : ''}`}
+                                  >
+                                    R
+                                  </span>
+                                )}
+                                <DeliverableBadges
+                                  values={displayDeliverables}
+                                  suggested={awaitingVerification}
+                                  justReleased={justReleasedSet.has(item.merchandiseId)}
+                                />
+                              </span>
+                              <span className="planning-release-meta-row">
+                                {showComments && (
+                                  <CommentCountChip
+                                    count={commentCount}
+                                    unread={item.unreadComments || 0}
+                                    recent={Boolean(item.recentComment)}
+                                  />
+                                )}
+                                {showAge && <span className={`planning-release-age is-${age.tone}`}>{age.label}</span>}
+                              </span>
                             </span>
                           )}
                         </button>
-                        {selectable && (
-                          <button
-                            type="button"
-                            className="planning-release-details-button"
-                            aria-label={`Edit ${item.title || 'received merchandise'}`}
-                            title="Edit"
-                            onClick={() => !disabled && onSelect?.(item.id)}
-                            disabled={disabled}
-                          >
-                            <Pencil size={13} strokeWidth={2.3} aria-hidden="true" />
-                          </button>
-                        )}
                       </div>
                     );
                   })}
@@ -9181,7 +9269,10 @@ function requirementResolution(requirement = {}) {
 
 function requirementBlockerLabel(requirement = {}) {
   const missing = requirementMissingFields(requirement);
-  if (missing.length === 1 && missing[0] !== requirement.label) return missing[0];
+  const readsAsFieldName = missing.length === 1
+    && missing[0] !== requirement.label
+    && missing[0].split(/\s+/).length <= 3;
+  if (readsAsFieldName) return missing[0];
   return requirement.label || 'Missing information';
 }
 
@@ -9686,10 +9777,10 @@ function DeliverablesSelector({ values = [], onChange, disabled = false, options
   );
 }
 
-function NewReviewProductIdentification({ item, product, onRefresh, deferNoClearMatch = false, noClearMatchDraft, onNoClearMatchDraftChange }) {
+function NewReviewProductIdentification({ item, product, onRefresh, deferNoClearMatch = false, noClearMatchDraft, onNoClearMatchDraftChange, clientRecord = null }) {
   const record = item.record || {};
   const [matchNameQuery, setMatchNameQuery] = useState(record.productName || record.description || '');
-  const [matchIdentifierQuery, setMatchIdentifierQuery] = useState(record.skuId || record.observedIdentifier || product.identifier || product.primaryMatchKey || '');
+  const [matchIdentifierQuery, setMatchIdentifierQuery] = useState(record.skuId || record.observedIdentifier || '');
   const [matches, setMatches] = useState([]);
   const [draft, setDraft] = useState(() => productInformationFields(product, record));
   const [busy, setBusy] = useState(false);
@@ -9699,10 +9790,17 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
   const [noClearMatch, setNoClearMatch] = useState(false);
   const [editingLinkedProductIdentity, setEditingLinkedProductIdentity] = useState(false);
   const [replacementProductId, setReplacementProductId] = useState('');
+  // Clients with Source Check rules match against the read-only client sheet rather
+  // than local Products, so Planning suggests the same rows Shipments does instead of
+  // only finding Products that happen to have been activated already.
+  const sourceBackedMatching = Boolean(sourceCheckRulesForClient(clientRecord));
+  const [sourceMatches, setSourceMatches] = useState([]);
+  const [sourceMatchLoading, setSourceMatchLoading] = useState(false);
+  const [sourceActivatingRow, setSourceActivatingRow] = useState(null);
 
   useEffect(() => {
     setMatchNameQuery(record.productName || record.description || '');
-    setMatchIdentifierQuery(record.skuId || record.observedIdentifier || product.identifier || product.primaryMatchKey || '');
+    setMatchIdentifierQuery(record.skuId || record.observedIdentifier || '');
     setDraft(productInformationFields(product, record));
     setMatches([]);
     setNotice('');
@@ -9751,7 +9849,56 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
       }
     }, 220);
     return () => { active = false; window.clearTimeout(t); };
-  }, [matchIdentifierQuery, matchNameQuery, item.id, record.clientIds, record.itemIds]);
+  }, [matchIdentifierQuery, matchNameQuery, item.id, record.clientIds, record.itemIds, sourceBackedMatching]);
+
+  useEffect(() => {
+    let active = true;
+    const nameQuery = String(matchNameQuery || '').trim();
+    const identifierQuery = String(matchIdentifierQuery || '').trim();
+    const ready = compactMatchValue(identifierQuery).length >= 3 || compactMatchValue(nameQuery).length >= 3;
+    if (!sourceBackedMatching || !ready) {
+      setSourceMatches([]);
+      setSourceMatchLoading(false);
+      return () => { active = false; };
+    }
+    setSourceMatchLoading(true);
+    const t = window.setTimeout(async () => {
+      try {
+        const data = await api.topcoSourceSuggestions({
+          clientId: record.clientIds?.[0],
+          productName: nameQuery,
+          upc: identifierQuery,
+          limit: 5,
+        });
+        if (active) setSourceMatches(data.records ?? []);
+      } catch {
+        if (active) setSourceMatches([]);
+      } finally {
+        if (active) setSourceMatchLoading(false);
+      }
+    }, 260);
+    return () => { active = false; window.clearTimeout(t); };
+  }, [sourceBackedMatching, matchNameQuery, matchIdentifierQuery, record.clientIds, item.id]);
+
+  // Selecting a source row creates or updates the local Product from that row and
+  // links it, the same idempotent activation Shipments uses.
+  async function activateSourceRow(sourceRow) {
+    const sourceRowNumber = sourceRow?.sourceRowNumber;
+    if (!sourceRowNumber) return;
+    setSourceActivatingRow(sourceRowNumber);
+    setNotice('');
+    try {
+      await api.activateMerchandiseSourceRow(item.merchandiseId, { sourceRowNumber });
+      onNoClearMatchDraftChange?.(false);
+      setEditingLinkedProductIdentity(false);
+      setReplacementProductId('');
+      await onRefresh?.();
+    } catch (error) {
+      setNotice(error.message || 'Could not match this source row.');
+    } finally {
+      setSourceActivatingRow(null);
+    }
+  }
 
   function setField(field, value) {
     setDraft(current => ({ ...current, [field]: value }));
@@ -9761,16 +9908,6 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
     setBusy(true);
     setNotice('');
     try {
-      const identityUpdates = {};
-      const nextName = String(matchNameQuery || '').trim();
-      const nextIdentifier = String(matchIdentifierQuery || '').trim();
-      const savedName = String(record.productName || record.description || '').trim();
-      const savedIdentifier = String(record.skuId || record.observedIdentifier || '').trim();
-      if (nextName && nextName !== savedName) identityUpdates.productName = nextName;
-      if (nextIdentifier !== savedIdentifier) identityUpdates.skuId = nextIdentifier;
-      if (Object.keys(identityUpdates).length > 0) {
-        await api.updateMerchandiseIntakeDecisions(item.merchandiseId, identityUpdates);
-      }
       await api.matchMerchandiseReviewEntry(item.merchandiseId, productId);
       onNoClearMatchDraftChange?.(false);
       setEditingLinkedProductIdentity(false);
@@ -9834,41 +9971,12 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
     }
   }
 
-  async function useProductMerchValue(field, value) {
-    const trimmed = String(value || '').trim();
-    if (!trimmed) return;
-    setBusy(true);
-    setNotice('');
-    try {
-      await api.updateMerchandiseIntakeDecisions(item.merchandiseId, { [field]: trimmed });
-      if (field === 'productName') setMatchNameQuery(trimmed);
-      if (field === 'skuId') setMatchIdentifierQuery(trimmed);
-      await onRefresh?.();
-    } catch (error) {
-      setNotice(error.message || 'Could not update merchandise.');
-    } finally {
-      setBusy(false);
-    }
-  }
 
   const linked = Boolean(product.id);
   const effectiveNoClearMatch = deferNoClearMatch ? Boolean(noClearMatchDraft) : noClearMatch;
   const choosingReplacementProduct = Boolean(replacementProductId);
   const showLinkedProductCard = linked && !choosingReplacementProduct;
-  const observedName = String(matchNameQuery || '').trim();
-  const observedIdentifier = String(matchIdentifierQuery || '').trim();
-  const productTitle = itemMatchTitle(product);
-  const productIdentifier = itemMatchIdentifierValue(product);
-  const linkedNameDiffers = linked && matchValuesConflict(observedName, productTitle);
-  const linkedIdentifierDiffers = linked && matchValuesConflict(observedIdentifier, productIdentifier);
-  const linkedIdentityIsClean = Boolean(
-    linked
-    && observedName
-    && observedIdentifier
-    && !linkedNameDiffers
-    && !linkedIdentifierDiffers
-  );
-  const showProductIdentityFields = !showLinkedProductCard || !linkedIdentityIsClean || editingLinkedProductIdentity;
+  const showProductIdentityFields = !showLinkedProductCard || editingLinkedProductIdentity;
   const matchIdentifierReady = compactMatchValue(matchIdentifierQuery).length >= 3;
   const matchNameReady = compactMatchValue(matchNameQuery).length >= 3;
   const showMatchSuggestions = (!showLinkedProductCard || editingLinkedProductIdentity) && (matchIdentifierReady || matchNameReady);
@@ -9876,23 +9984,28 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
   const combinedPartialMatchSuggestions = matches.length > 0 && matches.every(match => String(match.matchBasis || '').startsWith('both-'));
   const combinedMatchSearch = matchIdentifierReady && matchNameReady;
   const matchSuggestionsTitle = matchLoading
-    ? 'Searching products…'
+    ? 'Searching matches…'
     : matches.length
-      ? (nameOnlyMatchSuggestions || combinedPartialMatchSuggestions) ? 'Possible products' : 'Suggested products'
-      : combinedMatchSearch ? 'No product matches both fields' : 'No matches found';
+      ? (nameOnlyMatchSuggestions || combinedPartialMatchSuggestions) ? 'Possible matches' : 'Suggested matches'
+      : combinedMatchSearch ? 'No match on both fields' : 'No matches found';
   const showIncompleteProductCreation = false;
 
   return (
     <div className="new-review-product-id">
       {showProductIdentityFields && (
         <div className="new-review-product-search-fields">
+          {/* Search inputs, not a restatement of the package. They start from what was
+              recorded at receiving but are edited freely to find a Product, so they are
+              labelled for what they do. The recorded values live in step 1 and never
+              change here. */}
+          <p className="new-review-search-hint">Search the client product list. Starts from what was recorded on the package.</p>
           <div className="recv-field recv-field-product">
-            <label>{DOMAIN_TERMS.packageName}</label>
-            <input value={matchNameQuery} onChange={event => { setMatchNameQuery(event.target.value); if (linked) setEditingLinkedProductIdentity(true); }} placeholder="Name printed on package" autoComplete="off" />
+            <label>Search by name</label>
+            <input value={matchNameQuery} onChange={event => { setMatchNameQuery(event.target.value); if (linked) setEditingLinkedProductIdentity(true); }} placeholder="Type part of the product name" autoComplete="off" />
           </div>
           <div className="recv-field">
-            <label>{DOMAIN_TERMS.merchandiseIdentifier}</label>
-            <input value={matchIdentifierQuery} onChange={event => { setMatchIdentifierQuery(event.target.value); if (linked) setEditingLinkedProductIdentity(true); }} placeholder="Scan or enter UPC / ID" autoComplete="off" />
+            <label>Search by UPC / ID</label>
+            <input value={matchIdentifierQuery} onChange={event => { setMatchIdentifierQuery(event.target.value); if (linked) setEditingLinkedProductIdentity(true); }} placeholder="Scan or type a UPC / ID" autoComplete="off" />
           </div>
         </div>
       )}
@@ -9900,19 +10013,13 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
         <>
           <ProductMatchCard
             item={product}
-            observedName={observedName}
-            observedIdentifier={observedIdentifier}
             onChange={() => {
               setReplacementProductId(product.id || '');
               setEditingLinkedProductIdentity(false);
               setNoClearMatch(false);
             }}
-            onUseProductIdentifier={() => useProductMerchValue('skuId', productIdentifier)}
-            onUseProductName={() => useProductMerchValue('productName', productTitle)}
             changeDisabled={busy}
             actionDisabled={busy}
-            nameWarningText="Package name differs from the linked Product name."
-            identifierWarningText={`Package UPC / ID differs from the linked Product ${itemMatchMethod(product)}.`}
           />
           {showMatchSuggestions && (
               <ReceivingMatchSuggestions
@@ -9941,16 +10048,29 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
         />
       ) : (
         <>
-          {showMatchSuggestions && (
-              <ReceivingMatchSuggestions
-                title={matchSuggestionsTitle}
-                matches={matches}
+          {showMatchSuggestions && sourceBackedMatching && (
+            <SourceSheetMatchSuggestions
+              title="From the source sheet — not yet a Product"
+              matches={sourceMatches}
+              client={clientRecord}
+              searchName={matchNameQuery}
+              searchIdentifier={matchIdentifierQuery}
+              matchLoading={sourceMatchLoading}
+              activatingRowNumber={sourceActivatingRow}
+              canActivate
+              onActivate={activateSourceRow}
+            />
+          )}
+          {showMatchSuggestions && (matches.length > 0 || matchLoading) && (
+            <ReceivingMatchSuggestions
+              title={matchSuggestionsTitle}
+              matches={matches}
               identifierQuery={matchIdentifierQuery}
               nameOnlyMatchSuggestions={nameOnlyMatchSuggestions}
               combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
               combinedMatchSearch={combinedMatchSearch}
               matchLoading={matchLoading}
-              onNoClearMatch={markNoClearMatch}
+              showNoClearMatchAction={false}
               onSelect={match => linkProduct(match.id)}
               disabled={busy}
             />
@@ -10011,7 +10131,9 @@ function CommentComposer({ onSubmit, saving }) {
   return (
     <form className="conversation-composer" onSubmit={submit}>
       <textarea value={draft} onChange={event => setDraft(event.target.value)} placeholder="Add a comment" disabled={saving} />
-      <button type="submit" className="btn btn-primary btn-sm" disabled={!draft.trim() || saving}>{saving ? 'Saving...' : 'Comment'}</button>
+      {/* Deliberately not btn-primary: posting a comment is a side conversation, not
+          the modal's commit action, and matching Accept made the two look equivalent. */}
+      <button type="submit" className="btn btn-comment btn-sm" disabled={!draft.trim() || saving}>{saving ? 'Posting...' : 'Comment'}</button>
     </form>
   );
 }
@@ -10027,7 +10149,7 @@ function commentAuthorInitials(comment = {}) {
   return ((parts[0]?.[0] || '?') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
 }
 
-function ConversationPanel({ comments = [], onAddComment, saving, error }) {
+function ConversationPanel({ comments = [], onAddComment, saving, error, readThrough = '', embedded = false }) {
   const listRef = useRef(null);
   useEffect(() => {
     const list = listRef.current;
@@ -10035,20 +10157,28 @@ function ConversationPanel({ comments = [], onAddComment, saving, error }) {
   }, [comments.length]);
   return (
     <section className="review-step is-open conversation-panel">
-      <header className="review-step-head">
-        <span className="review-step-num review-step-num-plain">·</span>
-        <h3>Comments</h3>
-        <CommentCountChip count={comments.length} className="is-support" />
-      </header>
+      {!embedded && (
+        <header className="review-step-head">
+          <span className="review-step-num review-step-num-plain">·</span>
+          <h3>Comments</h3>
+          <CommentCountChip count={comments.length} className="is-support" />
+        </header>
+      )}
       <div className="conversation-list" ref={listRef}>
         {comments.map(comment => (
-          <article className="conversation-comment" key={comment.id}>
+          <article
+            className={`conversation-comment ${readThrough && comment.createdAt > readThrough ? 'is-new' : ''}`.trim()}
+            key={comment.id}
+          >
                 <span className="conversation-avatar" aria-hidden="true">{commentAuthorInitials(comment)}</span>
                 <div className="conversation-bubble">
                   <header>
                     <strong className="conversation-author-name">{commentAuthorName(comment)}</strong>
                     <span className="conversation-meta-line">
                       <time>{formatInventoryDate(comment.createdAt)}</time>
+                      {readThrough && comment.createdAt > readThrough && (
+                        <span className="conversation-new-flag">New</span>
+                      )}
                     </span>
                   </header>
                   <p>{comment.body}</p>
@@ -10062,17 +10192,20 @@ function ConversationPanel({ comments = [], onAddComment, saving, error }) {
   );
 }
 
-function HistoryPanel({ events = [] }) {
+function HistoryPanel({ events = [], embedded = false }) {
   const visibleEvents = events.filter(event => String(event.action || event.body || '').trim().toLowerCase() !== 'added a comment.');
   return (
     <section className="review-step is-open activity-panel">
-      <header className="review-step-head"><span className="review-step-num review-step-num-plain">·</span><h3>History</h3></header>
+      {!embedded && <header className="review-step-head"><span className="review-step-num review-step-num-plain">·</span><h3>History</h3></header>}
       <div className="activity-list">
         {visibleEvents.length === 0 && <p className="conversation-empty">No history yet.</p>}
         {visibleEvents.map(event => (
           <div className="activity-event" key={event.id}>
             <span>{event.actor || 'System'}</span>
             <strong>{event.action || event.body}</strong>
+            {event.from && event.to && (
+              <em className="activity-event-change">{event.from} &rarr; {event.to}</em>
+            )}
             <time>{formatInventoryDate(event.createdAt)}</time>
           </div>
         ))}
@@ -10081,17 +10214,48 @@ function HistoryPanel({ events = [] }) {
   );
 }
 
-function NewReviewSupportPanel({ comments = [], onAddComment, commentSaving, commentError, activity = [] }) {
+function NewReviewSupportPanel({ comments = [], onAddComment, commentSaving, commentError, activity = [], readThrough = '' }) {
+  const [tab, setTab] = useState('comments');
+  const historyCount = activity.filter(
+    event => String(event.action || event.body || '').trim().toLowerCase() !== 'added a comment.',
+  ).length;
+  // Surfaced on the tab so unread conversation is still visible while reading History.
+  const unread = readThrough ? comments.filter(comment => comment.createdAt > readThrough).length : 0;
+  const tabs = [
+    { id: 'comments', label: 'Comments', count: comments.length, dot: unread > 0 },
+    { id: 'history', label: 'History', count: historyCount, dot: false },
+  ];
   return (
     <aside className="new-review-support-panel" aria-label="Comments and history">
+      <div className="support-tabs" role="tablist">
+        {tabs.map(entry => (
+          <button
+            key={entry.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === entry.id}
+            className={tab === entry.id ? 'is-active' : ''}
+            onClick={() => setTab(entry.id)}
+          >
+            {entry.label}
+            {entry.count > 0 && <span className="support-tab-count">{entry.count}</span>}
+            {entry.dot && <span className="support-tab-dot" aria-label="Unread comments" />}
+          </button>
+        ))}
+      </div>
       <div className="new-review-support-body">
-        <ConversationPanel
-          comments={comments}
-          onAddComment={onAddComment}
-          saving={commentSaving}
-          error={commentError}
-        />
-        <HistoryPanel events={activity} />
+        {tab === 'comments' ? (
+          <ConversationPanel
+            comments={comments}
+            onAddComment={onAddComment}
+            saving={commentSaving}
+            error={commentError}
+            readThrough={readThrough}
+            embedded
+          />
+        ) : (
+          <HistoryPanel events={activity} embedded />
+        )}
       </div>
     </aside>
   );
@@ -10099,11 +10263,72 @@ function NewReviewSupportPanel({ comments = [], onAddComment, commentSaving, com
 
 // Collapsing step: when its work is done it folds to a one-line summary, so the
 // pane always keeps the open/actionable steps loud and the finished ones quiet.
+// A merch overview rather than a fixed form: condition and storage are often blank,
+// and rendering them as "Not recorded" fills the panel with absence. Facts are built
+// from what exists and empty ones drop out, so the block is always substantive and
+// shrinks instead of apologising. Shipment context is included because how and when
+// something arrived is part of deciding whether to accept it.
+const CARRIER_TRACKING_URLS = [
+  { match: /usps/i, url: t => `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(t)}` },
+  { match: /ups/i, url: t => `https://www.ups.com/track?tracknum=${encodeURIComponent(t)}` },
+  { match: /fedex/i, url: t => `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(t)}` },
+  { match: /dhl/i, url: t => `https://www.dhl.com/en/express/tracking.html?AWB=${encodeURIComponent(t)}` },
+];
+
+function carrierTrackingUrl(carrier, tracking) {
+  if (!tracking) return '';
+  const entry = CARRIER_TRACKING_URLS.find(candidate => candidate.match.test(carrier || ''));
+  return entry ? entry.url(tracking) : '';
+}
+
+// One uniform label/value list. Physical facts and observed identity were previously
+// rendered in two different shapes, which made the spacing read as arbitrary. Rows
+// with no value are omitted rather than showing a placeholder.
+function MerchFacts({ item }) {
+  const record = item?.record || {};
+  const receipt = record.receipt || {};
+  const carrier = String(receipt.carrier || '').trim();
+  const tracking = String(receipt.tracking || '').trim();
+  const condition = String(record.condition || '').trim();
+  const shipmentText = [carrier, tracking].filter(Boolean).join(' ');
+  const trackingUrl = carrierTrackingUrl(carrier, tracking);
+  const rows = [
+    { key: 'name', label: 'Name on package', value: String(record.productName || '').trim() },
+    { key: 'upc', label: 'UPC / ID on package', value: String(record.skuId || record.observedIdentifier || '').trim() },
+    {
+      key: 'shipment',
+      label: 'Shipment',
+      value: shipmentText,
+      href: trackingUrl,
+    },
+    { key: 'qty', label: 'Quantity Received', value: record.quantity || item?.quantity || '' },
+    { key: 'condition', label: 'Condition', value: condition, tone: condition && condition !== 'Good' ? 'attention' : '' },
+    { key: 'storage', label: 'Storage', value: item?.location || '' },
+    { key: 'description', label: 'Description', value: String(record.description || '').trim() },
+    { key: 'notes', label: 'Notes', value: String(record.notes || '').trim() },
+  ].filter(row => row.value !== '' && row.value !== null && row.value !== undefined);
+  return (
+    <dl className="merch-facts">
+      {rows.map(row => (
+        <div key={row.key}>
+          <dt>{row.label}</dt>
+          <dd className={row.tone ? `is-${row.tone}` : ''}>
+            {row.href ? (
+              <a href={row.href} target="_blank" rel="noreferrer noopener">{row.value}</a>
+            ) : row.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function ReviewStep({ n, title, done, flagged, statusText, statusTone, summary, children, collapseWhenDone = true }) {
   const [manualOpen, setManualOpen] = useState(false);
   useEffect(() => { if (!done) setManualOpen(false); }, [done]);
   const collapsed = collapseWhenDone && done && !flagged && !manualOpen;
-  const mark = flagged ? '⚑' : done ? '✓' : n;
+  const unnumbered = n === null || n === undefined;
+  const mark = flagged ? '⚑' : done ? '✓' : (unnumbered ? '·' : n);
   return (
     <section className={`review-step ${collapsed ? 'is-collapsed' : 'is-open'} ${done ? 'is-done' : ''} ${flagged ? 'is-flagged' : ''}`}>
       <header
@@ -10113,7 +10338,7 @@ function ReviewStep({ n, title, done, flagged, statusText, statusTone, summary, 
         tabIndex={collapsed ? 0 : undefined}
         onKeyDown={collapsed ? (event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setManualOpen(true); } }) : undefined}
       >
-        <span className="review-step-num">{mark}</span>
+        <span className={`review-step-num ${unnumbered && !done && !flagged ? 'review-step-num-plain' : ''}`.trim()}>{mark}</span>
         <h3>{title}</h3>
         {collapsed
           ? <span className="review-step-edit">Edit</span>
@@ -10217,7 +10442,8 @@ function ImageLightbox({ photos, index, setIndex, onClose }) {
   );
 }
 
-function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyForPhoto, onAddDeliverable, onRemove, workstreamPhotoCardCount = 1, workstreamTypes = [], onClose, previousItem, nextItem, onSelectItem, onRefresh, photos, photoIndex, setPhotoIndex, comments, commentSaving, commentError, activity, onAddComment, onMarkCommentsRead }) {
+function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyForPhoto, onAddDeliverable, onRemove, workstreamPhotoCardCount = 1, workstreamTypes = [], onClose, previousItem, nextItem, onSelectItem, onRefresh, photos, photoIndex, setPhotoIndex, comments, commentSaving, commentError, activity, onAddComment, onMarkCommentsRead, commentsReadThrough = '', clientRecord = null }) {
+  const [readThroughSnapshot, setReadThroughSnapshot] = useState('');
   const isWorkstreamCard = item.subjectType === 'workstream-card';
   const isNewQueue = item.columnId === QUEUE_IDS.newReview;
   const isMerchAcceptanceReview = !isWorkstreamCard && isNewQueue;
@@ -10335,15 +10561,32 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     ));
   }, [item.id, initialDeliverablesKey, committedDeliverables.length, isMerchAcceptanceReview]);
   const finishDisabled = finishBusy || finishBlocked;
-  const finishLabel = isWorkstreamCard ? 'Save Details' : isMerchAcceptanceReview ? 'Accept merchandise' : 'Confirm Merch';
+  // The button names the move it actually makes. When the item cannot advance yet
+  // it is still a save — deliverables are chosen here, and dropping the action
+  // would leave that selection with nowhere to go.
+  const requirementBlockers = visibleRequirementBlockers(item.requiredToShoot || []);
+  const blockersThisSaveCannotFix = requirementBlockers.filter(blocker => (
+    blocker.key !== 'deliverables' && !PHOTO_PRODUCTION_EDITABLE_FIELDS[blocker.key]
+  ));
+  const readyToAdvance = wizardState.productIdentified
+    && normalizeDeliverableList(wizardState.deliverables || []).some(type => type === 'Packaging' || type === 'Ecomm')
+    && photoProductionReady
+    && blockersThisSaveCannotFix.length === 0;
+  const finishLabel = isWorkstreamCard
+    ? 'Save Details'
+    : isMerchAcceptanceReview
+      ? 'Accept merchandise'
+      : readyToAdvance ? 'Move to Awaiting Photo Release' : 'Save';
   const issueBusy = issueState.status === 'loading';
   const footerOutcomePreview = planningActionOutcomePreview({
     isWorkstreamCard,
+    isMerchAcceptanceReview,
     stepFlagged,
     splitNeedsMultipleUnits,
     wizardState,
     photoProductionMissingCount,
     photoProductionReady,
+    requirementBlockers: blockersThisSaveCannotFix,
   });
   const workstreamFooterMessage = isWorkstreamCard
     ? workstreamPhotoCardCount >= 2
@@ -10389,6 +10632,9 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     setIssueNotes('');
     setIssueState({ status: 'idle', message: '' });
     setDraftNoClearMatch(Boolean(item.record?.noClearMatch || item.record?.reviewState === 'Waiting for Product Data'));
+    // Capture before marking read: opening the card stamps everything seen, so the
+    // list needs the value from the moment of arrival to still show what is new.
+    setReadThroughSnapshot(commentsReadThrough || '');
     onMarkCommentsRead?.(item.merchandiseId);
   }, [item.id, product.id, product.requestType, isMerchAcceptanceReview, item.record?.noClearMatch, item.record?.reviewState]);
 
@@ -10431,12 +10677,14 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     latestState.reviewOnly = latestState.productLinked && latestState.deliverables.length === 0;
     latestState.noClearMatch = Boolean(isMerchAcceptanceReview && draftNoClearMatch && !latestState.productLinked);
     latestState.assignment = workstreamAssignmentsForDeliverables(latestState.deliverables, totalQuantity, intakeDraft.allocation);
+    latestState.readyToAdvance = readyToAdvance;
+    latestState.photoDraft = photoDraftValues;
     const willShipToThr3d = latestState.thr3dOnly;
     if (willShipToThr3d && !window.confirm(THR3D_SHIP_CONFIRMATION_MESSAGE)) {
       setFinishState({ status: 'idle', message: 'Thr3d shipment cancelled.' });
       return;
     }
-    setFinishState({ status: 'loading', message: 'Confirming merch...' });
+    setFinishState({ status: 'loading', message: readyToAdvance ? 'Moving...' : 'Saving...' });
     try {
       const result = await onFinish?.(item, latestState);
       if (result?.ok === false) {
@@ -10473,6 +10721,9 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   const identifyDone = isMerchAcceptanceReview ? false : wizardState.productLinked;
   const deliverablesDone = wizardState.deliverables.length > 0;
   const receivedDateLabel = formatInventoryDate(item.record?.dateReceived || item.record?.received);
+  const shipmentRecord = item.record?.receipt || item.record?.shipment || {};
+  const shipmentEditHref = shipmentRecord.id ? `/shipments?shipmentId=${encodeURIComponent(shipmentRecord.id)}` : '';
+  const shipmentLabel = shipmentRecord.name || 'Shipments';
   const merchCheckStatusText = stepFlagged ? 'Issue' : wizardState.productLinked ? 'Matched' : 'Unmatched';
   const merchCheckStatusTone = stepFlagged ? 'flag' : wizardState.productLinked ? 'ok' : 'wait';
 
@@ -10499,6 +10750,11 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                     return url ? (
                       <button type="button" className={photoIndex === index ? 'is-active' : ''} onClick={() => setPhotoIndex(index)} key={`${url}-${index}`}>
                         <img src={url} alt="" />
+                        {photoSourceLabel(photo) && (
+                          <span className="new-review-thumb-label">
+                            {photoSourceLabel(photo).replace(/\s*Photo$/i, '')}
+                          </span>
+                        )}
                       </button>
                     ) : null;
                   })}
@@ -10524,22 +10780,44 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
           </section>
 
           <aside className="new-review-decision-pane" aria-label="Planning decision">
+            {isMerchAcceptanceReview && (
+              <ReviewStep
+                n={1}
+                title="Check the merchandise"
+                done={false}
+                flagged={stepFlagged}
+                statusText=""
+                summary=""
+                collapseWhenDone={false}
+              >
+                <p className="new-review-step-intro">
+                  Confirm the photos and recorded details describe what actually arrived.
+                </p>
+                <MerchFacts item={item} />
+              </ReviewStep>
+            )}
+
             <ReviewStep
-              n={1}
-              title="Merch Check"
+              n={isMerchAcceptanceReview ? 2 : 1}
+              title={isMerchAcceptanceReview ? 'Check the product match' : 'Merch Check'}
               done={identifyDone}
-              flagged={stepFlagged}
+              flagged={isMerchAcceptanceReview ? false : stepFlagged}
               statusText={merchCheckStatusText}
               statusTone={merchCheckStatusTone}
               summary={stepFlagged ? 'Issue keeps this item out of release.' : product.product || product.name || product.identifier || 'Confirm the received item can continue.'}
               collapseWhenDone={false}
             >
               <p className="new-review-step-intro">
-                Confirm the photos and package details. Match the Product when it is clear; otherwise continue unmatched.
+                {isMerchAcceptanceReview
+                  ? 'Confirm the matched product below is correct. You can still proceed without linking right now.'
+                  : wizardState.productLinked
+                    ? 'This Product governs production. Change it if it does not describe what arrived.'
+                    : 'Nothing is matched yet. Match the Product if you can identify it, or fill in the details below to continue without one.'}
               </p>
               <NewReviewProductIdentification
                 item={item}
                 product={product}
+                clientRecord={clientRecord}
                 onRefresh={onRefresh}
                 deferNoClearMatch={isMerchAcceptanceReview}
                 noClearMatchDraft={draftNoClearMatch}
@@ -10599,7 +10877,13 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                 {splitNeedsMultipleUnits && (
                   <div className="quantity-split-warning" role="alert">
                     <strong>Received quantity cannot be split</strong>
-                    <span>Qty received is {totalQuantity}. Update Qty received in Shipments, or choose one deliverable for this item.</span>
+                    <span>
+                      Qty received is {totalQuantity}. Update Qty received in{' '}
+                      {shipmentEditHref
+                        ? <Link to={shipmentEditHref} onClick={() => onClose(item)}>{shipmentLabel}</Link>
+                        : shipmentLabel}
+                      , or choose one deliverable for this item.
+                    </span>
                   </div>
                 )}
                 {wizardState.thr3dOnly && (
@@ -10625,7 +10909,6 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                 <PhotoProductionFieldsEditor
                   item={item}
                   production={selectedPhotoProduction}
-                  onRefresh={onRefresh}
                   onDraftChange={draft => setPhotoDraftValues(current => ({ ...current, ...draft }))}
                 />
               </ReviewStep>
@@ -10638,22 +10921,13 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
             commentSaving={commentSaving}
             commentError={commentError}
             activity={activity}
+            readThrough={readThroughSnapshot}
           />
         </div>
 
         <footer className="new-review-modal-footer">
           <div className="new-review-footer-left">
             <span className="new-review-received-date">Received {receivedDateLabel}</span>
-            {!isWorkstreamCard && (
-              <button
-                type="button"
-                className="btn btn-danger-outline"
-                onClick={() => setIssueDraftOpen(open => !open)}
-                disabled={finishBusy || issueBusy}
-              >
-                Raise Issue
-              </button>
-            )}
             {isWorkstreamCard && onRemove && (
               <button type="button" className="btn btn-danger-outline" onClick={() => onRemove(item)} disabled={finishBusy}>
                 Remove workstream
@@ -10703,18 +10977,35 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
             </div>
           )}
           <div className="new-review-footer-actions">
-            {finishState.message && (
-              <div className="new-review-finish-summary">
-                <strong className={`is-${finishState.status}`}>{finishState.message}</strong>
-              </div>
+            {!isWorkstreamCard && (
+              <button
+                type="button"
+                className="btn btn-ghost-danger"
+                onClick={() => setIssueDraftOpen(open => !open)}
+                disabled={finishBusy || issueBusy}
+              >
+                Raise an issue
+              </button>
             )}
             {finishLabel && (
               <button type="button" className="btn btn-primary" onClick={finishCurrentVerification} disabled={finishDisabled}>
-                {finishBusy ? (isWorkstreamCard ? 'Saving...' : 'Confirming...') : finishLabel}
+                {finishBusy
+                  ? (isWorkstreamCard || !readyToAdvance ? 'Saving...' : 'Moving...')
+                  : finishLabel}
               </button>
             )}
           </div>
           <p className="new-review-footer-guidance">{workstreamFooterMessage}</p>
+          {finishState.message && (
+            <div className="new-review-finish-summary">
+              <strong className={`is-${finishState.status}`}>{finishState.message}</strong>
+            </div>
+          )}
+          {/* Stated once, next to the commit action rather than per step: people
+              hesitate here because they assume they are editing the client's sheet. */}
+          <p className="new-review-footer-scope">
+            Nothing entered here writes back to the source sheet — it is what lets this product move into production.
+          </p>
           {issueState.message && (
             <p className={`new-review-footer-feedback is-${issueState.status}`} role={issueState.status === 'error' ? 'alert' : 'status'}>
               {issueState.message}
@@ -10755,6 +11046,14 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
     artworkPath: '',
     uploadLocation: '',
   });
+  // The Structure Form already named the project. Prefill it only when every
+  // item in the release agrees, since a release can bundle more than one.
+  const projectNameForSelection = merchandiseIds => {
+    const names = new Set((merchandiseIds || [])
+      .map(id => merchandiseOptions.find(option => option.id === id)?.projectName || '')
+      .filter(Boolean));
+    return names.size === 1 ? [...names][0] : '';
+  };
   const formFromActivation = activation => {
     const skuRows = Array.isArray(activation?.skuDetails)
       ? activation.skuDetails.map((row, index) => ({
@@ -10774,16 +11073,17 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
     const initialRows = skuRows.length
       ? skuRows
       : (initialMerchandiseIdList.length ? initialMerchandiseIdList : ['']).map(merchandiseId => ({ ...emptyItem(), merchandiseId }));
+    const deliverables = scopedDeliverableType
+      ? [scopedDeliverableType]
+      : normalizeDeliverableList(activation?.deliverables || ['Ecomm']).filter(value => ACTIVATION_DELIVERABLE_OPTIONS.includes(value));
     return {
       clientId: activation?.clientIds?.[0] || defaultClientId,
-      name: activation?.name || '',
+      name: activation?.name || projectNameForSelection(initialRows.map(row => row.merchandiseId)),
       dueUrgency: activation?.dueUrgency || '',
       imagesPerBundle: activation ? (activation.imagesPerBundle ?? '') : 9,
       totalImages: activation ? (activation.totalImages ?? '') : 9 * initialRows.length,
-      deliverables: scopedDeliverableType
-        ? [scopedDeliverableType]
-        : normalizeDeliverableList(activation?.deliverables || ['Ecomm']).filter(value => ACTIVATION_DELIVERABLE_OPTIONS.includes(value)),
-      walnutScope: activation?.walnutScope || '',
+      deliverables,
+      walnutScope: activation?.walnutScope || defaultWalnutScope(deliverables[0]),
       artworkPath: activation?.artworkPath || '',
       uploadLocation: activation?.uploadLocation || '',
       notes: activation?.notes || '',
@@ -10943,6 +11243,9 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
   const fieldIsConfigured = field => configuredRequiredFields.has(normalizeRequirementKey(field));
   const fieldShouldShow = field => fieldIsConfigured(field);
   const showStructure = selectedDeliverables.includes('Ecomm') || fieldIsConfigured('structure');
+  // Image counts describe an Ecomm bundle. A Packaging release shoots the
+  // package itself, so the counts are neither asked for nor stated.
+  const showImageCounts = selectedDeliverables.includes('Ecomm');
   const showArtworkPath = selectedDeliverables.length > 0;
   const showUploadLocation = selectedDeliverables.length > 0;
   const previewColumnDefinitions = [
@@ -10963,6 +11266,16 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
   const previewHeading = selectedDeliverables.length === 1
     ? `${previewLabel} photography is needed for the following projects:`
     : 'Photo deliverables are needed for the following projects:';
+  const previewLines = [
+    { label: 'Number of SKUs', value: String(itemCount), fallback: 'Number of SKUs' },
+    { label: 'Walnut scope', value: form.walnutScope, fallback: 'Walnut scope' },
+    ...(showImageCounts && String(form.imagesPerBundle || '').trim()
+      ? [{ label: 'Number of images per bundle', value: String(form.imagesPerBundle), fallback: 'Images per bundle' }] : []),
+    ...(showImageCounts && String(form.totalImages || '').trim()
+      ? [{ label: 'Total number of images', value: String(form.totalImages), fallback: 'Total images' }] : []),
+    ...(String(form.dueUrgency || '').trim()
+      ? [{ label: 'Due', value: form.dueUrgency, fallback: 'Due / urgency' }] : []),
+  ];
   const fieldStatus = value => String(value || '').trim() ? 'is-present' : 'is-missing';
   const fieldText = (value, fallback) => String(value || '').trim() || fallback;
   const activationRequiredFields = [
@@ -11007,6 +11320,26 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
     return <a className="activation-preview-link" href={path}>{path}</a>;
   }
 
+  const releaseEmail = buildPhotoReleaseEmail({
+    clientName: selectedClientName,
+    label: previewLabel,
+    heading: previewHeading,
+    projectName: form.name,
+    itemRows,
+    lines: previewLines,
+    columns: previewColumns,
+    showArtworkPath,
+    showUploadLocation,
+    pathPrefixes,
+    resolvePath: previewPath,
+    notes: form.notes,
+    deliverables: selectedDeliverables,
+  });
+  const [emailCopied, setEmailCopied] = useState('');
+  // Held open after a release only when the user still has to send the email
+  // themselves. When it sends, there is nothing left to do and the modal closes.
+  const [released, setReleased] = useState(null);
+
   const buildActivationPayload = status => {
     const seenMerchandiseIds = new Set();
     const skuDetails = form.skuRows
@@ -11023,8 +11356,8 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
       name: form.name.trim() || 'Topco Photo Release',
       status,
       dueUrgency: form.dueUrgency,
-      imagesPerBundle: form.imagesPerBundle === '' ? null : Number(form.imagesPerBundle),
-      totalImages: form.totalImages === '' ? null : Number(form.totalImages),
+      imagesPerBundle: !showImageCounts || form.imagesPerBundle === '' ? null : Number(form.imagesPerBundle),
+      totalImages: !showImageCounts || form.totalImages === '' ? null : Number(form.totalImages),
       deliverables: form.deliverables,
       walnutScope: form.walnutScope,
       artworkPath: form.skuRows[0]?.artworkPath || form.artworkPath,
@@ -11034,6 +11367,9 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
       skuDetails,
       linkedMerchandiseIds: skuDetails.map(row => row.merchandiseId).filter(Boolean),
       numberOfSkus: skuDetails.length,
+      // Stored as released so the record shows what was actually sent.
+      emailSubject: releaseEmail.subject,
+      emailBodyHtml: releaseEmail.html,
     };
   };
 
@@ -11058,7 +11394,17 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
         : await api.createActivation(payload);
       if (action === 'move') {
         const moved = await api.moveActivationToPhoto(result.record.id);
-        onSaved?.(moved.activation, { moved: true, movedCount: moved.movedCount });
+        const keepOpen = !moved.emailSent && Boolean(moved.email);
+        onSaved?.(moved.activation, {
+          moved: true,
+          movedCount: moved.movedCount,
+          movedIds: (moved.moved || []).map(entry => entry.id).filter(Boolean),
+          emailSent: Boolean(moved.emailSent),
+          emailDetail: moved.emailDetail || '',
+          email: moved.email || null,
+          keepOpen,
+        });
+        if (keepOpen) setReleased({ email: moved.email, movedCount: moved.movedCount });
       } else {
         onSaved?.(result.record, { moved: false });
       }
@@ -11114,10 +11460,12 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
                     showDropdownButton
                     required
                   />
-                  <div className="activation-image-count-fields">
-                    <label><ActivationFieldLabel value={form.imagesPerBundle}>Images/Bundle</ActivationFieldLabel><input className="form-input" type="number" min="0" value={form.imagesPerBundle} onChange={event => updateForm('imagesPerBundle', event.target.value)} /></label>
-                    <label><ActivationFieldLabel value={form.totalImages}>Total Images</ActivationFieldLabel><input className="form-input" type="number" min="0" value={form.totalImages} onChange={event => updateForm('totalImages', event.target.value)} /></label>
-                  </div>
+                  {showImageCounts && (
+                    <div className="activation-image-count-fields">
+                      <label><ActivationFieldLabel value={form.imagesPerBundle}>Images/Bundle</ActivationFieldLabel><input className="form-input" type="number" min="0" value={form.imagesPerBundle} onChange={event => updateForm('imagesPerBundle', event.target.value)} /></label>
+                      <label><ActivationFieldLabel value={form.totalImages}>Total Images</ActivationFieldLabel><input className="form-input" type="number" min="0" value={form.totalImages} onChange={event => updateForm('totalImages', event.target.value)} /></label>
+                    </div>
+                  )}
                   <label className="activation-simple-wide"><span>Notes</span><textarea className="form-input" value={form.notes} onChange={event => updateForm('notes', event.target.value)} placeholder="Once completed, please send for review/approval. Thanks!" /></label>
                 </div>
               </section>
@@ -11187,7 +11535,16 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
             <aside className="activation-email-preview" aria-label="Photo release email preview">
               <div className="activation-email-preview-header">
                 <span className="client-readiness-label">Email Preview</span>
-                <span>Live</span>
+                <span className="activation-email-preview-actions">
+                  {emailCopied && <em>{emailCopied}</em>}
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={async () => setEmailCopied(await copyPhotoReleaseEmail(releaseEmail))}
+                  >
+                    Copy email
+                  </button>
+                </span>
               </div>
               <div className="activation-email-preview-body">
                 <p className="activation-email-subject"><strong>Subject:</strong> {selectedClientName} {previewLabel} Photo Request - <PreviewValue value={form.name} fallback="Photo request" /></p>
@@ -11201,12 +11558,12 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
                   ))}
                 </ul>
                 <div className="activation-preview-lines">
-                  <strong>Number of SKUs:</strong> <span className="activation-preview-token is-present">{itemCount}</span>
-                  <br />
-                  <strong>Walnut scope:</strong> <PreviewValue value={form.walnutScope} fallback="Walnut scope" />
-                  {String(form.imagesPerBundle || '').trim() && <><br /><strong>Number of images per bundle:</strong> <PreviewValue value={form.imagesPerBundle} fallback="Images per bundle" /></>}
-                  {String(form.totalImages || '').trim() && <><br /><strong>Total number of images:</strong> <PreviewValue value={form.totalImages} fallback="Total images" /></>}
-                  {String(form.dueUrgency || '').trim() && <><br /><strong>Due:</strong> <PreviewValue value={form.dueUrgency} fallback="Due / urgency" /></>}
+                  {previewLines.map((line, index) => (
+                    <Fragment key={line.label}>
+                      {index > 0 && <br />}
+                      <strong>{line.label}:</strong> <PreviewValue value={line.value} fallback={line.fallback} />
+                    </Fragment>
+                  ))}
                 </div>
                 {showArtworkPath && <section className="activation-preview-path-section">
                   <p><strong>Path to artwork:</strong></p>
@@ -11241,12 +11598,35 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
           </div>
 
           {error && <div className="error-state">{error}</div>}
-          <footer className="activation-modal-footer">
-            <button type="button" className="btn" onClick={onClose}>Cancel</button>
-            <button type="button" className="btn btn-primary" onClick={() => saveActivationPackage('move')} disabled={saving || !form.clientId}>
-              {saving && saveAction === 'move' ? 'Releasing...' : 'Release to Photo'}
-            </button>
-          </footer>
+          {released ? (
+            <footer className="activation-modal-footer activation-modal-released">
+              <p>
+                <strong>
+                  Released {released.movedCount || 0} card{released.movedCount === 1 ? '' : 's'} to photo.
+                </strong>
+                {' '}Copy the email and paste it into a new message.
+              </p>
+              <span className="activation-released-actions">
+                {emailCopied && <em>{emailCopied}</em>}
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={async () => setEmailCopied(await copyPhotoReleaseEmail(released.email))}
+                >
+                  Copy email
+                </button>
+                <a className="btn" href={photoReleaseMailtoUrl(released.email)}>Open blank message</a>
+                <button type="button" className="btn btn-ghost" onClick={onClose}>Done</button>
+              </span>
+            </footer>
+          ) : (
+            <footer className="activation-modal-footer">
+              <button type="button" className="btn" onClick={onClose}>Cancel</button>
+              <button type="button" className="btn btn-primary" onClick={() => saveActivationPackage('move')} disabled={saving || !form.clientId}>
+                {saving && saveAction === 'move' ? 'Releasing...' : 'Release to Photo'}
+              </button>
+            </footer>
+          )}
         </form>
       </section>
     </div>,
@@ -11269,8 +11649,18 @@ function MerchandiseReviewV2Page() {
   const planningQueues = PM_QUEUE_COLUMNS;
   const [artworkOverrides] = useState(() => loadJsonMap(MERCH_REVIEW_V2_ARTWORK_KEY));
   const [conversations, setConversations] = useState({});
-  const [activityByMerchandise, setActivityByMerchandise] = useState(() => loadJsonMap(PM_ACTIVITY_STORAGE_KEY));
-  const [commentReads, setCommentReads] = useState(() => loadJsonMap(PM_COMMENT_READ_STORAGE_KEY));
+  const [historyByMerchandise, setHistoryByMerchandise] = useState({});
+  const [historyRefreshToken, setHistoryRefreshToken] = useState(0);
+  const [commentReads, setCommentReads] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    api.listCommentReads()
+      .then(data => { if (!cancelled) setCommentReads(data.reads || {}); })
+      // Read state is an enhancement, not a gate: on failure every comment simply
+      // reads as unread rather than the board failing to render.
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentErrors, setCommentErrors] = useState({});
   const [commentSavingId, setCommentSavingId] = useState('');
@@ -11289,9 +11679,14 @@ function MerchandiseReviewV2Page() {
   const [locationFilter, setLocationFilter] = useState('');
   const [ageFilter, setAgeFilter] = useState('');
   const [deliverableFilter, setDeliverableFilter] = useState('');
-  const [planningView, setPlanningView] = useState('release');
   const [groupReleaseByShipment, setGroupReleaseByShipment] = useState(true);
   const [activationModalOpen, setActivationModalOpen] = useState(false);
+  // The card stays on the board after release, so the badge carries a brief
+  // confirmation rather than the board looking unchanged.
+  const [justReleasedIds, setJustReleasedIds] = useState([]);
+  // An unsent release is not a lost one: the composed email stays available
+  // until the next release replaces it.
+  const [pendingReleaseEmail, setPendingReleaseEmail] = useState(null);
   const [activationListOpen, setActivationListOpen] = useState(false);
   const [selectedActivation, setSelectedActivation] = useState(null);
   const [activationMerchandiseId, setActivationMerchandiseId] = useState('');
@@ -11464,11 +11859,20 @@ function MerchandiseReviewV2Page() {
       && (!ageFilter || record.ageGroup === ageFilter)
       && (!deliverableFilter || item.deliverableRouteId === deliverableFilter || item.selectedDeliverableRouteIds?.includes(deliverableFilter));
   });
-  const itemsByColumn = planningQueues.reduce((groups, column) => ({ ...groups, [column.id]: [] }), {});
-  filteredItems.forEach(item => {
-    itemsByColumn[item.columnId]?.push(item);
-  });
   const selectedItem = boardItems.find(item => item.id === selectedId) || null;
+  const selectedHistoryId = workspaceOpen ? (selectedItem?.merchandiseId || '') : '';
+
+  useEffect(() => {
+    if (!selectedHistoryId) return undefined;
+    let cancelled = false;
+    api.listMerchandiseHistory(selectedHistoryId)
+      .then(data => {
+        if (cancelled) return;
+        setHistoryByMerchandise(current => ({ ...current, [selectedHistoryId]: data.records || [] }));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedHistoryId, historyRefreshToken]);
   const selectedPhotos = recordPhotos(selectedItem?.record);
   const selectedOverride = selectedItem ? artworkOverrides[selectedItem.merchandiseId] : null;
   const selectedWorkspaceMode = workspaceModeForQueue(selectedItem?.planningCard?.queue);
@@ -11504,7 +11908,8 @@ function MerchandiseReviewV2Page() {
         brand: item.record?.linkedItem?.brand || '',
         brandPrefix: item.record?.linkedItem?.brandPrefix || item.record?.linkedItem?.referenceData?.['Brand Prefix'] || '',
         jobNumber: item.record?.linkedItem?.itemJobNumber || item.record?.linkedItem?.wkftJobNumber || '',
-        fileNameDescription: item.record?.linkedItem?.referenceData?.['File Name Description'] || '',
+        projectName: item.record?.linkedItem?.projectName || '',
+        fileNameDescription: photoProductionProductValue(item.record?.linkedItem || {}, 'fileNameDescription'),
         artworkPath: item.record?.linkedItem?.pathToArt || item.record?.linkedItem?.referenceData?.['Path to Art'] || '',
         uploadLocation: '',
         columnId: item.columnId,
@@ -11528,32 +11933,13 @@ function MerchandiseReviewV2Page() {
     void nextDecision;
   }
 
-  function recordActivity(merchandiseId, body, options = {}) {
-    setActivityByMerchandise(current => {
-      const next = {
-        ...current,
-        [merchandiseId]: [
-          {
-            id: `${merchandiseId}:${Date.now()}`,
-            actor: options.actor || 'System',
-            action: options.action || body,
-            body,
-            createdAt: localNowIso(),
-          },
-          ...(Array.isArray(current[merchandiseId]) ? current[merchandiseId] : []),
-        ].slice(0, 40),
-      };
-      saveJsonMap(PM_ACTIVITY_STORAGE_KEY, next);
-      return next;
-    });
-  }
-
   function markCommentsRead(merchandiseId) {
-    setCommentReads(current => {
-      const next = { ...current, [merchandiseId]: localNowIso() };
-      saveJsonMap(PM_COMMENT_READ_STORAGE_KEY, next);
-      return next;
-    });
+    if (!merchandiseId) return;
+    // Optimistic so the badge clears immediately; the server value replaces it on reply.
+    setCommentReads(current => ({ ...current, [merchandiseId]: localNowIso() }));
+    api.markCommentRead(merchandiseId)
+      .then(data => { if (data?.reads) setCommentReads(data.reads); })
+      .catch(() => {});
   }
 
   async function addConversationComment(merchandiseId, body) {
@@ -11569,7 +11955,6 @@ function MerchandiseReviewV2Page() {
           savedComment,
         ],
       }));
-      recordActivity(merchandiseId, 'Added a comment.', { actor: commentAuthorName(savedComment), action: 'Added a comment.' });
       markCommentsRead(merchandiseId);
       return true;
     } catch (error) {
@@ -11612,6 +11997,8 @@ function MerchandiseReviewV2Page() {
       workstreamCards.reload({ quiet }),
       thr3dShippingItems.reload({ quiet }),
     ]);
+    // Anything that moves an item through the board also writes a history event.
+    setHistoryRefreshToken(token => token + 1);
   }
 
   async function saveIntakeReadiness(item) {
@@ -11696,8 +12083,15 @@ function MerchandiseReviewV2Page() {
     const deliverables = normalizeDeliverableList(state.deliverables || item.deliverables);
     const assignment = state.assignment || workstreamAssignmentsForDeliverables(deliverables, item.record?.quantity);
     const expectedProductId = item.record?.linkedItem?.id || item.record?.itemIds?.[0] || '';
-    const manualProductInfo = expectedProductId ? undefined : productDataSourceForPlanningItem(item, photoDraftValues);
+    const photoDraft = state.photoDraft || {};
+    const manualProductInfo = expectedProductId ? undefined : productDataSourceForPlanningItem(item, photoDraft);
     try {
+      if (expectedProductId) {
+        const productPatch = productPatchFromPhotoDraft(photoDraft);
+        if (Object.keys(productPatch).length) {
+          await api.updateProduct(expectedProductId, productPatch);
+        }
+      }
       const isThr3dHandoff = deliverables.includes('Thr3d') && !deliverables.includes('Packaging') && !deliverables.includes('Ecomm');
       if (isThr3dHandoff) {
         const result = await api.confirmAssignMerchandise(item.merchandiseId, {
@@ -11713,9 +12107,11 @@ function MerchandiseReviewV2Page() {
         setFeedback(message);
         return { ok: true, message, record: result.merchandise };
       }
-      if (state.reviewOnly || deliverables.length === 0 || deliverables.some(type => type === 'Packaging' || type === 'Ecomm')) {
+      const savingInPlace = !state.readyToAdvance
+        && (state.reviewOnly || deliverables.length === 0 || deliverables.some(type => type === 'Packaging' || type === 'Ecomm'));
+      if (savingInPlace) {
         const result = await api.updateMerchandiseIntakeState(item.merchandiseId, {
-          stage: QUEUE_IDS.waitingInformation,
+          stage: state.readyToAdvance ? QUEUE_IDS.readyProduction : QUEUE_IDS.waitingInformation,
           deliverables,
           expectedProductId,
           ...(state.noClearMatch ? { noClearMatch: true } : {}),
@@ -11725,13 +12121,16 @@ function MerchandiseReviewV2Page() {
         setSelectedId('');
         setWorkspaceOpen(false);
         const readyEnough = releaseInfoCompleteForPlanningItem({ ...item, record: { ...item.record, ...result }, deliverables });
-        const message = readyEnough ? 'Merch confirmed. Waiting on Activation.' : 'Merch confirmed. Needs more information.';
+        const message = state.readyToAdvance
+          ? 'Moved to Awaiting Photo Release.'
+          : readyEnough ? 'Saved. Waiting on Activation.' : 'Saved. Needs more information.';
         setFeedback(message);
         return { ok: true, message, record: result };
       }
       const result = await api.confirmAssignMerchandise(item.merchandiseId, {
         expectedProductId,
         ...(manualProductInfo ? { manualProductInfo } : {}),
+        ...(state.readyToAdvance ? { planningStatus: 'Awaiting Photo Release' } : {}),
         workstreams: assignment.workstreams,
         thr3d: assignment.thr3d,
       });
@@ -11744,7 +12143,9 @@ function MerchandiseReviewV2Page() {
         workCount ? `${workCount} photo card${workCount === 1 ? '' : 's'}` : '',
         shipCount ? `${shipCount} THR3D shipping item${shipCount === 1 ? '' : 's'}` : '',
       ].filter(Boolean).join(' and ');
-      const message = `Workflows created: ${created || 'assignment saved'}.`;
+      const message = state.readyToAdvance
+        ? `Moved to Awaiting Photo Release: ${created || 'work assigned'}.`
+        : `Workflows created: ${created || 'assignment saved'}.`;
       setFeedback(message);
       return { ok: true, message, record: result.merchandise };
     } catch (error) {
@@ -11858,6 +12259,34 @@ function MerchandiseReviewV2Page() {
     ));
   }
 
+  function toggleReleaseGroup(itemIds) {
+    const groupItems = itemIds
+      .map(id => boardItems.find(candidate => candidate.id === id))
+      .filter(item => item && releaseDeliverableForItem(item));
+    if (!groupItems.length) {
+      setFeedback('No ready Ecomm or Packaging items in this shipment.');
+      return;
+    }
+    const alreadySelected = groupItems.filter(item => selectedReleaseItemIds.includes(item.id));
+    if (alreadySelected.length === groupItems.length) {
+      const groupIds = new Set(groupItems.map(item => item.id));
+      setSelectedReleaseItemIds(current => current.filter(id => !groupIds.has(id)));
+      return;
+    }
+    const activeDeliverable = selectedReleaseItemIds
+      .map(id => releaseDeliverableForItem(boardItems.find(candidate => candidate.id === id)))
+      .find(Boolean) || releaseDeliverableForItem(groupItems[0]);
+    const eligible = groupItems.filter(item => releaseDeliverableForItem(item) === activeDeliverable);
+    const skipped = groupItems.length - eligible.length;
+    setSelectedReleaseItemIds(current => [
+      ...current,
+      ...eligible.map(item => item.id).filter(id => !current.includes(id)),
+    ]);
+    if (skipped) {
+      setFeedback(`Selected the ${activeDeliverable} items. Release Ecomm and Packaging separately.`);
+    }
+  }
+
   function openSelectedReadyRelease(items) {
     const selectedItems = items.length ? items : boardItems.filter(item => selectedReleaseItemIds.includes(item.id));
     if (!selectedItems.length) {
@@ -11901,6 +12330,12 @@ function MerchandiseReviewV2Page() {
     setActivationDeliverableType('');
   }
 
+  useEffect(() => {
+    if (!justReleasedIds.length) return undefined;
+    const timer = window.setTimeout(() => setJustReleasedIds([]), 6000);
+    return () => window.clearTimeout(timer);
+  }, [justReleasedIds]);
+
   async function handleActivationSaved(record, result = {}) {
     if (record?.id) {
       setLocalActivations(current => [
@@ -11908,9 +12343,17 @@ function MerchandiseReviewV2Page() {
         ...current.filter(activation => activation.id !== record.id),
       ]);
     }
-    closeActivationModal();
+    if (!result.keepOpen) closeActivationModal();
     if (result.moved) {
-      setFeedback(`Released ${result.movedCount || 0} linked card${result.movedCount === 1 ? '' : 's'} to photo.`);
+      setJustReleasedIds(result.movedIds || []);
+      const released = `Released ${result.movedCount || 0} linked card${result.movedCount === 1 ? '' : 's'} to photo.`;
+      // Whether the email went out is worth saying plainly either way.
+      setPendingReleaseEmail(result.emailSent || result.keepOpen ? null : (result.email || null));
+      setFeedback(result.emailSent
+        ? `${released} Email sent.`
+        : result.keepOpen
+          ? released
+          : `${released} Send the email yourself:`);
       await activations.reload({ quiet: true }).catch(() => {});
       await refreshV2WorkflowData();
     } else {
@@ -11931,6 +12374,12 @@ function MerchandiseReviewV2Page() {
       <div className="planning-board-actions">
         <div>
           {feedback && <span className="planning-board-feedback">{feedback}</span>}
+          {pendingReleaseEmail && (
+            <PhotoReleaseEmailHandoff
+              email={pendingReleaseEmail}
+              onDismiss={() => setPendingReleaseEmail(null)}
+            />
+          )}
         </div>
         <div className="planning-board-view-controls" aria-label="Planning view controls">
           <label className="planning-deliverable-filter">
@@ -11939,28 +12388,19 @@ function MerchandiseReviewV2Page() {
               {DELIVERABLE_ROUTES.filter(route => route.id !== 'thr3d').map(route => <option value={route.id} key={route.id}>{route.label}</option>)}
             </select>
           </label>
-          {planningView === 'release' && (
-            <label className="planning-group-toggle">
-              <input
-                type="checkbox"
-                checked={groupReleaseByShipment}
-                onChange={event => setGroupReleaseByShipment(event.target.checked)}
-              />
-              <span>Group by shipment</span>
-            </label>
-          )}
-          <div className="planning-view-toggle" role="group" aria-label="Planning view">
-            <button type="button" className={planningView === 'release' ? 'is-active' : ''} onClick={() => setPlanningView('release')} aria-label="Release view" title="Release view">
-              <LayoutGrid size={16} strokeWidth={2} />
-            </button>
-            <button type="button" className={planningView === 'list' ? 'is-active' : ''} onClick={() => setPlanningView('list')} aria-label="List view" title="List view">
-              <ListIcon size={16} strokeWidth={2} />
-            </button>
-          </div>
+          <label className="planning-group-toggle">
+            <input
+              type="checkbox"
+              checked={groupReleaseByShipment}
+              onChange={event => setGroupReleaseByShipment(event.target.checked)}
+            />
+            <span>Group by shipment</span>
+          </label>
         </div>
         {canCreateTopcoActivation && (
           <div className="planning-board-action-buttons">
-            <button type="button" className="btn btn-blue-outline" onClick={() => setActivationListOpen(true)}>
+            <button type="button" className="btn" onClick={() => setActivationListOpen(true)}>
+              <SquarePen size={13} strokeWidth={1.8} aria-hidden="true" />
               Edit Photo Releases
             </button>
             <button type="button" className="btn btn-primary" onClick={() => openSelectedReadyRelease([])}>
@@ -11969,16 +12409,7 @@ function MerchandiseReviewV2Page() {
           </div>
         )}
       </div>
-      {planningView === 'list' ? (
-        <PlanningListView
-          columns={planningQueues}
-          itemsByColumn={itemsByColumn}
-          selectedId={selectedId}
-          onSelect={openPlanningWorkspace}
-          disabled={workspaceOpen}
-          showNewCardClient={showNewCardClient}
-        />
-      ) : (
+      {(
         <PlanningReleaseView
           sections={PLANNING_RELEASE_SECTIONS}
           items={filteredItems}
@@ -11989,7 +12420,9 @@ function MerchandiseReviewV2Page() {
           groupByShipment={groupReleaseByShipment}
           selectedReleaseIds={selectedReleaseItemIds}
           onToggleReleaseSelection={toggleReleaseSelection}
+          onToggleReleaseGroup={toggleReleaseGroup}
           onReleaseSelected={openSelectedReadyRelease}
+          justReleasedIds={justReleasedIds}
         />
       )}
       {workspaceOpen && selectedItem ? (
@@ -12014,9 +12447,11 @@ function MerchandiseReviewV2Page() {
           comments={Array.isArray(conversations[selectedItem.merchandiseId]) ? conversations[selectedItem.merchandiseId] : []}
           commentSaving={commentSavingId === selectedItem.merchandiseId}
           commentError={commentErrors[selectedItem.merchandiseId] || ''}
-          activity={Array.isArray(activityByMerchandise[selectedItem.merchandiseId]) ? activityByMerchandise[selectedItem.merchandiseId] : []}
+          activity={Array.isArray(historyByMerchandise[selectedItem.merchandiseId]) ? historyByMerchandise[selectedItem.merchandiseId] : []}
           onAddComment={addConversationComment}
           onMarkCommentsRead={markCommentsRead}
+          commentsReadThrough={commentReads[selectedItem.merchandiseId] || ''}
+          clientRecord={clientMap[selectedItem.record?.clientIds?.[0]] || null}
         />
       ) : null}
       {activationListOpen && (
@@ -12197,15 +12632,15 @@ const AuthContext = createContext(null);
 function useAuth() { return useContext(AuthContext); }
 
 const ROLE_NAV = {
-  Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/products', '/jobs'],
-  Producer:     ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/products', '/jobs'],
+  Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/products'],
+  Producer:     ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/products'],
   Merch:        ['/shipments', '/merchandise'],
   'Merch Receiver': ['/shipments', '/merchandise'],
   Receiver:     ['/shipments', '/merchandise'],
-  User:         ['/dashboard', '/shipments', '/merchandise', '/planning', '/products', '/jobs'],
-  PM:           ['/dashboard', '/merchandise', '/planning', '/products', '/jobs'],
-  Photographer: ['/dashboard', '/production', '/products', '/jobs'],
-  Retoucher:    ['/dashboard', '/production', '/products', '/jobs'],
+  User:         ['/dashboard', '/shipments', '/merchandise', '/planning', '/products'],
+  PM:           ['/dashboard', '/merchandise', '/planning', '/products'],
+  Photographer: ['/dashboard', '/production', '/products'],
+  Retoucher:    ['/dashboard', '/production', '/products'],
   Viewer:       ['/dashboard', '/merchandise', '/products'],
 };
 const ROLES = ['Admin', 'Producer', 'Merch', 'User', 'Viewer'];
@@ -12984,7 +13419,6 @@ const NAV_ITEMS = [
   { path: '/shipments', label: 'Shipments', icon: <Icon.NavShipments /> },
   { path: '/merchandise', label: 'Merchandise', icon: <Icon.NavMerchandise /> },
   { path: '/planning', label: 'Planning', icon: <Icon.NavWork /> },
-  { path: '/jobs', label: 'Jobs', icon: <Icon.NavJobs /> },
   { path: '/products', label: 'Products', icon: <Icon.NavProducts /> },
 ];
 
@@ -12992,7 +13426,6 @@ const ADMIN_NAV_ITEM = { path: ADMINISTRATION_DEFAULT_PATH, label: 'Admin', icon
 
 function routeForPage(page, params = {}) {
   const query = new URLSearchParams();
-  if (params.jobId) query.set('jobId', params.jobId);
   if (params.queue) query.set('queue', params.queue);
   if (params.importId) query.set('importId', params.importId);
   const suffix = query.toString() ? `?${query.toString()}` : '';
@@ -13015,8 +13448,6 @@ function routeForPage(page, params = {}) {
     items: `/products${suffix}`,
     products: `/products${suffix}`,
     skus: `/products${suffix}`,
-    jobs: '/jobs',
-    'new-job': '/jobs/new',
     clients: '/clients',
     settings: `${ADMINISTRATION_PATH}/system`,
     admin: ADMINISTRATION_DEFAULT_PATH,
@@ -13037,8 +13468,6 @@ function pageTitleForPath(pathname) {
   if (pathname.startsWith('/production')) return 'Production';
   if (pathname.startsWith('/products')) return DOMAIN_TERMS.products;
   if (pathname.startsWith('/items')) return DOMAIN_TERMS.products;
-  if (pathname === '/jobs/new') return 'New Job';
-  if (pathname.startsWith('/jobs')) return 'Jobs';
   if (pathname.startsWith('/clients')) return 'Clients';
   if (pathname.startsWith('/admin')) return 'Admin';
   if (pathname.startsWith('/administration')) return 'Admin';
@@ -13050,10 +13479,7 @@ function pageTitleForPath(pathname) {
 function RouteProductsPage({ navigate }) {
   const [searchParams] = useSearchParams();
   return (
-    <ProductsPage
-      navigate={navigate}
-      jobId={searchParams.get('jobId') || ''}
-    />
+    <ProductsPage navigate={navigate} />
   );
 }
 
@@ -13308,8 +13734,6 @@ function AppLayout() {
             <Route path="/production" element={<ProductionPage />} />
             <Route path="/products" element={<RouteProductsPage navigate={navigate} />} />
             <Route path="/items" element={<Navigate to="/products" replace />} />
-            <Route path="/jobs" element={<JobsPage navigate={navigate} />} />
-            <Route path="/jobs/new" element={<NewJobPage navigate={navigate} />} />
             <Route path="/clients" element={<AdministrationPage />} />
             <Route path="/settings" element={<Navigate to={`${ADMINISTRATION_PATH}/system`} replace />} />
             <Route path="/admin" element={<Navigate to={ADMINISTRATION_DEFAULT_PATH} replace />} />

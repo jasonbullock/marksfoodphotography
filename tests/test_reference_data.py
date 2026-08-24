@@ -106,7 +106,7 @@ class ReferenceDataTests(unittest.TestCase):
         self.assertEqual(merged["_sourceSnapshot"]["sourceIdentity"]["upc"], "36800410305")
 
     def test_item_fields_from_row_writes_source_snapshot_inside_reference_data(self):
-        fields = _item_fields_from_row("recClient", "", {
+        fields = _item_fields_from_row("recClient", {
             "itemName": "Topcare Dental Guard",
             "id": "36800410305",
             "referenceData": {"Product Name": "Topcare Dental Guard", "UPC": "36800410305"},

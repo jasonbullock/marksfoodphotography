@@ -18,6 +18,23 @@ class Config:
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true" or FLASK_ENV == "production"
 
+    # Photo release email, sent through Microsoft Graph with an app registration.
+    # Absent credentials the release still records the rendered email and simply
+    # does not send, so the board never blocks on mail configuration.
+    MS_GRAPH_TENANT_ID = os.getenv("MS_GRAPH_TENANT_ID", "")
+    MS_GRAPH_CLIENT_ID = os.getenv("MS_GRAPH_CLIENT_ID", "")
+    MS_GRAPH_CLIENT_SECRET = os.getenv("MS_GRAPH_CLIENT_SECRET", "")
+    PHOTO_RELEASE_FROM_ADDRESS = os.getenv("PHOTO_RELEASE_FROM_ADDRESS", "")
+
+    @classmethod
+    def photo_release_email_ready(cls):
+        return all([
+            cls.MS_GRAPH_TENANT_ID,
+            cls.MS_GRAPH_CLIENT_ID,
+            cls.MS_GRAPH_CLIENT_SECRET,
+            cls.PHOTO_RELEASE_FROM_ADDRESS,
+        ])
+
     AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY", "")
     AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID", "")
     R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID", "")
@@ -26,6 +43,14 @@ class Config:
     R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "")
     R2_PUBLIC_BASE_URL = os.getenv("R2_PUBLIC_BASE_URL", "")
     CREATIVE_FORCE_WEBHOOK_SECRET = os.getenv("CREATIVE_FORCE_WEBHOOK_SECRET", "")
+    CREATIVE_FORCE_MAIN_WORKFLOW_NAME = os.getenv("CREATIVE_FORCE_MAIN_WORKFLOW_NAME", "")
+    # Creative Force posts every client's events to one endpoint. Restrict to ours.
+    CREATIVE_FORCE_CLIENT_IDS = [
+        value.strip() for value in os.getenv("CREATIVE_FORCE_CLIENT_IDS", "").split(",") if value.strip()
+    ]
+    CREATIVE_FORCE_CLIENT_NAMES = [
+        value.strip() for value in os.getenv("CREATIVE_FORCE_CLIENT_NAMES", "").split(",") if value.strip()
+    ]
     RECEIVING_PHOTO_STORAGE = os.getenv("RECEIVING_PHOTO_STORAGE", "r2")
     RECEIVING_PHOTO_MAX_BYTES = int(os.getenv("RECEIVING_PHOTO_MAX_BYTES", str(12 * 1024 * 1024)) or str(12 * 1024 * 1024))
     RECEIVING_PHOTO_LOCAL_DIR = str(BACKEND_DIR / "uploads" / "receiving")
@@ -36,6 +61,10 @@ class Config:
     TOPCO_SOURCE_COLUMN_RANGE = os.getenv("TOPCO_SOURCE_COLUMN_RANGE", "A:AE")
     TOPCO_SOURCE_REFRESH_ENABLED = os.getenv("TOPCO_SOURCE_REFRESH_ENABLED", "true").lower() == "true"
     TOPCO_SOURCE_REFRESH_INTERVAL_SECONDS = int(os.getenv("TOPCO_SOURCE_REFRESH_INTERVAL_SECONDS", "300") or "300")
+    # The source sheet is a working list of expected and active products, not an
+    # archive: finished items come off it. A window well above steady state means
+    # matching searches the whole list without needing tuning as it moves.
+    TOPCO_SOURCE_MATCH_ROW_WINDOW = int(os.getenv("TOPCO_SOURCE_MATCH_ROW_WINDOW", "600") or "600")
     TOPCO_SOURCE_REFRESH_LIMIT = int(os.getenv("TOPCO_SOURCE_REFRESH_LIMIT", "100") or "100")
     TOPCO_SOURCE_CHECK_FIELDS = [
         field.strip()
@@ -52,7 +81,6 @@ class Config:
     # Table names - canonical application domain.
     CLIENTS_TABLE = "Clients"
 
-    JOBS_TABLE = "Jobs"
 
     PRODUCTS_TABLE = os.getenv("AIRTABLE_PRODUCTS_TABLE", os.getenv("AIRTABLE_ITEMS_TABLE", "Products"))
     SHIPMENTS_TABLE = os.getenv("AIRTABLE_SHIPMENTS_TABLE", os.getenv("AIRTABLE_RECEIPTS_TABLE", "Shipments"))
@@ -100,6 +128,9 @@ class Config:
     F_USER_ALL_CLIENTS = "All Clients"
     F_USER_AVATAR = "Avatar"
     F_USER_PIN_HASH = "PIN Hash"
+    # App-owned JSON map of merchandiseId -> ISO timestamp read through. Server-side so
+    # "new comment" is per person rather than per browser.
+    F_USER_COMMENT_READS = "Comment Reads"
 
     # Field names - Shipments
     F_RECEIPT_NAME = "Shipment"
@@ -137,6 +168,7 @@ class Config:
     F_RECEIPT_ENTRY_MERCH_VERIFIED = "Merchandise Verified"
     F_RECEIPT_ENTRY_MERCH_VERIFIED_AT = "Merchandise Verified At"
     F_RECEIPT_ENTRY_MERCH_VERIFIED_BY = "Merchandise Verified By"
+    F_RECEIPT_ENTRY_HISTORY = "History"
     PLANNING_STATUS_OPTIONS = ["New", "Needs More Information", "Awaiting Photo Release"]
     # Workstream cards are only created after merchandise is accepted and
     # deliverables are known, so they are born at Needs More Information and can
@@ -174,8 +206,8 @@ class Config:
     F_CLIENT_IDENTIFIER_TYPE = "Identifier Type"
     F_CLIENT_HOLD_DAYS = "Hold Days"
     F_CLIENT_DISPO_DAYS = "Dispo Days"
-    F_CLIENT_JOB_PREFIX = "Job Prefix"
     F_CLIENT_ACTIVE = "Active"
+    F_CLIENT_PHOTO_RELEASE_RECIPIENTS = "Photo Release Recipients"
     F_CLIENT_IDENTIFIER_LABEL = "Identifier Label"
     F_CLIENT_REQUIRED_TO_SHOOT = "Required to Shoot"
     F_CLIENT_ARTWORK_REQUIREMENT = "Artwork Requirement"
@@ -202,21 +234,15 @@ class Config:
     F_ACTIVATION_LINKED_MERCHANDISE = "Linked Merchandise"
     F_ACTIVATION_MATCHED_MERCHANDISE = F_ACTIVATION_LINKED_MERCHANDISE
     F_ACTIVATION_NOTES = "Notes"
+    F_ACTIVATION_EMAIL_SUBJECT = "Email Subject"
+    F_ACTIVATION_EMAIL_BODY_HTML = "Email Body HTML"
     ACTIVATION_STATUS_OPTIONS = ["Draft", "Active", "Needs Info", "Released", "Cancelled"]
 
     # Field names — Jobs
-    F_JOB_NAME = "Job"
-    F_JOB_CLIENT = "Client"
-    F_JOB_PARENT_NUMBER = "Parent Job Number"
-    F_JOB_EXT_ID = F_JOB_PARENT_NUMBER
-    F_JOB_PERIOD = "Period"
-    F_JOB_STATUS = "Status"
-    F_JOB_DUE = "Due"
 
     # Field names - Products
     F_ITEM_NAME = "Product Name"
     F_ITEM_CLIENT = "Client"
-    F_ITEM_JOB = "Job"
     # Compatibility alias: Product matching now lives in the real UPC field.
     F_ITEM_IDENTIFIER = "UPC"
     F_ITEM_IDENTIFIER_TYPE = "Identifier Type"
@@ -227,6 +253,10 @@ class Config:
     F_ITEM_PROJECT_STATUS = "Project Status"
     F_ITEM_WKFT_JOB_NUMBER = "WKFT Job Number"
     F_ITEM_MBOX_NUMBER = "Mbox Number"
+    F_ITEM_PROJECT_NAME = "Project Name"
+    F_RECEIPT_ENTRY_ITEM_MERCHANDISE = "Merchandise"
+    F_ITEM_STUDIO_DESTINATION = "Studio Destination"
+    F_ITEM_VENDOR = "Vendor"
     F_ITEM_PRODUCT_TYPE = "Product Type"
     F_ITEM_PRODUCT_DESCRIPTION = "Product Description"
     F_ITEM_PREPRO_OVERLAYS = "Link to Prepro/Overlays"
@@ -281,7 +311,6 @@ class Config:
     # Field names — Issues
     F_ISSUE_NAME = "Issue"
     F_ISSUE_ITEM = "Product"
-    F_ISSUE_JOB = "Job"
     F_ISSUE_TYPE = "Type"
     F_ISSUE_STATUS = "Status"
     F_ISSUE_PRIORITY = "Priority"
@@ -294,20 +323,22 @@ class Config:
     # Field names — History
     F_HISTORY_EVENT = "Event"
     F_HISTORY_ITEM = "Product"
-    F_HISTORY_JOB = "Job"
     F_HISTORY_USER = "User"
-    F_HISTORY_TYPE = "Type"
     F_HISTORY_DATE = "Date"
-    F_HISTORY_FIELD = "Field"
     F_HISTORY_FROM = "From"
     F_HISTORY_TO = "To"
-    F_HISTORY_DETAILS = "Details"
+    # History covers the physical lifecycle too, not just Product edits, so merchandise
+    # events have something to attach to.
+    F_HISTORY_MERCHANDISE = "Merchandise"
 
     # Field names - Comments
     F_COMMENT_BODY = "Comment"
     F_COMMENT_MERCHANDISE = "Merchandise"
     F_COMMENT_USER = "User"
-    F_COMMENT_CREATED_AT = "Created At"
+    # Airtable createdTime field on Comments. The shaper still falls back to the
+    # record's createdTime metadata, so a rename here degrades to the same value
+    # rather than losing the timestamp.
+    F_COMMENT_CREATED_AT = "Comment Created"
 
     # Field names — Imports
     F_IMPORT_NAME = "Import"
@@ -319,8 +350,6 @@ class Config:
     F_IMPORT_STARTED = "Started"
     F_IMPORT_FINISHED = "Finished"
     F_IMPORT_ROWS = "Rows"
-    F_IMPORT_JOBS_CREATED = "Jobs Created"
-    F_IMPORT_JOBS_REUSED = "Jobs Reused"
     F_IMPORT_ITEMS_CREATED = "Products Created"
     F_IMPORT_ITEMS_UPDATED = "Products Updated"
     F_IMPORT_ROWS_SKIPPED = "Rows Skipped"

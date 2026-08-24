@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from app import create_app  # noqa: E402
 from config import Config as C  # noqa: E402
-from routes import AUTH_SESSION_KEY  # noqa: E402
+from routes import AUTH_SESSION_KEY, _now_iso  # noqa: E402
 
 
 class MerchandiseReviewTests(unittest.TestCase):
@@ -410,6 +410,126 @@ class MerchandiseReviewTests(unittest.TestCase):
         self.assertEqual(update_record.call_args.args[2][C.F_RECEIPT_ENTRY_MERCH_STATUS], "Issue")
         payload = response.get_json()
         self.assertEqual(payload["merchandise"]["reviewState"], "Issue")
+
+    @patch("routes.airtable.get_record")
+    def test_merchandise_history_returns_actor_and_timestamp_newest_first(self, get_record):
+        events = {
+            "recHistOld": {
+                "id": "recHistOld",
+                "fields": {
+                    C.F_HISTORY_EVENT: "Merchandise received",
+                    C.F_HISTORY_DATE: "2026-07-20T09:00:00.000Z",
+                    C.F_HISTORY_USER: ["recTestUser"],
+                    C.F_HISTORY_MERCHANDISE: ["recMerch"],
+                },
+            },
+            "recHistNew": {
+                "id": "recHistNew",
+                "fields": {
+                    C.F_HISTORY_EVENT: "Merchandise accepted",
+                    C.F_HISTORY_DATE: "2026-07-22T09:00:00.000Z",
+                    C.F_HISTORY_USER: ["recTestUser"],
+                    C.F_HISTORY_MERCHANDISE: ["recMerch"],
+                    C.F_HISTORY_FROM: "New",
+                    C.F_HISTORY_TO: "Needs More Information",
+                },
+            },
+        }
+
+        def get_side_effect(table, record_id, by_field_id=False):
+            if table == C.MERCHANDISE_TABLE:
+                return self.entry(record_id, {C.F_RECEIPT_ENTRY_HISTORY: ["recHistOld", "recHistNew"]})
+            if table == C.SHIPMENTS_TABLE:
+                return self.receipt()
+            if table == C.USERS_TABLE:
+                return self.user(record_id)
+            if table == C.HISTORY_TABLE:
+                return events[record_id]
+            raise AssertionError(f"Unexpected table {table}")
+
+        get_record.side_effect = get_side_effect
+
+        response = self.app.get("/api/merchandise/recMerch/history")
+
+        self.assertEqual(response.status_code, 200)
+        records = response.get_json()["records"]
+        self.assertEqual([event["action"] for event in records],
+                         ["Merchandise accepted", "Merchandise received"])
+        self.assertEqual(records[0]["actor"], "Jason Bullock")
+        self.assertEqual(records[0]["createdAt"], "2026-07-22T09:00:00.000Z")
+        self.assertEqual(records[0]["from"], "New")
+        self.assertEqual(records[0]["to"], "Needs More Information")
+
+    @patch("routes.airtable.list_records")
+    def test_same_event_for_two_merchandise_records_is_not_deduplicated(self, list_records):
+        # A batch receive writes one identical event per item within seconds of each
+        # other; only the merchandise link distinguishes them.
+        from routes import _history_exists
+
+        list_records.return_value = {"records": [{
+            "id": "recHistOther",
+            "fields": {
+                C.F_HISTORY_EVENT: "Merchandise received",
+                C.F_HISTORY_DATE: _now_iso(),
+                C.F_HISTORY_MERCHANDISE: ["recMerchA"],
+            },
+        }]}
+
+        same_item = {
+            C.F_HISTORY_EVENT: "Merchandise received",
+            C.F_HISTORY_MERCHANDISE: ["recMerchA"],
+        }
+        other_item = dict(same_item, **{C.F_HISTORY_MERCHANDISE: ["recMerchB"]})
+
+        self.assertTrue(_history_exists(same_item))
+        self.assertFalse(_history_exists(other_item))
+
+    @patch("routes.airtable.get_record")
+    def test_history_begins_with_received_event_for_items_recorded_before_history(self, get_record):
+        def get_side_effect(table, record_id, by_field_id=False):
+            if table == C.MERCHANDISE_TABLE:
+                return self.entry(record_id)
+            if table == C.SHIPMENTS_TABLE:
+                return self.receipt()
+            raise AssertionError(f"Unexpected table {table}")
+
+        get_record.side_effect = get_side_effect
+
+        response = self.app.get("/api/merchandise/recMerch/history")
+
+        self.assertEqual(response.status_code, 200)
+        records = response.get_json()["records"]
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[-1]["action"], "Merchandise received")
+        self.assertEqual(records[-1]["createdAt"], "2026-07-16T10:00:00Z")
+
+    @patch("routes.airtable.get_record")
+    def test_recorded_received_event_is_not_duplicated_by_the_derived_one(self, get_record):
+        def get_side_effect(table, record_id, by_field_id=False):
+            if table == C.MERCHANDISE_TABLE:
+                return self.entry(record_id, {C.F_RECEIPT_ENTRY_HISTORY: ["recHist"]})
+            if table == C.SHIPMENTS_TABLE:
+                return self.receipt()
+            if table == C.USERS_TABLE:
+                return self.user(record_id)
+            if table == C.HISTORY_TABLE:
+                return {
+                    "id": "recHist",
+                    "fields": {
+                        C.F_HISTORY_EVENT: "Merchandise received",
+                        C.F_HISTORY_DATE: "2026-07-16T11:00:00.000Z",
+                        C.F_HISTORY_USER: ["recTestUser"],
+                        C.F_HISTORY_MERCHANDISE: ["recMerch"],
+                    },
+                }
+            raise AssertionError(f"Unexpected table {table}")
+
+        get_record.side_effect = get_side_effect
+
+        records = self.app.get("/api/merchandise/recMerch/history").get_json()["records"]
+
+        self.assertEqual([event["action"] for event in records], ["Merchandise received"])
+        self.assertEqual(records[0]["actor"], "Jason Bullock")
 
 
 if __name__ == "__main__":

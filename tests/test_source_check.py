@@ -9,11 +9,42 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from app import create_app  # noqa: E402
 from config import Config as C  # noqa: E402
+import routes  # noqa: E402
 from routes import AUTH_SESSION_KEY, TOPCO_READINESS_PROFILE  # noqa: E402
 
 
 class SourceCheckTests(unittest.TestCase):
+    def test_both_clues_must_match_when_both_supplied(self):
+        # A name-only hit must not surface alongside real candidates when a UPC was
+        # also typed: its barcode shares nothing with what the receiver entered.
+        row = {"Product Name": "Freestyle Travel Toothbrush Holder", "UPC": "2088600002"}
+        score, _basis = routes._topco_source_suggestion_score(row, product_name="tooth", upc="368001156")
+        self.assertEqual(score, 0)
+
+    def test_partial_upc_with_matching_name_still_scores(self):
+        row = {"Product Name": "Topcare Toothbrush Deep Clean Soft", "UPC": "3680011565"}
+        score, basis = routes._topco_source_suggestion_score(row, product_name="tooth", upc="368001156")
+        self.assertGreater(score, 0)
+        self.assertIn("UPC", basis)
+        self.assertIn("Product Name", basis)
+
+    def test_exact_upc_stands_alone_against_a_different_name(self):
+        # A whole-value barcode hit is stronger than any name text.
+        row = {"Product Name": "Completely Different Item", "UPC": "3680011565"}
+        score, basis = routes._topco_source_suggestion_score(row, product_name="tooth", upc="3680011565")
+        self.assertGreater(score, 0)
+        self.assertIn("UPC", basis)
+
+    def test_name_only_search_is_unaffected(self):
+        row = {"Product Name": "Freestyle Travel Toothbrush Holder", "UPC": "2088600002"}
+        score, _basis = routes._topco_source_suggestion_score(row, product_name="tooth", upc="")
+        self.assertGreater(score, 0)
+
     def setUp(self):
+        # The source sheet read is cached per range for the refresh interval. Tests stub
+        # the HTTP fetch, so a warm cache would serve a previous test's rows and the
+        # stub would never be called.
+        routes._SOURCE_ROWS_CACHE.clear()
         self.app = create_app().test_client()
         with self.app.session_transaction() as session:
             session[AUTH_SESSION_KEY] = {
@@ -315,14 +346,12 @@ class SourceCheckTests(unittest.TestCase):
         create_record.assert_not_called()
         update_record.assert_not_called()
 
-    @patch("routes._jobs_by_id", return_value={})
     @patch("routes._client_permitted", return_value=True)
     @patch("routes.airtable.list_records")
     def test_existing_merchandise_product_suggestions_still_work(
         self,
         list_records,
         _client_permitted,
-        _jobs_by_id,
     ):
         list_records.return_value = {
             "records": [
@@ -341,7 +370,6 @@ class SourceCheckTests(unittest.TestCase):
     @patch("routes._issues_by_item_id", return_value={})
     @patch("routes._clients_by_id")
     @patch("routes._create_history_event")
-    @patch("routes._existing_jobs_by_lookup", return_value={})
     @patch("routes._existing_items_by_identifier", return_value={})
     @patch("routes._list_all_records", return_value=[])
     @patch("routes._client_permitted", return_value=True)
@@ -360,7 +388,6 @@ class SourceCheckTests(unittest.TestCase):
         _client_permitted,
         _list_all_records,
         _existing_items,
-        _existing_jobs,
         _history,
         clients_by_id,
         _issues,
@@ -447,7 +474,6 @@ class SourceCheckTests(unittest.TestCase):
     @patch("routes._issues_by_item_id", return_value={})
     @patch("routes._clients_by_id")
     @patch("routes._create_history_event")
-    @patch("routes._existing_jobs_by_lookup", return_value={})
     @patch("routes._existing_items_by_identifier", return_value={})
     @patch("routes._list_all_records")
     @patch("routes._client_permitted", return_value=True)
@@ -466,7 +492,6 @@ class SourceCheckTests(unittest.TestCase):
         _client_permitted,
         list_all_records,
         _existing_items,
-        _existing_jobs,
         _history,
         clients_by_id,
         _issues,
@@ -540,7 +565,6 @@ class SourceCheckTests(unittest.TestCase):
     @patch("routes._issues_by_item_id", return_value={})
     @patch("routes._clients_by_id")
     @patch("routes._create_history_event")
-    @patch("routes._existing_jobs_by_lookup", return_value={})
     @patch("routes._existing_items_by_identifier", return_value={})
     @patch("routes._list_all_records")
     @patch("routes._client_permitted", return_value=True)
@@ -559,7 +583,6 @@ class SourceCheckTests(unittest.TestCase):
         _client_permitted,
         list_all_records,
         _existing_items,
-        _existing_jobs,
         _history,
         clients_by_id,
         _issues,
@@ -635,7 +658,6 @@ class SourceCheckTests(unittest.TestCase):
     @patch("routes._issues_by_item_id", return_value={})
     @patch("routes._clients_by_id")
     @patch("routes._create_history_event")
-    @patch("routes._existing_jobs_by_lookup", return_value={})
     @patch("routes._existing_items_by_identifier", return_value={})
     @patch("routes._list_all_records")
     @patch("routes._client_permitted", return_value=True)
@@ -654,7 +676,6 @@ class SourceCheckTests(unittest.TestCase):
         _client_permitted,
         list_all_records,
         _existing_items,
-        _existing_jobs,
         _history,
         clients_by_id,
         _issues,
@@ -735,7 +756,6 @@ class SourceCheckTests(unittest.TestCase):
     @patch("routes._issues_by_item_id", return_value={})
     @patch("routes._clients_by_id")
     @patch("routes._create_history_event")
-    @patch("routes._existing_jobs_by_lookup", return_value={})
     @patch("routes._existing_items_by_identifier", return_value={})
     @patch("routes._list_all_records")
     @patch("routes._client_permitted", return_value=True)
@@ -754,7 +774,6 @@ class SourceCheckTests(unittest.TestCase):
         _client_permitted,
         list_all_records,
         _existing_items,
-        _existing_jobs,
         _history,
         clients_by_id,
         _issues,
@@ -836,7 +855,6 @@ class SourceCheckTests(unittest.TestCase):
     @patch("routes._issues_by_item_id", return_value={})
     @patch("routes._clients_by_id")
     @patch("routes._create_history_event")
-    @patch("routes._existing_jobs_by_lookup", return_value={})
     @patch("routes._existing_items_by_identifier", return_value={})
     @patch("routes._list_all_records", return_value=[])
     @patch("routes._client_record")
@@ -853,7 +871,6 @@ class SourceCheckTests(unittest.TestCase):
         client_record,
         _list_all_records,
         _existing_items,
-        _existing_jobs,
         _history,
         clients_by_id,
         _issues,
@@ -919,7 +936,6 @@ class SourceCheckTests(unittest.TestCase):
     @patch("routes._issues_by_item_id", return_value={})
     @patch("routes._clients_by_id")
     @patch("routes._create_history_event")
-    @patch("routes._existing_jobs_by_lookup", return_value={})
     @patch("routes._existing_items_by_identifier", return_value={})
     @patch("routes._list_all_records", return_value=[])
     @patch("routes._client_record")
@@ -936,7 +952,6 @@ class SourceCheckTests(unittest.TestCase):
         client_record,
         _list_all_records,
         _existing_items,
-        _existing_jobs,
         _history,
         clients_by_id,
         _issues,
@@ -1004,7 +1019,6 @@ class SourceCheckTests(unittest.TestCase):
     @patch("routes._issues_by_item_id", return_value={})
     @patch("routes._clients_by_id")
     @patch("routes._create_history_event")
-    @patch("routes._existing_jobs_by_lookup", return_value={})
     @patch("routes._existing_items_by_identifier", return_value={})
     @patch("routes._list_all_records")
     @patch("routes._client_record")
@@ -1021,7 +1035,6 @@ class SourceCheckTests(unittest.TestCase):
         client_record,
         list_all_records,
         _existing_items,
-        _existing_jobs,
         _history,
         clients_by_id,
         _issues,
@@ -1092,7 +1105,6 @@ class SourceCheckTests(unittest.TestCase):
     @patch("routes._issues_by_item_id", return_value={})
     @patch("routes._clients_by_id")
     @patch("routes._create_history_event")
-    @patch("routes._existing_jobs_by_lookup", return_value={})
     @patch("routes._existing_items_by_identifier", return_value={})
     @patch("routes._list_all_records")
     @patch("routes._client_record")
@@ -1109,7 +1121,6 @@ class SourceCheckTests(unittest.TestCase):
         client_record,
         list_all_records,
         _existing_items,
-        _existing_jobs,
         _history,
         clients_by_id,
         _issues,

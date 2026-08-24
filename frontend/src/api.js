@@ -26,18 +26,10 @@ const F = {
   CLIENT_IDENTIFIER_TYPE: 'Identifier Type',
   CLIENT_HOLD_DAYS: 'Hold Days',
   CLIENT_DISPO_DAYS: 'Dispo Days',
-  CLIENT_JOB_PREFIX: 'Job Prefix',
   CLIENT_ACTIVE: 'Active',
-  JOB_NAME: 'Job',
-  JOB_CLIENT: 'Client',
-  JOB_PARENT_NUMBER: 'Parent Job Number',
-  JOB_PERIOD: 'Period',
-  JOB_STATUS: 'Status',
-  JOB_DUE: 'Due',
   JOB_NOTES: 'Notes',
   SKU_NAME: 'Product Name',
   SKU_CLIENT: 'Client',
-  SKU_JOB: 'Job',
   SKU_IDENTIFIER: 'Identifier',
   SKU_UPC: 'UPC',
   SKU_CVID: 'CVID',
@@ -144,27 +136,9 @@ function shapeClient(r) {
     merchandiseRequired: r.merchandiseRequired ?? f['Merchandise Required'] ?? true,
     holdDays: r.holdDays ?? f[F.CLIENT_HOLD_DAYS] ?? null,
     dispoDays: r.dispoDays ?? f[F.CLIENT_DISPO_DAYS] ?? null,
-    jobPrefix: r.jobPrefix ?? f[F.CLIENT_JOB_PREFIX] ?? '',
     readinessProfile: r.readinessProfile ?? f.readinessProfile ?? null,
     sourceCheckRules: r.sourceCheckRules ?? f.sourceCheckRules ?? null,
     active: r.active ?? f[F.CLIENT_ACTIVE] ?? false,
-  };
-}
-
-function shapeJob(r) {
-  const f = r.fields ?? {};
-  return {
-    id: r.id,
-    name: f[F.JOB_NAME] ?? '',
-    job: f[F.JOB_NAME] ?? '',
-    clientIds: f[F.JOB_CLIENT] ?? [],
-    parentJobNumber: f[F.JOB_PARENT_NUMBER] ?? '',
-    extId: f[F.JOB_PARENT_NUMBER] ?? '',
-    period: f[F.JOB_PERIOD] ?? '',
-    status: f[F.JOB_STATUS] ?? '',
-    due: f[F.JOB_DUE] ?? '',
-    deadline: f[F.JOB_DUE] ?? '',
-    notes: f[F.JOB_NOTES] ?? '',
   };
 }
 
@@ -187,7 +161,6 @@ function shapeSku(r) {
     id: r.id,
     name: f[F.SKU_NAME] ?? '',
     clientIds: f[F.SKU_CLIENT] ?? [],
-    jobIds: f[F.SKU_JOB] ?? [],
     productId: f[F.SKU_IDENTIFIER] ?? '',
     gtinUpc: f[F.SKU_IDENTIFIER] ?? '',
     identifier: f[F.SKU_IDENTIFIER] ?? '',
@@ -256,29 +229,14 @@ export const api = {
   updateActivation: async (id, payload = {}) => backend('PATCH', `/activations/${id}`, payload),
   moveActivationToPhoto: async (id) => backend('POST', `/activations/${id}/move-to-photo`),
 
-  listJobs: async (clientId) => {
-    const params = new URLSearchParams();
-    if (clientId) params.set('clientId', clientId);
-    return backend('GET', `/jobs${params.toString() ? `?${params.toString()}` : ''}`);
-  },
-
-  createJob: async ({ clientId, job, name, sgsJobNum, parentJobNumber, extId, period, due, deadline, notes }) => {
-    const jobName = job || name || sgsJobNum;
-    return backend('POST', '/jobs', { clientId, job: jobName, parentJobNumber: parentJobNumber || extId, period, due: due || deadline, notes });
-  },
-
-  listSkus: async (jobId) => {
-    const params = new URLSearchParams();
-    if (jobId) params.set('jobId', jobId);
-    return backend('GET', `/items${params.toString() ? `?${params.toString()}` : ''}`);
-  },
+  listSkus: async () => backend('GET', '/items'),
 
   getItem: (id) => backend('GET', `/items/${id}`),
 
-  createSku: async ({ clientId, jobId, primaryMatchKey, productId, gtinUpc, id, codeType, identifierLabel, primaryMatchKeyLabel, name, product, itemJobNumber, description, masterOrVariant, pickupJobNumber, brand, category, notes }) => {
+  createSku: async ({ clientId, primaryMatchKey, productId, gtinUpc, id, codeType, identifierLabel, primaryMatchKeyLabel, name, product, itemJobNumber, description, masterOrVariant, pickupJobNumber, brand, category, notes }) => {
     const identifier = primaryMatchKey || productId || id || gtinUpc;
     validateItemIdentifier(identifier, codeType, primaryMatchKeyLabel || identifierLabel);
-    return backend('POST', '/items', { clientId, jobId, primaryMatchKey: identifier, productId: identifier, codeType, name, product, itemJobNumber, description, masterOrVariant, pickupJobNumber, brand, category, notes });
+    return backend('POST', '/items', { clientId, primaryMatchKey: identifier, productId: identifier, codeType, name, product, itemJobNumber, description, masterOrVariant, pickupJobNumber, brand, category, notes });
   },
 
   updateSku: async (id, patch) => {
@@ -296,16 +254,25 @@ export const api = {
 api.listItems = api.listSkus;
 api.createItem = api.createSku;
 api.updateItem = api.updateSku;
-api.listProducts = async (jobId) => {
-  const params = new URLSearchParams();
-  if (jobId) params.set('jobId', jobId);
-  return backend('GET', `/products${params.toString() ? `?${params.toString()}` : ''}`);
+api.listProducts = async () => backend('GET', '/products');
+api.commitStructureForms = async (payload) => backend('POST', '/intake/structure-form/commit', payload);
+api.previewStructureForms = async (files) => {
+  const body = new FormData();
+  files.forEach(file => body.append('files', file));
+  return backend('POST', '/intake/structure-form/preview', body);
 };
 api.topcoSourceCheck = async ({ limit = 20 } = {}) => {
   const params = new URLSearchParams();
   if (limit) params.set('limit', String(limit));
   return backend('GET', `/source-check/topco${params.toString() ? `?${params.toString()}` : ''}`);
 };
+api.resolveUpc = async ({ upc, clientId } = {}) => {
+  const params = new URLSearchParams();
+  if (upc) params.set('upc', upc);
+  if (clientId) params.set('clientId', clientId);
+  return backend('GET', `/products/resolve-upc?${params.toString()}`);
+};
+
 api.topcoSourceSuggestions = async ({ clientId, productName, upc, limit } = {}) => {
   const params = new URLSearchParams();
   if (clientId) params.set('clientId', clientId);
@@ -370,6 +337,8 @@ api.deleteShipmentPhoto = async (shipmentId, photoId) => backend('DELETE', `/shi
 api.listMerchandise = async () => backend('GET', '/merchandise');
 api.listVerificationEntries = async () => backend('GET', '/verification/entries');
 api.listMerchandiseReviewEntries = async () => backend('GET', '/merchandise/review');
+api.listCommentReads = async () => backend('GET', '/comment-reads');
+api.markCommentRead = async id => backend('POST', `/comment-reads/${id}`);
 api.listWorkstreamCards = async () => backend('GET', '/workstream-cards');
 api.createWorkstreamCard = async payload => backend('POST', '/workstream-cards', payload);
 api.updateWorkstreamCard = async (id, payload) => backend('PATCH', `/workstream-cards/${id}`, payload);
@@ -407,6 +376,7 @@ api.updateMerchandiseIntakeDecisions = async (entryId, payload = {}) => backend(
 api.updateMerchandiseIntakeState = async (entryId, payload = {}) => backend('PATCH', `/merchandise/${entryId}/intake-state`, payload);
 api.confirmAssignMerchandise = async (entryId, payload = {}) => backend('POST', `/merchandise/${entryId}/confirm-assign`, payload);
 api.listMerchandiseComments = async (entryId) => backend('GET', `/merchandise/${entryId}/comments`);
+api.listMerchandiseHistory = async (entryId) => backend('GET', `/merchandise/${entryId}/history`);
 api.createMerchandiseComment = async (entryId, comment) => backend('POST', `/merchandise/${entryId}/comments`, { comment });
 api.releaseMerchandiseToProduction = async (entryId) => backend('POST', `/merchandise/${entryId}/release`);
 api.markMerchandiseWaitingForProductData = async (entryId, payload = {}) => backend('POST', `/merchandise/review/${entryId}/waiting-product-data`, payload);

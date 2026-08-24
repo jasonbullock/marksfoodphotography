@@ -543,6 +543,102 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertEqual(written[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Needs More Information")
         self.assertFalse(written[C.F_RECEIPT_ENTRY_MERCH_VERIFIED])
 
+    # Auto-match exists so a receiver can scan a barcode and move on. It must never
+    # guess: anything short or ambiguous stays unmatched for a PM to resolve.
+    def _auto_match(self, upc):
+        return self.app.post("/api/merchandise/recMerch/auto-match", json={"upc": upc})
+
+    def test_auto_match_rejects_short_upc_without_touching_airtable(self):
+        with patch("routes.airtable.get_record") as get_record:
+            response = self._auto_match("1234")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"matched": False, "reason": "too-short"})
+        get_record.assert_not_called()
+
+    @patch("routes._link_merchandise_to_product")
+    @patch("routes._list_all_records")
+    @patch("routes._topco_client_record", return_value=None)
+    @patch("routes._clients_by_id", return_value={})
+    def test_auto_match_links_single_exact_product(self, _clients, _topco, list_all, link):
+        list_all.return_value = [
+            {"id": "recExact", "fields": {C.F_ITEM_UPC: "036800030107", C.F_ITEM_CLIENT: ["recClient"]}},
+            {"id": "recOther", "fields": {C.F_ITEM_UPC: "036800030199", C.F_ITEM_CLIENT: ["recClient"]}},
+        ]
+        link.return_value = (self.entry(), self.receipt(), {"id": "recExact"}, None)
+        with patch("routes._permitted_merchandise_or_error", return_value=(self.entry(), self.receipt(), None)):
+            response = self._auto_match("036800030107")
+        payload = response.get_json()
+        self.assertTrue(payload["matched"])
+        self.assertEqual(payload["via"], "product")
+        self.assertEqual(link.call_args.args[1], "recExact")
+
+    @patch("routes._link_merchandise_to_product")
+    @patch("routes._list_all_records")
+    @patch("routes._topco_client_record", return_value=None)
+    @patch("routes._clients_by_id", return_value={})
+    def test_auto_match_declines_when_two_products_share_a_upc(self, _clients, _topco, list_all, link):
+        list_all.return_value = [
+            {"id": "recA", "fields": {C.F_ITEM_UPC: "036800030107", C.F_ITEM_CLIENT: ["recClient"]}},
+            {"id": "recB", "fields": {C.F_ITEM_UPC: "036800030107", C.F_ITEM_CLIENT: ["recClient"]}},
+        ]
+        with patch("routes._permitted_merchandise_or_error", return_value=(self.entry(), self.receipt(), None)):
+            response = self._auto_match("036800030107")
+        payload = response.get_json()
+        self.assertFalse(payload["matched"])
+        self.assertEqual(payload["reason"], "ambiguous")
+        self.assertEqual(payload["candidateCount"], 2)
+        link.assert_not_called()
+
+    @patch("routes._link_merchandise_to_product")
+    @patch("routes._list_all_records")
+    @patch("routes._topco_client_record", return_value=None)
+    @patch("routes._clients_by_id", return_value={})
+    def test_auto_match_does_not_link_on_prefix_only(self, _clients, _topco, list_all, link):
+        # A prefix is what makes the suggestion list ambiguous; it must not auto-link.
+        list_all.return_value = [
+            {"id": "recLonger", "fields": {C.F_ITEM_UPC: "0368000301079", C.F_ITEM_CLIENT: ["recClient"]}},
+        ]
+        with patch("routes._permitted_merchandise_or_error", return_value=(self.entry(), self.receipt(), None)):
+            response = self._auto_match("036800030107")
+        payload = response.get_json()
+        self.assertFalse(payload["matched"])
+        self.assertEqual(payload["reason"], "no-match")
+        link.assert_not_called()
+
+    # Receiving stages merchandise before it exists, so it resolves without linking.
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes._list_all_records")
+    @patch("routes._topco_client_record", return_value=None)
+    def test_resolve_upc_returns_single_product_without_linking(self, _topco, list_all, _clients):
+        list_all.return_value = [
+            {"id": "recExact", "fields": {C.F_ITEM_UPC: "036800030107", C.F_ITEM_NAME: "Pizza"}},
+        ]
+        with patch("routes.airtable.update_record") as update_record:
+            response = self.app.get("/api/products/resolve-upc?upc=036800030107")
+        payload = response.get_json()
+        self.assertTrue(payload["resolved"])
+        self.assertEqual(payload["via"], "product")
+        update_record.assert_not_called()
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes._list_all_records")
+    @patch("routes._topco_client_record", return_value=None)
+    def test_resolve_upc_declines_ambiguous(self, _topco, list_all, _clients):
+        list_all.return_value = [
+            {"id": "recA", "fields": {C.F_ITEM_UPC: "036800030107"}},
+            {"id": "recB", "fields": {C.F_ITEM_UPC: "036800030107"}},
+        ]
+        response = self.app.get("/api/products/resolve-upc?upc=036800030107")
+        payload = response.get_json()
+        self.assertFalse(payload["resolved"])
+        self.assertEqual(payload["reason"], "ambiguous")
+
+    def test_resolve_upc_rejects_short_scan_without_reading_airtable(self):
+        with patch("routes._list_all_records") as list_all:
+            response = self.app.get("/api/products/resolve-upc?upc=1234")
+        self.assertEqual(response.get_json(), {"resolved": False, "reason": "too-short"})
+        list_all.assert_not_called()
+
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
     def test_update_workstream_card_rejects_legacy_status(self, get_record, update_record):
@@ -728,6 +824,7 @@ class IntakeDecisionTests(unittest.TestCase):
             }),
             self.receipt(),
             {"id": "recProduct", "fields": {C.F_ITEM_NAME: "Frozen Pizza", C.F_ITEM_IDENTIFIER: "000123", C.F_ITEM_ARTWORK_RECEIVED: True}},
+            {"id": "recClient", "fields": {C.F_CLIENT_NAME: "Kroger"}},
             {"id": "recProduct", "fields": {C.F_ITEM_NAME: "Frozen Pizza", C.F_ITEM_IDENTIFIER: "000123", C.F_ITEM_ARTWORK_RECEIVED: True}},
         ]
         update_record.return_value = self.entry({
@@ -769,6 +866,107 @@ class IntakeDecisionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("Product Linked", response.get_json()["error"])
+
+    @patch("routes._issues_by_item_id", return_value={})
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.create_record")
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_confirm_assign_can_open_cards_in_awaiting_photo_release(self, get_record, update_record, create_record, _clients, _issues):
+        product = {
+            "id": "recProduct",
+            "fields": {
+                C.F_ITEM_CLIENT: ["recClient"],
+                C.F_ITEM_NAME: "Frozen Pizza",
+                C.F_ITEM_IDENTIFIER: "000123",
+                C.F_ITEM_ARTWORK_RECEIVED: True,
+            },
+        }
+        get_record.side_effect = [
+            self.entry({C.F_RECEIPT_ENTRY_QUANTITY: 4, C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True}),
+            self.receipt(),
+            product,
+        ]
+        create_record.return_value = {
+            "id": "recEcomm",
+            "fields": {
+                C.F_WORKSTREAM_CARD_NAME: "Frozen Pizza Box - 000123 - Ecomm",
+                C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+                C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
+                C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release",
+                C.F_WORKSTREAM_CARD_QUANTITY: 4,
+            },
+        }
+        update_record.return_value = self.entry({C.F_RECEIPT_ENTRY_ITEM: ["recProduct"]})
+
+        response = self.app.post("/api/merchandise/recMerch/confirm-assign", json={
+            "expectedProductId": "recProduct",
+            "planningStatus": "Awaiting Photo Release",
+            "workstreams": [{"type": "Ecomm", "quantity": 4}],
+        })
+
+        self.assertEqual(response.status_code, 201)
+        card_fields = create_record.call_args.args[1]
+        self.assertEqual(card_fields[C.F_WORKSTREAM_CARD_PLANNING_STATUS], "Awaiting Photo Release")
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.create_record")
+    @patch("routes.airtable.get_record")
+    def test_confirm_assign_refuses_awaiting_photo_release_when_requirements_are_unmet(self, get_record, create_record, _clients):
+        # Merchandise Verified is false, which is exactly what the intake-state
+        # endpoint refuses on. Both paths must agree or the board can be skipped.
+        product = {"id": "recProduct", "fields": {C.F_ITEM_CLIENT: ["recClient"], C.F_ITEM_NAME: "Frozen Pizza"}}
+        get_record.side_effect = [self.entry({C.F_RECEIPT_ENTRY_QUANTITY: 4}), self.receipt(), product]
+
+        response = self.app.post("/api/merchandise/recMerch/confirm-assign", json={
+            "expectedProductId": "recProduct",
+            "planningStatus": "Awaiting Photo Release",
+            "workstreams": [{"type": "Ecomm", "quantity": 4}],
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Merchandise Verified", response.get_json()["error"])
+        create_record.assert_not_called()
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_accepting_new_merchandise_records_it_as_verified(self, get_record, update_record, _clients):
+        # Approving newly received merchandise is the verification; there is no
+        # separate step, so nothing else in the app ever sets this flag.
+        get_record.side_effect = [
+            self.entry({C.F_RECEIPT_ENTRY_PLANNING_STATUS: "New"}),
+            self.receipt(),
+        ]
+        update_record.return_value = self.entry({C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True})
+
+        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={"stage": "waiting-info"})
+
+        self.assertEqual(response.status_code, 200)
+        fields = update_record.call_args.args[2]
+        self.assertTrue(fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED])
+        self.assertTrue(fields[C.F_RECEIPT_ENTRY_MERCH_VERIFIED_AT])
+
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_already_verified_merchandise_keeps_its_original_verification(self, get_record, update_record, _clients):
+        get_record.side_effect = [
+            self.entry({
+                C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Needs More Information",
+                C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True,
+                C.F_RECEIPT_ENTRY_MERCH_VERIFIED_AT: "2026-07-01T00:00:00Z",
+            }),
+            self.receipt(),
+        ]
+        update_record.return_value = self.entry({C.F_RECEIPT_ENTRY_MERCH_VERIFIED: True})
+
+        response = self.app.patch("/api/merchandise/recMerch/intake-state", json={"stage": "waiting-info"})
+
+        self.assertEqual(response.status_code, 200)
+        fields = update_record.call_args.args[2]
+        self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_VERIFIED_AT, fields)
+
 
 
 class IntakeDecisionSchemaUtilityTests(unittest.TestCase):

@@ -1,5 +1,57 @@
 # Product Decisions
 
+## 2026-08-19 - A Scan That Resolves To One Row Matches Itself
+
+A scanned UPC links merchandise on its own only when it is unambiguous: at least eight digits, resolving to exactly one candidate by whole-value equality. Prefix and substring hits never auto-link, because prefix matching is what makes the suggestion list ambiguous in the first place. Anything short, absent or ambiguous leaves the merchandise unmatched for a PM to resolve, and is reported as an ordinary outcome rather than an error so a receiver never sees a failure because a barcode did not resolve.
+
+The rule lives server-side in `_resolve_unambiguous_upc` and is shared by two endpoints so a scan means the same thing regardless of when it happens. `GET /api/products/resolve-upc` answers without linking, which receiving needs because merchandise is staged before a record exists. `POST /api/merchandise/:id/auto-match` resolves and links for merchandise that already exists. Both report `candidateCount` on ambiguity, which distinguishes an unknown barcode from duplicate UPCs in the client sheet.
+
+Manual matching stays on both surfaces. `docs/proposals/2026-08-19-where-merchandise-matching-belongs.md` weighed removing it from receiving and that half was deliberately not done: receiving works well as it is. `2026-08-18 - Shipments Can Activate A Source Row While Matching Merchandise` therefore still stands.
+
+## 2026-08-19 - Observed Package Values Are Evidence; The Matched Product Is Authoritative
+
+The package name and UPC / ID captured at receiving exist to find the Expected Product and to record what physically arrived. They are retained on the Merchandise record and are never used downstream.
+
+Once a Product is linked, the Product's name and UPC are the operating values. `_creative_force_handoff` builds its payload from the linked Product record, so the Creative Force feed, file naming, folder path tokens, and photo-production readiness all read Product fields. Observed values reach downstream systems only through `_manual_product_from_fields`, the fallback used when no Product is linked.
+
+The two are therefore not competing versions of one fact and must not be reconciled by copying Product values onto the Merchandise record. A mismatch is a real signal with real causes — the wrong item shipped, a mislabelled box, incorrect client data, or a receiver typo — and overwriting the observed value destroys the only evidence that the discrepancy existed. `Use Product Name` and `Use Product UPC` stay explicit actions so correcting captured evidence is always a deliberate human decision, taken for the typo case.
+
+Because this is invisible in the interface, the mismatch warning states the consequence rather than only the discrepancy: production uses the Product values and package values are kept as received. Without it the warning reads as an unresolved problem the PM is expected to fix.
+
+## 2026-08-19 - Planning Matches Against The Same Source As Shipments
+
+Product matching in Planning now uses the read-only client source sheet for clients with Source Check rules, the same suggestions Shipments has used since the Topco source slice. Selecting a row runs the existing idempotent activation, which creates or updates one local Product from that row and links it to the Merchandise.
+
+Previously Planning searched local Products only. That meant the two surfaces answered the same question differently: a receiver in Shipments could find a product straight from the client sheet, while a PM in Planning could only find rows that had already been activated by someone else. Typing a word from the package into Planning would return nothing for a product the client had clearly listed.
+
+Clients without Source Check rules keep local Product search unchanged, so this adds a capability for configured clients rather than replacing the general path.
+
+Linking a Product no longer writes the match search fields back onto the Merchandise record. The search inputs are seeded from the observed values, so selecting a suggestion used to save whatever was currently typed as the observed package name and identifier — searching for "Cheese" replaced a recorded name of "CT Asiago Cheese 8oz", and clearing the identifier box to search by name alone blanked the recorded UPC. Observed values are the receiver's evidence of what physically arrived and now change only through the explicit `Use Product Name` and `Use Product UPC` actions. This supersedes the earlier behaviour where selecting a suggestion saved the typed values first.
+
+`No clear match` is removed from Planning. Shipments had already dropped it; saving without choosing a match leaves the Merchandise unmatched for later review without recording an explicit no-match state.
+
+## 2026-08-19 - Comment Read State Is Per Person, Server Side
+
+Unread comment state lives in an app-owned JSON map on `Users.Comment Reads`, keyed by merchandise id with an ISO read-through timestamp. It was previously `localStorage`, which made "new" a property of the browser rather than the person: reading a thread on a laptop left the badge showing on a phone, and clearing site data silently marked everything unread again.
+
+It is a field rather than a table because read state has no independent lifecycle, ownership, or relationships — the same reasoning that put Product Import Profiles and Photo Production Requirements on Clients. Both endpoints fail soft: if the read map cannot be fetched or written, comments show as unread rather than the Planning board failing to render. Losing read state is recoverable; a blank board is not.
+
+Comment timestamps come from Airtable, not the app. The shaper prefers the `Comment Created` field and falls back to the record's `createdTime` metadata. Because an Airtable `createdTime` field is a computed mirror of that same metadata, the two values are identical — the field buys visibility and sorting inside Airtable, not correctness in the app.
+
+Planning cards carry a comment signal with three steps in a single hue: a quiet outline when a conversation exists and the reader is caught up, a blue tint when unread, and solid blue when unread and posted within the last four hours. Recency previously had its own amber treatment, which collided with the age chip's aging colour and made a comment count the loudest element on the card. Amber and red stay reserved for age and blockers; conversation escalates by weight within blue.
+
+Inside the modal, individual comments are marked against a read-through captured when the card was opened, not the live value. Opening a card stamps everything read immediately, so marking against live state would mean no comment is ever shown as new.
+
+## 2026-08-19 - Planning Has One View
+
+The Planning List view is removed, along with the grid/list toggle. Planning renders the Release view only.
+
+A list exists to trade richness for density. This one did not: its rows showed a product name, client, and a status word in roughly the height the Release card uses for a photo, UPC, match state, age, and shipment grouping. It was less information per pixel than the view it was supposed to be the compact alternative to.
+
+It had also drifted. It labelled the first queue `New Merch` where the board said `Newly Received Merch`, said `No cards in this queue.` where the board said `No cards here.`, and kept an older header treatment. Every card refinement landed on the Release view only, so the gap widened with each change while both surfaces still had to be kept compiling and threaded with the same props.
+
+A genuinely dense table is still worth building when queue volume makes card scrolling painful — sortable columns, compact rows, no thumbnails. That is a different artifact from what was removed, and it should be built when the volume proves the need rather than maintained speculatively in the meantime. `tests/test_frontend_routing.py` asserts `PlanningListView` is absent so it cannot return without a deliberate decision.
+
 ## 2026-08-19 - The Routing Module Models Only What The Board Renders
 
 `frontend/src/merchandiseRouting.js` described a five-column planning board and a second production board while the app rendered three sections. Queue ids, board columns, and a two-board state model existed for surfaces that were never built.
@@ -951,4 +1003,342 @@ Source Request Type may provide the default/suggested Planning deliverable after
 
 The `Newly Received Merch` card should not visually badge source-suggested Packaging, Ecomm, or Thr3d work. Column 1 is an acknowledgement/identity scan, so cards show title, UPC / ID, and matched/unmatched state only. Deliverable badges and missing-info summaries belong after the PM has declared/verified work in the later Planning sections. The `New` pill is limited to the Newly Received section; later sections already imply the merch has been validated or moved forward.
 
-Planning Release grouping is a display option. `Group by shipment` applies only to `Newly Received Merch` and `Needs More Information`; `Ready to Release` remains ungrouped because it is already validated release work. Group headers show the received timestamp on the right only, without a duplicate left-side timestamp.
+Planning Release grouping is a display option. `Group by shipment` applies to every column, including `Awaiting Photo Release` (superseding the 2026-08-18 position that it should stay ungrouped — see 2026-08-20 below). Group headers show the received timestamp on the right only, without a duplicate left-side timestamp.
+
+## 2026-08-19 - Merchandise History Is A Server Record Of Who And When
+
+Every phase a piece of merchandise passes through writes one History row: the event, the signed-in user, and a timestamp. Nothing richer. The events recorded today are `Merchandise received` (on creation, including each item of a batch receive), `Merchandise accepted` (the transition off `New`), and `Planning status changed` (every later queue move, carrying From and To).
+
+The table carries only what something reads: `Event`, `Date`, `User`, `Merchandise`, `Product`, `Job`, `From`, `To`. `Type`, `Field`, and `Details` are removed. `Type` was written identical to `Event` by every caller and in all nine existing rows, and being a single-select it carried the same option-drift hazard that forced the Workstream Card status cleanup. `Field` was only ever the literal `"Status"`. `Details` restated `Event` in prose and was never displayed. `From` and `To` are kept because they are now rendered — a status change without them says nothing.
+
+History lives in the `History` table, linked to Merchandise through `History.Merchandise`. It is read through `GET /api/merchandise/<id>/history`, resolved from the merchandise record's reverse link so no full-table scan is needed, and loaded only when the workspace modal is open. The former browser-local activity log is removed; it recorded only comment events, which History deliberately filters out.
+
+Every item's history begins with `Merchandise received`. Items recorded before merchandise events existed have no such row, so the read endpoint derives it from the shipment's received date (falling back to the record's creation time) whenever no recorded arrival event is present. It is derived rather than backfilled because the arrival moment is already known from the shipment, while who received it is not — writing an invented actor into the audit trail would be worse than showing none.
+
+Recording a history event never blocks the user action that caused it. A failure to write the audit line is logged and swallowed.
+
+The 120-second duplicate suppression in `_history_exists` compares the linked Merchandise. Without it a batch receive — many identical `Merchandise received` events written seconds apart, distinguished only by their merchandise link — would collapse into a single row.
+
+## 2026-08-19 - The Planning Workspace Does Not Write Back To The Source
+
+Decisions made and data entered in the Planning workspace stay in Marks. They never write back to the client's source sheet. What they do is let the product move into production.
+
+This is stated once, as a quiet line beside the commit action in the modal footer, not as per-step instructions. People hesitate in this screen because they assume they are editing the client's system of record; the answer belongs at the moment of commitment, where the hesitation actually happens.
+
+## 2026-08-19 - Jobs Are Removed
+
+The Jobs table, its page, its endpoints, and every link to it are deleted. Products, Issues, and History no longer carry a Job link, and Clients no longer carries a Jobs link or a Job Prefix.
+
+Jobs was a grouping container from the spreadsheet-import era: an import chose a job (existing, new, grouped-by-column, or none), created or reused Job records, and linked every imported Product to one. Nothing downstream read the link. Planning, workstreams, release, and production are all product-led, and the job identifiers that production actually uses — `WKFT Job Number` and `Pickup Job Number` — are plain text on the Product, unrelated to the Jobs table.
+
+Imports therefore create Products directly. The job-selection step is gone from the import wizard, the "Missing Job" row error no longer exists, and rows are never skipped for lacking a job. The Imports record no longer counts Jobs Created / Jobs Reused.
+
+`Clients.Job Prefix` and `Products.Pickup Job Number` were read and written by code but do not exist as fields in the base. Job Prefix is removed with the rest of Jobs; Pickup Job Number remains referenced and is a live latent bug — writing it would fail the Airtable request.
+
+## 2026-08-19 - Required Product Data Stays Visible; Name And UPC Do Not
+
+The `Product data for photo` section lists every field the client requires, satisfied or not, with its ✓ / ✗ state. Filled fields are not hidden. The section teaches people what the client requires, and a list that only appears when something is wrong never teaches it.
+
+The exception is Product Name and UPC. Those are settled by matching, or by receiving when there is no match — they are never authored in this screen. Showing them as satisfied is noise on the one screen where the question is what still needs doing, so they are dropped from the list entirely and replaced by a single line naming where they came from.
+
+Open, deferred: which fields are required for which deliverable is not yet configurable per client. It belongs on the client admin page alongside `Required to Shoot` and Photo Production Requirements. Until that exists, the required set is whatever the client's Photo Production Requirements projection yields, which is not deliverable-aware.
+
+## 2026-08-20 - A Ready Item Leaves Planning By Splitting Into Work
+
+When every requirement is satisfied, the Planning workspace does not merely change a status. It calls `confirm-assign`, which creates the Workstream Cards (and any THR3D shipping item), links the Product, and opens those cards directly in `Awaiting Photo Release`. The parent Merchandise then leaves the board because child work exists — the structural rule, unchanged.
+
+The footer action names that move: `Move to Awaiting Photo Release` when ready, `Save` when not. An item that is not ready still saves in place, because deliverables are chosen in this screen and dropping the action would leave that choice nowhere to go.
+
+`confirm-assign` accepts an optional `planningStatus`. Requesting `Awaiting Photo Release` is gated by the same `_evaluate_required_to_shoot_from_fields` check the intake-state endpoint enforces, plus the blocking-issue check, so there is one definition of ready rather than two that can drift. Readiness is judged against the state the request is about to write — the Product it links and the deliverables it sets — not the state it found, since confirm-assign is what establishes both.
+
+## 2026-08-20 - Client Settings Define What Must Be Validated
+
+Which Product fields must be present before work can move on is the client's configuration, not a rule in code. `_evaluate_required_to_shoot_from_fields` reads `requiredProductFields` from the client's Photo Production Requirements, per selected deliverable, and builds one requirement per configured field. The Planning modal already read the same config, so the board gate and the screen now answer the same question from the same source.
+
+The gate keeps only the checks that are structural rather than per client: Merchandise Verified, Deliverables, Product Linked, and the Product identity fields that matching supplies.
+
+Artwork is no longer a hard-coded rule. It is `pathToArt` in the client's list — present if the Valid Artwork Path has a value. The old `Artwork Received` checkbox still satisfies it so nothing already flagged that way regresses, but nothing in the app sets that checkbox. A client with no configuration falls back to requiring artwork, which is the previous behaviour.
+
+Reading the client record cannot fail a request: `_client_config` returns an empty config on any lookup error, and readiness falls back to its defaults.
+
+`Merchandise Verified` is set by approving newly received merchandise. That approval is the verification — there is no separate step. An item either has a problem, which raises an issue and routes it elsewhere, or it is approved, and approval records the flag with a timestamp and the person who did it. An item already verified keeps its original timestamp rather than having it overwritten by a later queue move.
+
+The standalone `POST /merchandise/<id>/verify` endpoint and `api.verifyMerchandise` remain but are called by nothing; verification now happens as part of accepting the merchandise.
+
+
+## 2026-08-20 - Shipment Grouping Is A Scheduling Signal
+
+A shipment is not merely where something came from. Items that arrive together are usually variants of one product — six cheeses in different sizes — and get shot in the same setup. The grouping is therefore a scheduling hint, and it matters most in `Awaiting Photo Release`, where the selected batch becomes the shoot. That column now groups by shipment like the others; the earlier reasoning treated a shipment as provenance and concluded the opposite.
+
+Each shipment group in that column offers `Select all`, because selecting the group is the common move once grouping means "these get shot together". It respects the existing rule that Ecomm and Packaging release separately: it selects only the items matching the deliverable already in play, or the group's own when nothing is selected yet, and says so when it skips the rest.
+
+## 2026-08-20 - Releasing To Photo Writes The Creative Force Feed
+
+Releasing to photo is the hand-off to production, and the row in `Creative Force Product Feed` is what actually reaches Creative Force. The release endpoint now upserts the merchandise's Workstream Cards into that table through the same `_sync_creative_force_product_feed_cards` path the Topco activation flow uses, so there is one way a card reaches the feed rather than two.
+
+The feed is written **before** the `Released` stamp. If the feed write fails the release is not recorded, leaving the item releasable — the alternative is an item that reads as released to production and never arrives there.
+
+Release also records a `Released to photo` History event. It previously wrote `Released`, `Released At`, and `Released By` and nothing else, which made the one action that hands work to production the only lifecycle step absent from an item's history.
+
+## 2026-08-20 - Creative Force Reports Status Back Through A Stable Hostname
+
+Creative Force posts work unit and task events to `POST /api/integrations/creative-force/webhook`, reachable at `https://hooks.walnutcontent.com` through a named Cloudflare tunnel. The tunnel is named rather than a quick tunnel: quick tunnels mint a new random `trycloudflare.com` hostname on every start, so a URL given to Creative Force silently stops resolving and its events vanish with no error on either side. That is what had been happening.
+
+Two payload shapes carry different halves of the same picture. Work unit events (`WorkUnitStatusChanged`, `WorkUnitCompleted`) carry `WorkUnitStatusName` and no step. Task events (`EventGroupName: task`) carry `StepName` and no work unit status, and name the production type `ShootingTypeName` where work unit events say `ProductionTypeName`.
+
+Both are handled: the parser accepts either spelling of the production type, and each event is merged into the stored sync rather than replacing it, so an event that omits a field does not erase what an earlier one recorded. Writing wholesale meant status and step repeatedly blanked each other.
+
+Correlation runs through the `Creative Force Product Feed`: the first event for a card is found by Product Code and production type, and the resulting `WorkUnitId` is stored so later events match directly. This only works because releasing to photo writes the feed row — before that, every event returned `accepted: false`.
+
+Delivery depends on the Flask process being up. The tunnel runs under launchd and returns after a restart; the backend does not, and Creative Force does not retry, so events sent while it is down are lost.
+
+## 2026-08-20 - Only The Main Creative Force Workflow Drives A Card
+
+A SKU can carry more than one Creative Force work unit: a main workflow and a derived one that branches off Capture. Both share a Product Code and even step names — `Asset Delivery` exists in both chains — so nothing about a step distinguishes them. Only the workflow identity does.
+
+Events from a derived workflow are acknowledged and ignored rather than written. Left unfiltered they overwrite the card in both directions: the derived workflow's single step can complete while the main one is still at Final Selection, and the card then reports `Asset Delivery / Done` for an item that is nowhere near delivered.
+
+Creative Force reports an all-zero `WorkflowId` for derived workflows as well as the main one, so the ID cannot separate them — only `WorkflowName` can. `CREATIVE_FORCE_MAIN_WORKFLOW_NAME` names the main workflow when it is known; otherwise Creative Force's own default naming for derived workflows (`Derived Workflow 1`) is used. Renaming a derived workflow in Creative Force without setting that variable would defeat the check.
+
+Events that carry no workflow name are judged against the main `WorkUnitId` a named event has already identified. Before any main unit is known nothing is rejected, otherwise the card would stay blank waiting for a named event to arrive first.
+
+## 2026-08-21 - The Card Shows The Step's Status, Not The Work Unit's
+
+Creative Force reports two statuses. `WorkUnitStatusName` is the unit's lifecycle: it turns `InProgress` when work begins and stays there through every step until the job ends. `StepStatusName` is the current step's own state and moves with it.
+
+`Creative Force Status` shows the step status, falling back to the work unit status when an event carries no step. Paired with `Creative Force Step` the two now read as one fact — "Final Selection · To Do" — where before the step advanced beside a status that could not change until completion, which read as though nothing was happening.
+
+The work unit status is still recorded in `Creative Force Sync` and returned by the webhook as `workUnitStatus`; it is the right signal for "is this unit finished", just not for progress.
+
+## 2026-08-21 - Each Creative Force Step Is Tracked Separately
+
+Creative Force reports one event per step, and a single action fires the whole chain:
+resetting a work unit to Capture emits a reset for every downstream step within the same
+second. Storing only the newest event made the displayed step whichever happened to arrive
+last, which is arbitrary.
+
+Each step is now recorded on the card's sync under its `StepId`, with its status and the
+time Creative Force reported it. The displayed step is derived from that record: the
+earliest unfinished step by `StepId`, which is the workflow's own ordering, or the last
+step once everything is finished.
+
+Arrival order cannot be used and neither can the event timestamp, because a burst carries
+near-identical times. Only the step identity ordering is stable.
+
+The per-step record also answers when each step happened, which is what a Shot Date needs.
+
+## 2026-08-21 - Merchandise Verified By Is Text, Not A Link
+
+`Merchandise Verified By` is a `singleLineText` field holding the verifier's display name.
+The code wrote `[user_id]` into it, which Airtable rejects outright for a text field, so
+accepting merchandise failed on its last write.
+
+The alternative was converting the field to a link to Users, which is what the field's
+creation script had declared. That was rejected: verification is a stamp on the
+merchandise, and a link would put a Merchandise back-link on every user record — the
+same reverse link already slated for deletion.
+
+`Released By` on the same table remains a link to Users, so the two stamps are modelled
+differently. Converting it to text would drop another Users back-link, but it is not
+blocking anything today.
+
+## 2026-08-21 - One Resolver Decides What Product Data Is Missing
+
+Planning and the Photo Release modal disagreed about File Name Description: Planning
+reported it satisfied while the release said Missing. Planning used the shared resolver,
+which reads the Product's own value, then Reference Data under several aliases, then
+Product Description. The release modal had its own mapping that checked one key.
+
+The value normally lives in `Product Description` — `fileNameDescription` writes land
+there too, so the packaging naming token and the description are one value by design.
+`_shape_item` now emits it under both names rather than reporting `null` for a value
+that exists, and the release modal calls the shared resolver.
+
+Any screen that judges whether product data is complete uses that resolver. A second
+opinion about what is missing is worse than no opinion.
+
+## 2026-08-21 - The Project Name Lives On The Product
+
+Structure Forms name their project — `26007267 | CF Ice Cream Scrounds DFA - MI00204` —
+but the import kept only the raw string inside the Reference Data blob, so the Photo
+Release asked the user to retype a name that had already arrived on the form.
+
+`Products.Project Name` stores the readable remainder, `CF Ice Cream Scrounds DFA`. The
+WKFT number and Mbox number are stripped because both already have their own fields, and
+storing them again inside a text field would put the same identifier in two places.
+
+The field is on Products, not Merchandise. Merchandise links to a Product and inherits
+the project through that link, so one field serves both instead of two that can disagree.
+
+The release prefills the project name only when every item in it carries the same one; a
+release can bundle merchandise from more than one project, and guessing would be worse
+than an empty field.
+
+## 2026-08-21 - Walnut Scope Follows The Deliverable
+
+Each deliverable has exactly one sensible scope: Ecomm releases are
+`Full set renders - WALNUT (PHOTO)` and Packaging releases are `Packaging Shots`. The
+release form now opens on the right one instead of presenting an empty required field
+whose only valid answer is determined by the badge already shown in the title.
+
+Both remain editable, and both appear in the dropdown, because the scope is a statement
+to the vendor rather than a derived value.
+
+## 2026-08-21 - The Release Email Is Sent, And Is The Email That Was Previewed
+
+The release email preview was a rendering with no counterpart: nothing was stored and
+nothing was sent. The Activation now records `Email Subject` and `Email Body HTML` as
+released, so what went out is auditable rather than re-derived later.
+
+Preview and email are built from the same inputs — the same item rows, the same column
+set, and one shared list of summary lines — because two renderings of the same email
+drift. They differ in exactly one way, on purpose: the preview marks missing values with
+red placeholders to help the author, and an email to a vendor must never contain them.
+Release validation already requires those values, so a complete release renders the same
+either way.
+
+Delivery is Microsoft Graph with an app registration, chosen over an Airtable automation
+because Airtable escapes HTML held in a long-text field, which would send the SKU table
+and artwork links as literal markup. Sending from a real Marks address also matters for a
+message a vendor replies to.
+
+Sending never blocks the release. It runs after the move is recorded, and any failure is
+reported to the user rather than raised: merchandise stuck out of photo because of a mail
+outage would be a worse failure than an email nobody received.
+
+With no credentials configured the release records the email and reports that nothing was
+sent. `MS_GRAPH_TENANT_ID`, `MS_GRAPH_CLIENT_ID`, `MS_GRAPH_CLIENT_SECRET`, and
+`PHOTO_RELEASE_FROM_ADDRESS` are read from the environment and are not held in the repo.
+
+Recipients live on the Client, in `Photo Release Recipients`, because they differ per
+client and belong beside the rest of that client's configuration. The field accepts lines,
+commas, or semicolons; duplicates are dropped case-insensitively and entries without an
+`@` are ignored as typos.
+
+## 2026-08-21 - A Release Marks The Card It Released
+
+Releasing to photo closes the modal, but the card stays on the board, so the board looked
+unchanged. The deliverable badge now turns green with a check for six seconds.
+
+The mark uses the merchandise IDs the move endpoint actually returns, not the selection
+the user made, so only cards that really moved are marked. It honours
+`prefers-reduced-motion`.
+
+## 2026-08-21 - Photo Release Email Falls Back To The User's Own Mail Client
+
+SGS will not grant tenant-wide `Mail.Send` to an app registration in the Propelis tenant,
+and SGS controls `makemarks.com` DNS, so neither Microsoft Graph app-only sending nor a
+transactional service sending from the domain is available.
+
+An unsent release is therefore handed to the user instead of being lost. The release
+records the email as before, and the board offers `Open draft`, which opens the mail
+client with recipients, subject, and a plain reading of the body, and
+`Copy formatted email`, which puts the HTML on the clipboard so pasting into Outlook keeps
+the SKU table. The plain rendering is what a `mailto:` can carry; the copy action exists
+because the table is the one thing it loses.
+
+Long bodies are not put in the `mailto:` at all. Past 1800 characters some clients drop the
+URL silently, so the draft opens with recipients and subject only and says to paste the
+body in.
+
+The Graph path is kept, not removed. `mailer.send_photo_release_email` still runs first and
+the handoff only appears when it reports that nothing was sent, so consent granted later
+turns automatic sending on with no further change.
+
+The app registration remains in place: client `47b02901-8b3e-4b9b-b13b-c6b85e48c00e`,
+tenant `8714a216-0445-4269-b96b-7d84bddb6da1`, with `Mail.Send` requested and not consented.
+
+## 2026-08-21 - The Creative Force Feed Projects Only Configured Fields
+
+Releasing a Product that had a Product Description failed with
+`Unknown field name: "Product Description"`. The feed table is built by
+`ensure_creative_force_product_feed` from the fields client configurations actually
+require, but the writer projected every key in `PHOTO_PRODUCTION_REQUIREMENT_FIELDS` and
+wrote any that had a value. Two of those nine — `Product Description` and
+`Ecomm Photo Notes` — have no column, so any Product carrying one broke the release.
+
+The writer now projects the same list the schema utility builds from: the
+`requiredProductFields` configured for that client and workstream. The two sides of the
+feed are derived from one source, so a column can no longer be written that does not exist.
+
+This also removes `Valid Artwork Path` from the projection, a column left over from an
+earlier configuration that no client requires today and that no feed row had populated.
+Adding `pathToArt` back to a client's `requiredProductFields` restores it, which is the
+intended way to change what the feed carries.
+
+## 2026-08-21 - The Sent Email Carries The Preview's Styling
+
+The email went out as plain HTML while the preview showed green values and the yellow SKU
+table, so the message a vendor received did not look like the one the user approved.
+
+Mail clients strip stylesheets, so the preview's CSS is inlined into the built HTML:
+`#166534` for values, `#fffec7` for the SKU table, white uppercase headers, and
+`#2563eb` underlined links. Those are the same values `.activation-email-preview-body`
+uses on screen, and tests assert both sides so a change to one is visible against the other.
+
+The subject and the body travel separately, because that is how a message is built.
+`Open blank message` opens an addressed message carrying the subject; `Copy email` puts the
+body alone on the clipboard. A subject pasted with the body would land inside the message
+rather than on it, and the stored `Email Body HTML` omits it for the same reason: when
+Graph does send, the subject is a header.
+
+No body is put in the `mailto:` at all. It cannot carry the formatting, and past roughly
+1800 characters some clients drop the URL outright, so the message opens blank by design
+and the body arrives by paste.
+
+## 2026-08-21 - The Release Modal Closes Only When Nothing Is Left To Do
+
+Releasing closed the modal and put the unsent email in a bar at the top of the Planning
+board, behind where the user was looking. The send is the last step of the release, so it
+belongs in the release, not in a message on the screen the modal was covering.
+
+The modal now closes when the email sends, because then the release is finished. When it
+cannot send, the modal stays open and its footer changes from offering the release to
+offering the one thing left: copy the email, open a blank message, done. The board bar is
+suppressed in that case rather than duplicating it.
+
+`Copy email` also sits on the Email Preview header, so the email can be copied before
+releasing and from any release reopened later through Edit Photo Releases. Both call one
+`copyPhotoReleaseEmail`, so they cannot copy different things.
+
+## 2026-08-21 - Image Counts Belong To Ecomm Only
+
+`Images/Bundle` and `Total Images` describe an Ecomm bundle. A Packaging release
+photographs the package itself, so the counts mean nothing there.
+
+They are hidden from the form, left out of the preview and the email, and written as null
+rather than carried at their default of 9. A stored 9 on a packaging release would be a
+claim nobody made, and the vendor reading "Number of images per bundle: 9" on a packaging
+request would reasonably act on it.
+
+A release covering both deliverables still shows them. Neither field is required, so
+hiding them cannot block a release.
+
+## 2026-08-21 - A Released Card Says So Permanently
+
+The green badge flash after a release lasts six seconds and only ever says "this happened
+just now". Released cards stay on the board, so a card that was released yesterday looked
+identical to one that never was.
+
+Released cards now carry a standing `R` mark on the deliverable badge line, titled with the
+release date. The flash remains for the moment of release; the mark is what persists.
+
+The mark shares the badge line rather than taking a row of its own, because the meta column
+is a grid and a new row would push the card taller for every released item.
+
+## 2026-08-21 - Releasing Through A Photo Release Stamps The Release
+
+Two paths released merchandise and only one recorded it. The drawer's
+`Release to Photo` set `Released`, `Released At`, and `Released By`; the photo release's
+`Release to Photo` moved the Planning status and stopped there. Merchandise released
+through a photo release therefore read as never released, which is what left the `R` mark
+absent on cards that had plainly been released.
+
+The photo release path now writes the same stamp. Two conditions apply. It is written only
+once — re-releasing an edited photo release keeps the original date rather than moving it
+forward. And it is written only when no sibling workstream is still unreleased, matching
+the Planning status beside it: merchandise with a Packaging card released and an Ecomm card
+still waiting has not been released, it is half released.
+
+`Released By` is a link to Users on this table, unlike `Merchandise Verified By`, so it
+takes a record id rather than a name.
