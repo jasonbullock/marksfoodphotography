@@ -5280,26 +5280,42 @@ def _creative_force_steps_after_event(existing_steps, sync):
 
 
 def _creative_force_current_step(steps):
-    """The earliest step not finished; if all are finished, the last one.
+    """The step Creative Force reported most recently.
 
-    Ordered by StepId because that is the workflow's own ordering. Arrival order
-    cannot be used: one action fires the whole chain within the same second.
+    StepId is not workflow order: a Photo Review of id 15 can finish before an
+    External Post Production of id 7 begins. Nor can a step be judged finished by
+    its own status, because Creative Force never reports a completion for a step
+    it has moved past — those sit at In Progress indefinitely. What it does report
+    is each transition as it happens, so the newest report is the current step.
+
+    Timestamps carry microseconds, so ties are only produced by one action firing
+    the whole chain at once: a reset. Work resumes from the first step, which
+    CREATIVE_FORCE_STEP_ORDER names because Creative Force does not encode its
+    ordering in StepId. A step missing from that list sorts after the named ones,
+    by StepId, so an unconfigured workflow still resolves deterministically.
     """
     if not steps:
         return {}
 
-    def order(item):
-        key = item[0]
-        try:
-            return (0, int(key))
-        except (TypeError, ValueError):
-            return (1, 0)
+    order = [name.casefold() for name in C.CREATIVE_FORCE_STEP_ORDER]
 
-    ordered = sorted(steps.items(), key=order)
-    for _, step in ordered:
-        if str(step.get("status") or "").strip().casefold() not in CREATIVE_FORCE_DONE_STATUSES:
-            return step
-    return ordered[-1][1]
+    def workflow_position(item):
+        key, step = item
+        name = str(step.get("name") or "").strip().casefold()
+        try:
+            step_id = int(key)
+        except (TypeError, ValueError):
+            step_id = 0
+        return (order.index(name), 0) if name in order else (len(order), step_id)
+
+    def reported(item):
+        return str(item[1].get("reportedAt") or "")
+
+    latest = max((reported(item) for item in steps.items()), default="")
+    newest = [item for item in steps.items() if reported(item) == latest]
+    if len(newest) == 1:
+        return newest[0][1]
+    return sorted(newest, key=workflow_position)[0][1]
 
 
 def _creative_force_event_is_derived(sync, existing):

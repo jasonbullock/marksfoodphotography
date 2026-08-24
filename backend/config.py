@@ -48,6 +48,15 @@ class Config:
     R2_PUBLIC_BASE_URL = os.getenv("R2_PUBLIC_BASE_URL", "")
     CREATIVE_FORCE_WEBHOOK_SECRET = os.getenv("CREATIVE_FORCE_WEBHOOK_SECRET", "")
     CREATIVE_FORCE_MAIN_WORKFLOW_NAME = os.getenv("CREATIVE_FORCE_MAIN_WORKFLOW_NAME", "")
+    # The main workflow's steps in order. Creative Force does not encode its own
+    # ordering in StepId, so a reset - which stamps every step the same instant -
+    # has nothing to sort by unless the order is stated here.
+    CREATIVE_FORCE_STEP_ORDER = [
+        value.strip() for value in os.getenv(
+            "CREATIVE_FORCE_STEP_ORDER",
+            "Photography,Final Selection,Photo Review,External Post Production,External Post QC,Delivery",
+        ).split(",") if value.strip()
+    ]
     # Creative Force posts every client's events to one endpoint. Restrict to ours.
     CREATIVE_FORCE_CLIENT_IDS = [
         value.strip() for value in os.getenv("CREATIVE_FORCE_CLIENT_IDS", "").split(",") if value.strip()

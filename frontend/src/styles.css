@@ -6777,6 +6777,28 @@ input[type="checkbox"]:disabled {
 
 /* Its own lane at the leading edge. Nothing overlaps the photo, and the whole
    strip is a click target so the box itself does not have to be hunted for. */
+/* Temporary: where the item stands in Creative Force, on released cards only. */
+.planning-release-cf-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  min-width: 0;
+  color: #4f46e5;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.planning-release-cf-line svg {
+  flex: 0 0 auto;
+}
+
+.planning-release-cf-line span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The released mark shares the badge line rather than claiming a row of its own. */
 .planning-release-badge-row {
   display: inline-flex;
@@ -6860,7 +6882,7 @@ input[type="checkbox"]:disabled {
 }
 
 .planning-release-main .planning-release-identity-line,
-.planning-release-main > span:last-child {
+.planning-release-main > span:last-child:not(.planning-release-cf-line) {
   color: var(--text-3);
   font-size: 11px;
 }

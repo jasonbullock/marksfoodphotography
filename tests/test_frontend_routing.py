@@ -1268,6 +1268,18 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn(".activation-modal-released", self.styles)
         self.assertIn("onClick={onClose}>Done</button>", self.source)
 
+    def test_released_cards_show_creative_force_progress(self):
+        # Temporary: where the item stands in Creative Force, shown only on cards
+        # that have been released and only when Creative Force has reported.
+        self.assertIn("function CreativeForceMark({ size = 12 })", self.source)
+        self.assertIn("creativeForceStatus: card.creativeForceStatus || ''", self.source)
+        self.assertIn(
+            "{item.record?.released && (item.creativeForceStep || item.creativeForceStatus) && (",
+            self.source,
+        )
+        self.assertIn("[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' \u00b7 ')", self.source)
+        self.assertIn(".planning-release-cf-line", self.styles)
+
     def test_released_cards_carry_a_standing_mark(self):
         # The transient badge flash only says it happened just now. A released
         # card stays on the board, so it needs a mark that stays with it.

@@ -1118,12 +1118,9 @@ second. Storing only the newest event made the displayed step whichever happened
 last, which is arbitrary.
 
 Each step is now recorded on the card's sync under its `StepId`, with its status and the
-time Creative Force reported it. The displayed step is derived from that record: the
-earliest unfinished step by `StepId`, which is the workflow's own ordering, or the last
-step once everything is finished.
+time Creative Force reported it. The displayed step is derived from that record.
 
-Arrival order cannot be used and neither can the event timestamp, because a burst carries
-near-identical times. Only the step identity ordering is stable.
+Superseded below: choosing that step by `StepId` ordering was wrong.
 
 The per-step record also answers when each step happened, which is what a Shot Date needs.
 
@@ -1342,3 +1339,34 @@ still waiting has not been released, it is half released.
 
 `Released By` is a link to Users on this table, unlike `Merchandise Verified By`, so it
 takes a record id rather than a name.
+
+## 2026-08-24 - The Current Creative Force Step Is The Newest Report
+
+Choosing the displayed step as the earliest unfinished one by `StepId` was wrong on both
+halves, and the board showed `Photography` for an item Creative Force had already moved to
+`External Post Production`.
+
+`StepId` is not workflow order. Real data has `Photo Review` at id 15 finishing at 18:55:15
+and `External Post Production` at id 7 starting three seconds later.
+
+Nor can a step be judged finished by its own status. Creative Force never reports a
+completion for a step it has moved past — `Photography` sat at `In Progress` from 18:18
+onward while three later steps came and went.
+
+What it does report reliably is each transition as it happens. The current step is
+therefore the most recently reported one, which is also what Creative Force's own Current
+Step column shows.
+
+Timestamps carry microseconds, so a genuine tie means one action fired the whole chain:
+a reset, where work resumes from the first step. The workflow is linear but its order is
+not derivable from the ids, so `CREATIVE_FORCE_STEP_ORDER` states it:
+Photography, Final Selection, Photo Review, External Post Production, External Post QC,
+Delivery. A step missing from that list sorts after the named ones by `StepId`, so an
+unconfigured workflow still resolves deterministically.
+
+The order is environment configuration rather than code, matching
+`CREATIVE_FORCE_MAIN_WORKFLOW_NAME` beside it: both describe the Creative Force workflow,
+which can change without this application changing.
+
+Existing cards were recomputed from their stored step history rather than left waiting for
+the next event.

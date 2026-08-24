@@ -8227,6 +8227,7 @@ function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = 
     deliverableRoute: type,
     workstreamType: type,
     creativeForceStep: card.creativeForceStep || '',
+    creativeForceStatus: card.creativeForceStatus || '',
     planningStatus,
     workstreamQuantity: card.quantity || 0,
     clientPhotoProductionRequirements: client?.photoProductionRequirements || null,
@@ -8240,6 +8241,7 @@ function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = 
       workstreamCardId: card.id,
       workstreamType: type,
       creativeForceStep: card.creativeForceStep || '',
+      creativeForceStatus: card.creativeForceStatus || '',
       planningStatus,
       workstreamQuantity: card.quantity || 0,
       manualProductInfo: card.manualProductInfo || record.manualProductInfo || '',
@@ -8297,6 +8299,30 @@ function PhotoReleaseEmailHandoff({ email, onDismiss }) {
           : 'No recipients set for this client.')}
       </em>
     </span>
+  );
+}
+
+// Drawn inline rather than shipped as an asset: it is one small mark, and this
+// whole line is temporary.
+function CreativeForceMark({ size = 12 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id="cf-mark" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#2b3fd6" />
+          <stop offset="45%" stopColor="#4f46e5" />
+          <stop offset="75%" stopColor="#c9a0d8" />
+          <stop offset="100%" stopColor="#7dd3fc" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M20 7.2A9 9 0 1 0 20 16.8"
+        fill="none"
+        stroke="url(#cf-mark)"
+        strokeWidth="5.4"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 
@@ -8971,6 +8997,12 @@ function PlanningReleaseView({
                             )}
                             <strong>{item.title || 'Received Merchandise'}</strong>
                             <ReleaseCardIdentifierLine item={item} identifier={identifier} sectionId={section.id} />
+                            {item.record?.released && (item.creativeForceStep || item.creativeForceStatus) && (
+                              <span className="planning-release-cf-line">
+                                <CreativeForceMark />
+                                <span>{[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' · ')}</span>
+                              </span>
+                            )}
                             {missingLabel && (
                               <span className="planning-release-missing-row">
                                 <span

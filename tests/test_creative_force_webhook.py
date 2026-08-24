@@ -167,7 +167,9 @@ class CreativeForceDisplayedStatusTests(unittest.TestCase):
 
 
 class CreativeForceStepOrderTests(unittest.TestCase):
-    """A reset fires every step at once, so arrival order cannot pick the current step."""
+    """Creative Force reports each transition as it happens, so the newest report
+    is the current step. StepId is not workflow order, and a step it has moved
+    past keeps reporting In Progress forever."""
 
     def _apply(self, events):
         from routes import _creative_force_steps_after_event, _creative_force_current_step
@@ -177,48 +179,81 @@ class CreativeForceStepOrderTests(unittest.TestCase):
         return steps, _creative_force_current_step(steps)
 
     @staticmethod
-    def _step(step_id, name, status):
+    def _step(step_id, name, status, at=1787283842059):
         return {"Action": "StatusChanged", "EventGroupName": "task", "WorkUnitId": "wu-1",
                 "WorkflowName": "Basic Photo", "StepId": step_id, "StepName": name,
-                "StepStatusName": status, "EventDatetimeUtc": 1787283842059}
+                "StepStatusName": status, "EventDatetimeUtc": at}
 
-    def test_the_current_step_is_the_earliest_unfinished_one(self):
+    def test_the_current_step_is_the_most_recently_reported(self):
         _, current = self._apply([
-            self._step(2, "Capture", "Done"),
-            self._step(4, "Final Selection", "In Progress"),
-            self._step(14, "Asset Delivery", "New"),
+            self._step(2, "Capture", "Done", at=1787283842059),
+            self._step(4, "Final Selection", "In Progress", at=1787283902059),
+            self._step(14, "Asset Delivery", "New", at=1787283962059),
+        ])
+        self.assertEqual(current["name"], "Asset Delivery")
+
+    def test_a_step_creative_force_moved_past_is_not_shown(self):
+        # The real shape of it: Photography is still In Progress because no
+        # completion is ever sent for it, while later steps have come and gone.
+        _, current = self._apply([
+            self._step(3, "Photography", "In Progress", at=1787283842059),
+            self._step(4, "Final Selection", "In Progress", at=1787285900000),
+            self._step(15, "Photo Review", "Done", at=1787286000000),
+            self._step(7, "External Post Production", "To Do", at=1787286003000),
+        ])
+        self.assertEqual(current["name"], "External Post Production")
+
+    def test_step_id_is_not_workflow_order(self):
+        # Photo Review of id 15 finishes before External Post of id 7 begins.
+        _, current = self._apply([
+            self._step(15, "Photo Review", "Done", at=1787286000000),
+            self._step(7, "External Post Production", "To Do", at=1787286003000),
+        ])
+        self.assertEqual(current["name"], "External Post Production")
+
+    def test_a_reset_resumes_at_the_first_configured_step(self):
+        # Every step stamped the same instant is a reset. Creative Force does not
+        # encode its ordering in StepId, so the configured order decides — and the
+        # answer cannot depend on which event happened to arrive last.
+        reset = [
+            self._step(7, "External Post Production", "To Do"),
+            self._step(15, "Photo Review", "To Do"),
+            self._step(4, "Final Selection", "To Do"),
+            self._step(3, "Photography", "To Do"),
+        ]
+        _, current = self._apply(reset)
+        self.assertEqual(current["name"], "Photography")
+
+        _, reversed_current = self._apply(list(reversed(reset)))
+        self.assertEqual(reversed_current["name"], "Photography")
+
+    def test_an_unconfigured_step_sorts_after_the_named_ones(self):
+        # An unknown workflow still has to resolve to something deterministic.
+        _, current = self._apply([
+            self._step(99, "Some Other Step", "To Do"),
+            self._step(4, "Final Selection", "To Do"),
         ])
         self.assertEqual(current["name"], "Final Selection")
 
-    def test_a_reset_burst_does_not_depend_on_arrival_order(self):
-        # Creative Force resets every downstream step in one burst. Whichever event
-        # arrived last used to become the displayed step.
-        reset = [
-            self._step(14, "Asset Delivery", "New"),
-            self._step(4, "Final Selection", "New"),
-            self._step(2, "Capture", "New"),
-        ]
-        _, current = self._apply(reset)
-        self.assertEqual(current["name"], "Capture")
-
-        _, reversed_current = self._apply(list(reversed(reset)))
-        self.assertEqual(reversed_current["name"], "Capture")
-
     def test_a_finished_work_unit_shows_its_last_step(self):
         _, current = self._apply([
-            self._step(2, "Capture", "Done"),
-            self._step(14, "Asset Delivery", "Done"),
+            self._step(2, "Capture", "Done", at=1787283842059),
+            self._step(14, "Asset Delivery", "Done", at=1787283962059),
         ])
         self.assertEqual(current["name"], "Asset Delivery")
 
     def test_each_step_keeps_its_own_reported_time(self):
         steps, _ = self._apply([
-            self._step(2, "Capture", "Done"),
-            self._step(4, "Final Selection", "In Progress"),
+            self._step(2, "Capture", "Done", at=1787283842059),
+            self._step(4, "Final Selection", "In Progress", at=1787283902059),
         ])
         self.assertEqual(steps["2"]["status"], "Done")
         self.assertEqual(steps["4"]["status"], "In Progress")
-        self.assertTrue(steps["2"]["reportedAt"])
+        self.assertNotEqual(steps["2"]["reportedAt"], steps["4"]["reportedAt"])
+
+    def test_no_steps_yields_nothing(self):
+        from routes import _creative_force_current_step
+        self.assertEqual(_creative_force_current_step({}), {})
 
 
 class CreativeForceClientScopeTests(unittest.TestCase):
