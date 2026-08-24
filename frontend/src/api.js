@@ -1,8 +1,6 @@
-// Direct Airtable REST API — no backend required
-// Requires VITE_AIRTABLE_TOKEN in .env
-
-const BASE_ID = 'appE30EGZv8OzssDx';
-const AT_URL  = `https://api.airtable.com/v0/${BASE_ID}`;
+// Every call goes through the Marks Photo API. The browser holds no Airtable
+// credential: a VITE_* value is compiled into the public bundle, so a token
+// here would be readable by anyone who loads the site.
 const BACKEND_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5057/api';
 
 const TABLES = {
@@ -55,47 +53,6 @@ const F = {
   SKU_REFERENCE_DATA: 'Reference Data',
 };
 
-function token() {
-  const t = import.meta.env.VITE_AIRTABLE_TOKEN;
-  if (!t) throw new Error('VITE_AIRTABLE_TOKEN is not set in .env');
-  return t;
-}
-
-async function at(method, path, body) {
-  const res = await fetch(`${AT_URL}/${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token()}`,
-      'Content-Type': 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({}));
-    throw new Error(e?.error?.message || `Airtable error ${res.status}`);
-  }
-  return res.json();
-}
-
-async function airtableMeta(path) {
-  const res = await fetch(`https://api.airtable.com/v0/meta/bases/${BASE_ID}${path}`, {
-    headers: {
-      Authorization: `Bearer ${token()}`,
-    },
-  });
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({}));
-    throw new Error(e?.error?.message || `Airtable metadata error ${res.status}`);
-  }
-  return res.json();
-}
-
-function fieldChoiceNames(field) {
-  const choices = field?.options?.choices;
-  return Array.isArray(choices)
-    ? choices.map(choice => choice?.name).filter(Boolean)
-    : [];
-}
 
 async function backend(method, path, body) {
   const isFormData = body instanceof FormData;
@@ -393,11 +350,9 @@ api.createUser = async (data) => backend('POST', '/users', data);
 api.updateUser = async (id, data) => backend('PUT', `/users/${id}`, data);
 
 api.airtableSingleSelectOptions = async ({ tableName, fieldName }) => {
+  const params = new URLSearchParams({ tableName, fieldName });
   try {
-    const metadata = await airtableMeta('/tables');
-    const table = (metadata.tables || []).find(item => item.name === tableName);
-    const field = (table?.fields || []).find(item => item.name === fieldName);
-    return { options: fieldChoiceNames(field) };
+    return await backend('GET', `/airtable/single-select-options?${params.toString()}`);
   } catch {
     return { options: [] };
   }

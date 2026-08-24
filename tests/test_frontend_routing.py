@@ -1159,6 +1159,16 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn(".receiving-match-correction-actions", self.styles)
         self.assertNotIn("<em>Best</em>", self.source)
 
+    def test_browser_holds_no_airtable_credential(self):
+        # A VITE_* value is compiled into the public bundle, so an Airtable token
+        # in the frontend would be readable by anyone who loads the site.
+        api_source = (Path(__file__).resolve().parents[1] / "frontend/src/api.js").read_text()
+        self.assertNotIn("VITE_AIRTABLE_TOKEN", api_source)
+        self.assertNotIn("api.airtable.com", api_source)
+        self.assertNotIn("VITE_AIRTABLE_TOKEN", self.source)
+        # The carrier dropdown reads its choices through the API instead.
+        self.assertIn("/airtable/single-select-options?", api_source)
+
     def test_image_counts_are_ecomm_only(self):
         # A Packaging release shoots the package itself, so bundle and total
         # image counts are neither asked for, stated, nor recorded.

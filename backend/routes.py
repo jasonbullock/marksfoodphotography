@@ -3124,6 +3124,39 @@ def _execute_intake_plan(plan):
 
 # ── Locations ─────────────────────────────────────────────────────────────────
 
+@api.get("/airtable/single-select-options")
+def airtable_single_select_options():
+    """Choices for one single-select field, read server-side.
+
+    The browser used to call Airtable's metadata API directly, which meant
+    shipping an Airtable token in the bundle for a carrier dropdown. The token
+    belongs on the server; the browser only needs the resulting list.
+    """
+    table_name = (request.args.get("tableName") or "").strip()
+    field_name = (request.args.get("fieldName") or "").strip()
+    if not table_name or not field_name:
+        return err("tableName and fieldName are required.")
+    if not airtable.is_configured:
+        return jsonify({"options": []})
+    try:
+        response = requests.get(
+            f"https://api.airtable.com/v0/meta/bases/{C.AIRTABLE_BASE_ID}/tables",
+            headers=airtable._headers(),
+            timeout=20,
+        )
+        response.raise_for_status()
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    except requests.RequestException:
+        current_app.logger.exception("Could not read Airtable table metadata")
+        return jsonify({"options": []})
+
+    table = next((t for t in response.json().get("tables", []) if t.get("name") == table_name), None)
+    field = next((f for f in (table or {}).get("fields", []) if f.get("name") == field_name), None)
+    choices = ((field or {}).get("options") or {}).get("choices") or []
+    return jsonify({"options": [c.get("name", "") for c in choices if c.get("name")]})
+
+
 @api.get("/locations")
 def list_locations():
     data = airtable.list_records(

@@ -5886,7 +5886,7 @@ function SettingsPage({ cards = null } = {}) {
           {!loading && !s?.airtableConfigured && (
             <div className="setting-row">
               <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
-                Add <code>VITE_AIRTABLE_TOKEN=pat…</code> to <code>frontend/.env</code> then restart Vite.
+                Set <code>AIRTABLE_API_KEY</code> and <code>AIRTABLE_BASE_ID</code> on the API service, then redeploy.
               </span>
             </div>
           )}
