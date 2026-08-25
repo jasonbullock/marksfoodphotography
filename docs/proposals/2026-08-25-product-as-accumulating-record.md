@@ -105,51 +105,25 @@ But duplication is an identity problem, not a timing problem. With a reliable ke
 early is safe because the second arrival merges. Without one, creating is unsafe whenever
 it happens.
 
-### What the source data actually contains
+### We do not police their data
 
-The sheet was measured before designing against it. Of 171 rows: 119 have no UPC at all,
-43 are the wrong length, and **nine carry a valid twelve-digit UPC**. None fail a check
-digit, because almost none are UPCs. Row 51 reads `NO UPC? SG10293` — someone met this and
-wrote a question mark into the cell.
+Identifiers are taken as given. A UPC that fails its check digit, an Mbox a digit short, an
+internal item number where a barcode was expected — none of it is refused, and none of it is
+corrected on their behalf. If the client wanted perfect data they would maintain a source of
+truth; they have said they will not.
 
-The short codes are mostly not recoverable. Zero-padding fixes 13; supplying a missing check
-digit fixes none; 30 are neither. `1122500489` through `1122500494` are consecutive numbers
-where padding validates exactly one, which is not a formatting artifact — those are internal
-item numbers, not barcodes.
+The measurements are still worth stating, because they show what the system is working with.
+Of 171 sheet rows, nine carry a valid twelve-digit UPC, 43 are the wrong length and 119 are
+blank. Six real Structure Forms, by contrast, carry fifteen valid UPCs out of fifteen. One of
+those six states an Mbox of seven characters where the others state eight.
 
-So a check digit cannot gate input for this client. It remains useful as a *signal*: it
-correctly identified that these are not UPCs.
+That is the shape of the input, not a list of things to reject. `MI00204` is valid enough to
+work with. The only cost of a wrong project number is that a search for the right one misses,
+and that is the client's cost to bear.
 
-### The forms are clean; the sheet is not
-
-Six real Structure Forms were parsed. Every one read, and between them they carry fifteen
-SKU rows.
-
-| source | valid 12-digit UPCs |
-| --- | --- |
-| Structure Forms (6 forms, 15 SKUs) | **15 of 15** |
-| Google sheet (171 rows) | 9 of 171 |
-
-That settles where identity comes from. The forms state proper UPCs, every time. The sheet
-holds a degraded copy — leading zeros stripped by the spreadsheet, internal item numbers in
-place of barcodes, and 119 rows with nothing at all.
-
-It also reverses an assumption worth naming: the form is not the poorer source that arrives
-late. It is the better source that arrives late.
-
-### Project facts need validating, because one error hides a whole project
-
-The same six forms show why. Five carry an Mbox of `MI` and six digits. One carries
-`MI00204` — seven characters, a digit short — and its own filename says `2046`. That
-truncated value is already on all four ice cream Products in Airtable.
-
-A SKU typo costs one product. An Mbox typo hides an entire project: anyone searching
-`MI002046` finds nothing, which is precisely the failure the chat keeps working around.
-Project facts are shared across every SKU on a form, so they earn a format check that SKU
-fields do not.
-
-Three of the six forms also carry no WKFT number at all, so it cannot be treated as always
-present.
+What this does mean is that identifiers cannot be *assumed* good, so nothing may be merged
+silently on a near match. That is a different discipline from validation: we accept everything
+and guess at nothing.
 
 ### Exact merges, suggested matches
 
@@ -222,8 +196,13 @@ plainly which.
 
 **Assemble it here.** No form exists and the merchandise is on the shelf. This is
 origination, not a fallback: the app becomes the record of a Product that no client document
-describes, built from whatever arrived piecemeal. Refusing it means physical goods cannot be
-shot because paperwork never came, which is not the receiver's problem to solve.
+describes, built from whatever arrived piecemeal.
+
+This is an ordinary case, not a rare one. Data gets handed over in a chat with "push it
+through to production" and no form ever follows. Without this path that work cannot proceed
+at all, and no alternative solves it — the only other option is telling the studio that
+goods on its shelf cannot be shot because paperwork never came, which is not the receiver's
+problem to solve and not a position worth defending.
 
 Rung three is less invention than it appears. `manualProductInfo` already collects name,
 UPC, CVID and job number on unmatched cards, and photo-production validation already scores
@@ -314,11 +293,8 @@ show it before it goes, let a person send it.
 - Who confirms a record as official, and does that need recording — a name and a moment, the
   way merchandise verification does it?
 - Is CVID derivable? A dozen real pairs answers it.
-- What is the Mbox format — `MI` plus six digits, on the evidence of five forms out of six?
-  A validated format catches truncations like `MI00204` at ingest instead of after they have
-  propagated to every SKU on the form.
-- Should the ice cream Products be corrected to `MI002046` now, and does anything downstream
-  already reference the truncated value?
+- When a Structure Form arrives after the merchandise, what counts as matching "within
+  reason" — identifier alone, name alone, or either with a person confirming?
 
 ## Deliberately not automated
 
@@ -334,21 +310,16 @@ people will type rather than look, and the Product table fills with near-duplica
 merge rule can fix — because they will have subtly different UPCs, typed off boxes under
 time pressure.
 
-No single mitigation is sufficient. Five, layered, are:
-
-**The check digit, as a signal.** A UPC's last digit is a checksum: every single-digit typo
-fails it and nine of ten adjacent transpositions fail it, at no cost. But it cannot gate
-input here, because only nine of 171 sheet rows carry a code that would pass. It says "this
-is not a retail barcode", which is worth showing to whoever is typing and worthless as a
-refusal.
+The answer is not validation. Refusing bad identifiers would reject most of what this
+client sends and solve a problem that is theirs, not ours. Four things that do work:
 
 **Scan over type.** Receiving already supports scanning, and a scanned code is machine-read.
 Whether a code was scanned or typed should be recorded, because it is the difference between
 an identifier and someone's transcription of one.
 
-**Near-duplicate refusal.** The merge already looks up `(client, UPC)`. It should also look
-for codes one edit away and for products with a close name, and when it finds one, offer it
-rather than creating a second record. The failure this prevents is the compounding one.
+**Show the near-duplicates.** Before creating, look for codes one edit away and for close
+names, and offer them. Not a refusal — the person may know something the system does not —
+but they should never create a second record without having been shown the first.
 
 **Search before create.** Origination is only reachable after the match list has been shown.
 Not a warning — an ordering, so nobody arrives there without having looked.
@@ -357,6 +328,6 @@ Not a warning — an ordering, so nobody arrives there without having looked.
 and its origin is recorded. If a client needs records assembled by hand often, that is worth
 knowing and worth raising with them, and it is only knowable if it is countable.
 
-The design should be judged on whether the easy path stays the correct one. The check digit
-is what makes that plausible rather than aspirational: the cheapest path — scan the package —
-is also the most reliable one.
+The design should be judged on whether the easy path stays the correct one. Scanning the
+package is less work than typing it, so the cheapest path is already the most reliable —
+that, rather than any check on the value, is what makes this hold at a busy receiving desk.
