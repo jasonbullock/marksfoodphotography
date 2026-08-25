@@ -10,6 +10,7 @@ import json
 import os
 import random
 import re
+import threading
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -5592,6 +5593,38 @@ def preview_creative_force_product_feed():
     })
 
 
+def _forward_creative_force_event(body, signature, forwarded_from):
+    """Relay one authentic event to a second instance, in the background.
+
+    Sent verbatim with its signature, so the receiver validates exactly what
+    Creative Force sent. Never raised and never awaited: the event is already
+    accepted here, and a sleeping laptop must not cost production anything.
+
+    The X-CF-Forwarded header stops a relay from being relayed onward, which
+    would otherwise loop if both ends were ever configured to forward.
+    """
+    url = str(C.CREATIVE_FORCE_FORWARD_URL or "").strip()
+    if not url or forwarded_from:
+        return
+
+    def send():
+        try:
+            requests.post(
+                url,
+                data=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-CF-Signature": signature,
+                    "X-CF-Forwarded": "1",
+                },
+                timeout=8,
+            )
+        except Exception:  # noqa: BLE001 - a relay failure is not production's problem
+            pass
+
+    threading.Thread(target=send, daemon=True).start()
+
+
 @api.post("/integrations/creative-force/webhook")
 def creative_force_webhook():
     secret = str(C.CREATIVE_FORCE_WEBHOOK_SECRET or "")
@@ -5601,6 +5634,11 @@ def creative_force_webhook():
     expected = hmac.new(secret.encode("utf-8"), request.get_data(), hashlib.sha256).hexdigest()
     if not signature or not hmac.compare_digest(expected, signature):
         return err("Invalid Creative Force webhook signature.", 401)
+    # Relayed here rather than at each exit: the event is authentic, and every
+    # branch below is a legitimate outcome a second instance should also see.
+    _forward_creative_force_event(
+        request.get_data(), signature, request.headers.get("X-CF-Forwarded", ""),
+    )
     payload = request.get_json(silent=True) or {}
     sync = _creative_force_sync_from_payload(payload)
     received_at = _now_iso()

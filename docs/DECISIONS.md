@@ -1388,3 +1388,26 @@ build are untouched. Only the deployed static site sets it.
 
 `CORS_ORIGINS` keeps both origins: the redirect is client-side, so a request can still
 arrive from the old host before the redirect runs.
+
+## 2026-08-25 - Production Relays Creative Force Events To Development
+
+Creative Force posts to one URL. Pointing it at production means a development instance
+sees nothing; pointing it at the tunnel means production sees nothing. Switching the URL by
+hand for every debugging session is the kind of step that gets forgotten and then blamed on
+the code.
+
+Production relays a copy instead. `hooks.walnutcontent.com` is the permanent address and
+resolves to Render; after an event's signature passes, the raw body and its `X-CF-Signature`
+are POSTed verbatim to `CREATIVE_FORCE_FORWARD_URL`, so the receiver validates exactly what
+Creative Force sent and behaves as though it had been called directly.
+
+Relaying happens immediately after the signature check rather than at each of the handler's
+six exits, because every branch below it is a legitimate outcome a second instance should
+also see — including the ones that ignore the event.
+
+It is sent on a daemon thread with a short timeout and every failure swallowed. The event
+is already accepted by then, so a sleeping laptop cannot cost production anything.
+
+`X-CF-Forwarded` marks a relay so it is never relayed onward. The forward URL is unset on
+development, which is the real guard; the header covers the case where both ends are
+configured by mistake.

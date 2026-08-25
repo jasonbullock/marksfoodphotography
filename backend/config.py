@@ -47,6 +47,11 @@ class Config:
     R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "")
     R2_PUBLIC_BASE_URL = os.getenv("R2_PUBLIC_BASE_URL", "")
     CREATIVE_FORCE_WEBHOOK_SECRET = os.getenv("CREATIVE_FORCE_WEBHOOK_SECRET", "")
+    # Where to relay a copy of each authentic webhook event, so Creative Force can
+    # point at one URL forever while a development instance still sees live
+    # traffic. Unset means no relay, which is what a development instance runs
+    # with - otherwise two instances would forward to each other.
+    CREATIVE_FORCE_FORWARD_URL = os.getenv("CREATIVE_FORCE_FORWARD_URL", "")
     CREATIVE_FORCE_MAIN_WORKFLOW_NAME = os.getenv("CREATIVE_FORCE_MAIN_WORKFLOW_NAME", "")
     # The main workflow's steps in order. Creative Force does not encode its own
     # ordering in StepId, so a reset - which stamps every step the same instant -

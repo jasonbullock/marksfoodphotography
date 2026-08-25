@@ -1,11 +1,13 @@
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from routes import _creative_force_sync_from_payload, _creative_force_status  # noqa: E402
+from config import Config  # noqa: E402
 
 
 WORK_UNIT_EVENT = {
@@ -297,3 +299,68 @@ class CreativeForceClientScopeTests(unittest.TestCase):
         with patch.object(C, "CREATIVE_FORCE_CLIENT_IDS", []), \
              patch.object(C, "CREATIVE_FORCE_CLIENT_NAMES", []):
             self.assertTrue(_creative_force_client_is_ours(self.MEIJER)[0])
+
+
+class CreativeForceForwardTests(unittest.TestCase):
+    """Creative Force points at one URL forever; production relays a copy so a
+    development instance still sees live traffic."""
+
+    def _forward(self, body=b'{"a":1}', signature="sig", forwarded_from="", url="https://dev.example/hook"):
+        import routes
+        sent = {}
+
+        class FakeThread:
+            def __init__(self, target, daemon=None):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        with patch.object(Config, "CREATIVE_FORCE_FORWARD_URL", url), \
+             patch("routes.threading.Thread", FakeThread), \
+             patch("routes.requests.post") as post:
+            routes._forward_creative_force_event(body, signature, forwarded_from)
+            sent["called"] = post.called
+            sent["call"] = post.call_args
+        return sent
+
+    def test_the_event_is_relayed_verbatim_with_its_signature(self):
+        sent = self._forward()
+        self.assertTrue(sent["called"])
+        self.assertEqual(sent["call"].args[0], "https://dev.example/hook")
+        self.assertEqual(sent["call"].kwargs["data"], b'{"a":1}')
+        self.assertEqual(sent["call"].kwargs["headers"]["X-CF-Signature"], "sig")
+
+    def test_a_relay_is_marked_so_it_cannot_be_relayed_onward(self):
+        sent = self._forward()
+        self.assertEqual(sent["call"].kwargs["headers"]["X-CF-Forwarded"], "1")
+
+    def test_an_already_forwarded_event_is_not_forwarded_again(self):
+        # Both ends configured to forward would otherwise loop.
+        self.assertFalse(self._forward(forwarded_from="1")["called"])
+
+    def test_no_forward_url_means_no_relay(self):
+        self.assertFalse(self._forward(url="")["called"])
+
+    def test_a_relay_failure_never_reaches_the_caller(self):
+        import routes
+
+        class FakeThread:
+            def __init__(self, target, daemon=None):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        with patch.object(Config, "CREATIVE_FORCE_FORWARD_URL", "https://dev.example/hook"), \
+             patch("routes.threading.Thread", FakeThread), \
+             patch("routes.requests.post", side_effect=OSError("laptop asleep")):
+            routes._forward_creative_force_event(b"{}", "sig", "")  # must not raise
+
+    def test_forwarding_happens_only_after_the_signature_passes(self):
+        import routes
+        source = Path(routes.__file__).read_text(encoding="utf-8")
+        handler = source.split("def creative_force_webhook():", 1)[1].split("\n@api", 1)[0]
+        reject = handler.index("Invalid Creative Force webhook signature")
+        relay = handler.index("_forward_creative_force_event(")
+        self.assertLess(reject, relay)
