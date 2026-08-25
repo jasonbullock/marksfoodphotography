@@ -1171,3 +1171,66 @@ class SourceCheckTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SourceRefreshEfficiencyTests(unittest.TestCase):
+    """The sheet is a free public CSV; Airtable is what costs. The refresh is
+    shaped so an unchanged sheet costs nothing."""
+
+    def setUp(self):
+        import routes
+        routes._SOURCE_SHEET_FINGERPRINTS.clear()
+
+    def test_an_unchanged_sheet_skips_the_products_scan(self):
+        import routes
+        with patch.object(routes, "_fetch_topco_source_rows", return_value=([{"sourceRowNumber": 5}], "A1:Z50")), \
+             patch.object(routes, "_list_all_records") as scan:
+            first = routes.refresh_topco_source_linked_products("recC", enforce_permissions=False)
+            self.assertFalse(first.get("sourceUnchanged", False))
+            scan.reset_mock()
+            second = routes.refresh_topco_source_linked_products("recC", enforce_permissions=False)
+
+        self.assertTrue(second["sourceUnchanged"])
+        scan.assert_not_called()
+
+    def test_a_changed_sheet_does_the_work(self):
+        import routes
+        with patch.object(routes, "_list_all_records", return_value=[]):
+            with patch.object(routes, "_fetch_topco_source_rows", return_value=([{"sourceRowNumber": 5}], "A1:Z50")):
+                routes.refresh_topco_source_linked_products("recC", enforce_permissions=False)
+            with patch.object(routes, "_fetch_topco_source_rows", return_value=([{"sourceRowNumber": 6}], "A1:Z50")):
+                changed = routes.refresh_topco_source_linked_products("recC", enforce_permissions=False)
+        self.assertFalse(changed.get("sourceUnchanged", False))
+
+    def test_a_person_clicking_refresh_is_never_skipped(self):
+        import routes
+        with patch.object(routes, "_fetch_topco_source_rows", return_value=([{"sourceRowNumber": 5}], "A1:Z50")), \
+             patch.object(routes, "_list_all_records", return_value=[]):
+            routes.refresh_topco_source_linked_products("recC", enforce_permissions=False)
+            forced = routes.refresh_topco_source_linked_products("recC", enforce_permissions=False, force=True)
+        self.assertFalse(forced.get("sourceUnchanged", False))
+
+    def test_a_sheet_read_failure_does_not_skip_the_refresh(self):
+        import routes
+        with patch.object(routes, "_topco_source_sheet_fingerprint", side_effect=OSError("sheet down")):
+            self.assertFalse(routes._topco_source_sheet_unchanged("recC", 100))
+
+
+class SourceRefreshWorkerTests(unittest.TestCase):
+    """Asking Airtable 'is it time yet' every minute cost more than the work."""
+
+    def test_the_loop_sleeps_until_something_is_due(self):
+        from app import _next_source_refresh_sleep
+        configs = [{"clientId": "recC", "intervalSeconds": 600}]
+        self.assertEqual(_next_source_refresh_sleep(configs, {"recC": 0}, 550), 50)
+
+    def test_sleep_is_clamped_at_both_ends(self):
+        from app import (_next_source_refresh_sleep, SOURCE_REFRESH_MIN_SLEEP_SECONDS,
+                         SOURCE_REFRESH_MAX_SLEEP_SECONDS)
+        configs = [{"clientId": "recC", "intervalSeconds": 600}]
+        self.assertEqual(_next_source_refresh_sleep(configs, {"recC": 0}, 0), SOURCE_REFRESH_MAX_SLEEP_SECONDS)
+        self.assertEqual(_next_source_refresh_sleep(configs, {"recC": 0}, 9999), SOURCE_REFRESH_MIN_SLEEP_SECONDS)
+
+    def test_no_configured_clients_still_sleeps(self):
+        from app import _next_source_refresh_sleep, SOURCE_REFRESH_MAX_SLEEP_SECONDS
+        self.assertEqual(_next_source_refresh_sleep([], {}, 0), SOURCE_REFRESH_MAX_SLEEP_SECONDS)

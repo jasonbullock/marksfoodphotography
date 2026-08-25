@@ -1411,3 +1411,66 @@ is already accepted by then, so a sleeping laptop cannot cost production anythin
 `X-CF-Forwarded` marks a relay so it is never relayed onward. The forward URL is unset on
 development, which is the real guard; the header covers the case where both ends are
 configured by mistake.
+
+## 2026-08-25 - A Product Is What We Know So Far, Not The Client's Record
+
+No authoritative source of product data exists, and the evidence is that none is coming.
+The shared spreadsheet was meant to be it; the client's producers have said in writing that
+maintaining it is not their job and that the studio team should input the data instead.
+Structure Forms arrive late, often after the merchandise, sometimes never, and carry only
+part of what a shoot needs — the recent ones supply WKFT and supplier but no CVID. The rest
+turns up piecemeal in Teams messages.
+
+So the system stops treating a Product as the client's record that merchandise is matched
+against, and starts treating it as the accumulating record of what is known about a SKU.
+Merchandise arrives first; data catches up.
+
+Three things follow.
+
+Every ingest path is a contributor rather than an authority. Receiving supplies name and
+identifier, a Structure Form adds WKFT, Mbox, supplier, studio and request type, a chat
+message adds a CVID. Each fills gaps in one record instead of competing to own it. The
+Structure Form import and source-row activation already merge on UPC; they simply do not
+compose yet.
+
+Completeness is computed, never a precondition. `photoProductionRequirements` already
+states per client and per deliverable which fields a shoot needs, and the card already
+reports which are absent. That evaluation is the gate, not where the data came from.
+
+The absent list is worth sending. Knowing exactly which fields are missing for which SKUs
+is the request the studio currently makes by hand and loses in a chat thread.
+
+The spreadsheet stays connected for now. It is one contributor among several, and the
+intent is that disconnecting it later is a configuration change rather than a rewrite:
+new ingest paths sit beside `sourceCheckRules` rather than on top of it, and nothing new
+assumes a sheet row exists.
+
+## 2026-08-25 - The Source Refresh Stopped Costing More Than It Delivered
+
+The Airtable workspace ran 177,000 API calls against a 100,000 monthly allowance. This base
+holds 28 records, so the volume was not data — it was a background loop.
+
+The worker woke every 60 seconds and read the whole Clients table to ask whether a refresh
+was due. Topco's interval is 600 seconds, so 97% of those reads answered "not yet" — around
+43,000 calls a month to schedule 4,300 refreshes. It now re-reads the schedule at the
+cadence the schedule itself names, capped at five minutes so an edit on the Clients page
+still takes effect promptly, and sleeps until something is actually due instead of waking
+every minute.
+
+The refresh itself scanned Products before looking at the sheet, so it paid the Airtable
+cost whether or not anything had changed. That is backwards. The sheet is a public CSV
+export: free to fetch, and it offers no ETag or Last-Modified, so a conditional request is
+impossible — but fingerprinting the parsed rows achieves the same thing. The sheet is read
+first, and Airtable is touched only when the fingerprint moves.
+
+For a sheet the client rarely edits — which is the premise of everything else here — that
+is close to zero calls. It also inverts the tradeoff: polling more often now costs nothing,
+because frequency is paid in free sheet reads rather than metered Airtable calls.
+
+A manual refresh passes `force`, because a person clicking Refresh means it. A failed sheet
+read reports "changed" so the refresh proceeds; skipping work because the check broke would
+be worse than doing it twice.
+
+Worth noting for later: each process that starts the worker runs its own loop, so a
+multi-worker gunicorn multiplies all of this, and a development server running alongside
+production doubles it.

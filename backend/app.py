@@ -34,14 +34,51 @@ def _should_start_source_refresh_worker():
     return not Config.FLASK_DEBUG
 
 
+# Reading the Clients table to ask "is it time yet" cost one Airtable call a
+# minute - roughly 43,000 a month - while the work it gates runs every ten. The
+# schedule is re-read on the cadence the work actually happens, and the loop
+# sleeps until something is due rather than waking every minute to find nothing.
+SOURCE_REFRESH_CONFIG_MAX_TTL_SECONDS = 300
+SOURCE_REFRESH_MIN_SLEEP_SECONDS = 30
+SOURCE_REFRESH_MAX_SLEEP_SECONDS = 300
+
+
+def _next_source_refresh_sleep(configs, last_runs, now):
+    """Seconds until the earliest client is due, clamped to a sane window."""
+    if not configs:
+        return SOURCE_REFRESH_MAX_SLEEP_SECONDS
+    waits = []
+    for config in configs:
+        client_id = config.get("clientId")
+        if not client_id:
+            continue
+        interval = config.get("intervalSeconds") or 300
+        waits.append(interval - (now - last_runs.get(client_id, 0)))
+    if not waits:
+        return SOURCE_REFRESH_MAX_SLEEP_SECONDS
+    return max(SOURCE_REFRESH_MIN_SLEEP_SECONDS, min(SOURCE_REFRESH_MAX_SLEEP_SECONDS, min(waits)))
+
+
 def _source_refresh_worker():
     last_runs = {}
+    configs, configs_read_at = [], 0.0
     # Give Flask startup a moment before the first background Airtable/sheet read.
     time.sleep(10)
     while True:
         try:
             now = time.monotonic()
-            for refresh_config in source_refresh_client_configs():
+            # The schedule lives in Airtable, so re-reading it is itself an API
+            # call. Refresh it no more often than the shortest interval it names.
+            # Capped so an edit on the Clients page takes effect within minutes,
+            # rather than waiting out the longest interval it configures.
+            config_ttl = min(
+                SOURCE_REFRESH_CONFIG_MAX_TTL_SECONDS,
+                min([c.get("intervalSeconds") or 300 for c in configs], default=300),
+            )
+            if not configs or now - configs_read_at >= config_ttl:
+                configs = source_refresh_client_configs()
+                configs_read_at = now
+            for refresh_config in configs:
                 client_id = refresh_config.get("clientId")
                 interval = refresh_config.get("intervalSeconds") or 300
                 if not client_id or now - last_runs.get(client_id, 0) < interval:
@@ -53,9 +90,11 @@ def _source_refresh_worker():
                         enforce_permissions=False,
                     )
                     last_runs[client_id] = now
+            sleep_for = _next_source_refresh_sleep(configs, last_runs, time.monotonic())
         except Exception as exc:  # pragma: no cover - defensive background logging
             app.logger.warning("Source-linked Product refresh failed: %s", exc)
-        time.sleep(60)
+            sleep_for = SOURCE_REFRESH_MAX_SLEEP_SECONDS
+        time.sleep(sleep_for)
 
 
 def start_source_refresh_worker():

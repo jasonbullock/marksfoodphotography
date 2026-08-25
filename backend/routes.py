@@ -3834,11 +3834,50 @@ def _source_snapshot_for_topco_product(record):
     return {**snapshot, "sourceRowNumber": source_row_number}
 
 
-def refresh_topco_source_linked_products(client_id, limit=100, enforce_permissions=True):
+# The sheet is a public CSV export: free to fetch, and it offers no ETag or
+# Last-Modified, so a conditional request is impossible. What costs is the
+# Airtable work that follows. Fingerprinting the rows lets the sheet be polled
+# as often as we like while Airtable is touched only when something changed -
+# which, for a sheet the client rarely edits, is almost never.
+_SOURCE_SHEET_FINGERPRINTS = {}
+
+
+def _topco_source_sheet_fingerprint(limit):
+    rows, _source_range = _fetch_topco_source_rows(limit, max_age_seconds=0)
+    payload = json.dumps(rows, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _topco_source_sheet_unchanged(client_id, limit):
+    """True when the sheet reads exactly as it did last time we looked."""
+    try:
+        digest = _topco_source_sheet_fingerprint(limit)
+    except Exception:  # noqa: BLE001 - a sheet read failure must not skip the refresh
+        return False
+    previous = _SOURCE_SHEET_FINGERPRINTS.get(client_id)
+    _SOURCE_SHEET_FINGERPRINTS[client_id] = digest
+    return previous is not None and previous == digest
+
+
+def _unchanged_refresh_result():
+    return {
+        "checked": 0,
+        "updated": 0,
+        "skipped": 0,
+        "missingSourceRows": [],
+        "sourceUnchanged": True,
+        "summary": {"itemsCreated": 0, "itemsUpdated": 0, "rowsSkipped": 0, "errors": 0, "warnings": 0},
+    }
+
+
+def refresh_topco_source_linked_products(client_id, limit=100, enforce_permissions=True, force=False):
     try:
         refresh_limit = max(1, min(int(limit or 100), 500))
     except (TypeError, ValueError):
         refresh_limit = 100
+    # Checked before the Products scan: an unchanged sheet costs no Airtable call.
+    if not force and _topco_source_sheet_unchanged(client_id, refresh_limit):
+        return _unchanged_refresh_result()
     product_records = _list_all_records(C.PRODUCTS_TABLE)
     permitted_records = _filter_by_client_field(product_records, C.F_ITEM_CLIENT) if enforce_permissions else product_records
     linked_products = []
@@ -4111,7 +4150,7 @@ def refresh_topco_linked_source_products():
         if not client_id:
             return err("Topco client is not available for this user.", 404)
     try:
-        result = refresh_topco_source_linked_products(client_id, limit=body.get("limit") or 100)
+        result = refresh_topco_source_linked_products(client_id, limit=body.get("limit") or 100, force=True)
     except requests.RequestException as exc:
         current_app.logger.exception("Topco linked Product source refresh failed")
         return err(f"Could not read source sheet: {exc}", 502)
