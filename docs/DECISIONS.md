@@ -1567,3 +1567,30 @@ Product exists.
 The distinction worth keeping: contributing and syncing are different. A form, receiving or
 a chat message *contributes* what it knows and never overwrites. The sheet *syncs* fields it
 owns. Both must agree about identity; only one may overwrite.
+
+## 2026-08-25 - Every Product Creation Now Goes Through One Of Two Doors
+
+`POST /api/items` created a Product unconditionally: no lookup, no duplicate check. It is
+the endpoint behind the disabled "create an incomplete Product" form, so re-enabling that
+without changing it would have made hand entry the fastest way to duplicate a SKU.
+
+It goes through the merge now. A known identifier fills gaps and returns 200 rather than
+creating a second record; an unknown one creates and returns 201.
+
+The merge also writes the identifier into both `UPC` and `Identifier` when it creates. That
+removes at its source the disagreement patched at the lookup earlier: Products made from a
+form carried a UPC and no Identifier, and the sheet import indexes Identifier. Filling both
+means the two paths describe the same product the same way from the start.
+
+Two doors remain, and that is the intended shape:
+
+`merge_product` — a Structure Form, `POST /api/items`, and in due course receiving and the
+Planning ladder. Contributes what it knows, never overwrites, records which source answered
+which field.
+
+The intake plan executor — the source-sheet import and source-row activation. Syncs fields
+the sheet owns, and overwriting is the point. It resolves an existing Product first, through
+the same identifier index the merge uses.
+
+Nothing else creates a Product. The remaining `create_record` calls against the Products
+table are those two.

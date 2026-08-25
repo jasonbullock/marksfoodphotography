@@ -182,3 +182,61 @@ class IntakeLookupTests(unittest.TestCase):
     def test_nothing_to_look_up_finds_nothing(self):
         self.assertIsNone(routes._existing_item_for({}, ""))
         self.assertIsNone(routes._existing_item_for({}, None))
+
+
+class CreateItemEndpointTests(unittest.TestCase):
+    """POST /api/items created without looking, which is how one SKU acquires two
+    records. It goes through the merge like every other path now."""
+
+    def setUp(self):
+        from app import create_app
+        from routes import AUTH_SESSION_KEY
+        self.client = create_app().test_client()
+        with self.client.session_transaction() as session:
+            session[AUTH_SESSION_KEY] = {"id": "recU", "name": "P", "displayName": "P",
+                                         "role": "Admin", "active": True,
+                                         "clientIds": [], "allClients": True}
+
+    def _post(self, body, existing=None):
+        record = {"id": "recNew", "fields": {C.F_ITEM_IDENTIFIER: body.get("primaryMatchKey", "")}}
+        with patch.object(routes, "_list_all_records", return_value=existing or []), \
+             patch.object(routes, "_client_permitted", return_value=True), \
+             patch.object(routes, "_client_config", return_value={}), \
+             patch.object(routes, "_clients_by_id", return_value={}), \
+             patch.object(routes, "_issues_by_item_id", return_value={}), \
+             patch.object(routes, "_create_history_event"), \
+             patch.object(routes.airtable, "create_record", return_value=record) as create, \
+             patch.object(routes.airtable, "update_record", return_value=record) as update:
+            response = self.client.post("/api/items", json=body)
+        return response, create, update
+
+    def test_a_new_identifier_creates_and_reports_201(self):
+        response, create, _ = self._post({"clientId": "recC", "primaryMatchKey": "036800120457",
+                                          "name": "Vinegar"})
+        self.assertEqual(response.status_code, 201)
+        create.assert_called_once()
+
+    def test_both_identifier_fields_are_written(self):
+        _response, create, _ = self._post({"clientId": "recC", "primaryMatchKey": "036800120457",
+                                           "name": "Vinegar"})
+        written = create.call_args.args[1]
+        self.assertEqual(written[C.F_ITEM_UPC], "036800120457")
+        self.assertEqual(written[C.F_ITEM_IDENTIFIER], "036800120457")
+
+    def test_a_known_identifier_does_not_create_a_second_record(self):
+        existing = [{"id": "recP", "fields": {C.F_ITEM_CLIENT: ["recC"],
+                                              C.F_ITEM_UPC: "036800120457",
+                                              C.F_ITEM_NAME: "Vinegar"}}]
+        response, create, _ = self._post({"clientId": "recC", "primaryMatchKey": "036800120457",
+                                          "name": "Vinegar"}, existing=existing)
+        create.assert_not_called()
+        self.assertEqual(response.status_code, 200)
+
+    def test_a_stripped_leading_zero_finds_the_existing_product(self):
+        existing = [{"id": "recP", "fields": {C.F_ITEM_CLIENT: ["recC"],
+                                              C.F_ITEM_UPC: "036800120457",
+                                              C.F_ITEM_NAME: "Vinegar"}}]
+        response, create, _ = self._post({"clientId": "recC", "primaryMatchKey": "36800120457",
+                                          "name": "Vinegar"}, existing=existing)
+        create.assert_not_called()
+        self.assertEqual(response.status_code, 200)

@@ -4331,18 +4331,23 @@ def create_item():
     if validation_error:
         return err(validation_error)
 
-    fields = {
-        C.F_ITEM_NAME: body.get("name") or body.get("product") or identifier,
-        C.F_ITEM_IDENTIFIER: identifier,
-    }
-    if client_id:
-        fields[C.F_ITEM_CLIENT] = [client_id]
-    _apply_item_fields(fields, body)
+    values = {**body, "name": body.get("name") or body.get("product") or identifier}
+    try:
+        # Through the merge like everything else: this endpoint created without
+        # looking, which is how the same SKU acquired two records.
+        data, outcome, _filled = merge_product(
+            client_id, identifier, values, source=str(body.get("source") or "manual"),
+        )
+    except ValueError as error:
+        return err(str(error))
+    except requests.HTTPError as error:
+        return airtable_err(error)
 
-    data = airtable.create_record(C.PRODUCTS_TABLE, fields, by_field_id=False)
-    item_id = data["id"]
-    _create_history_event("Item Created", item_ids=[item_id])
-    return jsonify(_shape_item(data, clients_by_id=_clients_by_id(), issues_by_item_id=_issues_by_item_id())), 201
+    if outcome == "created":
+        _create_history_event("Item Created", item_ids=[data["id"]])
+    shaped = _shape_item(data, clients_by_id=_clients_by_id(), issues_by_item_id=_issues_by_item_id())
+    # 200 when it already existed, because nothing was created.
+    return jsonify(shaped), (201 if outcome == "created" else 200)
 
 
 @api.patch("/items/<record_id>")
@@ -4618,6 +4623,14 @@ def merge_product(client_id, identifier, values, *, source="", reference=None, r
     if existing is None:
         fields = {C.F_ITEM_CLIENT: [client_id]} if client_id else {}
         _apply_item_fields(fields, patch)
+        # Written to both identifier fields. Products made from a form carried a UPC
+        # and no Identifier, and the sheet import indexes Identifier - so the import
+        # could not see them and made a second record for the same SKU. Filling both
+        # removes the disagreement at its source rather than at every lookup.
+        raw = str(identifier).strip()
+        for field in (C.F_ITEM_UPC, C.F_ITEM_IDENTIFIER):
+            if not str(fields.get(field, "") or "").strip():
+                fields[field] = raw
         provenance = _product_reference_data({}, source, sorted(patch), created=True,
                                              reference=reference)
         if provenance:
