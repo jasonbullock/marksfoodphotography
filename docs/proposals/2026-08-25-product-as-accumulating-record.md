@@ -251,6 +251,79 @@ than a brand, the correct code was `FC`, and the instruction was to leave the fi
 alone because assets already existed. A wrong-looking name that assets were delivered under
 is the right name.
 
+### A formula for the token
+
+The six values a human has actually written show the convention:
+
+| product name | what a person wrote |
+| --- | --- |
+| `WAFFLES BLUEBERRY 6 CT 7.4 OZ` | `Waffles GF Blueberry` |
+| `Butter Qtrs Org Plant Based Coconut Oil 16` | `Plantbased Butter Qtrs` |
+| `Clancy's Pretzel Slims Original 8oz` | `26009152_CF_Pretzel Slims` |
+
+Three lessons. They keep the category — `Waffles GF Blueberry`, not `Blueberry` — because a
+filename should say what the thing is, not only how it differs from its siblings. They add
+knowledge that is not in the name: `GF` appears nowhere in the waffle product name, so no
+formula can derive it. And one row holds the entire filename, `{jobNumber}_{brandPrefix}_{token}`,
+because someone did not know what the field was for.
+
+The formula, then, proposes and a person confirms — which fits, because data is verified
+before release regardless.
+
+1. Split the name on anything that is not a letter or digit.
+2. Take the category: the leading run of words every sibling shares, skipping the client's
+   `Brand Prefix`, up to two words. `Ice Cream`, `Bread Crumbs`, `Cheese`.
+
+   Skip the *stored* prefix, never a guessed one. Brand codes sit inside product names —
+   `CT Asiago Cheese`, `FX Organic EVOO`, `TR Cotton Swabs` — and a rule that treats two or
+   three capitals as a brand turns `ICE CREAM` into `Cream`. `Products.Brand Prefix` already
+   holds the answer. `26009152_CF_Pretzel Slims` is the same fact from the other direction:
+   `CF` is Food Club, the brand whose miscoding as `FZ` started the naming argument in the
+   chat.
+3. Take the differentiators: words no sibling shares, dropping filler (`of`, `org`) and
+   packaging words (`scr`, `box`, `ct`).
+4. Join with underscores, in name order, capped at four words.
+5. If two SKUs still collide, add the size — and only then, because size is noise when the
+   names already differ. If they still collide, use the full name.
+
+Never a numeric counter. `-1` and `-2` tell a reader nothing, and the point of the token is
+to be readable in a filename.
+
+Measured on real sibling sets:
+
+| product name | token |
+| --- | --- |
+| `ICE CREAM BLUEBERRY WAFFLE CONE SCR 48 OZ` | `Ice_Cream_Blueberry_Waffle` |
+| `Bread Crumbs Italian Gluten Free 9oz` | `Bread_Crumbs_Italian` |
+| `CT Shredded Parm Cheese 5oz` | `Cheese_Shredded_Parm` |
+| `FX Organic EVOO 16.9oz` | `Organic_Evoo_169oz` |
+| `FX Organic EVOO 33.8oz` | `Organic_Evoo_338oz` |
+
+Every group tested came out unique without a counter: four ice creams, four vinegars, ten CT
+cheeses, eight Freestyle travel items, and a pair distinguished only by size.
+
+The token is generated once and frozen on first use. It depends on its siblings, so adding a
+fifth vinegar later could change what the minimal distinguisher would be — but assets have
+been delivered under the old name by then, and the FZ/FC exchange settles what happens next:
+the name stays.
+
+## Grouping the board by project
+
+A Structure Form describes a project and the SKUs inside it. That is the container the work
+actually arrives in, and it is how the client refers to it — Ashley answers `MI002101` and a
+carton of pretzels is identified.
+
+Planning currently groups by shipment. It should be able to group by project instead, keyed
+on the project name or the Mbox number when one is known. The facts are already on the
+Product: `Project Name`, `Mbox Number`, `WKFT Job Number`, all copied from the form onto
+every SKU it describes.
+
+Grouping this way is also what makes the ask coherent — a request covering four SKUs of one
+project is one message, and the board should show that group the same way the message does.
+
+Merchandise with no project facts yet has to group somewhere. Shipment grouping remains for
+exactly that case, and the choice is a view toggle rather than a replacement.
+
 ## The ask
 
 The strongest signal in three weeks of chat is that the client has told the studio the data
