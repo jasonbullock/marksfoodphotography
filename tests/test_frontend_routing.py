@@ -1290,6 +1290,18 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn('<span className="planning-release-badge-row">', self.source)
         self.assertIn(".planning-release-badge-row", self.styles)
 
+    def test_the_app_redirects_to_its_canonical_host(self):
+        # Render's redirect rules match on path, not host, so a rule on the
+        # service would loop: both hostnames are the same service.
+        entry = (ROOT / "frontend" / "src" / "main.jsx").read_text()
+        self.assertIn("const canonicalHost = import.meta.env.VITE_CANONICAL_HOST;", entry)
+        self.assertIn("if (canonicalHost && window.location.hostname !== canonicalHost) {", entry)
+        # Path and query survive, so a shared link still lands where it meant to.
+        self.assertIn("const target = new URL(window.location.href);", entry)
+        self.assertIn("window.location.replace(target.toString());", entry)
+        # Unset means no redirect, so localhost and preview builds are untouched.
+        self.assertNotIn('VITE_CANONICAL_HOST || "', entry)
+
     def test_release_board_buttons_use_the_site_palette(self):
         # A neutral secondary beside the black primary is the site's own pairing.
         self.assertIn('<button type="button" className="btn" onClick={() => setActivationListOpen(true)}>', self.source)

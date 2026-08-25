@@ -1370,3 +1370,21 @@ which can change without this application changing.
 
 Existing cards were recomputed from their stored step history rather than left waiting for
 the next event.
+
+## 2026-08-25 - The App Has One Address
+
+The site answers on both `marksfoodphotography.onrender.com` and
+`food.walnutcontent.com`. Two live URLs split sessions and bookmarks between them, and a
+session cookie set on one is not sent to the other.
+
+`food.walnutcontent.com` is canonical and the other redirects to it. Render's redirect
+rules match on path rather than host, so a rule on the service would redirect the canonical
+host to itself and loop — both hostnames are the same service. The redirect is therefore in
+the app entry, before anything renders, preserving path and query so a shared link still
+lands where it meant to.
+
+`VITE_CANONICAL_HOST` names the host and is unset by default, so localhost and any preview
+build are untouched. Only the deployed static site sets it.
+
+`CORS_ORIGINS` keeps both origins: the redirect is client-side, so a request can still
+arrive from the old host before the redirect runs.
