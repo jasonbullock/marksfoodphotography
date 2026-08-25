@@ -1234,3 +1234,65 @@ class SourceRefreshWorkerTests(unittest.TestCase):
     def test_no_configured_clients_still_sleeps(self):
         from app import _next_source_refresh_sleep, SOURCE_REFRESH_MAX_SLEEP_SECONDS
         self.assertEqual(_next_source_refresh_sleep([], {}, 0), SOURCE_REFRESH_MAX_SLEEP_SECONDS)
+
+
+class TableCacheTests(unittest.TestCase):
+    """Reference tables were read on nearly every request. Caching them is only
+    safe because anything this application writes drops the cache."""
+
+    def setUp(self):
+        import routes
+        routes.invalidate_reference_cache()
+
+    def test_a_repeated_scan_reads_airtable_once(self):
+        import routes
+        with patch.object(routes.airtable, "list_records",
+                          return_value={"records": [{"id": "recA", "fields": {}}]}) as read:
+            routes._list_all_records(routes.C.CLIENTS_TABLE)
+            routes._list_all_records(routes.C.CLIENTS_TABLE)
+        self.assertEqual(read.call_count, 1)
+
+    def test_a_filtered_read_is_never_served_from_cache(self):
+        # A filter asks a different question; answering it from a full scan would
+        # return records the caller explicitly excluded.
+        import routes
+        with patch.object(routes.airtable, "list_records",
+                          return_value={"records": [{"id": "recA", "fields": {}}]}) as read:
+            routes._list_all_records(routes.C.CLIENTS_TABLE)
+            routes._list_all_records(routes.C.CLIENTS_TABLE, params={"filterByFormula": "1"})
+        self.assertEqual(read.call_count, 2)
+
+    def test_a_write_drops_the_cache_for_that_table(self):
+        import routes
+        with patch.object(routes.airtable, "list_records",
+                          return_value={"records": [{"id": "recA", "fields": {}}]}) as read:
+            routes._list_all_records(routes.C.CLIENTS_TABLE)
+            routes.invalidate_reference_cache(routes.C.CLIENTS_TABLE)
+            routes._list_all_records(routes.C.CLIENTS_TABLE)
+        self.assertEqual(read.call_count, 2)
+
+    def test_one_table_invalidation_leaves_the_others(self):
+        import routes
+        with patch.object(routes.airtable, "list_records",
+                          return_value={"records": []}) as read:
+            routes._list_all_records(routes.C.CLIENTS_TABLE)
+            routes._list_all_records(routes.C.LOCATIONS_TABLE)
+            routes.invalidate_reference_cache(routes.C.CLIENTS_TABLE)
+            routes._list_all_records(routes.C.CLIENTS_TABLE)
+            routes._list_all_records(routes.C.LOCATIONS_TABLE)
+        self.assertEqual(read.call_count, 3)
+
+    def test_reference_tables_are_held_longer_than_data_tables(self):
+        import routes
+        self.assertGreater(routes._table_cache_ttl(routes.C.CLIENTS_TABLE),
+                           routes._table_cache_ttl(routes.C.MERCHANDISE_TABLE))
+
+    def test_every_client_read_goes_through_one_cached_helper(self):
+        # Five call sites each did their own unfiltered read of the whole table.
+        source = Path(routes_path()).read_text(encoding="utf-8")
+        self.assertNotIn("airtable.list_records(C.CLIENTS_TABLE", source)
+
+
+def routes_path():
+    import routes
+    return routes.__file__

@@ -6,12 +6,21 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 
 from config import Config
-from routes import api, refresh_topco_source_linked_products, source_refresh_client_configs
+from routes import (
+    api,
+    invalidate_reference_cache,
+    refresh_topco_source_linked_products,
+    source_refresh_client_configs,
+)
 
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+    # The table cache is process-global. A fresh app means a fresh cache, which
+    # matters most in tests: without it one test's mocked records are served to
+    # the next.
+    invalidate_reference_cache()
 
     CORS(app, origins=Config.cors_origins(), supports_credentials=True)
     app.register_blueprint(api, url_prefix="/api")

@@ -1474,3 +1474,33 @@ be worse than doing it twice.
 Worth noting for later: each process that starts the worker runs its own loop, so a
 multi-worker gunicorn multiplies all of this, and a development server running alongside
 production doubles it.
+
+## 2026-08-25 - Airtable Reads Are Cached Because Writes Invalidate Them
+
+The per-base breakdown named this application: 172,790 of the workspace's 177,489 calls,
+against a base holding 35 records. So the volume is request shape, not data.
+
+One Planning page load made nine requests and 22 Airtable calls. Six of those read the
+Clients table, from five separate call sites each doing its own unfiltered scan, and the
+same data tables were re-read across requests a fraction of a second apart — Merchandise
+three times, Products, Issues, Shipments and the workstream cards twice each.
+
+Whole-table scans are now cached: sixty seconds for Clients, Locations and Users, which
+change perhaps weekly, and ten seconds for everything else, which is long enough to collapse
+one page load's burst and short enough to be uninteresting. Every Clients read goes through
+one helper rather than five copies of the same call.
+
+This is only safe because writes invalidate. Every create, update and delete through the
+Airtable client drops that table's cache first, so anything this application changes is
+visible on the next read. The only staleness possible is an edit made directly in Airtable,
+bounded by the TTL.
+
+A page load went from 22 calls to 14 with a cold cache. Together with the source refresh
+loop, that removes roughly two thirds of what this base was spending.
+
+The cache is process-global, so `create_app()` clears it. That matters most in tests, where
+one test's mocked records would otherwise be served to the next — which is exactly what
+happened, and thirteen tests caught it.
+
+Filtered reads are never served from the cache. A filter asks a different question, and
+answering it from a full scan would return records the caller excluded.

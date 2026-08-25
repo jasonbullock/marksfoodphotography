@@ -216,7 +216,87 @@ def _list_all_record_ids(table_name):
         params["offset"] = offset
 
 
+# Clients, Locations and Users are read on nearly every request and change
+# perhaps weekly. They were 8 of the 22 Airtable calls a single page load made,
+# with Clients alone read six times. Cached briefly, and dropped the moment this
+# application writes to the table, so the only staleness possible is an edit made
+# directly in Airtable - which the TTL bounds.
+REFERENCE_TABLE_TTL_SECONDS = 60
+# One page load makes nine requests within about a second, and they re-read the
+# same data tables: Merchandise three times, Products, Issues, Shipments and the
+# workstream cards twice each. A short window collapses that burst into one read.
+# Anything this application writes drops the cache immediately, so the only
+# staleness possible is an edit made directly in Airtable during the window.
+DATA_TABLE_TTL_SECONDS = 10
+_REFERENCE_TABLE_CACHE = {}
+
+
+def _reference_table_records(table_name):
+    """One cached read of a whole reference table, shared by every caller."""
+    cached = _cached_reference_records(table_name)
+    if cached is not None:
+        return list(cached)
+    records = airtable.list_records(table_name, by_field_id=False).get("records", [])
+    _remember_reference_records(table_name, list(records))
+    return records
+
+
+def _client_records():
+    return _reference_table_records(C.CLIENTS_TABLE)
+
+
+def _reference_tables():
+    return {C.CLIENTS_TABLE, C.LOCATIONS_TABLE, C.USERS_TABLE}
+
+
+def invalidate_reference_cache(table_name=None):
+    if table_name is None:
+        _REFERENCE_TABLE_CACHE.clear()
+    else:
+        _REFERENCE_TABLE_CACHE.pop(table_name, None)
+
+
+def _table_cache_ttl(table_name):
+    return REFERENCE_TABLE_TTL_SECONDS if table_name in _reference_tables() else DATA_TABLE_TTL_SECONDS
+
+
+def _cached_reference_records(table_name):
+    entry = _REFERENCE_TABLE_CACHE.get(table_name)
+    if entry and (time.monotonic() - entry[0]) < _table_cache_ttl(table_name):
+        return entry[1]
+    return None
+
+
+def _remember_reference_records(table_name, records):
+    _REFERENCE_TABLE_CACHE[table_name] = (time.monotonic(), records)
+
+
+def _install_reference_cache_invalidation():
+    """Any write through the client drops that table's cache."""
+    client = airtable
+    if getattr(client, "_reference_cache_installed", False):
+        return
+    for name in ("create_record", "update_record", "delete_records"):
+        original = getattr(client, name)
+
+        def wrapper(table_name, *args, _original=original, **kwargs):
+            invalidate_reference_cache(table_name)
+            return _original(table_name, *args, **kwargs)
+
+        setattr(client, name, wrapper)
+    client._reference_cache_installed = True
+
+
+_install_reference_cache_invalidation()
+
+
 def _list_all_records(table_name, params=None):
+    # Only unfiltered scans are cached; a filtered read asks a different question.
+    cacheable = params is None
+    if cacheable:
+        cached = _cached_reference_records(table_name)
+        if cached is not None:
+            return list(cached)
     records = []
     merged = {"pageSize": 100, **(params or {})}
     while True:
@@ -224,6 +304,8 @@ def _list_all_records(table_name, params=None):
         records.extend(data.get("records", []))
         offset = data.get("offset")
         if not offset:
+            if cacheable:
+                _remember_reference_records(table_name, list(records))
             return records
         merged["offset"] = offset
 
@@ -554,7 +636,7 @@ def _client_readiness_profile(client_name, client_fields=None):
 
 
 def source_refresh_client_configs():
-    data = airtable.list_records(C.CLIENTS_TABLE, by_field_id=False)
+    data = {"records": _client_records()}
     configs = []
     for record in data.get("records", []):
         client_name = _client_name(record)
@@ -3624,7 +3706,7 @@ def _topco_source_row_to_import_row(source_row):
 
 
 def _topco_client_id():
-    data = airtable.list_records(C.CLIENTS_TABLE, by_field_id=False)
+    data = {"records": _client_records()}
     for record in _permitted_client_records(data.get("records", [])):
         if _client_name(record).strip().casefold() == "topco":
             return record.get("id", "")
@@ -4296,7 +4378,7 @@ def delete_item(record_id):
 
 
 def _clients_by_id():
-    data = airtable.list_records(C.CLIENTS_TABLE, by_field_id=False)
+    data = {"records": _client_records()}
     return {record["id"]: _shape_client(record) for record in _permitted_client_records(data.get("records", []))}
 
 
@@ -4528,7 +4610,7 @@ def _log_item_changes(record_id, previous, current, changed_fields):
 def _client_code_type(client_id):
     if not client_id:
         return ""
-    data = airtable.list_records(C.CLIENTS_TABLE, by_field_id=False)
+    data = {"records": _client_records()}
     for record in data.get("records", []):
         if record.get("id") == client_id:
             return record.get("fields", {}).get(C.F_CLIENT_IDENTIFIER_TYPE, "")
@@ -9277,7 +9359,7 @@ def randomize_demo_data():
     if not _is_development_mode():
         return err("Developer tools are only available in development mode.", 404)
 
-    clients_data = airtable.list_records(C.CLIENTS_TABLE, by_field_id=False).get("records", [])
+    clients_data = _client_records()
     clients_by_id = {record["id"]: _shape_client(record) for record in clients_data}
     items = airtable.list_records(C.PRODUCTS_TABLE, by_field_id=False).get("records", [])
     issues = airtable.list_records(C.ISSUES_TABLE, by_field_id=False).get("records", [])
