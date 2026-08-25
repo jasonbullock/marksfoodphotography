@@ -142,3 +142,43 @@ class MergeProvenanceTests(unittest.TestCase):
 
     def test_no_source_and_no_reference_writes_nothing(self):
         self.assertEqual(routes._product_reference_data({}, "", ["name"], created=True), "")
+
+
+class IntakeLookupTests(unittest.TestCase):
+    """The sheet import used to index Identifier alone, with exact string matching.
+    A Product created from a Structure Form carries a UPC and no Identifier, so the
+    import could not see it and made a second record for the same SKU."""
+
+    def _index(self, records):
+        with patch.object(routes, "_list_all_records", return_value=records), \
+             patch.object(routes, "_filter_by_client_field", side_effect=lambda r, _f: r):
+            return routes._existing_items_by_identifier("recC")
+
+    def test_a_product_with_only_a_upc_is_found(self):
+        form_made = [{"id": "recP", "fields": {C.F_ITEM_CLIENT: ["recC"],
+                                               C.F_ITEM_UPC: "036800120457"}}]
+        index = self._index(form_made)
+        self.assertIsNotNone(routes._existing_item_for(index, "036800120457"))
+
+    def test_a_stripped_leading_zero_still_finds_it(self):
+        form_made = [{"id": "recP", "fields": {C.F_ITEM_CLIENT: ["recC"],
+                                               C.F_ITEM_UPC: "036800120457"}}]
+        index = self._index(form_made)
+        # What the spreadsheet gives, having stored the code as a number.
+        self.assertIsNotNone(routes._existing_item_for(index, "36800120457"))
+
+    def test_a_product_with_only_an_identifier_is_still_found(self):
+        older = [{"id": "recP", "fields": {C.F_ITEM_CLIENT: ["recC"],
+                                           C.F_ITEM_IDENTIFIER: "036800120457"}}]
+        index = self._index(older)
+        self.assertIsNotNone(routes._existing_item_for(index, "036800120457"))
+
+    def test_a_different_code_is_not_found(self):
+        index = self._index([{"id": "recP", "fields": {C.F_ITEM_CLIENT: ["recC"],
+                                                       C.F_ITEM_UPC: "036800120457"}}])
+        # One digit apart, and a different product.
+        self.assertIsNone(routes._existing_item_for(index, "036800120458"))
+
+    def test_nothing_to_look_up_finds_nothing(self):
+        self.assertIsNone(routes._existing_item_for({}, ""))
+        self.assertIsNone(routes._existing_item_for({}, None))

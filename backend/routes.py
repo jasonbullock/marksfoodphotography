@@ -2829,15 +2829,39 @@ def _normalized_required_fields(client_config):
 
 
 
+def _existing_item_for(existing_items, identifier):
+    """Look up by what the sheet said, then by the comparable form of it."""
+    if not identifier:
+        return None
+    raw = str(identifier).strip()
+    return existing_items.get(raw) or existing_items.get(normalized_identifier(raw))
+
+
 def _existing_items_by_identifier(client_id):
-    data = airtable.list_records(C.PRODUCTS_TABLE, by_field_id=False)
+    """Products this client already has, keyed for lookup by a sheet row.
+
+    Keyed the same way the merge keys them, and over the same two fields. Indexing
+    `Identifier` alone missed every Product created from a Structure Form, because
+    those carry a UPC and no Identifier - so importing the sheet made a second
+    record for a SKU that already had one. Exact string matching missed them again
+    whenever the spreadsheet had stripped a leading zero.
+
+    Both the raw and normalized forms are keyed, because callers look up with
+    whatever the sheet gave them.
+    """
+    records = _filter_by_client_field(_list_all_records(C.PRODUCTS_TABLE), C.F_ITEM_CLIENT)
     items = {}
-    for record in _filter_by_client_field(data.get("records", []), C.F_ITEM_CLIENT):
+    for record in records:
         fields = record.get("fields", {})
-        if client_id in (fields.get(C.F_ITEM_CLIENT, []) or []):
-            identifier = fields.get(C.F_ITEM_IDENTIFIER, "")
-            if identifier:
-                items[identifier] = record
+        if client_id not in (fields.get(C.F_ITEM_CLIENT, []) or []):
+            continue
+        for candidate in (fields.get(C.F_ITEM_IDENTIFIER), fields.get(C.F_ITEM_UPC)):
+            raw = str(candidate or "").strip()
+            if raw:
+                items.setdefault(raw, record)
+            key = normalized_identifier(candidate)
+            if key:
+                items.setdefault(key, record)
     return items
 
 
@@ -2919,7 +2943,7 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
         if "Brand" in required_photo_fields and not brand:
             problems.append("Missing Brand")
 
-        existing_item = existing_items.get(identifier) if identifier else None
+        existing_item = _existing_item_for(existing_items, identifier)
         action = "skip" if problems else ("update" if existing_item else "create")
         if action == "create":
             items_to_create += 1
@@ -3063,7 +3087,8 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
         if "Brand" in required_photo_fields and not brand:
             problems.append("Missing Brand")
 
-        existing_item = {"id": source.get("existingItemId")} if source.get("existingItemId") else (existing_items.get(identifier) if identifier else None)
+        existing_item = ({"id": source.get("existingItemId")} if source.get("existingItemId")
+                         else _existing_item_for(existing_items, identifier))
         action = "skip" if problems else ("update" if existing_item else "create")
         if action == "create":
             items_to_create += 1

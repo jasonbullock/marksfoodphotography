@@ -1543,3 +1543,27 @@ that field is empty — the sheet supplies the real one. That rule lives in the 
 merge merges what it is given, and deciding what to offer is policy.
 
 The remaining paths move over one at a time, so each move can be verified on its own.
+
+## 2026-08-25 - The Sheet Import Could Not See Products The Forms Made
+
+Two of the four creation paths share the intake plan executor: the source-sheet import and
+source-row activation. Neither moved onto `merge_product`, because they are a different
+operation — the sheet owns those fields and overwriting them is the point of the refresh.
+Merging gaps would have broken the thing the timed refresh exists to do.
+
+Their matching was wrong, though, in a way that produced exactly the duplicates the merge
+work exists to prevent.
+
+`_existing_items_by_identifier` indexed `Identifier` alone, and `_apply_item_fields` writes
+only `UPC`. So every Product created from a Structure Form was invisible to the sheet
+import, which then created a second record for a SKU that already had one. Exact string
+matching missed them a second way, whenever the spreadsheet had stripped a leading zero.
+
+The index now covers both fields and keys each in raw and normalized form, and lookups go
+through one helper that tries what the sheet said before the comparable form of it. This is
+the same keying the merge uses, so the two paths can no longer disagree about whether a
+Product exists.
+
+The distinction worth keeping: contributing and syncing are different. A form, receiving or
+a chat message *contributes* what it knows and never overwrites. The sheet *syncs* fields it
+owns. Both must agree about identity; only one may overwrite.
