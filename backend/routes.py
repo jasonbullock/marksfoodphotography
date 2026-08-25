@@ -4542,6 +4542,107 @@ def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, required_to_sh
     return item
 
 
+# Every path that brings product data into the system - a Structure Form, a source
+# sheet row, receiving, someone typing what a chat message told them - goes through
+# one merge. Four paths that each created Products their own way is how a SKU ends
+# up with two records that no later rule can reconcile.
+
+
+def normalized_identifier(value):
+    """The comparable form of an identifier.
+
+    Digits only, with leading zeros dropped: the spreadsheet stores UPCs as numbers
+    and strips them, so `036800120457` and `36800120457` are one product. Nothing
+    else is relaxed. Dropping the trailing digit would merge five distinct CT
+    cheeses, which differ in that digit alone.
+    """
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    return digits.lstrip("0")
+
+
+def _product_identifier_index(client_id, records=None):
+    """Every Product for a client, keyed by comparable identifier."""
+    index = {}
+    for record in (records if records is not None else _list_all_records(C.PRODUCTS_TABLE)):
+        fields = record.get("fields", {})
+        if client_id and client_id not in (fields.get(C.F_ITEM_CLIENT, []) or []):
+            continue
+        for candidate in (fields.get(C.F_ITEM_UPC), fields.get(C.F_ITEM_IDENTIFIER)):
+            key = normalized_identifier(candidate)
+            if key:
+                index.setdefault(key, record)
+    return index
+
+
+def merge_product(client_id, identifier, values, *, source="", records=None):
+    """Create a Product or fill its gaps. The only way a Product comes to exist.
+
+    Returns (record, outcome, filled) where outcome is "created", "filled" or
+    "unchanged", and filled names the fields this call supplied.
+
+    Existing values are never overwritten. A contribution can only answer a
+    question the record has not answered yet, so a late Structure Form cannot
+    quietly rewrite what receiving observed, and vice versa.
+    """
+    key = normalized_identifier(identifier)
+    if not key:
+        raise ValueError("A Product needs an identifier.")
+
+    patch = {k: v for k, v in (values or {}).items() if str(v or "").strip()}
+    existing = _product_identifier_index(client_id, records).get(key)
+
+    if existing is None:
+        fields = {C.F_ITEM_CLIENT: [client_id]} if client_id else {}
+        _apply_item_fields(fields, patch)
+        record = airtable.create_record(C.PRODUCTS_TABLE, fields, by_field_id=False, typecast=True)
+        _record_product_contribution(record, source, sorted(patch), created=True)
+        return record, "created", sorted(patch)
+
+    current = existing.get("fields", {})
+    gaps = {}
+    for name, value in patch.items():
+        target = {}
+        _apply_item_fields(target, {name: value})
+        for field, mapped in target.items():
+            if not str(current.get(field, "") or "").strip():
+                gaps[name] = value
+    if not gaps:
+        return existing, "unchanged", []
+
+    fields = {}
+    _apply_item_fields(fields, gaps)
+    record = airtable.update_record(C.PRODUCTS_TABLE, existing["id"], fields,
+                                    by_field_id=False, typecast=True)
+    _record_product_contribution(record, source, sorted(gaps), created=False)
+    return record, "filled", sorted(gaps)
+
+
+def _record_product_contribution(record, source, filled, *, created):
+    """Note which source answered which fields, in Reference Data.
+
+    Per field rather than per record: when a CVID turns out wrong, the question is
+    where that one came from, not whether the Product had a form behind it.
+    """
+    if not source or not filled:
+        return
+    try:
+        reference = _parse_reference_data(record.get("fields", {}).get(C.F_ITEM_REFERENCE_DATA, ""))
+        contributions = reference.get("_contributions") or {}
+        stamp = {"source": source, "at": _now_iso()}
+        for name in filled:
+            contributions.setdefault(name, stamp)
+        if created:
+            reference.setdefault("_origin", stamp)
+        reference["_contributions"] = contributions
+        airtable.update_record(
+            C.PRODUCTS_TABLE, record["id"],
+            {C.F_ITEM_REFERENCE_DATA: _reference_data_json(reference)},
+            by_field_id=False, typecast=True,
+        )
+    except Exception:  # noqa: BLE001 - provenance is never worth failing a merge over
+        current_app.logger.exception("Could not record Product contribution")
+
+
 def _apply_item_fields(fields, body):
     mapping = {
         "name": C.F_ITEM_NAME,

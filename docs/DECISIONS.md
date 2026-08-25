@@ -1504,3 +1504,32 @@ happened, and thirteen tests caught it.
 
 Filtered reads are never served from the cache. A filter asks a different question, and
 answering it from a full scan would return records the caller excluded.
+
+## 2026-08-25 - One Way A Product Comes To Exist
+
+Four paths created Products and each merged differently: the Structure Form import on UPC,
+source-row activation on a sheet row, `POST /api/items` on a validated identifier, and the
+intake import. That is how one SKU ends up with two records, and no later rule reconciles
+them.
+
+`merge_product(client, identifier, values, source)` is now the only way. Given an identifier
+it creates a Product or fills that Product's gaps, and it refuses when there is no
+identifier at all.
+
+Identifiers compare as digits with leading zeros dropped, because the spreadsheet stores
+UPCs as numbers and strips them — `036800120457` and `36800120457` are one product. Nothing
+else is relaxed. Dropping the trailing digit would merge five distinct CT cheeses that
+differ in that digit alone, measured on the real sheet: fifteen products collapsing into
+five buckets.
+
+Existing values are never overwritten. A contribution answers a question the record has not
+answered yet, so a Structure Form arriving three weeks late cannot quietly rewrite what
+receiving observed off the package, and receiving cannot overwrite the form.
+
+Which source answered which field is recorded in Reference Data under `_contributions`, per
+field rather than per record. When a CVID from a chat message turns out wrong, the question
+is where that one came from, not whether the Product had a form behind it. Failing to record
+provenance never fails the merge.
+
+Nothing calls it yet. The existing paths move over one at a time, so each move can be
+verified on its own.
