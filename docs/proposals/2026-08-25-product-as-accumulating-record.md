@@ -227,31 +227,42 @@ instead of a Teams thread.
 This follows from the merge rule rather than adding to it: a form is just an early
 contributor, and merchandise arriving later merges into the same records.
 
-## The filename token
+## The product title
 
-`Products.Product Description` is not a description. It is the token that goes in the
-packaging filename, `{jobNumber}_{brandPrefix}_{fileNameDescription}`, and the real values
-are `vinegar` and `ice cream`.
+`Products.Product Description` is not a description. It is a short human-readable title for
+the product, which happens to be what the packaging filename uses:
+`{jobNumber}_{brandPrefix}_{title}`. The real values are `vinegar` and `ice cream`.
 
-The name is actively harmful, because `jobNumber` and `brandPrefix` are project facts. The
-token is the only per-SKU component, so it must distinguish SKUs *within a project* — and
-calling it a description invites the shared word that breaks exactly that.
+The field name is doing harm. Called a description, it invites the shared word — and since
+`jobNumber` and `brandPrefix` are project facts, the title is the only part of the filename
+that differs between SKUs in a project.
 
 The four vinegar SKUs share `26012199` and `CT`. One is filled in as `vinegar`. If the other
 three are described the same way — which is what anyone would type, since they are all
 vinegar — all four files become `26012199_CT_vinegar`. The distinguishing values are
 `red wine`, `white wine`, `balsamic`, `balsamic glaze`.
 
-So: rename it to what it is, validate uniqueness within `jobNumber + brandPrefix` at save,
-and propose a default derived from what differs across the sibling SKUs, since the app knows
-all four names.
+So: rename it to what it is — a title — check that two products in one project do not share
+one, and offer a first draft, since the app already knows the sibling names.
 
 Enforce at creation, not later. The FZ/FC exchange settles that — `FZ` meant Frozen rather
 than a brand, the correct code was `FC`, and the instruction was to leave the filenames
 alone because assets already existed. A wrong-looking name that assets were delivered under
 is the right name.
 
-### A formula for the token
+### It is a human-readable title
+
+The simplest way to think about this field: it is a short title for the product, the name a
+person would give it. Nothing more.
+
+That is why `Waffles GF Blueberry` is right and `Blueberry` is not — a title says what the
+thing is. It is also why a numeric counter is wrong: `Pretzel_Slims_2` is not a title of
+anything.
+
+Sibling awareness is not the purpose. It exists only so two products in one project do not
+end up with the same title, because the filename would then collide.
+
+### Deriving a first draft of it
 
 The six values a human has actually written show the convention:
 
@@ -267,8 +278,8 @@ knowledge that is not in the name: `GF` appears nowhere in the waffle product na
 formula can derive it. And one row holds the entire filename, `{jobNumber}_{brandPrefix}_{token}`,
 because someone did not know what the field was for.
 
-The formula, then, proposes and a person confirms — which fits, because data is verified
-before release regardless.
+The formula proposes a first draft and a person edits it — which fits, because data is
+verified before release regardless. It is a starting point, not an answer.
 
 1. Split the name on anything that is not a letter or digit.
 2. Take the category: the leading run of words every sibling shares, skipping the client's
@@ -353,7 +364,8 @@ show it before it goes, let a person send it.
 2. **The ask.** Highest value per unit of work, and it needs nothing new — the missing-field
    evaluation already exists.
 3. **The ladder.** Structure Form drop, then hand entry, both as thin callers of the merge.
-4. **The filename token.** Rename, uniqueness check, derived default.
+4. **The product title.** Rename the field, check two products in a project do not share a
+   title, offer a first draft.
 5. **Products before arrival.** Falls out of the merge rule once it is trusted.
 
 ## Decisions this needs
