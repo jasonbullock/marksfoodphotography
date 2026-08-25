@@ -1531,5 +1531,15 @@ field rather than per record. When a CVID from a chat message turns out wrong, t
 is where that one came from, not whether the Product had a form behind it. Failing to record
 provenance never fails the merge.
 
-Nothing calls it yet. The existing paths move over one at a time, so each move can be
-verified on its own.
+Provenance is written in the same call as the record, never as a follow-up update. Recording
+where a value came from is not worth a second Airtable call, and the merge does not fail if
+it cannot be built.
+
+The Structure Form commit is the first caller. Moving it changed two things beyond the
+plumbing. Matching is now on the normalized identifier rather than the exact UPC string, so
+a form whose code lost its leading zero finds the Product it belongs to. And a Product the
+source sheet owns no longer has the form's *proposed* request type written into it even when
+that field is empty — the sheet supplies the real one. That rule lives in the caller: the
+merge merges what it is given, and deciding what to offer is policy.
+
+The remaining paths move over one at a time, so each move can be verified on its own.

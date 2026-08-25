@@ -40,8 +40,7 @@ class MergeProductTests(unittest.TestCase):
         return {"id": rid, "fields": base}
 
     def test_an_unknown_identifier_creates_a_product(self):
-        with patch.object(routes.airtable, "create_record", return_value=self._record()) as create, \
-             patch.object(routes, "_record_product_contribution"):
+        with patch.object(routes.airtable, "create_record", return_value=self._record()) as create:
             record, outcome, filled = routes.merge_product(
                 "recC", "036800120457", {"name": "Vinegar"}, records=[])
         self.assertEqual(outcome, "created")
@@ -50,8 +49,7 @@ class MergeProductTests(unittest.TestCase):
 
     def test_a_known_identifier_is_never_duplicated(self):
         existing = [self._record(**{C.F_ITEM_NAME: "Vinegar"})]
-        with patch.object(routes.airtable, "create_record") as create, \
-             patch.object(routes, "_record_product_contribution"):
+        with patch.object(routes.airtable, "create_record") as create:
             _record, outcome, _filled = routes.merge_product(
                 "recC", "036800120457", {"name": "Vinegar"}, records=existing)
         create.assert_not_called()
@@ -59,8 +57,7 @@ class MergeProductTests(unittest.TestCase):
 
     def test_leading_zeros_still_find_the_existing_product(self):
         existing = [self._record(upc="036800120457", **{C.F_ITEM_NAME: "Vinegar"})]
-        with patch.object(routes.airtable, "create_record") as create, \
-             patch.object(routes, "_record_product_contribution"):
+        with patch.object(routes.airtable, "create_record") as create:
             _r, outcome, _f = routes.merge_product("recC", "36800120457", {"name": "Vinegar"},
                                                    records=existing)
         create.assert_not_called()
@@ -69,8 +66,7 @@ class MergeProductTests(unittest.TestCase):
     def test_a_contribution_fills_gaps_only(self):
         existing = [self._record(**{C.F_ITEM_NAME: "Observed at receiving"})]
         with patch.object(routes.airtable, "update_record",
-                          return_value=self._record()) as update, \
-             patch.object(routes, "_record_product_contribution"):
+                          return_value=self._record()) as update:
             _r, outcome, filled = routes.merge_product(
                 "recC", "036800120457",
                 {"name": "From a form", "wkftJobNumber": "26012199"}, records=existing)
@@ -84,8 +80,7 @@ class MergeProductTests(unittest.TestCase):
 
     def test_blank_contributions_are_not_gaps_to_fill(self):
         existing = [self._record()]
-        with patch.object(routes.airtable, "update_record") as update, \
-             patch.object(routes, "_record_product_contribution"):
+        with patch.object(routes.airtable, "update_record") as update:
             _r, outcome, _f = routes.merge_product("recC", "036800120457",
                                                    {"name": "", "wkftJobNumber": "   "},
                                                    records=existing)
@@ -95,8 +90,7 @@ class MergeProductTests(unittest.TestCase):
     def test_another_client_is_a_different_product(self):
         theirs = [self._record()]
         theirs[0]["fields"][C.F_ITEM_CLIENT] = ["recOther"]
-        with patch.object(routes.airtable, "create_record", return_value=self._record()) as create, \
-             patch.object(routes, "_record_product_contribution"):
+        with patch.object(routes.airtable, "create_record", return_value=self._record()) as create:
             _r, outcome, _f = routes.merge_product("recC", "036800120457", {"name": "V"},
                                                    records=theirs)
         create.assert_called_once()
@@ -109,3 +103,42 @@ class MergeProductTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MergeProvenanceTests(unittest.TestCase):
+    """Provenance rides along in the same write. Recording it is not worth a second
+    API call, and never worth failing a merge over."""
+
+    def test_provenance_is_written_with_the_record_not_after_it(self):
+        with patch.object(routes.airtable, "create_record",
+                          return_value={"id": "recP", "fields": {}}) as create:
+            routes.merge_product("recC", "036800120457", {"name": "V"},
+                                 source="structureForm:a.pdf", records=[])
+        written = create.call_args.args[1]
+        self.assertIn(C.F_ITEM_REFERENCE_DATA, written)
+        self.assertIn("structureForm:a.pdf", written[C.F_ITEM_REFERENCE_DATA])
+
+    def test_each_field_records_which_source_answered_it(self):
+        import json
+        payload = routes._product_reference_data({}, "structureForm:a.pdf",
+                                                 ["name", "wkftJobNumber"], created=True)
+        contributions = json.loads(payload)["_contributions"]
+        self.assertEqual(set(contributions), {"name", "wkftJobNumber"})
+        self.assertEqual(contributions["name"]["source"], "structureForm:a.pdf")
+
+    def test_the_first_source_to_answer_a_field_keeps_the_credit(self):
+        import json
+        first = json.loads(routes._product_reference_data({}, "receiving", ["name"], created=True))
+        second = json.loads(routes._product_reference_data(first, "structureForm:a.pdf",
+                                                           ["name"], created=False))
+        self.assertEqual(second["_contributions"]["name"]["source"], "receiving")
+
+    def test_caller_reference_data_is_preserved(self):
+        import json
+        payload = routes._product_reference_data(
+            {}, "structureForm:a.pdf", ["name"], created=True,
+            reference={"_structureForm": {"fileName": "a.pdf"}})
+        self.assertEqual(json.loads(payload)["_structureForm"]["fileName"], "a.pdf")
+
+    def test_no_source_and_no_reference_writes_nothing(self):
+        self.assertEqual(routes._product_reference_data({}, "", ["name"], created=True), "")

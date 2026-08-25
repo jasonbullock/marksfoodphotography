@@ -1800,14 +1800,7 @@ def structure_form_commit():
         return err("No rows to create.")
 
     try:
-        existing_by_upc = {}
-        for record in _list_all_records(C.PRODUCTS_TABLE):
-            fields = record.get("fields", {})
-            if client_id not in (fields.get(C.F_ITEM_CLIENT, []) or []):
-                continue
-            upc = str(fields.get(C.F_ITEM_UPC, "") or "").strip()
-            if upc:
-                existing_by_upc[upc] = record
+        product_records = _list_all_records(C.PRODUCTS_TABLE)
     except requests.HTTPError as error:
         return airtable_err(error)
 
@@ -1834,33 +1827,39 @@ def structure_form_commit():
             patch["requestType"] = request_type
         patch = {key: value for key, value in patch.items() if value}
 
-        record = existing_by_upc.get(upc)
+        # The form only proposes a request type. A Product the source sheet owns
+        # gets the real one from the sheet, so the guess is not offered at all -
+        # not even into an empty field.
+        known = _product_identifier_index(client_id, product_records).get(
+            normalized_identifier(upc))
+        if known is not None and _source_snapshot_for_topco_product(known):
+            patch.pop("requestType", None)
+
         try:
-            if record:
-                fields = {}
-                _apply_item_fields(fields, patch)
-                # A Product already known to the source sheet keeps the sheet's
-                # ownership of these fields; the form is only filling a gap.
-                if _source_snapshot_for_topco_product(record):
-                    fields.pop(C.F_ITEM_REQUEST_TYPE, None)
-                saved = airtable.update_record(C.PRODUCTS_TABLE, record["id"], fields,
-                                               by_field_id=False, typecast=True)
-                updated.append({"id": saved["id"], "upc": upc, "name": name})
-            else:
-                fields = {C.F_ITEM_CLIENT: [client_id]}
-                _apply_item_fields(fields, patch)
-                reference = {"_structureForm": {
+            saved, outcome, _filled = merge_product(
+                client_id, upc, patch,
+                source=f"structureForm:{str(row.get('fileName') or '').strip()}".rstrip(":"),
+                reference={"_structureForm": {
                     "fileName": str(row.get("fileName") or ""),
                     "project": str(row.get("project") or ""),
                     "importedAt": _now_iso(),
-                }}
-                fields[C.F_ITEM_REFERENCE_DATA] = _reference_data_json(reference)
-                saved = airtable.create_record(C.PRODUCTS_TABLE, fields,
-                                               by_field_id=False, typecast=True)
-                _create_history_event("Item Created", item_ids=[saved["id"]])
-                created.append({"id": saved["id"], "upc": upc, "name": name})
+                }},
+                records=product_records,
+            )
+        except ValueError as error:
+            skipped.append({"upc": upc, "reason": str(error)})
+            continue
         except requests.HTTPError as error:
             return airtable_err(error)
+
+        if outcome == "created":
+            product_records.append(saved)
+            _create_history_event("Item Created", item_ids=[saved["id"]])
+            created.append({"id": saved["id"], "upc": upc, "name": name})
+        else:
+            # "unchanged" is reported as updated: the row was accepted and the
+            # Product already said everything the form had to say.
+            updated.append({"id": saved["id"], "upc": upc, "name": name})
 
     return jsonify({
         "created": created,
@@ -4574,7 +4573,7 @@ def _product_identifier_index(client_id, records=None):
     return index
 
 
-def merge_product(client_id, identifier, values, *, source="", records=None):
+def merge_product(client_id, identifier, values, *, source="", reference=None, records=None):
     """Create a Product or fill its gaps. The only way a Product comes to exist.
 
     Returns (record, outcome, filled) where outcome is "created", "filled" or
@@ -4594,8 +4593,11 @@ def merge_product(client_id, identifier, values, *, source="", records=None):
     if existing is None:
         fields = {C.F_ITEM_CLIENT: [client_id]} if client_id else {}
         _apply_item_fields(fields, patch)
+        provenance = _product_reference_data({}, source, sorted(patch), created=True,
+                                             reference=reference)
+        if provenance:
+            fields[C.F_ITEM_REFERENCE_DATA] = provenance
         record = airtable.create_record(C.PRODUCTS_TABLE, fields, by_field_id=False, typecast=True)
-        _record_product_contribution(record, source, sorted(patch), created=True)
         return record, "created", sorted(patch)
 
     current = existing.get("fields", {})
@@ -4603,7 +4605,7 @@ def merge_product(client_id, identifier, values, *, source="", records=None):
     for name, value in patch.items():
         target = {}
         _apply_item_fields(target, {name: value})
-        for field, mapped in target.items():
+        for field in target:
             if not str(current.get(field, "") or "").strip():
                 gaps[name] = value
     if not gaps:
@@ -4611,36 +4613,44 @@ def merge_product(client_id, identifier, values, *, source="", records=None):
 
     fields = {}
     _apply_item_fields(fields, gaps)
+    provenance = _product_reference_data(
+        _parse_reference_data(current.get(C.F_ITEM_REFERENCE_DATA, "")),
+        source, sorted(gaps), created=False, reference=reference,
+    )
+    if provenance:
+        fields[C.F_ITEM_REFERENCE_DATA] = provenance
     record = airtable.update_record(C.PRODUCTS_TABLE, existing["id"], fields,
                                     by_field_id=False, typecast=True)
-    _record_product_contribution(record, source, sorted(gaps), created=False)
     return record, "filled", sorted(gaps)
 
 
-def _record_product_contribution(record, source, filled, *, created):
-    """Note which source answered which fields, in Reference Data.
+def _product_reference_data(stored, source, filled, *, created, reference=None):
+    """Reference Data noting which source answered which fields.
 
     Per field rather than per record: when a CVID turns out wrong, the question is
     where that one came from, not whether the Product had a form behind it.
+
+    Returned for the caller to include in the same write. Recording provenance is
+    not worth a second API call, and it is not worth failing a merge over either.
     """
-    if not source or not filled:
-        return
+    if not (source or reference):
+        return ""
     try:
-        reference = _parse_reference_data(record.get("fields", {}).get(C.F_ITEM_REFERENCE_DATA, ""))
-        contributions = reference.get("_contributions") or {}
-        stamp = {"source": source, "at": _now_iso()}
-        for name in filled:
-            contributions.setdefault(name, stamp)
-        if created:
-            reference.setdefault("_origin", stamp)
-        reference["_contributions"] = contributions
-        airtable.update_record(
-            C.PRODUCTS_TABLE, record["id"],
-            {C.F_ITEM_REFERENCE_DATA: _reference_data_json(reference)},
-            by_field_id=False, typecast=True,
-        )
-    except Exception:  # noqa: BLE001 - provenance is never worth failing a merge over
-        current_app.logger.exception("Could not record Product contribution")
+        merged = dict(stored or {})
+        for key, value in (reference or {}).items():
+            merged.setdefault(key, value)
+        if source and filled:
+            contributions = dict(merged.get("_contributions") or {})
+            stamp = {"source": source, "at": _now_iso()}
+            for name in filled:
+                contributions.setdefault(name, stamp)
+            merged["_contributions"] = contributions
+            if created:
+                merged.setdefault("_origin", stamp)
+        return _reference_data_json(merged)
+    except Exception:  # noqa: BLE001 - provenance never fails a merge
+        current_app.logger.exception("Could not build Product provenance")
+        return ""
 
 
 def _apply_item_fields(fields, body):
