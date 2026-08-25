@@ -6483,11 +6483,11 @@ input[type="checkbox"]:disabled {
    Tune the single max-width value to taste; the columns divide whatever it allows. */
 .planning-release-view {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 440px));
+  grid-template-columns: repeat(3, minmax(0, 80%));
   justify-content: center;
   gap: 10px;
   padding: 0 8px 8px;
-  min-height: min(720px, calc(100vh - 170px));
+  min-height: 720px;
   overflow-x: auto;
 }
 
