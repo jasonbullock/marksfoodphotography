@@ -524,7 +524,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "Merch Check",
             "Linked Product",
             "Search Product",
-            "Create Incomplete Product",
+            "Create Product",
             "Deliverables",
             "deliverables",
             "api.updateMerchandiseIntakeDecisions",
@@ -1279,6 +1279,31 @@ class FrontendRoutingTests(unittest.TestCase):
         )
         self.assertIn("[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' \u00b7 ')", self.source)
         self.assertIn(".planning-release-cf-line", self.styles)
+
+    def test_a_product_can_be_established_from_the_card(self):
+        # Hidden on 2026-08-13 while Planning was made product-led, which left no way
+        # to establish a Product when none existed. Restored behind the merge.
+        self.assertNotIn("showIncompleteProductCreation", self.source)
+        self.assertIn("const showProductCreation = !linked;", self.source)
+        self.assertIn("No Product exists yet? Establish one", self.source)
+        self.assertIn("Create Product and link it", self.source)
+        # Not "incomplete": the record is established, not lesser.
+        self.assertNotIn("Incomplete Product", self.source)
+
+    def test_the_creation_fields_come_from_client_settings(self):
+        # The client states what a shoot needs; this form must not restate it.
+        self.assertIn("function productCreationFields(clientRecord, item)", self.source)
+        self.assertIn("?.requiredProductFields", self.source)
+        self.assertIn("const keys = ['productName', 'upc', ...", self.source)
+        self.assertIn("{productCreationKeys.map(key => (", self.source)
+        self.assertIn("PHOTO_PRODUCTION_FIELD_LABELS[key] || key", self.source)
+        # The old fixed four are gone from this form. An older copy survives in
+        # WaitingInformationWorkspace and still says "Primary Match Key"; that is a
+        # separate screen and a separate cleanup.
+        card = self.source.split("function NewReviewProductIdentification", 1)[1]
+        card = card.split("\nfunction ", 1)[0]
+        self.assertNotIn("<label>Primary Match Key<input", card)
+        self.assertNotIn("<label>Brand<input", card)
 
     def test_released_cards_carry_a_standing_mark(self):
         # The transient badge flash only says it happened just now. A released

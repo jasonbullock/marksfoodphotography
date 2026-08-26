@@ -1594,3 +1594,30 @@ the same identifier index the merge uses.
 
 Nothing else creates a Product. The remaining `create_record` calls against the Products
 table are those two.
+
+## 2026-08-26 - Establishing A Product From The Card, Restored
+
+The Planning card once offered "Can't find it? Create an incomplete Product". It was hidden
+on 2026-08-13, in the commit that made Planning product-led, by a flag set to false. No
+decision recorded it. That removed the only way to establish a Product when none existed,
+which is the case that occurs whenever data arrives in a chat with "push it through to
+production" and no Structure Form ever follows.
+
+It is back, with three changes.
+
+It creates through `merge_product`, so a known identifier fills gaps rather than making a
+second record. That was the real hazard, and it is the reason hiding the form looked
+reasonable at the time.
+
+The fields are the client's own `requiredProductFields` for the workstream, plus name and
+identifier always — without those two there is nothing to match on later. The old form
+asked for a fixed four including "Primary Match Key", a concept being retired, and "Brand",
+which nothing requires.
+
+The language changed. A Product established from what is known is not an "incomplete
+Product"; it is the record, and every record is incomplete until it is not. The card now
+offers "No Product exists yet? Establish one".
+
+An older copy of the fixed-field form survives in `WaitingInformationWorkspace` and still
+says "Primary Match Key" and "Product Job Number", a field the base no longer has. Left
+alone deliberately: different screen, separate cleanup.

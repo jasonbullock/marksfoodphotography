@@ -9409,7 +9409,7 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
         setLocalFeedback('Product information saved.');
       } else {
         if (!productDraft.productId) {
-          setLocalFeedback('Cannot create an incomplete Product until an identifier is available.');
+          setLocalFeedback('A UPC or product ID is needed before a Product can be created.');
           return;
         }
         const created = await api.createItem({
@@ -9419,7 +9419,7 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
           primaryMatchKeyLabel: product.primaryMatchKeyLabel || product.identifierLabel || DOMAIN_TERMS.primaryMatchKey,
         });
         await api.matchMerchandiseReviewEntry(item.merchandiseId, created.id);
-        setLocalFeedback('Incomplete Product created and linked.');
+        setLocalFeedback('Product created and linked.');
       }
       await onRefresh?.();
     } catch (error) {
@@ -9548,7 +9548,7 @@ function WaitingInformationWorkspace({ item, onClose, onMove, onSave, onSaveCont
               <label>Product Job Number<input value={productDraft.itemJobNumber} onChange={event => updateProductDraft('itemJobNumber', event.target.value)} /></label>
             </div>
             <button type="button" className="btn btn-secondary" onClick={saveProductInformation} disabled={productSaving}>
-              {product.id ? 'Save Product Information' : 'Create Incomplete Product'}
+              {product.id ? 'Save Product Information' : 'Create Product'}
             </button>
           </section>
 
@@ -9809,6 +9809,38 @@ function DeliverablesSelector({ values = [], onChange, disabled = false, options
   );
 }
 
+// A Product assembled here is not lesser than one a Structure Form described. It
+// is the same record, established from what is known — which is often all that
+// will ever arrive. The fields asked for are the client's own required fields, so
+// nothing about what a shoot needs is stated twice.
+const PRODUCT_CREATION_DRAFT_KEYS = {
+  productName: 'name',
+  upc: 'productId',
+  cvid: 'cvid',
+  jobNumber: 'wkftJobNumber',
+  brandPrefix: 'brandPrefix',
+  fileNameDescription: 'fileNameDescription',
+  productDescription: 'productDescription',
+  productType: 'productType',
+  pathToArt: 'pathToArt',
+  ecommPhotoNotes: 'ecommPhotoNotes',
+};
+
+function productCreationFields(clientRecord, item) {
+  const type = item?.workstreamType
+    || normalizeDeliverableList(item?.deliverables).find(value => value === 'Packaging' || value === 'Ecomm')
+    || '';
+  const configured = clientRecord?.photoProductionRequirements?.workstreams?.[type]?.requiredProductFields;
+  // Name and identifier regardless: without them there is nothing to match on later.
+  const keys = ['productName', 'upc', ...(Array.isArray(configured) ? configured : [])];
+  const seen = new Set();
+  return keys.filter(key => {
+    if (seen.has(key) || !PRODUCT_CREATION_DRAFT_KEYS[key]) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function NewReviewProductIdentification({ item, product, onRefresh, deferNoClearMatch = false, noClearMatchDraft, onNoClearMatchDraftChange, clientRecord = null }) {
   const record = item.record || {};
   const [matchNameQuery, setMatchNameQuery] = useState(record.productName || record.description || '');
@@ -9983,7 +10015,9 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
         setNotice('Product information saved.');
       } else {
         if (!draft.productId) {
-          setNotice('Add an identifier before creating an incomplete Product.');
+          // Without an identifier there is nothing to match on later, and nothing
+          // stopping the next arrival from creating the same Product again.
+          setNotice('A UPC or product ID is needed before a Product can be created.');
           return;
         }
         const created = await api.createItem({
@@ -9993,7 +10027,7 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
           primaryMatchKeyLabel: product.primaryMatchKeyLabel || product.identifierLabel || DOMAIN_TERMS.primaryMatchKey,
         });
         await api.matchMerchandiseReviewEntry(item.merchandiseId, created.id);
-        setNotice('Incomplete Product created and linked.');
+        setNotice('Product created and linked.');
       }
       await onRefresh?.();
     } catch (error) {
@@ -10020,7 +10054,11 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
     : matches.length
       ? (nameOnlyMatchSuggestions || combinedPartialMatchSuggestions) ? 'Possible matches' : 'Suggested matches'
       : combinedMatchSearch ? 'No match on both fields' : 'No matches found';
-  const showIncompleteProductCreation = false;
+  // Switched off on 2026-08-13 while Planning was made product-led, which removed
+  // the only way to establish a Product when none exists. Restored: creation goes
+  // through the merge now, so a known identifier fills gaps instead of duplicating.
+  const productCreationKeys = productCreationFields(clientRecord, item);
+  const showProductCreation = !linked;
 
   return (
     <div className="new-review-product-id">
@@ -10107,22 +10145,33 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
               disabled={busy}
             />
           )}
-          {showIncompleteProductCreation && (
+          {showProductCreation && (
             <>
               <div className="merch-create-alt">
                 <button type="button" className="merch-link-btn" onClick={() => setCreateOpen(open => !open)}>
-                  {createOpen ? 'Hide' : 'Can’t find it? Create an incomplete Product'}
+                  {createOpen ? 'Hide' : 'No Product exists yet? Establish one'}
                 </button>
               </div>
               {createOpen && (
                 <>
+                  <p className="new-review-search-hint">
+                    Creates the Product this merchandise is, from what is known now. A
+                    Structure Form arriving later fills in the rest.
+                  </p>
                   <div className="waiting-product-fields">
-                    <label>Product Name<input value={draft.name} onChange={event => setField('name', event.target.value)} /></label>
-                    <label>Product/File Name<input value={draft.product} onChange={event => setField('product', event.target.value)} /></label>
-                    <label>Primary Match Key<input value={draft.productId} onChange={event => setField('productId', event.target.value)} /></label>
-                    <label>Brand<input value={draft.brand} onChange={event => setField('brand', event.target.value)} /></label>
+                    {productCreationKeys.map(key => (
+                      <label key={key}>
+                        {PHOTO_PRODUCTION_FIELD_LABELS[key] || key}
+                        <input
+                          value={draft[PRODUCT_CREATION_DRAFT_KEYS[key]] || ''}
+                          onChange={event => setField(PRODUCT_CREATION_DRAFT_KEYS[key], event.target.value)}
+                        />
+                      </label>
+                    ))}
                   </div>
-                  <button type="button" className="btn btn-secondary" onClick={saveProduct} disabled={busy}>Create &amp; Link Incomplete Product</button>
+                  <button type="button" className="btn btn-secondary" onClick={saveProduct} disabled={busy}>
+                    Create Product and link it
+                  </button>
                 </>
               )}
             </>
