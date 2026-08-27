@@ -6809,6 +6809,46 @@ input[type="checkbox"]:disabled {
   line-height: 1.25;
 }
 
+/* Quiet until wanted: a copy control should not compete with the value it copies. */
+.copy-value {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 5px;
+  padding: 1px;
+  border-radius: 4px;
+  color: var(--text-3);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.planning-release-card:hover .copy-value,
+.copy-value:focus-visible {
+  opacity: 1;
+}
+
+.copy-value:hover {
+  color: var(--text-1);
+  background: var(--surface-2);
+}
+
+.copy-value.is-copied {
+  opacity: 1;
+  color: #15803d;
+}
+
+.planning-release-title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.planning-release-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* The released mark shares the badge line rather than claiming a row of its own. */
 .planning-release-badge-row {
   display: inline-flex;

@@ -1277,6 +1277,18 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' \u00b7 ')", self.source)
         self.assertIn(".planning-release-cf-line", self.styles)
 
+    def test_planning_cards_can_copy_the_name_and_upc(self):
+        # A span, not a button: the card is itself a button, and nesting one inside
+        # another is invalid and behaves unpredictably.
+        self.assertIn("function CopyValue({ value, label })", self.source)
+        self.assertIn('role="button"', self.source)
+        self.assertIn("navigator.clipboard?.writeText(String(value))", self.source)
+        self.assertIn('<CopyValue value={identifier} label="Copy UPC" />', self.source)
+        self.assertIn('<CopyValue value={item.title} label="Copy product name" />', self.source)
+        # Reachable without a mouse.
+        self.assertIn("if (event.key === 'Enter' || event.key === ' ') copy(event);", self.source)
+        self.assertIn(".copy-value", self.styles)
+
     def test_unlinking_a_product_actually_unlinks_it(self):
         # Picking a match writes the link immediately, so the button that appears to
         # undo it has to. "Change" only revealed the search: the record still said

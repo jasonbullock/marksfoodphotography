@@ -8043,11 +8043,11 @@ def remove_merchandise_review_match(entry_id):
         return _forbidden()
 
     try:
-        updated = _update_receipt_entry_record(entry_id, {
-            C.F_RECEIPT_ENTRY_ITEM: [],
-            C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-            C.F_RECEIPT_ENTRY_PLANNING_STATUS: "New",
-        })
+        # The link only. Whether the merchandise arrived as described, and how far
+        # it has been reviewed, are different facts: unlinking a Product says
+        # nothing about either. Resetting them sent an accepted item back to New,
+        # which took its Deliverables step away and offered acceptance again.
+        updated = _update_receipt_entry_record(entry_id, {C.F_RECEIPT_ENTRY_ITEM: []})
     except requests.HTTPError as error:
         return airtable_err(error)
     return jsonify(_shape_verification_entry(updated, receipt))

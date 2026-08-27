@@ -8746,11 +8746,49 @@ function photoProductionReadyForPlanningItem(item = {}) {
 
 
 
+// A span rather than a button: these sit inside the Planning card, which is itself
+// a button, and a button inside a button is invalid and behaves unpredictably.
+// role and the key handler keep it reachable without a keyboard user losing it.
+function CopyValue({ value, label }) {
+  const [copied, setCopied] = useState(false);
+  if (!value) return null;
+
+  const copy = event => {
+    event.stopPropagation();
+    event.preventDefault();
+    navigator.clipboard?.writeText(String(value)).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    }).catch(() => {});
+  };
+
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      className={`copy-value ${copied ? 'is-copied' : ''}`}
+      title={copied ? 'Copied' : label}
+      aria-label={label}
+      onClick={copy}
+      onKeyDown={event => {
+        if (event.key === 'Enter' || event.key === ' ') copy(event);
+      }}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+      </svg>
+    </span>
+  );
+}
+
 function ReleaseCardIdentifierLine({ item, identifier, sectionId }) {
   const matched = productLinkedForPlanningItem(item);
   return (
     <span className="planning-release-identity-line">
       <span>{identifier || 'No UPC'}</span>
+      <CopyValue value={identifier} label="Copy UPC" />
       <span className={matched ? 'is-matched' : 'is-unmatched'}>{matched ? '✓ Matched' : '✗ Unmatched'}</span>
     </span>
   );
@@ -8991,7 +9029,10 @@ function PlanningReleaseView({
                             {showNewCardClient && clientName && !shouldGroupByShipment && (
                               <span className="planning-release-eyebrow">{clientName}</span>
                             )}
-                            <strong>{item.title || 'Received Merchandise'}</strong>
+                            <span className="planning-release-title">
+                              <strong>{item.title || 'Received Merchandise'}</strong>
+                              <CopyValue value={item.title} label="Copy product name" />
+                            </span>
                             <ReleaseCardIdentifierLine item={item} identifier={identifier} sectionId={section.id} />
                             {item.record?.released && (item.creativeForceStep || item.creativeForceStatus) && (
                               <span className="planning-release-cf-line">

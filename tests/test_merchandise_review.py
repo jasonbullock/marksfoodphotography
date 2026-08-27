@@ -353,8 +353,10 @@ class MerchandiseReviewTests(unittest.TestCase):
         response = self.app.post("/api/merchandise/review/recEntry/remove-match")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(update_record.call_args.args[2][C.F_RECEIPT_ENTRY_ITEM], [])
-        self.assertEqual(update_record.call_args.args[2][C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
+        written = update_record.call_args.args[2]
+        self.assertEqual(written[C.F_RECEIPT_ENTRY_ITEM], [])
+        self.assertNotIn(C.F_RECEIPT_ENTRY_MERCH_STATUS, written)
+        self.assertNotIn(C.F_RECEIPT_ENTRY_PLANNING_STATUS, written)
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")

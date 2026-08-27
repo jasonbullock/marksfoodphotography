@@ -1698,3 +1698,14 @@ Choosing a different Product is now unlink, then search. One more step, and each
 true.
 
 The state that hid the card while keeping the link is removed rather than left unreachable.
+
+## 2026-08-27 - Unlinking A Product Does Not Undo The Review
+
+`remove-match` cleared the Product link and also set Merch Status to "Received" and Planning
+Status to "New". So unlinking a Product on an item already accepted threw it back to New:
+the modal switched to the acceptance flow, its Deliverables step disappeared, and the card
+sat in Needs More Information describing something that no longer matched its state.
+
+Those are different facts. Whether the goods arrived as described, and how far the review
+has got, are not claims about which Product this is. Unlinking now clears the link and
+nothing else.
