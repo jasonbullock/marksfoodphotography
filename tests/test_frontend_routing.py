@@ -1115,15 +1115,14 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("No match on both fields", self.source)
         self.assertIn("Check the package name and UPC / ID. Clear one field to search by the other.", self.source)
         self.assertIn("matchBasis: 'name'", self.source)
-        self.assertIn("function itemExpectedIdentifierText(item)", self.source)
         self.assertNotIn("function itemMatchedByText", self.source)
         self.assertIn("function itemProductIdentifierText(item)", self.source)
         self.assertIn("function matchValuesConflict(observedValue, productValue)", self.source)
         self.assertIn("if (!observed || !product || observed === product) return false;", self.source)
         self.assertIn("return true;", self.source)
         self.assertIn("Product ${itemMatchMethod(item)}: ${value}", self.source)
-        self.assertIn("itemExpectedIdentifierText(item)", self.source)
-        self.assertIn("itemExpectedIdentifierText(item)", self.source)
+        self.assertIn("itemProductIdentifierText(item)", self.source)
+        self.assertIn("itemProductIdentifierText(item)", self.source)
         self.assertIn("Matched Product", self.source)
         self.assertIn("Qty received", self.source)
         self.assertNotIn("Use Product {itemMatchMethod(item)}", self.source)
@@ -1279,6 +1278,14 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' \u00b7 ')", self.source)
         self.assertIn(".planning-release-cf-line", self.styles)
 
+    def test_a_candidate_always_shows_its_identifier(self):
+        # It used to be hidden once the typed UPC contributed to the match, which is
+        # exactly when it is needed: a prefix narrows the list, and the full code is
+        # how the remaining candidates are told apart.
+        self.assertIn("itemProductIdentifierText(item), item.brand", self.source)
+        self.assertNotIn("function itemExpectedIdentifierText", self.source)
+        self.assertNotIn("if (item?.matchBasis !== 'name') return '';", self.source)
+
     def test_the_planning_modal_shows_one_match_list(self):
         # A source row and a Product are the same thing to whoever is looking. The
         # only difference is whether picking it creates a Product, which is the
@@ -1402,7 +1409,7 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("No match on both fields", planning_product_step)
         self.assertIn("These match the typed name and UPC / ID prefix. Select the correct Product, then use Product values only when they should replace the observed fields.", self.source)
         self.assertIn("Enter or scan UPC / ID to confirm the exact Product.", self.source)
-        self.assertIn("itemExpectedIdentifierText(item)", self.source)
+        self.assertIn("itemProductIdentifierText(item)", self.source)
         self.assertIn("itemMatchConfidenceBadge(item, identifierQuery)", self.source)
         self.assertNotIn("useProductMerchValue", planning_product_step)
         # Search inputs, not a restatement of the package: step 1 owns the recorded

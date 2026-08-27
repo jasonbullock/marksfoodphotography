@@ -1398,13 +1398,6 @@ function itemMatchMethod(item) {
   return 'Product ID';
 }
 
-function itemExpectedIdentifierText(item) {
-  if (item?.matchBasis !== 'name') return '';
-  const value = itemMatchIdentifierValue(item);
-  if (!value) return 'No UPC / ID on Product';
-  return `Product ${itemMatchMethod(item)}: ${value}`;
-}
-
 function itemProductIdentifierText(item) {
   const value = itemMatchIdentifierValue(item);
   if (!value) return 'No UPC / ID on Product';
@@ -1610,7 +1603,7 @@ function ReceivingMatchSuggestions({
               >
                 <span>
                   <strong>{itemMatchTitle(item)}</strong>
-                  <small>{[itemExpectedIdentifierText(item), item.brand, item.parentJobNumber ? `Job ${item.parentJobNumber}` : ''].filter(Boolean).join(' · ')}</small>
+                  <small>{[itemProductIdentifierText(item), item.brand, item.parentJobNumber ? `Job ${item.parentJobNumber}` : ''].filter(Boolean).join(' · ')}</small>
                 </span>
                 {confidenceBadge && <em>{confidenceBadge}</em>}
               </button>
@@ -8123,7 +8116,7 @@ function planningActionOutcomePreview({
   requirementBlockers = [],
 } = {}) {
   if (stepFlagged) return 'Issue will keep this item out of release until resolved.';
-  if (isMerchAcceptanceReview) return 'Confirms the merchandise arrived as expected and moves it to Needs More Information.';
+  if (isMerchAcceptanceReview) return '';
   if (isWorkstreamCard) {
     const hasPhotoDeliverable = (wizardState.deliverables || []).some(type => type === 'Packaging' || type === 'Ecomm');
     if (!hasPhotoDeliverable) return 'Blocked by missing required info: choose Ecomm or Packaging.';
@@ -10693,8 +10686,8 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   const workstreamFooterMessage = isWorkstreamCard
     ? workstreamPhotoCardCount >= 2
       ? <><span>This merchandise already has Ecomm and Packaging workstreams.</span><br /><span>You cannot add or change one here; remove this card only to end this workstream.</span></>
-      : <span>{footerOutcomePreview}</span>
-    : <span>{footerOutcomePreview}</span>;
+      : footerOutcomePreview ? <span>{footerOutcomePreview}</span> : null
+    : footerOutcomePreview ? <span>{footerOutcomePreview}</span> : null;
 
   useEffect(() => {
     setPhotoDraftValues({});
