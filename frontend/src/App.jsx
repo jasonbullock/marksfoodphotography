@@ -9896,6 +9896,11 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
   const [notice, setNotice] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [noClearMatch, setNoClearMatch] = useState(false);
+  // Unlinking, or dismissing No Clear Match, means whoever is looking has started
+  // searching. The record still reads Waiting for Product Data until the step is
+  // saved, so without this the refresh puts the card straight back and the search
+  // has to be started twice.
+  const [searchingForMatch, setSearchingForMatch] = useState(false);
   const [editingLinkedProductIdentity, setEditingLinkedProductIdentity] = useState(false);
   // Clients with Source Check rules match against the read-only client sheet rather
   // than local Products, so Planning suggests the same rows Shipments does instead of
@@ -9914,6 +9919,8 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
     setNoClearMatch(Boolean(record.noClearMatch || record.reviewState === 'Waiting for Product Data'));
     setEditingLinkedProductIdentity(false);
   }, [item.id, product.id, record.productName, record.description, record.skuId, record.observedIdentifier, record.noClearMatch, record.reviewState]);
+
+  useEffect(() => { setSearchingForMatch(false); }, [item.id]);
 
   useEffect(() => {
     let active = true;
@@ -10042,10 +10049,10 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
     try {
       await api.removeMerchandiseReviewMatch(item.merchandiseId);
       setEditingLinkedProductIdentity(false);
-      setNoClearMatch(false);
       // Unlinking is the start of looking for a different Product, so it drops
-      // straight to the suggestions. Leaving the draft set landed on No Clear
-      // Match instead, which had to be dismissed before the list appeared.
+      // straight to the suggestions rather than to No Clear Match.
+      setNoClearMatch(false);
+      setSearchingForMatch(true);
       onNoClearMatchDraftChange?.(false);
       await onRefresh?.();
     } catch (error) {
@@ -10090,7 +10097,8 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
   // A staged choice reads as chosen, because it is - it just is not written yet.
   const stagedProduct = matchDraft?.item || null;
   const linked = Boolean(product.id) || Boolean(stagedProduct);
-  const effectiveNoClearMatch = deferNoClearMatch ? Boolean(noClearMatchDraft) : noClearMatch;
+  const effectiveNoClearMatch = !searchingForMatch
+    && (deferNoClearMatch ? Boolean(noClearMatchDraft) : noClearMatch);
   const showLinkedProductCard = linked;
   const showProductIdentityFields = (!showLinkedProductCard || editingLinkedProductIdentity) && !createOpen;
   const matchIdentifierReady = compactMatchValue(matchIdentifierQuery).length >= 3;
@@ -10176,6 +10184,7 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
           meta={deferNoClearMatch ? 'Will continue unmatched when accepted.' : 'Waiting for Product data.'}
           onChange={() => {
             setNoClearMatch(false);
+            setSearchingForMatch(true);
             onNoClearMatchDraftChange?.(false);
           }}
           changeDisabled={busy}

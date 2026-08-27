@@ -1849,3 +1849,9 @@ class UnlinkTests(unittest.TestCase):
         start = source.index("async function unlinkProduct()")
         body = source[start:start + 900]
         self.assertIn("onNoClearMatchDraftChange?.(false);", body)
+        self.assertIn("setSearchingForMatch(true);", body)
+
+    def test_the_refresh_does_not_put_no_clear_match_back(self):
+        source = APP.read_text()
+        self.assertIn("const effectiveNoClearMatch = !searchingForMatch", source)
+        self.assertIn("useEffect(() => { setSearchingForMatch(false); }, [item.id]);", source)
