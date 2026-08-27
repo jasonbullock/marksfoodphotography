@@ -8013,7 +8013,10 @@ function requirementLabelForUser(requirement = {}) {
   }[label] || label;
 }
 
-function wizardStateForItem(item, draftDeliverables) {
+// stagedProduct is a match picked but not yet written. Saving the step writes it,
+// so everything gated on having a Product should count it - otherwise the screen
+// says Matched while the footer still asks for a match.
+function wizardStateForItem(item, draftDeliverables, stagedProduct = null) {
   const record = item?.record || {};
   const product = record.linkedItem || {};
   const deliverables = normalizeDeliverableList(draftDeliverables ?? record.deliverables);
@@ -8022,8 +8025,8 @@ function wizardStateForItem(item, draftDeliverables) {
     : evaluateMerchandiseReviewRequirements({ ...record, deliverables });
   const actionableRequirements = requirements.filter(requirement => requirementBlockerLabel(requirement) !== 'Merchandise Verified');
   const blockers = visibleRequirementBlockers(actionableRequirements);
-  const productLinked = Boolean(product.id || record.itemIds?.length);
-  const productIdentified = productIdentifiedForPlanningItem(item);
+  const productLinked = Boolean(product.id || record.itemIds?.length || stagedProduct);
+  const productIdentified = Boolean(stagedProduct) || productIdentifiedForPlanningItem(item);
   const missingLabels = blockers.map(requirementLabelForUser);
   return {
     productLinked,
@@ -10539,7 +10542,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   const initialDeliverablesKey = initialReviewDeliverables(item.record).join('|');
   const activePhoto = photos[photoIndex] || photos[0];
   const activePhotoUrl = receivingPhotoUrl(activePhoto);
-  const wizardState = wizardStateForItem(item, intakeDraft.deliverables);
+  const wizardState = wizardStateForItem(item, intakeDraft.deliverables, matchDraft?.item || null);
   const finishBusy = finishState.status === 'loading';
   const totalQuantity = Math.max(1, Number.parseInt(item.record?.quantity, 10) || 1);
   const splitDeliverablesSelected = wizardState.deliverables.includes('Packaging') && wizardState.deliverables.includes('Thr3d');
@@ -10761,7 +10764,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
       }
       return;
     }
-    const latestState = wizardStateForItem(item, intakeDraft.deliverables);
+    const latestState = wizardStateForItem(item, intakeDraft.deliverables, matchDraft?.item || null);
     latestState.reviewOnly = latestState.productLinked && latestState.deliverables.length === 0;
     latestState.assignment = workstreamAssignmentsForDeliverables(latestState.deliverables, totalQuantity, intakeDraft.allocation);
     latestState.readyToAdvance = readyToAdvance;
@@ -10805,9 +10808,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     }
   }
 
-  // A staged match counts. The record is where the status starts, but once someone
-  // picks a Product the screen should say so rather than wait for the save.
-  const productChosen = Boolean(wizardState.productLinked) || Boolean(matchDraft?.item);
+  const productChosen = Boolean(wizardState.productLinked);
   // Deliverables are a decision about a Product, so they are not offered before one
   // is chosen. Ones already recorded are still shown: hiding them would make saved
   // work invisible rather than merely unavailable.

@@ -1869,10 +1869,20 @@ class MatchStepTests(unittest.TestCase):
 
     def test_a_staged_match_reads_as_matched_before_it_is_saved(self):
         self.assertIn(
-            "const productChosen = Boolean(wizardState.productLinked) || Boolean(matchDraft?.item);",
+            "wizardStateForItem(item, intakeDraft.deliverables, matchDraft?.item || null)",
             self.source,
         )
+        self.assertIn("|| stagedProduct);", self.source)
         self.assertIn("stepFlagged ? 'Issue' : productChosen ? 'Matched' : 'Unmatched'", self.source)
+
+    def test_a_staged_match_also_clears_the_footer_gate(self):
+        # One source for "is there a Product", so the status and the footer cannot
+        # disagree about it.
+        self.assertIn("const productChosen = Boolean(wizardState.productLinked);", self.source)
+        self.assertIn(
+            "const productIdentified = Boolean(stagedProduct) || productIdentifiedForPlanningItem(item);",
+            self.source,
+        )
 
     def test_deliverables_wait_for_a_product(self):
         self.assertIn("{!isMerchAcceptanceReview && showDeliverablesStep && (", self.source)
