@@ -1919,3 +1919,22 @@ class StagedMatchSuggestionTests(unittest.TestCase):
             "const suggestingRequestType = product.requestType || stagedMatchProduct?.requestType || '';",
         ]:
             self.assertIn(text, self.source)
+
+
+class StagedMatchProductDataTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+
+    def test_product_data_reads_from_a_staged_match(self):
+        self.assertIn(
+            "function productDataSourceForPlanningItem(item = {}, draft = {}, stagedProduct = null) {",
+            self.source,
+        )
+        self.assertIn("if (stagedProduct?.id) return { ...stagedProduct, ...draft };", self.source)
+
+    def test_the_photo_checks_pass_the_staged_match_through(self):
+        self.assertIn(
+            "productDataSourceForPlanningItem(item, {}, stagedMatchProduct)",
+            self.source,
+        )

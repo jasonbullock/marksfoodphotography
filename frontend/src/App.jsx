@@ -8390,10 +8390,14 @@ function manualProductInfoForItem(item = {}) {
   };
 }
 
-function productDataSourceForPlanningItem(item = {}, draft = {}) {
+function productDataSourceForPlanningItem(item = {}, draft = {}, stagedProduct = null) {
   const record = item.record || {};
   const linked = record.linkedItem || {};
   if (linked.id) return { ...linked, ...draft };
+  // A match picked but not yet saved carries the same shape a linked one does, so
+  // the Product data reads from it. Otherwise the step asks for values the chosen
+  // Product already holds, and the UPC on screen is reported as missing.
+  if (stagedProduct?.id) return { ...stagedProduct, ...draft };
   const manual = manualProductInfoForItem(item);
   return {
     name: manual.name || manual.productName || manual.product || record.productName || '',
@@ -10583,7 +10587,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
         check.key,
         Object.prototype.hasOwnProperty.call(photoDraftValues, check.key)
           ? photoDraftValues[check.key]
-          : photoProductionProductValue(productDataSourceForPlanningItem(item), check.key),
+          : photoProductionProductValue(productDataSourceForPlanningItem(item, {}, stagedMatchProduct), check.key),
       ),
     }
   ));
