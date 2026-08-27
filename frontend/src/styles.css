@@ -6724,7 +6724,7 @@ input[type="checkbox"]:disabled {
 .planning-release-identity-line {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -8374,7 +8374,7 @@ input[type="checkbox"]:disabled {
 .merch-verify-status,
 .merch-verify-status.wait {
   margin-left: auto;
-  margin-right: 16px;
+  margin-right: 6px;
   padding: 0;
   border: 0;
   background: transparent;
