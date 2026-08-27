@@ -5327,8 +5327,9 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
           <button className="modal-close" type="button" onClick={onClose} aria-label="Close">×</button>
         </div>
         <div className="client-photo-requirements-grid">
-          {['Packaging', 'Ecomm'].map(type => {
+          {['Packaging', 'Ecomm'].map((type, typeIndex) => {
             const config = configFor(type);
+            const isFirstWorkstream = typeIndex === 0;
             return (
               <section className="client-photo-requirement-column" key={type}>
                 <h3>{type}</h3>
@@ -5344,20 +5345,20 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
                 <span className="client-photo-requirement-label">Creative Force handoff</span>
                 <div className="client-photo-cf-handoff">
                   <label className="client-photo-template-field client-photo-cf-field">
-                    <span>Creative Force Product Code</span>
+                    <span>Product code</span>
                     <select value={config.creativeForce?.productCodeField || ''} onChange={event => updateCreativeForce(type, { productCodeField: event.target.value })}>
                       <option value="">Choose a Product field</option>
                       {PHOTO_PRODUCTION_CF_PRODUCT_CODE_OPTIONS.map(key => <option value={key} key={key}>{PHOTO_PRODUCTION_FIELD_LABELS[key]}</option>)}
                     </select>
                   </label>
                   <label className="client-photo-template-field client-photo-cf-field">
-                    <span>Creative Force Category</span>
+                    <span>Category</span>
                     <select value={config.creativeForce?.categoryField || 'clientName'} onChange={event => updateCreativeForce(type, { categoryField: event.target.value, categoryValue: '' })}>
                       {PHOTO_PRODUCTION_CF_CATEGORY_OPTIONS.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}
                     </select>
                   </label>
                   {config.creativeForce?.categoryField === 'custom' && <label className="client-photo-template-field client-photo-cf-field">
-                    <span>Custom Category value</span>
+                    <span>Custom category value</span>
                     <input value={config.creativeForce?.categoryValue || ''} onChange={event => updateCreativeForce(type, { categoryValue: event.target.value })} placeholder="e.g. Grocery" />
                   </label>}
                 </div>
@@ -5401,23 +5402,23 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
                     </label>
                   ))}
                 </div>
+                {isFirstWorkstream && <>
+                  <span className="client-photo-requirement-label">Path prefixes</span>
+                  <div className="client-photo-path-fields">
+                    <label>
+                      Artwork
+                      <input value={requirements.paths?.artwork || ''} onChange={event => setPath('artwork', event.target.value)} placeholder="smb://server/Client/_CGI/" />
+                    </label>
+                    <label>
+                      Uploads
+                      <input value={requirements.paths?.upload || ''} onChange={event => setPath('upload', event.target.value)} placeholder="smb://server/Client/" />
+                    </label>
+                  </div>
+                </>}
               </section>
             );
           })}
         </div>
-        <section className="client-photo-requirement-group">
-          <span className="client-photo-requirement-label">Path prefixes</span>
-          <div className="client-photo-path-fields">
-            <label>
-              Artwork
-              <input className="form-input" value={requirements.paths?.artwork || ''} onChange={event => setPath('artwork', event.target.value)} placeholder="smb://server/Client/_CGI/" />
-            </label>
-            <label>
-              Uploads
-              <input className="form-input" value={requirements.paths?.upload || ''} onChange={event => setPath('upload', event.target.value)} placeholder="smb://server/Client/" />
-            </label>
-          </div>
-        </section>
         {error && <div className="error-state">{error}</div>}
         <div className="client-photo-requirements-footer">
           <span>These checks appear on the workstream card as Product data and Creative Force handoff validation.</span>

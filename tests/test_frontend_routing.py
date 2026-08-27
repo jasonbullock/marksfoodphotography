@@ -2051,3 +2051,14 @@ class ReleasePathConfigTests(unittest.TestCase):
         self.assertIn("Path prefixes", self.source)
         self.assertIn("setPath('artwork', event.target.value)", self.source)
         self.assertIn("setPath('upload', event.target.value)", self.source)
+        # One set for the client, shown once under the first workstream rather than
+        # adrift at the bottom of the dialog.
+        self.assertIn("const isFirstWorkstream = typeIndex === 0;", self.source)
+        self.assertEqual(self.source.count("setPath('artwork'"), 1)
+
+    def test_the_handoff_field_labels_read_below_their_heading(self):
+        # The section is already titled in caps; repeating "Creative Force" in caps
+        # under it left two levels looking like one.
+        self.assertIn("<span>Product code</span>", self.source)
+        self.assertIn("<span>Category</span>", self.source)
+        self.assertNotIn("<span>Creative Force Product Code</span>", self.source)
