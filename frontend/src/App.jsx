@@ -8541,9 +8541,9 @@ function photoProductionValuePresent(field, value) {
   return Boolean(text);
 }
 
-function PhotoProductionFieldsEditor({ item, production, onDraftChange }) {
+function PhotoProductionFieldsEditor({ item, production, onDraftChange, stagedProduct = null }) {
   const product = item?.record?.linkedItem || {};
-  const productDataSource = productDataSourceForPlanningItem(item);
+  const productDataSource = productDataSourceForPlanningItem(item, {}, stagedProduct);
   const entries = production?.workstreamType
     ? [[production.workstreamType, production]]
     : Object.entries(production || {});
@@ -8571,7 +8571,7 @@ function PhotoProductionFieldsEditor({ item, production, onDraftChange }) {
     onDraftChange?.(Object.fromEntries(
       Object.entries(nextDraft).filter(([field]) => !inheritedIdentityFieldSet.has(field)),
     ));
-  }, [item?.id, product.id, item?.manualProductInfo, item?.record?.manualProductInfo, item?.record?.productName, item?.record?.skuId, fields.join('|')]);
+  }, [item?.id, product.id, stagedProduct?.id, item?.manualProductInfo, item?.record?.manualProductInfo, item?.record?.productName, item?.record?.skuId, fields.join('|')]);
 
   if (!entries.length || !fields.length) return null;
 
@@ -11002,6 +11002,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                 <PhotoProductionFieldsEditor
                   item={item}
                   production={selectedPhotoProduction}
+                  stagedProduct={stagedMatchProduct}
                   onDraftChange={draft => setPhotoDraftValues(current => ({ ...current, ...draft }))}
                 />
               </ReviewStep>

@@ -1938,3 +1938,11 @@ class StagedMatchProductDataTests(unittest.TestCase):
             "productDataSourceForPlanningItem(item, {}, stagedMatchProduct)",
             self.source,
         )
+
+    def test_the_field_editor_reads_the_staged_match_too(self):
+        self.assertIn(
+            "function PhotoProductionFieldsEditor({ item, production, onDraftChange, stagedProduct = null }) {",
+            self.source,
+        )
+        self.assertIn("productDataSourceForPlanningItem(item, {}, stagedProduct)", self.source)
+        self.assertIn("stagedProduct={stagedMatchProduct}", self.source)
