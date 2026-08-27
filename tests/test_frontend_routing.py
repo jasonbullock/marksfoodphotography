@@ -1822,3 +1822,22 @@ if (card.assignment !== card.planningCard) throw new Error('Planning card alias 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SavingStatusTests(unittest.TestCase):
+    def test_the_save_reports_itself_before_the_match_commit(self):
+        source = APP.read_text()
+        start = source.index("async function finishCurrentVerification()")
+        head = source[start:start + 400]
+        self.assertLess(
+            head.index("setFinishState({ status: 'loading'"),
+            head.index("await commitMatchDraft()"),
+            "the button should show it is saving on the click, not a request later",
+        )
+
+    def test_the_saving_state_is_not_also_spelled_out_under_the_footer(self):
+        source = APP.read_text()
+        self.assertIn(
+            "{finishState.status !== 'loading' && finishState.message && (",
+            source,
+        )

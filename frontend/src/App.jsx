@@ -10817,9 +10817,11 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
 
   async function finishCurrentVerification() {
     if (finishBusy) return;
+    // Before the match commit, so the button reports the save on the click
+    // rather than once the first request comes back.
+    setFinishState({ status: 'loading', message: '' });
     if (!await commitMatchDraft()) return;
     if (isWorkstreamCard) {
-      setFinishState({ status: 'loading', message: 'Saving details...' });
       try {
         const result = await onReadyForPhoto?.(item);
         if (result?.ok === false) {
@@ -10844,7 +10846,6 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
       setFinishState({ status: 'idle', message: 'Thr3d shipment cancelled.' });
       return;
     }
-    setFinishState({ status: 'loading', message: readyToAdvance ? 'Moving...' : 'Saving...' });
     try {
       const result = await onFinish?.(item, latestState);
       if (result?.ok === false) {
@@ -11152,7 +11153,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
             )}
           </div>
           <p className="new-review-footer-guidance">{workstreamFooterMessage}</p>
-          {finishState.message && (
+          {finishState.status !== 'loading' && finishState.message && (
             <div className="new-review-finish-summary">
               <strong className={`is-${finishState.status}`}>{finishState.message}</strong>
             </div>
