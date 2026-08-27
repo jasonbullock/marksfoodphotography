@@ -1679,3 +1679,22 @@ does.
 
 `showSourceMatchPanel = false` still gates two dead renders of the separate source-sheet
 suggestion panel in receiving, left from merging those lists. Worth removing.
+
+## 2026-08-26 - Unlink Means Unlink
+
+Picking a match in the Planning modal writes the link to Airtable immediately. The button
+offering to undo it did not: "Change" hid the matched card and showed the search again while
+the link stood.
+
+So the record said Matched while the user was choosing a replacement, the option to establish
+a Product stayed hidden because something was linked, and walking away at that point left a
+link the user believed they had undone.
+
+The button is "Unlink" and it removes the link. The status then reads Unmatched, the search
+returns, and establishing a Product is offered again — because all of those follow from the
+record rather than from a screen state that disagreed with it.
+
+Choosing a different Product is now unlink, then search. One more step, and each step is
+true.
+
+The state that hid the card while keeping the link is removed rather than left unreachable.

@@ -1277,6 +1277,19 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' \u00b7 ')", self.source)
         self.assertIn(".planning-release-cf-line", self.styles)
 
+    def test_unlinking_a_product_actually_unlinks_it(self):
+        # Picking a match writes the link immediately, so the button that appears to
+        # undo it has to. "Change" only revealed the search: the record still said
+        # Matched, the establish option stayed hidden because something was linked,
+        # and walking away kept a link the user believed they had undone.
+        self.assertIn("async function unlinkProduct()", self.source)
+        self.assertIn("api.removeMerchandiseReviewMatch(item.merchandiseId)", self.source)
+        self.assertIn('changeLabel="Unlink"', self.source)
+        self.assertIn("onChange={unlinkProduct}", self.source)
+        # The state that hid the card while keeping the link is gone.
+        self.assertNotIn("choosingReplacementProduct", self.source)
+        self.assertNotIn("replacementProductId", self.source)
+
     def test_establishing_a_product_puts_the_search_away(self):
         # Establishing a Product is a decision, not a step after searching. The
         # search and its results are put away while the form is open so the two are

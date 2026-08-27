@@ -1448,6 +1448,7 @@ function combineIdentifierAndNameMatches(identifierRecords = [], nameRecords = [
 }
 
 function ProductMatchCard({
+  changeLabel = 'Change',
   item,
   status = 'matched',
   title,
@@ -1464,7 +1465,7 @@ function ProductMatchCard({
             <strong>{title || 'No Clear Match'}</strong>
             {meta && <small>{meta}</small>}
           </span>
-          {onChange && <button type="button" onClick={onChange} disabled={changeDisabled}>Change</button>}
+          {onChange && <button type="button" onClick={onChange} disabled={changeDisabled}>{changeLabel}</button>}
         </div>
       </div>
     );
@@ -9853,7 +9854,6 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
   const [createOpen, setCreateOpen] = useState(false);
   const [noClearMatch, setNoClearMatch] = useState(false);
   const [editingLinkedProductIdentity, setEditingLinkedProductIdentity] = useState(false);
-  const [replacementProductId, setReplacementProductId] = useState('');
   // Clients with Source Check rules match against the read-only client sheet rather
   // than local Products, so Planning suggests the same rows Shipments does instead of
   // only finding Products that happen to have been activated already.
@@ -9955,7 +9955,6 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
       await api.activateMerchandiseSourceRow(item.merchandiseId, { sourceRowNumber });
       onNoClearMatchDraftChange?.(false);
       setEditingLinkedProductIdentity(false);
-      setReplacementProductId('');
       await onRefresh?.();
     } catch (error) {
       setNotice(error.message || 'Could not match this source row.');
@@ -9975,7 +9974,6 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
       await api.matchMerchandiseReviewEntry(item.merchandiseId, productId);
       onNoClearMatchDraftChange?.(false);
       setEditingLinkedProductIdentity(false);
-      setReplacementProductId('');
       await onRefresh?.();
     } catch (error) {
       setNotice(error.message || 'Could not link Product.');
@@ -9988,7 +9986,6 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
     if (deferNoClearMatch) {
       onNoClearMatchDraftChange?.(true);
       setNoClearMatch(true);
-      setReplacementProductId('');
       setNotice('');
       return;
     }
@@ -9997,10 +9994,24 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
     try {
       await api.markMerchandiseWaitingForProductData(item.merchandiseId, { note: 'No clear Product match from Planning.' });
       setNoClearMatch(true);
-      setReplacementProductId('');
       await onRefresh?.();
     } catch (error) {
       setNotice(error.message || 'Could not mark this as no clear match.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unlinkProduct() {
+    setBusy(true);
+    setNotice('');
+    try {
+      await api.removeMerchandiseReviewMatch(item.merchandiseId);
+      setEditingLinkedProductIdentity(false);
+      setNoClearMatch(false);
+      await onRefresh?.();
+    } catch (error) {
+      setNotice(error.message || 'Could not unlink the Product.');
     } finally {
       setBusy(false);
     }
@@ -10040,8 +10051,7 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
 
   const linked = Boolean(product.id);
   const effectiveNoClearMatch = deferNoClearMatch ? Boolean(noClearMatchDraft) : noClearMatch;
-  const choosingReplacementProduct = Boolean(replacementProductId);
-  const showLinkedProductCard = linked && !choosingReplacementProduct;
+  const showLinkedProductCard = linked;
   const showProductIdentityFields = (!showLinkedProductCard || editingLinkedProductIdentity) && !createOpen;
   const matchIdentifierReady = compactMatchValue(matchIdentifierQuery).length >= 3;
   const matchNameReady = compactMatchValue(matchNameQuery).length >= 3;
@@ -10099,11 +10109,8 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
         <>
           <ProductMatchCard
             item={product}
-            onChange={() => {
-              setReplacementProductId(product.id || '');
-              setEditingLinkedProductIdentity(false);
-              setNoClearMatch(false);
-            }}
+            changeLabel="Unlink"
+            onChange={unlinkProduct}
             changeDisabled={busy}
             actionDisabled={busy}
           />
