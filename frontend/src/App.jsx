@@ -8257,17 +8257,23 @@ function CreativeForceMark({ size = 12 }) {
 // saying when that arrival is further along than this one — otherwise it is noise.
 function otherArrivalNote(item, arrivalsByProduct) {
   const productId = item.record?.itemIds?.[0] || item.record?.linkedItem?.id || '';
-  const siblings = (arrivalsByProduct[productId] || []).filter(other => other.id !== item.id);
-  if (!productId || !siblings.length) return '';
+  // By arrival, not by card. One arrival split into Ecomm and Packaging is two cards
+  // and one box, and reporting each as a duplicate of the other is just noise.
+  const arrival = item.merchandiseId || item.record?.id || item.id;
+  const siblings = (arrivalsByProduct[productId] || [])
+    .filter(other => (other.merchandiseId || other.record?.id || other.id) !== arrival);
+  const arrivals = new Set(siblings.map(other => other.merchandiseId || other.record?.id || other.id));
+  if (!productId || !arrivals.size) return '';
 
   const released = siblings.filter(other => other.record?.released);
   if (released.length) {
     const when = formatInventoryDate(released[0].record?.releasedAt);
-    return `Another arrival of this SKU was released${when ? ` ${when}` : ''}.`;
+    return `Duplicate SKU · released${when ? ` ${when}` : ''}`;
   }
-  const awaiting = siblings.filter(other => releaseSectionForPlanningItem(other) === 'readyToRelease');
-  if (awaiting.length) return 'Another arrival of this SKU is ready for release.';
-  return `This SKU arrived ${siblings.length + 1} times.`;
+  if (siblings.some(other => releaseSectionForPlanningItem(other) === 'readyToRelease')) {
+    return 'Duplicate SKU · one ready for release';
+  }
+  return `Duplicate SKU · ${arrivals.size + 1} arrivals`;
 }
 
 function DeliverableBadges({ values = [], overlay = false, suggested = false, justReleased = false }) {

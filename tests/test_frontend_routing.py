@@ -1376,8 +1376,8 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("function otherArrivalNote(item, arrivalsByProduct)", self.source)
         self.assertIn("const arrivalsByProduct = boardItems.reduce", self.source)
         self.assertIn("arrivalsByProduct={arrivalsByProduct}", self.source)
-        self.assertIn("Another arrival of this SKU was released", self.source)
-        self.assertIn("Another arrival of this SKU is ready for release.", self.source)
+        self.assertIn("Duplicate SKU \u00b7 released", self.source)
+        self.assertIn("Duplicate SKU \u00b7 one ready for release", self.source)
         self.assertIn(".planning-release-other-arrival", self.styles)
         # Reported, never blocked: a repeat arrival is often deliberate.
         self.assertNotIn("cannot be released because another arrival", self.source)
@@ -1988,3 +1988,26 @@ class FileNameDescriptionTests(unittest.TestCase):
         self.assertIn("'Product Description': 'fileNameDescription'", self.source)
         self.assertIn("productdescription: 'fileNameDescription'", self.source)
         self.assertIn("proddescrip: 'fileNameDescription'", self.source)
+
+
+class DuplicateSkuNoteTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+
+    def test_the_note_counts_arrivals_not_cards(self):
+        # One arrival split into Ecomm and Packaging is two cards and one box.
+        self.assertIn(
+            "const arrival = item.merchandiseId || item.record?.id || item.id;",
+            self.source,
+        )
+        self.assertIn("if (!productId || !arrivals.size) return '';", self.source)
+
+    def test_the_note_is_short(self):
+        for text in [
+            "`Duplicate SKU · released${when ? ` ${when}` : ''}`",
+            "'Duplicate SKU · one ready for release'",
+            "`Duplicate SKU · ${arrivals.size + 1} arrivals`",
+        ]:
+            self.assertIn(text, self.source)
+        self.assertNotIn("Another arrival of this SKU", self.source)
