@@ -10900,9 +10900,6 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
               summary={stepFlagged ? 'Issue keeps this item out of release.' : product.product || product.name || product.identifier || 'Confirm the received item can continue.'}
               collapseWhenDone={false}
             >
-              {!wizardState.productLinked && (
-                <p className="new-review-step-intro">Find the Product, or establish one.</p>
-              )}
               <NewReviewProductIdentification
                 item={item}
                 product={product}
