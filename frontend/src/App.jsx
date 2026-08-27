@@ -5148,29 +5148,12 @@ const PHOTO_PRODUCTION_CF_CATEGORY_OPTIONS = [
   { value: 'productType', label: 'Product Type' },
   { value: 'custom', label: 'Custom value' },
 ];
-const TOPCO_PHOTO_PRODUCTION_DEFAULTS = {
-  version: 1,
-  workstreams: {
-    Packaging: {
-      requiredProductFields: ['productName', 'upc', 'jobNumber', 'brandPrefix', 'fileNameDescription'],
-      naming: { template: '{jobNumber}_{brandPrefix}_{fileNameDescription}', tokens: ['jobNumber', 'brandPrefix', 'fileNameDescription'], views: [] },
-      creativeForce: { productCodeField: '', categoryField: 'clientName', categoryValue: '' },
-    },
-    Ecomm: {
-      requiredProductFields: ['productName', 'upc', 'cvid'],
-      naming: { template: '{cvid}_{view}', tokens: ['cvid', 'view'], views: ['front', 'back', 'left', 'right', 'top', 'bottom', 'frontelevated', 'leftelevated', 'rightelevated'] },
-      creativeForce: { productCodeField: '', categoryField: 'clientName', categoryValue: '' },
-    },
-  },
-};
-
-function fallbackPhotoProductionStatus(type, item = {}) {
+function fallbackPhotoProductionStatus(type, item = {}, stagedProduct = null) {
   const clientRequirements = item.clientPhotoProductionRequirements || item.client?.photoProductionRequirements || item.record?.clientPhotoProductionRequirements;
-  const clientConfig = clientRequirements?.workstreams?.[type];
-  const clientName = String(typeof item.client === 'string' ? item.client : item.client?.name || item.record?.clientName || '').trim().toLowerCase();
-  const config = clientConfig || (clientName === 'topco' ? TOPCO_PHOTO_PRODUCTION_DEFAULTS.workstreams[type] : null);
+  // Only the client says what a photo needs. Nothing stands in for that.
+  const config = clientRequirements?.workstreams?.[type];
   if (!config) return null;
-  const product = productDataSourceForPlanningItem(item);
+  const product = productDataSourceForPlanningItem(item, {}, stagedProduct);
   const checks = (config.requiredProductFields || []).map(key => ({
     key,
     label: PHOTO_PRODUCTION_FIELD_LABELS[key] || key,
@@ -5238,9 +5221,7 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
   const configured = client?.photoProductionRequirements;
   const initial = configured?.workstreams && Object.keys(configured.workstreams).length > 0
     ? configured
-    : String(client?.name || '').trim().toLowerCase() === 'topco'
-      ? TOPCO_PHOTO_PRODUCTION_DEFAULTS
-      : { version: 1, workstreams: {} };
+    : { version: 1, workstreams: {} };
   const [requirements, setRequirements] = useState(() => ({
     version: 1,
     workstreams: { ...(initial.workstreams || {}) },
@@ -5454,9 +5435,7 @@ function ClientSourceSyncModal({ client, onClose, onSaved }) {
     try {
       const existingRequirements = client.photoProductionRequirements?.workstreams
         ? client.photoProductionRequirements
-        : String(client?.name || '').trim().toLowerCase() === 'topco'
-          ? TOPCO_PHOTO_PRODUCTION_DEFAULTS
-          : { version: 1, workstreams: {} };
+        : { version: 1, workstreams: {} };
       const sourceRefresh = {
         enabled,
         intervalSeconds: Math.max(1, Number(intervalMinutes || 1)) * 60,
@@ -10576,7 +10555,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
             const status = item.record?.photoProduction?.[type];
             const hasChecks = (status?.productData?.checks || []).length > 0
               || (status?.creativeForce?.checks || []).length > 0;
-            return [type, hasChecks ? status : fallbackPhotoProductionStatus(type, item)];
+            return [type, hasChecks ? status : fallbackPhotoProductionStatus(type, item, stagedMatchProduct)];
           })
           .filter(([, status]) => status)
       );
@@ -10989,7 +10968,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
               </ReviewStep>
             )}
 
-            {!isMerchAcceptanceReview && Object.keys(selectedPhotoProduction).length > 0 && (
+            {!isMerchAcceptanceReview && productChosen && Object.keys(selectedPhotoProduction).length > 0 && (
               <ReviewStep
                 n={3}
                 title="Product data for photo"

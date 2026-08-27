@@ -1946,3 +1946,15 @@ class StagedMatchProductDataTests(unittest.TestCase):
         )
         self.assertIn("productDataSourceForPlanningItem(item, {}, stagedProduct)", self.source)
         self.assertIn("stagedProduct={stagedMatchProduct}", self.source)
+
+    def test_product_data_follows_the_product_too(self):
+        self.assertIn(
+            "{!isMerchAcceptanceReview && productChosen && Object.keys(selectedPhotoProduction).length > 0 && (",
+            self.source,
+        )
+
+    def test_required_fields_come_only_from_the_client(self):
+        # A copy in the app drifts - the one removed here had already lost jobNumber
+        # from Ecomm - and a wrong list is worse than no list.
+        self.assertNotIn("TOPCO_PHOTO_PRODUCTION_DEFAULTS", self.source)
+        self.assertIn("const config = clientRequirements?.workstreams?.[type];", self.source)
