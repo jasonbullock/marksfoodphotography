@@ -10157,17 +10157,20 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
           )}
           {showProductCreation && (
             <>
-              <div className="merch-create-alt">
-                <button type="button" className="merch-link-btn" onClick={() => setCreateOpen(open => !open)}>
-                  {createOpen ? 'Hide' : 'No Product exists yet? Establish one'}
-                </button>
-              </div>
-              {createOpen && (
-                <>
-                  <p className="new-review-search-hint">
-                    Creates the Product this merchandise is, from what is known now. A
-                    Structure Form arriving later fills in the rest.
-                  </p>
+              {!createOpen ? (
+                <div className="merch-create-alt">
+                  <button type="button" className="merch-link-btn" onClick={() => setCreateOpen(true)}>
+                    No Product exists yet? Establish one
+                  </button>
+                </div>
+              ) : (
+                <section className="product-establish">
+                  <header>
+                    <span>Add what you know. The rest can be filled in later.</span>
+                    <button type="button" className="merch-link-btn" onClick={() => setCreateOpen(false)}>
+                      Cancel
+                    </button>
+                  </header>
                   <div className="waiting-product-fields">
                     {productCreationKeys.map(key => (
                       <label key={key}>
@@ -10179,10 +10182,12 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
                       </label>
                     ))}
                   </div>
-                  <button type="button" className="btn btn-secondary" onClick={saveProduct} disabled={busy}>
-                    Create Product and link it
-                  </button>
-                </>
+                  <footer>
+                    <button type="button" className="btn btn-primary" onClick={saveProduct} disabled={busy}>
+                      Create Product and link it
+                    </button>
+                  </footer>
+                </section>
               )}
             </>
           )}

@@ -1283,7 +1283,13 @@ class FrontendRoutingTests(unittest.TestCase):
         # never on screen competing for the same action. Hide brings them back.
         self.assertIn("&& !createOpen;", self.source)
         self.assertIn("{!createOpen && showMatchSuggestions &&", self.source)
-        self.assertIn("{createOpen ? 'Hide' : 'No Product exists yet? Establish one'}", self.source)
+        self.assertIn("No Product exists yet? Establish one", self.source)
+        self.assertIn('<section className="product-establish">', self.source)
+        self.assertIn("onClick={() => setCreateOpen(false)}", self.source)
+        self.assertIn("Add what you know. The rest can be filled in later.", self.source)
+        self.assertIn(".product-establish", self.styles)
+        # The action sits under all the fields, not under the first column.
+        self.assertIn(".product-establish > footer", self.styles)
 
     def test_the_match_list_says_when_it_is_truncated(self):
         # Silent truncation reads as "this is everything". Five is enough to
