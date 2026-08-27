@@ -10134,6 +10134,32 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
   const productCreationKeys = productCreationFields(clientRecord, item);
   const showProductCreation = !linked;
 
+  const matchSuggestionList = !createOpen
+    && showMatchSuggestions
+    && (combinedMatches.length > 0 || matchLoading || sourceMatchLoading)
+    ? (
+      <ReceivingMatchSuggestions
+        title={matchSuggestionsTitle}
+        matches={combinedMatches}
+        identifierQuery={matchIdentifierQuery}
+        nameOnlyMatchSuggestions={nameOnlyMatchSuggestions}
+        combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
+        combinedMatchSearch={combinedMatchSearch}
+        matchLoading={matchLoading || sourceMatchLoading}
+        showNoClearMatchAction={false}
+        onSelect={match => {
+          if (match.__sourceRow) {
+            // Not a Product yet - picking it is what creates one.
+            activateSourceRow(match.__sourceRow);
+            return;
+          }
+          linkProduct(match);
+        }}
+        disabled={busy}
+      />
+    )
+    : null;
+
   return (
     <div className="new-review-product-id">
       {showProductIdentityFields && (
@@ -10177,41 +10203,26 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
             />
           )}
         </>
-      ) : effectiveNoClearMatch ? (
-        <ProductMatchCard
-          status="unmatched"
-          title="No Clear Match"
-          meta={deferNoClearMatch ? 'Will continue unmatched when accepted.' : 'Waiting for Product data.'}
-          onChange={() => {
-            setNoClearMatch(false);
-            setSearchingForMatch(true);
-            onNoClearMatchDraftChange?.(false);
-          }}
-          changeDisabled={busy}
-        />
       ) : (
         <>
-          {!createOpen && showMatchSuggestions && (combinedMatches.length > 0 || matchLoading || sourceMatchLoading) && (
-            <ReceivingMatchSuggestions
-              title={matchSuggestionsTitle}
-              matches={combinedMatches}
-              identifierQuery={matchIdentifierQuery}
-              nameOnlyMatchSuggestions={nameOnlyMatchSuggestions}
-              combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
-              combinedMatchSearch={combinedMatchSearch}
-              matchLoading={matchLoading || sourceMatchLoading}
-              showNoClearMatchAction={false}
-              onSelect={match => {
-                if (match.__sourceRow) {
-                  // Not a Product yet — picking it is what creates one.
-                  activateSourceRow(match.__sourceRow);
-                  return;
-                }
-                linkProduct(match);
+          {effectiveNoClearMatch && (
+            <ProductMatchCard
+              status="unmatched"
+              title="No Clear Match"
+              meta={deferNoClearMatch ? 'Will continue unmatched when accepted.' : 'Waiting for Product data.'}
+              onChange={() => {
+                setNoClearMatch(false);
+                setSearchingForMatch(true);
+                onNoClearMatchDraftChange?.(false);
               }}
-              disabled={busy}
+              changeDisabled={busy}
             />
           )}
+          {/* Below the card rather than instead of it. No Clear Match records what
+              someone decided at receiving, not a verdict on what exists now, so a
+              Product that has since appeared should be one click away rather than
+              hidden behind dismissing the card. */}
+          {matchSuggestionList}
         </>
       )}
       {showProductCreation && (

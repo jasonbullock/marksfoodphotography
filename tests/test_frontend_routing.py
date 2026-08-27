@@ -1331,7 +1331,7 @@ class FrontendRoutingTests(unittest.TestCase):
         # search and its results are put away while the form is open so the two are
         # never on screen competing for the same action. Hide brings them back.
         self.assertIn("&& !createOpen;", self.source)
-        self.assertIn("{!createOpen && showMatchSuggestions &&", self.source)
+        self.assertIn("const matchSuggestionList = !createOpen\n    && showMatchSuggestions", self.source)
         self.assertIn("No Product exists yet? Establish one", self.source)
         self.assertIn('<section className="product-establish">', self.source)
         self.assertIn("onClick={() => setCreateOpen(false)}", self.source)
@@ -1491,7 +1491,7 @@ class FrontendRoutingTests(unittest.TestCase):
         # DOMAIN_TERMS receiver-facing wording.
         package_name_index = planning_product_step.index("<label>Search by name</label>")
         identifier_index = planning_product_step.index("<label>Search by UPC / ID</label>", package_name_index)
-        suggestions_index = planning_product_step.index("<ReceivingMatchSuggestions")
+        suggestions_index = planning_product_step.index("{matchSuggestionList}")
         self.assertLess(package_name_index, identifier_index)
         self.assertLess(identifier_index, suggestions_index)
         self.assertIn(".new-review-product-search-fields", self.styles)
@@ -1855,3 +1855,17 @@ class UnlinkTests(unittest.TestCase):
         source = APP.read_text()
         self.assertIn("const effectiveNoClearMatch = !searchingForMatch", source)
         self.assertIn("useEffect(() => { setSearchingForMatch(false); }, [item.id]);", source)
+
+
+class NoClearMatchSuggestionTests(unittest.TestCase):
+    def test_the_suggestions_sit_under_no_clear_match_not_instead_of_it(self):
+        source = APP.read_text()
+        start = source.index("{effectiveNoClearMatch && (")
+        block = source[start:start + 1200]
+        self.assertIn("title=\"No Clear Match\"", block)
+        self.assertIn("{matchSuggestionList}", block)
+
+    def test_the_suggestion_list_is_built_once(self):
+        source = APP.read_text()
+        self.assertEqual(source.count("const matchSuggestionList = !createOpen"), 1)
+        self.assertEqual(source.count("{matchSuggestionList}"), 1)

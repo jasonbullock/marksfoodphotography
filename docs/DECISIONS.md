@@ -1725,3 +1725,20 @@ sat in Needs More Information describing something that no longer matched its st
 Those are different facts. Whether the goods arrived as described, and how far the review
 has got, are not claims about which Product this is. Unlinking now clears the link and
 nothing else.
+
+## 2026-08-27 - No Clear Match Is A Record, Not A Verdict
+
+Nothing computes "no clear match". Both write paths in `backend/routes.py` set it from a
+flag in the request body: it is what someone decided at receiving, not the system reporting
+that a search came up empty.
+
+The card was rendered instead of the suggestion list, which read as though the two agreed.
+They do not. An item parked on No Clear Match in April says nothing about what Products
+exist today, and a Product established since would sit hidden behind dismissing the card.
+
+The suggestions now render below the card. The recorded decision stays on screen and stays
+honest, and a match that has since appeared is one click away.
+
+Unlinking, or dismissing the card, also marks the panel as searching for the rest of that
+item's visit. The record still reads Waiting for Product Data until the step is saved, so
+without that the refresh put the card straight back and the search had to be started twice.
