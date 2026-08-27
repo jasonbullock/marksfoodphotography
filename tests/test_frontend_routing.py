@@ -1875,4 +1875,12 @@ class MatchStepTests(unittest.TestCase):
         self.assertIn("stepFlagged ? 'Issue' : productChosen ? 'Matched' : 'Unmatched'", self.source)
 
     def test_deliverables_wait_for_a_product(self):
-        self.assertIn("{!isMerchAcceptanceReview && productChosen && (", self.source)
+        self.assertIn("{!isMerchAcceptanceReview && showDeliverablesStep && (", self.source)
+
+    def test_deliverables_already_recorded_stay_visible_while_unmatched(self):
+        # Not offering the choice is one thing; hiding an answer already given is
+        # another, and would read as the data having been lost.
+        self.assertIn(
+            "const showDeliverablesStep = productChosen || committedDeliverables.length > 0;",
+            self.source,
+        )

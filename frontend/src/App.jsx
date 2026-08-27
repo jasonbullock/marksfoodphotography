@@ -10808,6 +10808,10 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   // A staged match counts. The record is where the status starts, but once someone
   // picks a Product the screen should say so rather than wait for the save.
   const productChosen = Boolean(wizardState.productLinked) || Boolean(matchDraft?.item);
+  // Deliverables are a decision about a Product, so they are not offered before one
+  // is chosen. Ones already recorded are still shown: hiding them would make saved
+  // work invisible rather than merely unavailable.
+  const showDeliverablesStep = productChosen || committedDeliverables.length > 0;
   const identifyDone = isMerchAcceptanceReview ? false : productChosen;
   const deliverablesDone = wizardState.deliverables.length > 0;
   const receivedDateLabel = formatInventoryDate(item.record?.dateReceived || item.record?.received);
@@ -10904,7 +10908,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
               />
             </ReviewStep>
 
-            {!isMerchAcceptanceReview && productChosen && (
+            {!isMerchAcceptanceReview && showDeliverablesStep && (
               <ReviewStep
                 n={2}
                 title="Deliverables"
