@@ -1831,3 +1831,18 @@ was answering a different question.
 
 The Merchandise flag stays and becomes derived: the arrival is released once every workstream
 on it is. Released At and Released By on Merchandise still record the most recent release.
+
+## 2026-08-27 - An Edit After Release Reaches Creative Force
+
+The Creative Force feed was written once, at release. Everything the feed carries -
+product name, UPC, CVID, job number, brand prefix, file name description - can be edited
+afterwards, and the row kept saying what it said on the day. Creative Force would go on
+working from the released version while the board showed the corrected one.
+
+Saving a released Workstream Card, or a Product that a released card points at, now
+refreshes that card's feed row. The sync was already an upsert keyed on the card id, so
+this reuses it rather than adding a second path.
+
+It is deliberately quiet. The edit has already been written; a feed row that lags for a
+moment is better than refusing the save because Creative Force was unreachable. Failures
+are logged, not raised. Cards that were never released are untouched.
