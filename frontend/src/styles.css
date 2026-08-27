@@ -17891,3 +17891,25 @@ select.form-input {
   color: var(--text-1);
   font: 600 12px/1.2 system-ui, -apple-system, sans-serif;
 }
+
+.new-review-released-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.new-review-released-mark {
+  padding: 2px 7px;
+  border: 1px solid rgba(22, 163, 74, 0.4);
+  border-radius: 999px;
+  background: rgba(22, 163, 74, 0.08);
+  color: #15803d;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}

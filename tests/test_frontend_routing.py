@@ -2095,3 +2095,27 @@ class ReleaseColumnIdentityTests(unittest.TestCase):
         source = APP.read_text()
         self.assertIn("const showMatchState = sectionId !== 'readyToRelease';", source)
         self.assertIn("{showMatchState && (", source)
+
+
+class ReleasedCardEditingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+        cls.styles = STYLES.read_text()
+
+    def test_a_released_card_says_so(self):
+        # Editing after release is normal - a typo in CVID should be fixable without
+        # undoing the release. Doing it unknowingly is not.
+        self.assertIn("const alreadyReleased = Boolean(item.record?.released);", self.source)
+        self.assertIn("Changes here update the Creative Force record.", self.source)
+        self.assertIn(".new-review-released-mark", self.styles)
+
+    def test_the_two_controls_that_are_not_corrections_ask_first(self):
+        self.assertIn(
+            "'This workstream has been released to photo and Creative Force is holding it. Remove it anyway?',",
+            self.source,
+        )
+        self.assertIn(
+            "'This workstream has been released to photo against this Product. Unlink it anyway?',",
+            self.source,
+        )

@@ -9993,6 +9993,11 @@ function NewReviewProductIdentification({ item, product, onRefresh, matchDraft =
       onMatchDraftChange?.(null);
       return;
     }
+    // Re-pointing a released card is not a correction: Creative Force is scheduled
+    // against the Product that was released.
+    if (item.record?.released && !window.confirm(
+      'This workstream has been released to photo against this Product. Unlink it anyway?',
+    )) return;
     setBusy(true);
     setNotice('');
     try {
@@ -10840,6 +10845,10 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   const shipmentRecord = item.record?.receipt || item.record?.shipment || {};
   const shipmentEditHref = shipmentRecord.id ? `/shipments?shipmentId=${encodeURIComponent(shipmentRecord.id)}` : '';
   const shipmentLabel = shipmentRecord.name || 'Shipments';
+  // Editing a released card is normal - a typo in CVID should be fixable without
+  // undoing the release. What is not normal is doing it without knowing.
+  const alreadyReleased = Boolean(item.record?.released);
+  const releasedOnLabel = formatInventoryDate(item.record?.releasedAt);
   const merchCheckStatusText = stepFlagged ? 'Issue' : productChosen ? 'Matched' : 'Unmatched';
   const merchCheckStatusTone = stepFlagged ? 'flag' : productChosen ? 'ok' : 'wait';
 
@@ -10850,6 +10859,12 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
           <div className="new-review-modal-heading">
             <span className="nr-eyebrow">{item.client}</span>
             <h2>{item.title}</h2>
+            {alreadyReleased && (
+              <p className="new-review-released-note">
+                <span className="new-review-released-mark">Released{releasedOnLabel ? ` ${releasedOnLabel}` : ''}</span>
+                Changes here update the Creative Force record.
+              </p>
+            )}
           </div>
           <button type="button" className="merchandise-detail-close" onClick={() => onClose(item)} aria-label="Close intake review">
             <Icon.Close />
@@ -11035,7 +11050,18 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
           <div className="new-review-footer-left">
             <span className="new-review-received-date">Received {receivedDateLabel}</span>
             {isWorkstreamCard && onRemove && (
-              <button type="button" className="btn btn-danger-outline" onClick={() => onRemove(item)} disabled={finishBusy}>
+              <button
+                type="button"
+                className="btn btn-danger-outline"
+                onClick={() => {
+                  // Creative Force is already holding this one. Say so before it goes.
+                  if (alreadyReleased && !window.confirm(
+                    'This workstream has been released to photo and Creative Force is holding it. Remove it anyway?',
+                  )) return;
+                  onRemove(item);
+                }}
+                disabled={finishBusy}
+              >
                 Remove workstream
               </button>
             )}

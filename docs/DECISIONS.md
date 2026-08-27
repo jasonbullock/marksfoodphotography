@@ -1846,3 +1846,20 @@ this reuses it rather than adding a second path.
 It is deliberately quiet. The edit has already been written; a feed row that lags for a
 moment is better than refusing the save because Creative Force was unreachable. Failures
 are logged, not raised. Cards that were never released are untouched.
+
+## 2026-08-27 - A Released Card Stays Editable, And Says So
+
+Locking a card at release would force an unrelease-and-redo for a typo in CVID, and the
+feed re-sync already carries corrections through to Creative Force. So editing stays open.
+
+What was missing is that the screen said nothing. A released card looked identical to an
+unreleased one: same fields, same Remove workstream button, no mention that a change now
+rewrites what Creative Force is holding. The header carries a Released marker with the
+date and that sentence now.
+
+Two of the controls are not corrections. Unlinking re-points the card at a different
+Product while Creative Force is scheduled against the released one, and Remove workstream
+withdraws work CF may already hold - its existing guard is on CF *status*, so a card
+released minutes ago is still removable and would leave its feed row behind. Both ask
+before acting on a released card. Neither is blocked: a wrong match after release is a
+real situation, and refusing it only moves the fix into the base.
