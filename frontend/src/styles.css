@@ -17858,3 +17858,17 @@ select.form-input {
 .structure-form-result td {
   vertical-align: middle;
 }
+
+.client-photo-path-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.client-photo-path-fields label {
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--text-2);
+}

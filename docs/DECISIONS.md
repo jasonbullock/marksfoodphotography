@@ -1782,3 +1782,31 @@ import map so sheets already in circulation keep working.
 
 `F_ITEM_DESCRIPTION` went with it. Products has no Description field and never has, so the
 read always returned "" and the write would have failed with 422 had anyone supplied one.
+
+## 2026-08-27 - The Client Says What A Release Needs
+
+Three copies of "what a photo needs" were in play. The Client record's Photo Production
+Requirements was one. `TOPCO_READINESS_PROFILE` in `routes.py` was a second, carrying its own
+`deliverables.*.requiredFields` that the Admin panel displayed but nothing enforced, and which
+did not match the Client record. `_topco_photo_production_requirements()` was a third, handed
+out whenever the Client record looked blank, and it had drifted - its Ecomm list was missing
+jobNumber. The release form then hardcoded Upload Location as required on top of all that,
+while Artwork Path next to it read the Product field list, which answers a different question.
+
+Only the Client record says it now. The two hardcoded copies are gone, and nothing is invented
+for an unconfigured client.
+
+Release-form fields are configured separately from Product fields, as `release.requiredFields`
+per workstream. They are typed at release and never carried on the Product, so listing them
+among `requiredProductFields` would leave Planning asking for a Product field that does not
+exist. Both default to not required, so no asterisk, and the email omits a path unless the
+client requires it or someone entered one - the preview previously showed a red placeholder
+for copy the sent email never contained.
+
+Path prefixes moved from `TOPCO_READINESS_PROFILE.pathPrefixes` to `paths: {artwork, upload}`
+in the same Client config, editable in the Admin panel. Topco's record now carries the two
+smb:// values that used to be in the code. No new Airtable columns: the config field already
+existed, and the standing goal is fewer fields, not more.
+
+Where the values are stored is unchanged - Artwork Path and Upload Location stay on the
+Activation, written per release.

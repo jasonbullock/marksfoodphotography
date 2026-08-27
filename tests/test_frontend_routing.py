@@ -2011,3 +2011,43 @@ class DuplicateSkuNoteTests(unittest.TestCase):
         ]:
             self.assertIn(text, self.source)
         self.assertNotIn("Another arrival of this SKU", self.source)
+
+
+class ReleasePathConfigTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+
+    def test_path_prefixes_come_from_the_client(self):
+        self.assertIn(
+            "const pathPrefixes = selectedClient?.photoProductionRequirements?.paths || {};",
+            self.source,
+        )
+        self.assertNotIn("readinessProfile?.pathPrefixes", self.source)
+
+    def test_the_asterisks_follow_the_client_config(self):
+        # Upload Location was hardcoded required and Artwork Path read the Product
+        # field list, which is a different question from what the release form needs.
+        self.assertIn("const artworkPathRequired = configuredReleaseFields.has('artworkPath');", self.source)
+        self.assertIn("const uploadLocationRequired = configuredReleaseFields.has('uploadLocation');", self.source)
+        self.assertIn("required={artworkPathRequired}", self.source)
+        self.assertIn("required={uploadLocationRequired}", self.source)
+
+    def test_the_preview_shows_what_the_email_will_carry(self):
+        # The email already dropped an empty path; the preview rendered a red
+        # placeholder for it, so it promised copy that was never sent.
+        self.assertIn("showArtworkPath: artworkPathInEmail,", self.source)
+        self.assertIn("showUploadLocation: uploadLocationInEmail,", self.source)
+        self.assertIn("fallback={artworkPathRequired ? 'Artwork path' : ''}", self.source)
+        self.assertIn("fallback={uploadLocationRequired ? 'Upload location' : ''}", self.source)
+
+    def test_views_included_in_handoff_is_gone(self):
+        self.assertNotIn("Views included in handoff", self.source)
+        self.assertNotIn("function toggleView(", self.source)
+
+    def test_the_admin_panel_edits_paths_and_release_requirements(self):
+        self.assertIn("Required on the release form", self.source)
+        self.assertIn("function toggleReleaseField(type, field)", self.source)
+        self.assertIn("Path prefixes", self.source)
+        self.assertIn("setPath('artwork', event.target.value)", self.source)
+        self.assertIn("setPath('upload', event.target.value)", self.source)

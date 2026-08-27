@@ -513,32 +513,6 @@ TOPCO_READINESS_PROFILE = {
         {"label": "Activation Package", "description": "Marks creates and stores the Topco project readiness package."},
         {"label": "Shipments", "description": "Marks captures received quantity, photos, and physical handling."},
     ],
-    "pathPrefixes": {
-        "artwork": "smb://gfs-marks/Topco/_CGI/03 PROJECTS/",
-        "upload": "smb://gfs-marks/Topco/",
-    },
-    "deliverables": {
-        "Ecomm": {
-            "source": "Activation",
-            "requiredFields": [
-                "UPC",
-                "CVID",
-                "Description",
-                "Structure",
-                "Walnut Scope",
-                "Upload Location",
-            ],
-        },
-        "Packaging": {
-            "source": "Activation",
-            "requiredFields": [
-                "UPC",
-                "WKFT Job Number",
-                "Brand Prefix",
-                "File Name Description",
-            ],
-        },
-    },
     "notRequiredFromActivation": [
         "Quantity received",
         "Storage location",
@@ -851,6 +825,13 @@ PHOTO_PRODUCTION_REQUIREMENT_FIELDS = {
     "ecommPhotoNotes": "Ecomm Photo Notes",
     "pathToArt": "Valid Artwork Path",
 }
+# Entered on the release form, not carried on the Product, so they are kept apart
+# from requiredProductFields - listing them there would leave Planning asking for a
+# Product field that does not exist.
+PHOTO_RELEASE_REQUIREMENT_FIELDS = {
+    "artworkPath": "Artwork Path",
+    "uploadLocation": "Upload Location",
+}
 PHOTO_PRODUCTION_CATEGORY_FIELDS = {
     "clientName": "Client Name",
     "productName": "Product Name",
@@ -858,33 +839,6 @@ PHOTO_PRODUCTION_CATEGORY_FIELDS = {
     "productType": "Product Type",
     "custom": "Custom value",
 }
-
-
-def _topco_photo_production_requirements():
-    return {
-        "version": 1,
-        "workstreams": {
-            "Packaging": {
-                "requiredProductFields": ["productName", "upc", "jobNumber", "brandPrefix", "fileNameDescription"],
-                "naming": {
-                    "template": "{jobNumber}_{brandPrefix}_{fileNameDescription}",
-                    "tokens": ["jobNumber", "brandPrefix", "fileNameDescription"],
-                    "separator": "_",
-                },
-                "creativeForce": {"productCodeField": "", "categoryField": "clientName"},
-            },
-            "Ecomm": {
-                "requiredProductFields": ["productName", "upc", "cvid"],
-                "naming": {
-                    "template": "{cvid}_{view}",
-                    "tokens": ["cvid", "view"],
-                    "views": ["front", "back", "left", "right", "top", "bottom", "frontelevated", "leftelevated", "rightelevated"],
-                    "separator": "_",
-                },
-                "creativeForce": {"productCodeField": "", "categoryField": "clientName"},
-            },
-        },
-    }
 
 
 def _empty_photo_production_requirements():
@@ -933,6 +887,17 @@ def _normalize_photo_production_requirements(value):
                 "separator": separator,
             },
         }
+        release = config.get("release") or {}
+        if not isinstance(release, dict) or isinstance(release, list):
+            raise ValueError(f"Photo requirements for {name}.release must be an object.")
+        release_fields = release.get("requiredFields") or []
+        if not isinstance(release_fields, list):
+            raise ValueError(f"Photo requirements for {name}.release.requiredFields must be a list.")
+        invalid_release = [str(field) for field in release_fields if str(field) not in PHOTO_RELEASE_REQUIREMENT_FIELDS]
+        if invalid_release:
+            raise ValueError(f"Unsupported release requirement for {name}: {', '.join(invalid_release)}.")
+        if release_fields:
+            normalized_config["release"] = {"requiredFields": [str(field) for field in release_fields]}
         if "creativeForce" in config:
             creative_force = config.get("creativeForce") or {}
             if not isinstance(creative_force, dict) or isinstance(creative_force, list):
@@ -953,6 +918,17 @@ def _normalize_photo_production_requirements(value):
             }
         normalized[name] = normalized_config
     normalized_requirements = {"version": 1, "workstreams": normalized}
+    # Where this client's artwork and uploads live. Client config, not a code branch.
+    paths = value.get("paths") or {}
+    if not isinstance(paths, dict) or isinstance(paths, list):
+        raise ValueError("Photo Production Requirements paths must be an object.")
+    normalized_paths = {
+        key: str(paths.get(key) or "").strip()
+        for key in ("artwork", "upload")
+        if str(paths.get(key) or "").strip()
+    }
+    if normalized_paths:
+        normalized_requirements["paths"] = normalized_paths
     if "sourceRefresh" in value:
         normalized_requirements["sourceRefresh"] = _normalize_source_refresh_config(
             value.get("sourceRefresh"),
@@ -962,8 +938,6 @@ def _normalize_photo_production_requirements(value):
 
 
 def _parse_photo_production_requirements(raw, client_name=""):
-    if not raw and (client_name or "").strip().lower() == "topco":
-        return _topco_photo_production_requirements(), ""
     if not raw:
         return _empty_photo_production_requirements(), ""
     try:

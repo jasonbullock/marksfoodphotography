@@ -405,9 +405,30 @@ class AuthTests(unittest.TestCase):
     @patch("routes.airtable.list_records")
     def test_topco_client_includes_activation_readiness_profile(self, list_records):
         self.authenticate(user_record(role="Admin", all_clients=True))
+        # Paths and requirements come from the Client record. The profile describes the
+        # relationship; it no longer carries a second copy of what a photo needs.
+        configured = json.dumps({
+            "version": 1,
+            "paths": {"artwork": "smb://gfs-marks/Topco/_CGI/03 PROJECTS/", "upload": "smb://gfs-marks/Topco/"},
+            "workstreams": {
+                "Packaging": {
+                    "requiredProductFields": ["productName", "upc", "jobNumber", "brandPrefix", "fileNameDescription"],
+                    "naming": {"template": "{jobNumber}_{brandPrefix}_{fileNameDescription}", "tokens": ["jobNumber", "brandPrefix", "fileNameDescription"], "separator": "_"},
+                },
+                "Ecomm": {
+                    "requiredProductFields": ["productName", "upc", "cvid"],
+                    "naming": {"template": "{cvid}_{view}", "tokens": ["cvid", "view"], "separator": "_"},
+                    "release": {"requiredFields": ["uploadLocation"]},
+                },
+            },
+        })
         list_records.return_value = {
             "records": [
-                {"id": "recTopco", "fields": {C.F_CLIENT_NAME: "Topco", C.F_CLIENT_ACTIVE: True}},
+                {"id": "recTopco", "fields": {
+                    C.F_CLIENT_NAME: "Topco",
+                    C.F_CLIENT_ACTIVE: True,
+                    C.F_CLIENT_PHOTO_PRODUCTION_REQUIREMENTS: configured,
+                }},
                 {"id": "recOther", "fields": {C.F_CLIENT_NAME: "Other Client", C.F_CLIENT_ACTIVE: True}},
             ],
         }
@@ -420,17 +441,34 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(profile["mode"], "activation_driven")
         self.assertEqual(profile["matchingTarget"], "Activation row linked to received Merchandise")
         self.assertIn("Activation confirmed", profile["readyForPhotoRequires"])
-        self.assertIn("Activation row linked", profile["readyForPhotoRequires"])
         self.assertEqual(profile["sources"][0]["label"], "Activation Package")
-        self.assertEqual(profile["pathPrefixes"]["artwork"], "smb://gfs-marks/Topco/_CGI/03 PROJECTS/")
-        self.assertEqual(profile["pathPrefixes"]["upload"], "smb://gfs-marks/Topco/")
-        self.assertIn("CVID", profile["deliverables"]["Ecomm"]["requiredFields"])
-        self.assertIn("File Name Description", profile["deliverables"]["Packaging"]["requiredFields"])
+        self.assertNotIn("pathPrefixes", profile)
+        self.assertNotIn("deliverables", profile)
         self.assertIn("Quantity received", profile["notRequiredFromActivation"])
+
         photo_requirements = records["Topco"]["photoProductionRequirements"]
+        self.assertEqual(photo_requirements["paths"]["artwork"], "smb://gfs-marks/Topco/_CGI/03 PROJECTS/")
+        self.assertEqual(photo_requirements["paths"]["upload"], "smb://gfs-marks/Topco/")
+        self.assertEqual(photo_requirements["workstreams"]["Ecomm"]["release"]["requiredFields"], ["uploadLocation"])
         self.assertEqual(photo_requirements["workstreams"]["Packaging"]["naming"]["template"], "{jobNumber}_{brandPrefix}_{fileNameDescription}")
-        self.assertEqual(photo_requirements["workstreams"]["Ecomm"]["naming"]["template"], "{cvid}_{view}")
+        self.assertNotIn("release", photo_requirements["workstreams"]["Packaging"])
         self.assertIsNone(records["Other Client"]["readinessProfile"])
+
+    @patch("routes.airtable.list_records")
+    def test_an_unconfigured_client_gets_no_invented_requirements(self, list_records):
+        # Topco used to receive a hardcoded copy when its record was blank, and the
+        # copy had drifted from the record. Only the Client says what a photo needs.
+        self.authenticate(user_record(role="Admin", all_clients=True))
+        list_records.return_value = {
+            "records": [{"id": "recTopco", "fields": {C.F_CLIENT_NAME: "Topco", C.F_CLIENT_ACTIVE: True}}],
+        }
+
+        response = self.client.get("/api/clients")
+
+        self.assertEqual(response.status_code, 200)
+        requirements = response.get_json()["records"][0]["photoProductionRequirements"]
+        self.assertEqual(requirements["workstreams"], {})
+        self.assertNotIn("paths", requirements)
 
     def test_photo_production_status_reports_missing_product_and_naming_values(self):
         client = {

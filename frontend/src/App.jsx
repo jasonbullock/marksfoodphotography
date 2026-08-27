@@ -5122,6 +5122,12 @@ function ClientImportProfilesModal({ client, onClose, onSaved }) {
   );
 }
 
+// Entered on the release form, never carried on the Product, so they are listed
+// apart from the Product data checks.
+const PHOTO_RELEASE_REQUIREMENT_LABELS = {
+  artworkPath: 'Artwork Path',
+  uploadLocation: 'Upload Location',
+};
 const PHOTO_PRODUCTION_FIELD_LABELS = {
   productName: 'Product Name',
   upc: 'UPC / Product ID',
@@ -5223,6 +5229,7 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
   const [requirements, setRequirements] = useState(() => ({
     version: 1,
     workstreams: { ...(initial.workstreams || {}) },
+    ...(initial.paths ? { paths: { ...initial.paths } } : {}),
     ...(initial.sourceRefresh ? { sourceRefresh: initial.sourceRefresh } : {}),
   }));
   const [saving, setSaving] = useState(false);
@@ -5282,12 +5289,18 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
     });
   }
 
-  function toggleView(type, view) {
+  // Entered on the release form rather than carried on the Product, so these are
+  // kept apart from the Product data checks above.
+  function toggleReleaseField(type, field) {
     updateType(type, config => {
-      const naming = config.naming || {};
-      const views = naming.views || [];
-      return { ...config, naming: { ...naming, views: views.includes(view) ? views.filter(value => value !== view) : [...views, view] } };
+      const current = config.release?.requiredFields || [];
+      const next = current.includes(field) ? current.filter(value => value !== field) : [...current, field];
+      return { ...config, release: { requiredFields: next } };
     });
+  }
+
+  function setPath(key, value) {
+    setRequirements(current => ({ ...current, paths: { ...(current.paths || {}), [key]: value } }));
   }
 
   async function save() {
@@ -5375,18 +5388,36 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
                   </div>
                   <code className="client-photo-template-preview">{(config.naming?.tokens || []).map(value => `{${value}}`).join(config.naming?.separator ?? '_') || 'Filename preview will appear here'}</code>
                 </div>
-                {type === 'Ecomm' && <>
-                    <span className="client-photo-requirement-label">Views included in handoff</span>
-                  <div className="client-photo-view-options">
-                    {['front', 'back', 'left', 'right', 'top', 'bottom', 'frontelevated', 'leftelevated', 'rightelevated'].map(view => (
-                      <label key={view}><input type="checkbox" checked={(config.naming?.views || []).includes(view)} onChange={() => toggleView(type, view)} />{view}</label>
-                    ))}
-                  </div>
-                </>}
+                <span className="client-photo-requirement-label">Required on the release form</span>
+                <div className="client-photo-requirement-options">
+                  {Object.entries(PHOTO_RELEASE_REQUIREMENT_LABELS).map(([field, label]) => (
+                    <label key={field}>
+                      <input
+                        type="checkbox"
+                        checked={(config.release?.requiredFields || []).includes(field)}
+                        onChange={() => toggleReleaseField(type, field)}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
               </section>
             );
           })}
         </div>
+        <section className="client-photo-requirement-group">
+          <span className="client-photo-requirement-label">Path prefixes</span>
+          <div className="client-photo-path-fields">
+            <label>
+              Artwork
+              <input className="form-input" value={requirements.paths?.artwork || ''} onChange={event => setPath('artwork', event.target.value)} placeholder="smb://server/Client/_CGI/" />
+            </label>
+            <label>
+              Uploads
+              <input className="form-input" value={requirements.paths?.upload || ''} onChange={event => setPath('upload', event.target.value)} placeholder="smb://server/Client/" />
+            </label>
+          </div>
+        </section>
         {error && <div className="error-state">{error}</div>}
         <div className="client-photo-requirements-footer">
           <span>These checks appear on the workstream card as Product data and Creative Force handoff validation.</span>
@@ -5640,8 +5671,7 @@ function SettingsPage({ cards = null } = {}) {
     const sourceRules = sourceCheckRulesForClient(client);
     const sourceRefresh = sourceRefreshConfigForClient(client);
     if (!profile && !sourceRules) return <span className="badge badge-neutral">Standard</span>;
-    const deliverables = Object.entries(profile?.deliverables || {});
-    const pathPrefixes = Object.entries(profile?.pathPrefixes || {});
+    const pathPrefixes = Object.entries(client?.photoProductionRequirements?.paths || {});
     const requestTypeMappings = Object.entries(sourceRules?.requestTypeMappings || {});
     const requiredToProceed = Object.entries(sourceRules?.requiredToProceed || {});
     const sourceFieldMappings = sourceRules?.sourceFieldMappings || [];
@@ -5672,14 +5702,6 @@ function SettingsPage({ cards = null } = {}) {
                 {(profile.readyForPhotoRequires || []).map(field => <span className="requirements-chip" key={field}>{field}</span>)}
               </div>
             </div>}
-            {deliverables.map(([deliverable, config]) => (
-              <div key={deliverable}>
-                <span className="client-readiness-label">{deliverable}</span>
-                <div className="requirements-chips">
-                  {(config.requiredFields || []).map(field => <span className="requirements-chip" key={field}>{field}</span>)}
-                </div>
-              </div>
-            ))}
             {profile && <div>
               <span className="client-readiness-label">Not required from activation</span>
               <div className="requirements-chips">
@@ -11189,7 +11211,7 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
 
   const selectedClient = clients.find(client => client.id === form.clientId) || topcoClient;
   const selectedClientName = selectedClient?.name || 'Client';
-  const pathPrefixes = selectedClient?.readinessProfile?.pathPrefixes || {};
+  const pathPrefixes = selectedClient?.photoProductionRequirements?.paths || {};
   const walnutScopeSuggestions = DEFAULT_WALNUT_SCOPE_SUGGESTIONS;
   const dueUrgencySuggestions = activationFieldSuggestions(
     activationHistory.data?.records,
@@ -11319,13 +11341,24 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
     )),
   );
   const fieldIsConfigured = field => configuredRequiredFields.has(normalizeRequirementKey(field));
+  const configuredReleaseFields = new Set(
+    selectedRequirementConfigs.flatMap(({ config }) => (
+      Array.isArray(config?.release?.requiredFields) ? config.release.requiredFields : []
+    )),
+  );
+  const artworkPathRequired = configuredReleaseFields.has('artworkPath');
+  const uploadLocationRequired = configuredReleaseFields.has('uploadLocation');
   const fieldShouldShow = field => fieldIsConfigured(field);
   const showStructure = selectedDeliverables.includes('Ecomm') || fieldIsConfigured('structure');
   // Image counts describe an Ecomm bundle. A Packaging release shoots the
   // package itself, so the counts are neither asked for nor stated.
   const showImageCounts = selectedDeliverables.includes('Ecomm');
+  // The fields are always offered - release is where these get typed. The email only
+  // carries a path the client requires or someone actually entered.
   const showArtworkPath = selectedDeliverables.length > 0;
   const showUploadLocation = selectedDeliverables.length > 0;
+  const artworkPathInEmail = artworkPathRequired || itemRows.some(row => String(row.artworkPath || '').trim());
+  const uploadLocationInEmail = uploadLocationRequired || itemRows.some(row => String(row.uploadLocation || '').trim());
   const previewColumnDefinitions = [
     { key: 'productName', label: 'Description', getValue: row => row.description },
     { key: 'structure', label: 'Structure', getValue: row => row.structure },
@@ -11406,8 +11439,8 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
     itemRows,
     lines: previewLines,
     columns: previewColumns,
-    showArtworkPath,
-    showUploadLocation,
+    showArtworkPath: artworkPathInEmail,
+    showUploadLocation: uploadLocationInEmail,
     pathPrefixes,
     resolvePath: previewPath,
     notes: form.notes,
@@ -11601,8 +11634,8 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
                         suggestions={structureSuggestions}
                         className="activation-structure-field"
                       />}
-                      {showArtworkPath && <label className="activation-path-field"><ActivationFieldLabel required={fieldIsConfigured('pathToArt')} value={row.artworkPath} detail={pathPrefixes.artwork || 'Enter artwork path'}>Artwork Path</ActivationFieldLabel><input className={`form-input ${row.artworkPath ? 'is-autofilled' : ''}`} value={row.artworkPath} onChange={event => updateItem(row.id, 'artworkPath', event.target.value)} placeholder="" /></label>}
-                      {showUploadLocation && <label className="activation-path-field"><ActivationFieldLabel required value={row.uploadLocation} detail={pathPrefixes.upload || 'Enter upload location'}>Upload Location</ActivationFieldLabel><input className={`form-input ${row.uploadLocation ? 'is-autofilled' : ''}`} value={row.uploadLocation} onChange={event => updateItem(row.id, 'uploadLocation', event.target.value)} placeholder="" /></label>}
+                      {showArtworkPath && <label className="activation-path-field"><ActivationFieldLabel required={artworkPathRequired} value={row.artworkPath} detail={pathPrefixes.artwork || 'Enter artwork path'}>Artwork Path</ActivationFieldLabel><input className={`form-input ${row.artworkPath ? 'is-autofilled' : ''}`} value={row.artworkPath} onChange={event => updateItem(row.id, 'artworkPath', event.target.value)} placeholder="" /></label>}
+                      {showUploadLocation && <label className="activation-path-field"><ActivationFieldLabel required={uploadLocationRequired} value={row.uploadLocation} detail={pathPrefixes.upload || 'Enter upload location'}>Upload Location</ActivationFieldLabel><input className={`form-input ${row.uploadLocation ? 'is-autofilled' : ''}`} value={row.uploadLocation} onChange={event => updateItem(row.id, 'uploadLocation', event.target.value)} placeholder="" /></label>}
                     </div>
                   ))}
                   <button type="button" className="btn btn-ghost btn-sm activation-add-item-button activation-add-item-bottom" onClick={addItem}>Add ready item</button>
@@ -11643,16 +11676,16 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
                     </Fragment>
                   ))}
                 </div>
-                {showArtworkPath && <section className="activation-preview-path-section">
+                {artworkPathInEmail && <section className="activation-preview-path-section">
                   <p><strong>Path to artwork:</strong></p>
                   <ul>
-                    {itemRows.map((row, index) => <li key={`${row.id}-artwork`}><PreviewValue value={row.description} fallback={`Item ${index + 1}`} />: <PreviewPath value={row.artworkPath} prefix={pathPrefixes.artwork} fallback="Artwork path" /></li>)}
+                    {itemRows.map((row, index) => <li key={`${row.id}-artwork`}><PreviewValue value={row.description} fallback={`Item ${index + 1}`} />: <PreviewPath value={row.artworkPath} prefix={pathPrefixes.artwork} fallback={artworkPathRequired ? 'Artwork path' : ''} /></li>)}
                   </ul>
                 </section>}
-                {showUploadLocation && <section className="activation-preview-path-section">
+                {uploadLocationInEmail && <section className="activation-preview-path-section">
                   <p><strong>Location for image uploads:</strong></p>
                   <ul>
-                    {itemRows.map((row, index) => <li key={`${row.id}-upload`}><PreviewValue value={row.description} fallback={`Item ${index + 1}`} />: <PreviewPath value={row.uploadLocation} prefix={pathPrefixes.upload} fallback="Upload location" /></li>)}
+                    {itemRows.map((row, index) => <li key={`${row.id}-upload`}><PreviewValue value={row.description} fallback={`Item ${index + 1}`} />: <PreviewPath value={row.uploadLocation} prefix={pathPrefixes.upload} fallback={uploadLocationRequired ? 'Upload location' : ''} /></li>)}
                   </ul>
                 </section>}
                 {previewColumns.length > 0 && <><p className="activation-preview-table-title"><strong>Sku Details</strong></p>
