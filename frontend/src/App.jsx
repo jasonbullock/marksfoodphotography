@@ -9870,7 +9870,6 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
     setNotice('');
     setNoClearMatch(Boolean(record.noClearMatch || record.reviewState === 'Waiting for Product Data'));
     setEditingLinkedProductIdentity(false);
-    setReplacementProductId('');
   }, [item.id, product.id, record.productName, record.description, record.skuId, record.observedIdentifier, record.noClearMatch, record.reviewState]);
 
   useEffect(() => {
