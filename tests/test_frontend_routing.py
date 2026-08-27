@@ -1429,7 +1429,7 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn(".recv-field-product input", self.styles)
         self.assertIn(".receiving-match-panel", self.styles)
         product_search_styles = self.styles.split(".new-review-product-search-fields", 1)[1].split("}", 1)[0]
-        self.assertNotIn("grid-template-columns", product_search_styles)
+        self.assertIn("grid-template-columns: repeat(auto-fit, minmax(190px, 1fr))", product_search_styles)
 
     def test_shipment_capture_shows_name_before_identifier_but_matches_after_identifier(self):
         receiving_form = self.source.split("function ShipmentsPage()", 1)[1].split("function ProductsPage", 1)[0]
