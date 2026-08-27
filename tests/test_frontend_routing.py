@@ -1277,6 +1277,14 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' \u00b7 ')", self.source)
         self.assertIn(".planning-release-cf-line", self.styles)
 
+    def test_establishing_a_product_puts_the_search_away(self):
+        # Establishing a Product is a decision, not a step after searching. The
+        # search and its results are put away while the form is open so the two are
+        # never on screen competing for the same action. Hide brings them back.
+        self.assertIn("&& !createOpen;", self.source)
+        self.assertIn("{!createOpen && showMatchSuggestions &&", self.source)
+        self.assertIn("{createOpen ? 'Hide' : 'No Product exists yet? Establish one'}", self.source)
+
     def test_the_match_list_says_when_it_is_truncated(self):
         # Silent truncation reads as "this is everything". Five is enough to
         # recognise the right one; past that the query was too loose.

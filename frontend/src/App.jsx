@@ -10042,7 +10042,7 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
   const effectiveNoClearMatch = deferNoClearMatch ? Boolean(noClearMatchDraft) : noClearMatch;
   const choosingReplacementProduct = Boolean(replacementProductId);
   const showLinkedProductCard = linked && !choosingReplacementProduct;
-  const showProductIdentityFields = !showLinkedProductCard || editingLinkedProductIdentity;
+  const showProductIdentityFields = (!showLinkedProductCard || editingLinkedProductIdentity) && !createOpen;
   const matchIdentifierReady = compactMatchValue(matchIdentifierQuery).length >= 3;
   const matchNameReady = compactMatchValue(matchNameQuery).length >= 3;
   const showMatchSuggestions = (!showLinkedProductCard || editingLinkedProductIdentity) && (matchIdentifierReady || matchNameReady);
@@ -10134,7 +10134,7 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
         />
       ) : (
         <>
-          {showMatchSuggestions && (combinedMatches.length > 0 || matchLoading || sourceMatchLoading) && (
+          {!createOpen && showMatchSuggestions && (combinedMatches.length > 0 || matchLoading || sourceMatchLoading) && (
             <ReceivingMatchSuggestions
               title={matchSuggestionsTitle}
               matches={combinedMatches}
