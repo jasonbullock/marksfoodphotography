@@ -1841,3 +1841,11 @@ class SavingStatusTests(unittest.TestCase):
             "{finishState.status !== 'loading' && finishState.message && (",
             source,
         )
+
+
+class UnlinkTests(unittest.TestCase):
+    def test_unlinking_goes_to_the_suggestions_not_no_clear_match(self):
+        source = APP.read_text()
+        start = source.index("async function unlinkProduct()")
+        body = source[start:start + 900]
+        self.assertIn("onNoClearMatchDraftChange?.(false);", body)

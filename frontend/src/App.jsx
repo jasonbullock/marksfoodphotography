@@ -10043,6 +10043,10 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
       await api.removeMerchandiseReviewMatch(item.merchandiseId);
       setEditingLinkedProductIdentity(false);
       setNoClearMatch(false);
+      // Unlinking is the start of looking for a different Product, so it drops
+      // straight to the suggestions. Leaving the draft set landed on No Clear
+      // Match instead, which had to be dismissed before the list appeared.
+      onNoClearMatchDraftChange?.(false);
       await onRefresh?.();
     } catch (error) {
       setNotice(error.message || 'Could not unlink the Product.');
