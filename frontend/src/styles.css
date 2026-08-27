@@ -8873,7 +8873,7 @@ input[type="checkbox"]:disabled {
   color: var(--text-3);
 }
 
-.merch-create-alt { margin-top: 2px; }
+.merch-create-alt { margin-top: 14px; }
 
 .merch-link-btn {
   padding: 0;
