@@ -1726,6 +1726,22 @@ Those are different facts. Whether the goods arrived as described, and how far t
 has got, are not claims about which Product this is. Unlinking now clears the link and
 nothing else.
 
+## 2026-08-27 - No Clear Match Is Removed
+
+Nothing ever computed it, and it stored nothing that a plain unmatched entry did not
+already store: both branches in `_receipt_entry_match_fields` wrote the same Merch Status,
+and the extra link-clearing was a no-op when nothing was linked. In receiving the button
+had already been switched off at both call sites, so that path was unreachable. In Planning
+the card was inherited from the pane the card sat in, which meant accepting merchandise
+without a match was being reported back as a decision nobody made.
+
+Unmatched is now simply unmatched. The card, the `noClearMatch` request flag, the receiving
+choice and its dead styles are gone; the review state still derives from the Planning status
+label as it always did, and `Mark Waiting for Product Data` on the Merchandise Review screen
+is untouched because that one is an explicit act.
+
+The entry below records the intermediate step and is kept for the reasoning, not the code.
+
 ## 2026-08-27 - No Clear Match Is A Record, Not A Verdict
 
 Nothing computes "no clear match". Both write paths in `backend/routes.py` set it from a

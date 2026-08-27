@@ -272,29 +272,28 @@ class IntakeDecisionTests(unittest.TestCase):
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
-    def test_intake_state_no_clear_match_clears_product_on_commit(self, get_record, update_record, _clients):
+    def test_intake_state_waiting_info_leaves_the_product_link_alone(self, get_record, update_record, _clients):
+        # Moving to waiting-info says how far the review has got. It is not a claim
+        # about which Product this is, so it does not touch the link.
         get_record.side_effect = [
             self.entry({C.F_RECEIPT_ENTRY_ITEM: ["recProduct"]}),
             self.receipt(),
+            # The link survives, so shaping the response now reads the Product.
+            {"id": "recProduct", "fields": {C.F_ITEM_CLIENT: ["recClient"]}},
         ]
         update_record.return_value = self.entry({
-            C.F_RECEIPT_ENTRY_ITEM: [],
-            C.F_RECEIPT_ENTRY_MERCH_STATUS: "Received",
-            C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Waiting on Information",
+            C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
             C.F_RECEIPT_ENTRY_PLANNING_STATUS: "Needs More Information",
         })
 
         response = self.app.patch("/api/merchandise/recMerch/intake-state", json={
             "stage": "waiting-info",
             "deliverables": [],
-            "noClearMatch": True,
         })
 
         self.assertEqual(response.status_code, 200)
         fields = update_record.call_args.args[2]
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_ITEM], [])
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
-        self.assertEqual(fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Needs More Information")
+        self.assertNotIn(C.F_RECEIPT_ENTRY_ITEM, fields)
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS], "Needs More Information")
 
     @patch("routes._clients_by_id", return_value={})

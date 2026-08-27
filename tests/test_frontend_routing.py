@@ -1491,7 +1491,7 @@ class FrontendRoutingTests(unittest.TestCase):
         # DOMAIN_TERMS receiver-facing wording.
         package_name_index = planning_product_step.index("<label>Search by name</label>")
         identifier_index = planning_product_step.index("<label>Search by UPC / ID</label>", package_name_index)
-        suggestions_index = planning_product_step.index("{matchSuggestionList}")
+        suggestions_index = planning_product_step.index("matchSuggestionList}")
         self.assertLess(package_name_index, identifier_index)
         self.assertLess(identifier_index, suggestions_index)
         self.assertIn(".new-review-product-search-fields", self.styles)
@@ -1843,29 +1843,16 @@ class SavingStatusTests(unittest.TestCase):
         )
 
 
-class UnlinkTests(unittest.TestCase):
-    def test_unlinking_goes_to_the_suggestions_not_no_clear_match(self):
-        source = APP.read_text()
-        start = source.index("async function unlinkProduct()")
-        body = source[start:start + 900]
-        self.assertIn("onNoClearMatchDraftChange?.(false);", body)
-        self.assertIn("setSearchingForMatch(true);", body)
-
-    def test_the_refresh_does_not_put_no_clear_match_back(self):
-        source = APP.read_text()
-        self.assertIn("const effectiveNoClearMatch = !searchingForMatch", source)
-        self.assertIn("useEffect(() => { setSearchingForMatch(false); }, [item.id]);", source)
-
-
-class NoClearMatchSuggestionTests(unittest.TestCase):
-    def test_the_suggestions_sit_under_no_clear_match_not_instead_of_it(self):
-        source = APP.read_text()
-        start = source.index("{effectiveNoClearMatch && (")
-        block = source[start:start + 1200]
-        self.assertIn("title=\"No Clear Match\"", block)
-        self.assertIn("{matchSuggestionList}", block)
+class UnmatchedPanelTests(unittest.TestCase):
+    def test_nothing_records_or_shows_no_clear_match(self):
+        # It was never computed, and it stored nothing a plain unmatched entry did
+        # not already store, so unmatched is simply unmatched.
+        for path in (APP, ROOT / "backend" / "routes.py"):
+            text = path.read_text()
+            self.assertNotIn("noClearMatch", text, path.name)
+            self.assertNotIn("No Clear Match", text, path.name)
 
     def test_the_suggestion_list_is_built_once(self):
         source = APP.read_text()
         self.assertEqual(source.count("const matchSuggestionList = !createOpen"), 1)
-        self.assertEqual(source.count("{matchSuggestionList}"), 1)
+        self.assertEqual(source.count("matchSuggestionList}"), 1)

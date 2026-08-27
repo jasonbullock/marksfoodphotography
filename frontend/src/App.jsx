@@ -1462,7 +1462,7 @@ function ProductMatchCard({
       <div className="receiving-match-selected is-unmatched">
         <div className="receiving-match-selected-main">
           <span className="receiving-match-selected-copy">
-            <strong>{title || 'No Clear Match'}</strong>
+            <strong>{title || 'Unmatched'}</strong>
             {meta && <small>{meta}</small>}
           </span>
           {onChange && <button type="button" onClick={onChange} disabled={changeDisabled}>{changeLabel}</button>}
@@ -1569,13 +1569,11 @@ function ReceivingMatchSuggestions({
   combinedPartialMatchSuggestions = false,
   combinedMatchSearch = false,
   matchLoading = false,
-  onNoClearMatch,
   onSelect,
   disabled = false,
-  showNoClearMatchAction = true,
   showEmptyState = true,
 }) {
-  if (!matches.length && !matchLoading && !showEmptyState && !showNoClearMatchAction) return null;
+  if (!matches.length && !matchLoading && !showEmptyState) return null;
   return (
     <div className="receiving-match-panel">
       <div className="receiving-match-panel-head">
@@ -1611,13 +1609,6 @@ function ReceivingMatchSuggestions({
       {matches.length > limit && (
         <div className="receiving-match-helper">
           {matches.length - limit} more — narrow the search to see them.
-        </div>
-      )}
-      {showNoClearMatchAction && onNoClearMatch && (
-        <div className="receiving-match-panel-footer">
-          <button type="button" className="receiving-match-secondary-action" onClick={onNoClearMatch} disabled={disabled}>
-            No clear match
-          </button>
         </div>
       )}
     </div>
@@ -2190,14 +2181,13 @@ function ShipmentsPage() {
   const stagedSourceMatchItem = stagedSourceRow ? sourceRowMatchItem(stagedSourceRow) : null;
   const showMatchSuggestions = !stagedSourceRow
     && matchChoice.status !== 'matched'
-    && matchChoice.status !== 'needs'
     && (matchIdentifierReady || matchNameReady);
   // A scanned barcode that resolves to exactly one row links itself. This is the one
   // case where receiving is the cheapest place to match: the box is in hand and no
   // judgement is involved. Anything ambiguous is left alone for a PM in Planning.
   useEffect(() => {
     const digits = String(entry.skuId || '').replace(/\D+/g, '');
-    const alreadyDecided = matchChoice.status === 'matched' || matchChoice.status === 'needs' || Boolean(stagedSourceRow);
+    const alreadyDecided = matchChoice.status === 'matched' || Boolean(stagedSourceRow);
     if (alreadyDecided || digits.length < 8) return undefined;
     let active = true;
     const t = window.setTimeout(async () => {
@@ -2373,9 +2363,6 @@ function ShipmentsPage() {
 
   function setEntry(field, value, options = {}) {
     setEntryState(prev => ({ ...prev, [field]: value }));
-    if ((field === 'productName' || field === 'skuId') && matchChoice.status === 'needs') {
-      setMatchChoice({ status: 'none', item: null });
-    }
     if ((field === 'productName' || field === 'skuId') && matchChoice.status === 'matched') {
       setEditingMatchedEntryIdentity(true);
     }
@@ -2427,11 +2414,6 @@ function ShipmentsPage() {
     } finally {
       setSourceActivatingRow(null);
     }
-  }
-
-  function markEntryNoClearMatch() {
-    setMatchChoice({ status: 'needs', item: null });
-    setStagedSourceRow(null);
   }
 
   async function addEntryPhotos(files) {
@@ -2576,11 +2558,9 @@ function ShipmentsPage() {
       if (matchChoice.status === 'matched') {
         matchPayload.itemId = matchChoice.item?.id || '';
         matchPayload.matchStatus = 'Matched';
-        matchPayload.noClearMatch = false;
-      } else if (matchChoice.status === 'needs' || (!editingEntryId && !stagedSourceRow)) {
+      } else if (!editingEntryId && !stagedSourceRow) {
         matchPayload.itemId = '';
         matchPayload.matchStatus = 'Needs Match';
-        matchPayload.noClearMatch = matchChoice.status === 'needs';
       }
       const entryPayload = {
         productName: entry.productName.trim(),
@@ -3090,8 +3070,6 @@ function ShipmentsPage() {
                               combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
                               combinedMatchSearch={combinedMatchSearch}
                               matchLoading={matchLoading}
-                              onNoClearMatch={markEntryNoClearMatch}
-                              showNoClearMatchAction={false}
                               showEmptyState={false}
 	                              onSelect={item => {
 	                                if (item.__sourceRow) {
@@ -3119,16 +3097,6 @@ function ShipmentsPage() {
                             />
                           )}
                         </>
-                      ) : matchChoice.status === 'needs' ? (
-                        <ProductMatchCard
-                          status="unmatched"
-                          title="No Clear Match"
-                          meta="Will go to Merchandise Review."
-                          onChange={() => {
-                            setMatchChoice({ status: 'none', item: null });
-                            setStagedSourceRow(null);
-                          }}
-                        />
 	                      ) : showLocalMatchSuggestionPanel ? (
 	                        <ReceivingMatchSuggestions
 	                          title={matchSuggestionsTitle}
@@ -3138,8 +3106,6 @@ function ShipmentsPage() {
                           combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
                           combinedMatchSearch={combinedMatchSearch}
                           matchLoading={matchLoading || sourceMatchLoading}
-                          onNoClearMatch={markEntryNoClearMatch}
-                          showNoClearMatchAction={false}
                           showEmptyState={false}
 	                          onSelect={item => {
 	                            if (item.__sourceRow) {
@@ -3153,7 +3119,7 @@ function ShipmentsPage() {
 	                          }}
                         />
                       ) : null}
-                      {matchChoice.status !== 'needs' && showSourceMatchPanel ? (
+                      {showSourceMatchPanel ? (
                         <SourceSheetMatchSuggestions
                           title={sourceSuggestionsTitle}
                           matches={sourceMatches}
@@ -9885,7 +9851,7 @@ function productCreationFields(clientRecord, item) {
   });
 }
 
-function NewReviewProductIdentification({ item, product, onRefresh, deferNoClearMatch = false, noClearMatchDraft, onNoClearMatchDraftChange, matchDraft = null, onMatchDraftChange, clientRecord = null }) {
+function NewReviewProductIdentification({ item, product, onRefresh, matchDraft = null, onMatchDraftChange, clientRecord = null }) {
   const record = item.record || {};
   const [matchNameQuery, setMatchNameQuery] = useState(record.productName || record.description || '');
   const [matchIdentifierQuery, setMatchIdentifierQuery] = useState(record.skuId || record.observedIdentifier || '');
@@ -9895,12 +9861,6 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
   const [matchLoading, setMatchLoading] = useState(false);
   const [notice, setNotice] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
-  const [noClearMatch, setNoClearMatch] = useState(false);
-  // Unlinking, or dismissing No Clear Match, means whoever is looking has started
-  // searching. The record still reads Waiting for Product Data until the step is
-  // saved, so without this the refresh puts the card straight back and the search
-  // has to be started twice.
-  const [searchingForMatch, setSearchingForMatch] = useState(false);
   const [editingLinkedProductIdentity, setEditingLinkedProductIdentity] = useState(false);
   // Clients with Source Check rules match against the read-only client sheet rather
   // than local Products, so Planning suggests the same rows Shipments does instead of
@@ -9916,11 +9876,8 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
     setDraft(productInformationFields(product, record));
     setMatches([]);
     setNotice('');
-    setNoClearMatch(Boolean(record.noClearMatch || record.reviewState === 'Waiting for Product Data'));
     setEditingLinkedProductIdentity(false);
-  }, [item.id, product.id, record.productName, record.description, record.skuId, record.observedIdentifier, record.noClearMatch, record.reviewState]);
-
-  useEffect(() => { setSearchingForMatch(false); }, [item.id]);
+  }, [item.id, product.id, record.productName, record.description, record.skuId, record.observedIdentifier]);
 
   useEffect(() => {
     let active = true;
@@ -10000,8 +9957,6 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
     // A source row is not a Product yet, so committing this creates one. All the
     // more reason not to do it on a click that might be a mis-click.
     onMatchDraftChange?.({ type: 'sourceRow', row: sourceRow, item: sourceRowMatchItem(sourceRow) });
-    onNoClearMatchDraftChange?.(false);
-    setNoClearMatch(false);
     setEditingLinkedProductIdentity(false);
     setNotice('');
   }
@@ -10013,30 +9968,8 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
   function linkProduct(match) {
     // Staged, not written. Committed when the step is.
     onMatchDraftChange?.({ type: 'product', id: match.id, item: match });
-    onNoClearMatchDraftChange?.(false);
-    setNoClearMatch(false);
     setEditingLinkedProductIdentity(false);
     setNotice('');
-  }
-
-  async function markNoClearMatch() {
-    if (deferNoClearMatch) {
-      onNoClearMatchDraftChange?.(true);
-      setNoClearMatch(true);
-      setNotice('');
-      return;
-    }
-    setBusy(true);
-    setNotice('');
-    try {
-      await api.markMerchandiseWaitingForProductData(item.merchandiseId, { note: 'No clear Product match from Planning.' });
-      setNoClearMatch(true);
-      await onRefresh?.();
-    } catch (error) {
-      setNotice(error.message || 'Could not mark this as no clear match.');
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function unlinkProduct() {
@@ -10049,11 +9982,6 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
     try {
       await api.removeMerchandiseReviewMatch(item.merchandiseId);
       setEditingLinkedProductIdentity(false);
-      // Unlinking is the start of looking for a different Product, so it drops
-      // straight to the suggestions rather than to No Clear Match.
-      setNoClearMatch(false);
-      setSearchingForMatch(true);
-      onNoClearMatchDraftChange?.(false);
       await onRefresh?.();
     } catch (error) {
       setNotice(error.message || 'Could not unlink the Product.');
@@ -10097,8 +10025,6 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
   // A staged choice reads as chosen, because it is - it just is not written yet.
   const stagedProduct = matchDraft?.item || null;
   const linked = Boolean(product.id) || Boolean(stagedProduct);
-  const effectiveNoClearMatch = !searchingForMatch
-    && (deferNoClearMatch ? Boolean(noClearMatchDraft) : noClearMatch);
   const showLinkedProductCard = linked;
   const showProductIdentityFields = (!showLinkedProductCard || editingLinkedProductIdentity) && !createOpen;
   const matchIdentifierReady = compactMatchValue(matchIdentifierQuery).length >= 3;
@@ -10146,7 +10072,6 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
         combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
         combinedMatchSearch={combinedMatchSearch}
         matchLoading={matchLoading || sourceMatchLoading}
-        showNoClearMatchAction={false}
         onSelect={match => {
           if (match.__sourceRow) {
             // Not a Product yet - picking it is what creates one.
@@ -10203,28 +10128,7 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
             />
           )}
         </>
-      ) : (
-        <>
-          {effectiveNoClearMatch && (
-            <ProductMatchCard
-              status="unmatched"
-              title="No Clear Match"
-              meta={deferNoClearMatch ? 'Will continue unmatched when accepted.' : 'Waiting for Product data.'}
-              onChange={() => {
-                setNoClearMatch(false);
-                setSearchingForMatch(true);
-                onNoClearMatchDraftChange?.(false);
-              }}
-              changeDisabled={busy}
-            />
-          )}
-          {/* Below the card rather than instead of it. No Clear Match records what
-              someone decided at receiving, not a verdict on what exists now, so a
-              Product that has since appeared should be one click away rather than
-              hidden behind dismissing the card. */}
-          {matchSuggestionList}
-        </>
-      )}
+      ) : matchSuggestionList}
       {showProductCreation && (
         !createOpen ? (
           <div className="merch-create-alt">
@@ -10624,7 +10528,6 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   const [issueDescription, setIssueDescription] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
   const [issueState, setIssueState] = useState({ status: 'idle', message: '' });
-  const [draftNoClearMatch, setDraftNoClearMatch] = useState(() => Boolean(item.record?.noClearMatch || item.record?.reviewState === 'Waiting for Product Data'));
   // Choosing a match is a decision in progress until the step is committed. Writing
   // it on click meant a mis-click linked a Product - or, for a source row, created
   // one - that then had to be undone.
@@ -10797,12 +10700,11 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     setIssueDescription('');
     setIssueNotes('');
     setIssueState({ status: 'idle', message: '' });
-    setDraftNoClearMatch(Boolean(item.record?.noClearMatch || item.record?.reviewState === 'Waiting for Product Data'));
     // Capture before marking read: opening the card stamps everything seen, so the
     // list needs the value from the moment of arrival to still show what is new.
     setReadThroughSnapshot(commentsReadThrough || '');
     onMarkCommentsRead?.(item.merchandiseId);
-  }, [item.id, product.id, product.requestType, isMerchAcceptanceReview, item.record?.noClearMatch, item.record?.reviewState]);
+  }, [item.id, product.id, product.requestType, isMerchAcceptanceReview]);
 
   function stageDeliverables(value) {
     const cleanValue = normalizeDeliverableList(value);
@@ -10861,7 +10763,6 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     }
     const latestState = wizardStateForItem(item, intakeDraft.deliverables);
     latestState.reviewOnly = latestState.productLinked && latestState.deliverables.length === 0;
-    latestState.noClearMatch = Boolean(isMerchAcceptanceReview && draftNoClearMatch && !latestState.productLinked);
     latestState.assignment = workstreamAssignmentsForDeliverables(latestState.deliverables, totalQuantity, intakeDraft.allocation);
     latestState.readyToAdvance = readyToAdvance;
     latestState.photoDraft = photoDraftValues;
@@ -10995,11 +10896,8 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                 product={product}
                 clientRecord={clientRecord}
                 onRefresh={onRefresh}
-                deferNoClearMatch={isMerchAcceptanceReview}
-                noClearMatchDraft={draftNoClearMatch}
                 matchDraft={matchDraft}
                 onMatchDraftChange={setMatchDraft}
-                onNoClearMatchDraftChange={setDraftNoClearMatch}
               />
             </ReviewStep>
 
@@ -12300,7 +12198,6 @@ function MerchandiseReviewV2Page() {
           stage: state.readyToAdvance ? QUEUE_IDS.readyProduction : QUEUE_IDS.waitingInformation,
           deliverables,
           expectedProductId,
-          ...(state.noClearMatch ? { noClearMatch: true } : {}),
           ...(manualProductInfo ? { manualProductInfo } : {}),
         });
         await refreshV2WorkflowData();

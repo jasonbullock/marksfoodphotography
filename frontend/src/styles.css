@@ -3923,44 +3923,9 @@ input[type="checkbox"]:disabled {
   font-weight: 800;
 }
 
-.receiving-match-secondary-action {
-  min-height: 30px;
-  padding: 5px 10px;
-  border: 1px solid rgba(148, 163, 184, 0.42);
-  border-radius: 7px;
-  background: var(--surface);
-  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
-  color: var(--text-2);
-  font-size: 11px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease, color 0.14s ease;
-}
-
-.receiving-match-secondary-action:hover:not(:disabled),
-.receiving-match-secondary-action:focus-visible {
-  border-color: rgba(100, 116, 139, 0.46);
-  background: #fff;
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
-  color: var(--text-1);
-  outline: none;
-}
-
-.receiving-match-secondary-action:disabled {
-  cursor: default;
-  opacity: 0.58;
-}
-
 .receiving-match-list {
   display: grid;
   gap: 8px;
-}
-
-.receiving-match-panel-footer {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 4px;
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
 }
 
 .receiving-match-option {

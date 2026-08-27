@@ -7487,9 +7487,6 @@ def update_merchandise_intake_state(entry_id):
         if isinstance(decision_fields, tuple):
             return decision_fields
         update_fields.update(decision_fields)
-    if body.get("noClearMatch"):
-        update_fields[C.F_RECEIPT_ENTRY_ITEM] = []
-        update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Received"
     effective_fields = {**fields, **update_fields}
     if planning_label_value:
         label_to_planning_slug = {
@@ -8614,7 +8611,7 @@ def update_receiving_entry(record_id, entry_id):
         return intake_fields
     fields_or_error.update(intake_fields)
     item_ids_for_match = _as_list(body.get("itemIds") or body.get("itemId"))
-    should_update_match = bool(item_ids_for_match) or "matchStatus" in body or body.get("noClearMatch")
+    should_update_match = bool(item_ids_for_match) or "matchStatus" in body
     if should_update_match:
         match_fields = _receipt_entry_match_fields(body, receipt)
         if isinstance(match_fields, tuple):
@@ -8935,8 +8932,6 @@ def _receipt_entry_match_fields(body, receipt):
         if receipt_client_ids and item_client_ids and not (set(receipt_client_ids) & set(item_client_ids)):
             return err("Product does not belong to this Shipment client.", 403)
         fields[C.F_RECEIPT_ENTRY_ITEM] = [item_id]
-    elif body.get("noClearMatch") or match_status in {"Needs Match", "No Clear Match"}:
-        fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Received"
     elif match_status == "Matched":
         return err("Choose a Product before marking this Merchandise matched.")
     else:
