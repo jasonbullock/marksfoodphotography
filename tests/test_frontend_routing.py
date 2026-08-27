@@ -1115,9 +1115,8 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("No match on both fields", self.source)
         self.assertIn("Check the package name and UPC / ID. Clear one field to search by the other.", self.source)
         self.assertIn("matchBasis: 'name'", self.source)
-        self.assertIn("Matches typed name + UPC prefix", self.source)
-        self.assertIn("Matched by product name", self.source)
         self.assertIn("function itemExpectedIdentifierText(item)", self.source)
+        self.assertNotIn("function itemMatchedByText", self.source)
         self.assertIn("function itemProductIdentifierText(item)", self.source)
         self.assertIn("function matchValuesConflict(observedValue, productValue)", self.source)
         self.assertIn("if (!observed || !product || observed === product) return false;", self.source)
@@ -1280,6 +1279,17 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' \u00b7 ')", self.source)
         self.assertIn(".planning-release-cf-line", self.styles)
 
+    def test_the_planning_modal_shows_one_match_list(self):
+        # A source row and a Product are the same thing to whoever is looking. The
+        # only difference is whether picking it creates a Product, which is the
+        # component's problem rather than the reader's.
+        modal = self.source.split("function NewReviewProductIdentification", 1)[1]
+        modal = modal.split("\nfunction ", 1)[0]
+        self.assertIn("matches={combinedMatches}", modal)
+        self.assertIn("if (match.__sourceRow) {", modal)
+        self.assertNotIn("<SourceSheetMatchSuggestions", modal)
+        self.assertNotIn("From the source sheet", modal)
+
     def test_a_repeat_arrival_of_a_sku_is_visible(self):
         # One SKU can arrive twice — more units, or a replacement. Each arrival is
         # its own Merchandise, and nothing said they were the same thing, so the
@@ -1392,7 +1402,6 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("No match on both fields", planning_product_step)
         self.assertIn("These match the typed name and UPC / ID prefix. Select the correct Product, then use Product values only when they should replace the observed fields.", self.source)
         self.assertIn("Enter or scan UPC / ID to confirm the exact Product.", self.source)
-        self.assertIn("itemMatchedByText(item)", self.source)
         self.assertIn("itemExpectedIdentifierText(item)", self.source)
         self.assertIn("itemMatchConfidenceBadge(item, identifierQuery)", self.source)
         self.assertNotIn("useProductMerchValue", planning_product_step)

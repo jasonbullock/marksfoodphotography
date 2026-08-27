@@ -1398,16 +1398,6 @@ function itemMatchMethod(item) {
   return 'Product ID';
 }
 
-function itemMatchedByText(item) {
-  const value = itemMatchIdentifierValue(item);
-  if (item?.matchBasis === 'both-upc') return value ? `Matches typed name + UPC prefix: ${value}` : 'Matches typed name + UPC prefix';
-  if (item?.matchBasis === 'both-product-id') return value ? `Matches typed name + Product ID prefix: ${value}` : 'Matches typed name + Product ID prefix';
-  if (item?.matchBasis === 'name') return 'Matched by product name';
-  if (item?.matchBasis === 'product-id') return value ? `Matched by Product ID: ${value}` : 'Matched by Product ID';
-  if (item?.matchBasis === 'upc') return value ? `Matched by UPC: ${value}` : 'Matched by UPC';
-  return value ? `Matched by ${itemMatchMethod(item)}: ${value}` : '';
-}
-
 function itemExpectedIdentifierText(item) {
   if (item?.matchBasis !== 'name') return '';
   const value = itemMatchIdentifierValue(item);
@@ -1620,7 +1610,7 @@ function ReceivingMatchSuggestions({
               >
                 <span>
                   <strong>{itemMatchTitle(item)}</strong>
-                  <small>{[itemMatchedByText(item), itemExpectedIdentifierText(item), item.brand, item.parentJobNumber ? `Job ${item.parentJobNumber}` : ''].filter(Boolean).join(' · ')}</small>
+                  <small>{[itemExpectedIdentifierText(item), item.brand, item.parentJobNumber ? `Job ${item.parentJobNumber}` : ''].filter(Boolean).join(' · ')}</small>
                 </span>
                 {confidenceBadge && <em>{confidenceBadge}</em>}
               </button>
@@ -1689,10 +1679,7 @@ function SourceSheetMatchSuggestions({
               >
                 <span>
                   <strong>{source['Product Name'] || 'Unnamed source row'}</strong>
-                  <small>{[
-                    row.matchBasis ? `Matched by ${row.matchBasis}` : '',
-                    source.UPC ? `UPC ${source.UPC}` : '',
-                  ].filter(Boolean).join(' · ')}</small>
+                  <small>{source.UPC ? `UPC ${source.UPC}` : ''}</small>
                 </span>
                 <em>
                   {activating && <span className="match-option-spinner" aria-hidden="true" />}
@@ -10072,9 +10059,25 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
   const nameOnlyMatchSuggestions = matches.length > 0 && matches.every(match => match.matchBasis === 'name');
   const combinedPartialMatchSuggestions = matches.length > 0 && matches.every(match => String(match.matchBasis || '').startsWith('both-'));
   const combinedMatchSearch = matchIdentifierReady && matchNameReady;
-  const matchSuggestionsTitle = matchLoading
+  // One list. A source row and a Product are the same thing to whoever is looking;
+  // the only difference is whether picking it creates a Product, which is this
+  // component's problem rather than the reader's.
+  const matchedUpcKeys = new Set(
+    matches.map(match => String(match.primaryMatchKey || match.gtinUpc || '').replace(/\D+/g, '')).filter(Boolean),
+  );
+  const combinedMatches = [
+    ...matches,
+    ...(sourceBackedMatching ? sourceMatches : [])
+      // A source row whose UPC is already a Product would otherwise appear twice.
+      .filter(row => {
+        const upc = String(row.sourceData?.UPC || '').replace(/\D+/g, '');
+        return !upc || !matchedUpcKeys.has(upc);
+      })
+      .map(row => ({ ...sourceRowMatchItem(row), __sourceRow: row })),
+  ];
+  const matchSuggestionsTitle = (matchLoading || sourceMatchLoading)
     ? 'Searching matches…'
-    : matches.length
+    : combinedMatches.length
       ? (nameOnlyMatchSuggestions || combinedPartialMatchSuggestions) ? 'Possible matches' : 'Suggested matches'
       : combinedMatchSearch ? 'No match on both fields' : 'No matches found';
   // Switched off on 2026-08-13 while Planning was made product-led, which removed
@@ -10091,7 +10094,7 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
               recorded at receiving but are edited freely to find a Product, so they are
               labelled for what they do. The recorded values live in step 1 and never
               change here. */}
-          <p className="new-review-search-hint">Search the client product list. Starts from what was recorded on the package.</p>
+
           <div className="recv-field recv-field-product">
             <label>Search by name</label>
             <input value={matchNameQuery} onChange={event => { setMatchNameQuery(event.target.value); if (linked) setEditingLinkedProductIdentity(true); }} placeholder="Type part of the product name" autoComplete="off" />
@@ -10141,30 +10144,25 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
         />
       ) : (
         <>
-          {showMatchSuggestions && sourceBackedMatching && (
-            <SourceSheetMatchSuggestions
-              title="From the source sheet — not yet a Product"
-              matches={sourceMatches}
-              client={clientRecord}
-              searchName={matchNameQuery}
-              searchIdentifier={matchIdentifierQuery}
-              matchLoading={sourceMatchLoading}
-              activatingRowNumber={sourceActivatingRow}
-              canActivate
-              onActivate={activateSourceRow}
-            />
-          )}
-          {showMatchSuggestions && (matches.length > 0 || matchLoading) && (
+          {showMatchSuggestions && (combinedMatches.length > 0 || matchLoading || sourceMatchLoading) && (
             <ReceivingMatchSuggestions
               title={matchSuggestionsTitle}
-              matches={matches}
+              matches={combinedMatches}
+              limit={10}
               identifierQuery={matchIdentifierQuery}
               nameOnlyMatchSuggestions={nameOnlyMatchSuggestions}
               combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
               combinedMatchSearch={combinedMatchSearch}
-              matchLoading={matchLoading}
+              matchLoading={matchLoading || sourceMatchLoading}
               showNoClearMatchAction={false}
-              onSelect={match => linkProduct(match.id)}
+              onSelect={match => {
+                if (match.__sourceRow) {
+                  // Not a Product yet — picking it is what creates one.
+                  activateSourceRow(match.__sourceRow);
+                  return;
+                }
+                linkProduct(match.id);
+              }}
               disabled={busy}
             />
           )}
@@ -10894,9 +10892,6 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                 summary=""
                 collapseWhenDone={false}
               >
-                <p className="new-review-step-intro">
-                  Confirm the photos and recorded details describe what actually arrived.
-                </p>
                 <MerchFacts item={item} />
               </ReviewStep>
             )}
@@ -10911,13 +10906,9 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
               summary={stepFlagged ? 'Issue keeps this item out of release.' : product.product || product.name || product.identifier || 'Confirm the received item can continue.'}
               collapseWhenDone={false}
             >
-              <p className="new-review-step-intro">
-                {isMerchAcceptanceReview
-                  ? 'Confirm the matched product below is correct. You can still proceed without linking right now.'
-                  : wizardState.productLinked
-                    ? 'This Product governs production. Change it if it does not describe what arrived.'
-                    : 'Nothing is matched yet. Match the Product if you can identify it, or fill in the details below to continue without one.'}
-              </p>
+              {!wizardState.productLinked && (
+                <p className="new-review-step-intro">Find the Product, or establish one.</p>
+              )}
               <NewReviewProductIdentification
                 item={item}
                 product={product}

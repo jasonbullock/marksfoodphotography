@@ -1639,3 +1639,25 @@ tell each other nothing.
 It reports and never blocks. A repeat arrival is often deliberate — more units, or a
 replacement for something damaged — so the studio decides. Amber rather than red for the
 same reason.
+
+## 2026-08-26 - The Planning Modal Shows One Match List
+
+Receiving stopped separating "products" from "source sheet rows" some time ago, on the
+grounds that they are the same thing to whoever is looking. The Planning modal never got the
+same treatment and still showed two stacked panels — "From the source sheet — not yet a
+Product" above "Possible matches" — which on a search for "Pasta" produced five source rows,
+then a divider, then the Products.
+
+One list now. Picking a row that is not yet a Product creates one; that is the component's
+problem, not the reader's.
+
+The "Matched by product name" line went with it. How a candidate was found is the search's
+business. What the reader needs is what identifies the Product, so the row keeps the UPC and
+drops the route the query took to reach it. `itemMatchedByText` was left unused and removed
+rather than left to rot.
+
+Instructions above the search went too. "Confirm the matched product below is correct. You
+can still proceed without linking right now" was shown even when the status read Unmatched
+and there was nothing below to confirm. The unmatched state now says "Find the Product, or
+establish one" and the matched state says nothing — the green card with the product name and
+a Change button already does.
