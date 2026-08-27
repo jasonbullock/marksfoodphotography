@@ -58,14 +58,13 @@ class ProductSchemaTests(unittest.TestCase):
         for attr in legacy_attrs:
             self.assertFalse(hasattr(C.Config, attr), attr)
 
-    def test_item_shape_returns_item_job_number_and_description(self):
+    def test_item_shape_returns_item_job_number_and_metadata(self):
         shaped = _shape_item({
             "id": "recItem",
             "fields": {
                 C.Config.F_ITEM_NAME: "Milk",
                 C.Config.F_ITEM_IDENTIFIER: "012345678901",
                 C.Config.F_ITEM_JOB_NUMBER: "00-ABC-123",
-                C.Config.F_ITEM_DESCRIPTION: "Whole milk gallon",
                 C.Config.F_ITEM_MASTER_VARIANT: "Variant",
                 C.Config.F_ITEM_PICKUP_JOB_NUMBER: "OLD-001",
             },
@@ -75,25 +74,23 @@ class ProductSchemaTests(unittest.TestCase):
         self.assertEqual(shaped["primaryMatchKey"], "012345678901")
         self.assertEqual(shaped["identifier"], "012345678901")
         self.assertEqual(shaped["primaryMatchKeyLabel"], "UPC / Product ID")
-        self.assertEqual(shaped["description"], "Whole milk gallon")
         self.assertNotIn("workstream", shaped)
         self.assertNotIn("output", shaped)
         self.assertEqual(shaped["masterOrVariant"], "Variant")
         self.assertEqual(shaped["pickupJobNumber"], "OLD-001")
 
     def test_item_shape_exposes_file_name_description(self):
-        # Writes for fileNameDescription land in Product Description, so the API
-        # must not report the naming token as absent when the value is there.
         shaped = _shape_item({
             "id": "recItem",
             "fields": {
                 C.Config.F_ITEM_NAME: "Milk",
-                C.Config.F_ITEM_PRODUCT_DESCRIPTION: "ice cream",
+                C.Config.F_ITEM_FILE_NAME_DESCRIPTION: "ice cream",
             },
         })
 
         self.assertEqual(shaped["fileNameDescription"], "ice cream")
-        self.assertEqual(shaped["productDescription"], "ice cream")
+        # One field, one name. It used to be reported twice under two labels.
+        self.assertNotIn("productDescription", shaped)
 
     def test_item_shape_and_patch_carry_project_name(self):
         # The Structure Form names the project; WKFT and Mbox keep their own
@@ -115,13 +112,11 @@ class ProductSchemaTests(unittest.TestCase):
         fields = {}
         _apply_item_fields(fields, {
             "itemJobNumber": "  00-ABC-123  ",
-            "description": "  Line one\r\nLine two  ",
             "masterOrVariant": "v",
             "pickupJobNumber": "  OLD-001  ",
         })
 
         self.assertEqual(fields[C.Config.F_ITEM_JOB_NUMBER], "00-ABC-123")
-        self.assertEqual(fields[C.Config.F_ITEM_DESCRIPTION], "Line one\nLine two")
         self.assertEqual(fields[C.Config.F_ITEM_MASTER_VARIANT], "Variant")
         self.assertEqual(fields[C.Config.F_ITEM_PICKUP_JOB_NUMBER], "OLD-001")
 
@@ -144,13 +139,13 @@ class ProductSchemaTests(unittest.TestCase):
             "product": "",
             "status": "New",
             "itemJobNumber": "000-ABC",
-            "description": "Organic whole milk",
+            "fileNameDescription": "Organic whole milk",
             "masterOrVariant": "Master",
             "pickupJobNumber": "PICK-123",
         })
 
         self.assertEqual(fields[C.Config.F_ITEM_JOB_NUMBER], "000-ABC")
-        self.assertEqual(fields[C.Config.F_ITEM_DESCRIPTION], "Organic whole milk")
+        self.assertEqual(fields[C.Config.F_ITEM_FILE_NAME_DESCRIPTION], "Organic whole milk")
         self.assertEqual(fields[C.Config.F_ITEM_MASTER_VARIANT], "Master")
         self.assertEqual(fields[C.Config.F_ITEM_PICKUP_JOB_NUMBER], "PICK-123")
 

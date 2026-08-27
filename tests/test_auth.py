@@ -101,7 +101,7 @@ class AuthTests(unittest.TestCase):
         fields = update_record.call_args.args[2]
         self.assertEqual(fields[C.F_ITEM_JOB_NUMBER], "JOB-1")
         self.assertEqual(fields[C.F_ITEM_BRAND_PREFIX], "FX")
-        self.assertEqual(fields[C.F_ITEM_PRODUCT_DESCRIPTION], "Bacon")
+        self.assertEqual(fields[C.F_ITEM_FILE_NAME_DESCRIPTION], "Bacon")
         self.assertNotIn(C.F_ITEM_REFERENCE_DATA, fields)
 
     @patch("routes.airtable.get_record")
@@ -459,7 +459,7 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(status["productData"]["missing"], ["File Name Description"])
         self.assertEqual(status["fileNaming"]["missing"], ["File Name Description"])
 
-    def test_photo_production_status_uses_product_description_as_file_name_description(self):
+    def test_photo_production_status_reads_the_file_name_description(self):
         client = {
             "photoProductionRequirements": {
                 "version": 1,
@@ -480,7 +480,7 @@ class AuthTests(unittest.TestCase):
             "upc": "036800108738",
             "itemJobNumber": "25026953",
             "brandPrefix": "FX",
-            "productDescription": "Topco Ranch Mix 12 oz",
+            "fileNameDescription": "Topco Ranch Mix 12 oz",
         }, client)
 
         self.assertTrue(status["ready"])

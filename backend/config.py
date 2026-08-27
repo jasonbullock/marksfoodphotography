@@ -276,7 +276,9 @@ class Config:
     F_ITEM_STUDIO_DESTINATION = "Studio Destination"
     F_ITEM_VENDOR = "Vendor"
     F_ITEM_PRODUCT_TYPE = "Product Type"
-    F_ITEM_PRODUCT_DESCRIPTION = "Product Description"
+    # A short human-readable name used as a file-naming token, not prose. Renamed
+    # from "Product Description" on 2026-08-27; source sheets still call it Prod Descrip.
+    F_ITEM_FILE_NAME_DESCRIPTION = "File Name Description"
     F_ITEM_PREPRO_OVERLAYS = "Link to Prepro/Overlays"
     F_ITEM_ECOMM_PHOTO_NOTES = "Ecomm Photo Notes"
     F_ITEM_PATH_TO_ART = "Path to Art"
@@ -285,7 +287,6 @@ class Config:
     # The live Products table uses WKFT Job Number. Keep the API's
     # itemJobNumber name for compatibility with existing callers.
     F_ITEM_JOB_NUMBER = "WKFT Job Number"
-    F_ITEM_DESCRIPTION = "Description"
     F_ITEM_MASTER_VARIANT = "Master or Variant"
     F_ITEM_PICKUP_JOB_NUMBER = "Pickup Job Number"
     F_ITEM_BRAND = "Brand"
@@ -321,7 +322,6 @@ class Config:
         "jobNumber": "Job Number",
         "brandPrefix": "Brand Prefix",
         "fileNameDescription": "File Name Description",
-        "productDescription": "Product Description",
         "ecommPhotoNotes": "Ecomm Photo Notes",
         "pathToArt": "Valid Artwork Path",
     }

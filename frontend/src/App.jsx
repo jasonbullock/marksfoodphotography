@@ -3538,7 +3538,7 @@ function ShipmentsPage() {
 // ── Products page ─────────────────────────────────────────────────────────────
 const DEFAULT_PRODUCT_GRID_VISIBLE_COLUMNS = [
   'client', 'name', 'upc', 'productionSummary', 'cvid', 'brandPrefix', 'requestType', 'projectStatus',
-  'wkftJobNumber', 'mboxNumber', 'productType', 'productDescription',
+  'wkftJobNumber', 'mboxNumber', 'productType', 'fileNameDescription',
   'preproOverlays', 'ecommPhotoNotes', 'pathToArt',
 ];
 const PRODUCT_REQUEST_TYPE_OPTIONS = ['Ecomm only', 'Pack only', 'Thr3d only', 'Pack & Thr3d', 'Ecomm & Pack'];
@@ -3551,8 +3551,7 @@ const SOURCE_CHECK_FIELD_CONFIG = {
   cvid: { label: 'CVID', marksKey: 'cvid', trackerKeys: ['CVID'], detail: 'Required to proceed for Ecomm file naming.' },
   brandPrefix: { label: 'Brand Prefix', marksKey: 'brandPrefix', trackerKeys: ['Brand Prefix'] },
   jobNumber: { label: 'WKFT Job Number', marksKey: 'wkftJobNumber', trackerKeys: ['WKFT #', 'WKFT Job Number'], detail: 'Required to proceed for Topco folder naming and handoff.' },
-  fileNameDescription: { label: 'File Name Description', marksKey: 'productDescription', trackerKeys: ['Prod Descrip', 'Product Description'], detail: 'Source Prod Descrip is used as this packaging filename/handoff token and also shown as Product Description.' },
-  productDescription: { label: 'Product Description', marksKey: 'productDescription', trackerKeys: ['Prod Descrip', 'Product Description'], detail: 'Display value from source Prod Descrip.' },
+  fileNameDescription: { label: 'File Name Description', marksKey: 'fileNameDescription', trackerKeys: ['Prod Descrip', 'File Name Description', 'Product Description'], detail: 'A short readable name, used as the packaging filename and handoff token.' },
   productType: { label: 'Product Type', marksKey: 'productType', trackerKeys: ['Product Type'] },
   ecommPhotoNotes: { label: 'Ecomm Photo Notes', marksKey: 'ecommPhotoNotes', trackerKeys: ['Photo Notes', 'Ecomm Photo Notes'] },
   pathToArt: { label: 'Path to Art', marksKey: 'pathToArt', trackerKeys: ['Path to Art'] },
@@ -3578,8 +3577,8 @@ const TOPCO_SOURCE_CHECK_RULES = {
   sourceFieldMappings: [
     {
       sourceField: 'Prod Descrip',
-      usedAs: ['File Name Description', 'Product Description'],
-      note: 'For this Topco slice, Prod Descrip satisfies the packaging filename/handoff token and the display Product Description.',
+      usedAs: ['File Name Description'],
+      note: 'For this Topco slice, Prod Descrip is the packaging filename and handoff token.',
     },
   ],
 };
@@ -4024,7 +4023,7 @@ function ProductsPage({ navigate }) {
     { id: 'wkftJobNumber', header: 'WKFT Job Number', key: 'wkftJobNumber', patchKey: 'wkftJobNumber', editable: true, defaultWidth: 180 },
     { id: 'mboxNumber', header: 'Mbox Number', key: 'mboxNumber', patchKey: 'mboxNumber', editable: true, defaultWidth: 160 },
     { id: 'productType', header: 'Product Type', key: 'productType', patchKey: 'productType', editable: true, options: PRODUCT_TYPE_OPTIONS, defaultWidth: 170, filterType: 'select' },
-    { id: 'productDescription', header: 'Product Description', key: 'productDescription', patchKey: 'productDescription', editable: true, defaultWidth: 260 },
+    { id: 'fileNameDescription', header: 'File Name Description', key: 'fileNameDescription', patchKey: 'fileNameDescription', editable: true, defaultWidth: 260 },
     { id: 'preproOverlays', header: 'Link to Prepro/Overlays', key: 'preproOverlays', patchKey: 'preproOverlays', editable: true, defaultWidth: 240 },
     { id: 'ecommPhotoNotes', header: 'Ecomm Photo Notes', key: 'ecommPhotoNotes', patchKey: 'ecommPhotoNotes', editable: true, defaultWidth: 240 },
     { id: 'pathToArt', header: 'Path to Art', key: 'pathToArt', patchKey: 'pathToArt', editable: true, defaultWidth: 240 },
@@ -5130,17 +5129,16 @@ const PHOTO_PRODUCTION_FIELD_LABELS = {
   jobNumber: 'WKFT Job Number',
   brandPrefix: 'Brand Prefix',
   fileNameDescription: 'File Name Description',
-  productDescription: 'Product Description',
   productType: 'Product Type',
   ecommPhotoNotes: 'Ecomm Photo Notes',
   pathToArt: 'Valid Artwork Path',
 };
 const PHOTO_PRODUCTION_FIELD_OPTIONS = {
-  Packaging: ['productName', 'upc', 'jobNumber', 'brandPrefix', 'fileNameDescription', 'productDescription', 'productType', 'pathToArt'],
-  Ecomm: ['productName', 'upc', 'cvid', 'jobNumber', 'productDescription', 'productType', 'ecommPhotoNotes', 'pathToArt'],
+  Packaging: ['productName', 'upc', 'jobNumber', 'brandPrefix', 'fileNameDescription', 'productType', 'pathToArt'],
+  Ecomm: ['productName', 'upc', 'cvid', 'jobNumber', 'fileNameDescription', 'productType', 'ecommPhotoNotes', 'pathToArt'],
 };
-const PHOTO_PRODUCTION_CF_PRODUCT_CODE_OPTIONS = ['productName', 'upc', 'cvid', 'jobNumber', 'brandPrefix', 'fileNameDescription', 'productDescription', 'productType'];
-const PHOTO_PRODUCTION_FILENAME_OPTIONS = ['productName', 'upc', 'cvid', 'jobNumber', 'brandPrefix', 'fileNameDescription', 'productDescription', 'productType', 'view'];
+const PHOTO_PRODUCTION_CF_PRODUCT_CODE_OPTIONS = ['productName', 'upc', 'cvid', 'jobNumber', 'brandPrefix', 'fileNameDescription', 'productType'];
+const PHOTO_PRODUCTION_FILENAME_OPTIONS = ['productName', 'upc', 'cvid', 'jobNumber', 'brandPrefix', 'fileNameDescription', 'productType', 'view'];
 const PHOTO_PRODUCTION_CF_CATEGORY_OPTIONS = [
   { value: 'clientName', label: 'Client Name' },
   { value: 'productName', label: 'Product Name' },
@@ -5975,7 +5973,7 @@ const INTAKE_TARGET_LABELS = {
   'WKFT Job Number': 'WKFT Job Number',
   'Mbox Number': 'Mbox Number',
   'Product Type': 'Product Type',
-  'Product Description': 'Product Description',
+  'File Name Description': 'File Name Description',
   'Link to Prepro/Overlays': 'Link to Prepro/Overlays',
   'Ecomm Photo Notes': 'Ecomm Photo Notes',
   'Path to Art': 'Path to Art',
@@ -6004,7 +6002,7 @@ const INTAKE_FALLBACK_TARGET_DESCRIPTIONS = {
   'WKFT Job Number': 'Client or production job reference.',
   'Mbox Number': 'Client merchandise box reference.',
   'Product Type': 'Product structure or storage category.',
-  'Product Description': 'Client-provided product description.',
+  'File Name Description': 'Short readable name used as a photo filename token.',
   'Link to Prepro/Overlays': 'Link to preproduction or overlay materials.',
   'Ecomm Photo Notes': 'Notes for Ecomm photography.',
   'Path to Art': 'Path or reference to product artwork.',
@@ -6026,11 +6024,11 @@ const KNOWN_INTAKE_MAPPINGS = {
   topco: { 'Product Name': 'Product Name', CVID: 'CVID', UPC: 'Identifier', 'Brand Prefix': 'Brand Prefix', 'Product Type': 'Product Type' },
   kroger: { 'Job #': 'Product Job Number', Description: 'Description', UPC: 'Identifier', Brand: 'Brand', 'Product Received': 'Product Name', Notes: 'Notes' },
   unfi: { 'Project Number': 'Product Job Number', Description: 'Description', UPC: 'Identifier', Notes: 'Notes' },
-  smithfield: { 'Job #': 'Product Job Number', 'GAR #': 'Identifier', Brand: 'Brand', 'Product Description': 'Description', Notes: 'Notes' },
+  smithfield: { 'Job #': 'Product Job Number', 'GAR #': 'Identifier', Brand: 'Brand', 'Product Description': 'File Name Description', Notes: 'Notes' },
 };
 const INTAKE_TARGET_FIELDS = {
   'Job Name': 'jobName', 'Parent Job Number': 'parentJobNumber', 'Due Date': 'due',
-  'Product Name': 'itemName', Identifier: 'id', UPC: 'id', CVID: 'cvid', 'Brand Prefix': 'brandPrefix', 'Request Type': 'requestType', 'Project Status': 'projectStatus', 'WKFT Job Number': 'wkftJobNumber', 'Mbox Number': 'mboxNumber', 'Product Type': 'productType', 'Product Description': 'productDescription', 'Link to Prepro/Overlays': 'preproOverlays', 'Ecomm Photo Notes': 'ecommPhotoNotes', 'Path to Art': 'pathToArt', 'Product or File Name': 'product', 'Product/File Name': 'product', Description: 'description', 'Product Job Number': 'itemJobNumber', 'Master or Variant': 'masterOrVariant', 'Pickup Job Number': 'pickupJobNumber', Brand: 'brand', Notes: 'notes',
+  'Product Name': 'itemName', Identifier: 'id', UPC: 'id', CVID: 'cvid', 'Brand Prefix': 'brandPrefix', 'Request Type': 'requestType', 'Project Status': 'projectStatus', 'WKFT Job Number': 'wkftJobNumber', 'Mbox Number': 'mboxNumber', 'Product Type': 'productType', 'File Name Description': 'fileNameDescription', 'Product Description': 'fileNameDescription', 'Link to Prepro/Overlays': 'preproOverlays', 'Ecomm Photo Notes': 'ecommPhotoNotes', 'Path to Art': 'pathToArt', 'Product or File Name': 'product', 'Product/File Name': 'product', Description: 'description', 'Product Job Number': 'itemJobNumber', 'Master or Variant': 'masterOrVariant', 'Pickup Job Number': 'pickupJobNumber', Brand: 'brand', Notes: 'notes',
 };
 const INTAKE_WIZARD_STEPS = [
   { id: 'upload', label: 'Upload' },
@@ -6526,7 +6524,7 @@ function IntakePage({ navigate }) {
   const normalizedClientRequiredFields = clientRequiredFields.map(field => field === 'ID' ? 'Identifier' : ['Product Name', 'Product/File Name'].includes(field) ? 'Product or File Name' : field);
   const photographyTargets = [...normalizedClientRequiredFields.filter(field => ['Product or File Name', 'Brand'].includes(field))].filter((target, index, list) => list.indexOf(target) === index);
   const photographyRequiredTargets = new Set(normalizedClientRequiredFields.filter(field => !['Identifier', 'UPC'].includes(field)));
-  const itemMappingTargets = ['Product Name', ...photographyTargets.filter(target => target !== 'Identifier'), 'UPC', 'CVID', 'Brand Prefix', 'Request Type', 'Project Status', 'WKFT Job Number', 'Mbox Number', 'Product Type', 'Product Description', 'Link to Prepro/Overlays', 'Ecomm Photo Notes', 'Path to Art']
+  const itemMappingTargets = ['Product Name', ...photographyTargets.filter(target => target !== 'Identifier'), 'UPC', 'CVID', 'Brand Prefix', 'Request Type', 'Project Status', 'WKFT Job Number', 'Mbox Number', 'Product Type', 'File Name Description', 'Link to Prepro/Overlays', 'Ecomm Photo Notes', 'Path to Art']
     .filter((target, index, list) => list.indexOf(target) === index);
   const itemMappingTargetSet = new Set(itemMappingTargets);
   const referenceColumns = headers.filter(header => !new Set(Object.values(targetMapping).filter(Boolean)).has(header));
@@ -8389,12 +8387,11 @@ function productDataSourceForPlanningItem(item = {}, draft = {}, stagedProduct =
     wkftJobNumber: manual.wkftJobNumber || '',
     pickupJobNumber: manual.pickupJobNumber || '',
     brandPrefix: manual.brandPrefix || '',
-    fileNameDescription: manual.fileNameDescription || '',
-    productDescription: manual.productDescription || manual.description || record.description || '',
+    fileNameDescription: manual.fileNameDescription || manual.productDescription || '',
     productType: manual.productType || '',
     ecommPhotoNotes: manual.ecommPhotoNotes || '',
     pathToArt: manual.pathToArt || manual.artworkPath || '',
-    description: manual.description || manual.productDescription || record.description || '',
+    description: manual.description || record.description || '',
     brand: manual.brand || '',
     ...draft,
   };
@@ -8449,7 +8446,6 @@ const PHOTO_PRODUCTION_EDITABLE_FIELDS = {
   jobNumber: { label: 'WKFT Job Number', patch: 'itemJobNumber' },
   brandPrefix: { label: 'Brand Prefix', patch: 'brandPrefix' },
   fileNameDescription: { label: 'File Name Description', patch: 'fileNameDescription' },
-  productDescription: { label: 'Product Description', patch: 'productDescription' },
   productType: { label: 'Product Type', patch: 'productType' },
   ecommPhotoNotes: { label: 'Ecomm Photo Notes', patch: 'ecommPhotoNotes' },
   pathToArt: { label: 'Valid Artwork Path', patch: 'pathToArt' },
@@ -8508,8 +8504,7 @@ function photoProductionProductValue(product = {}, field) {
   if (field === 'fileNameDescription' && product.fileNameDescription) return product.fileNameDescription;
   if (field === 'fileNameDescription') {
     return referenceDataValue(product, ['File Name Description', 'fileNameDescription', 'Prod Descrip', 'Product Description'])
-      || product.productDescription
-      || product.description
+      || product.fileNameDescription
       || '';
   }
   return product[field] || '';
@@ -9819,7 +9814,6 @@ const PRODUCT_CREATION_DRAFT_KEYS = {
   jobNumber: 'wkftJobNumber',
   brandPrefix: 'brandPrefix',
   fileNameDescription: 'fileNameDescription',
-  productDescription: 'productDescription',
   productType: 'productType',
   pathToArt: 'pathToArt',
   ecommPhotoNotes: 'ecommPhotoNotes',
@@ -11300,7 +11294,8 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
       jobnumber: 'jobNumber',
       brandprefix: 'brandPrefix',
       filenamedescription: 'fileNameDescription',
-      productdescription: 'productDescription',
+      productdescription: 'fileNameDescription',
+      proddescrip: 'fileNameDescription',
       producttype: 'productType',
       ecommphotonotes: 'ecommPhotoNotes',
       pathtoart: 'pathToArt',

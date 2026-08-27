@@ -62,7 +62,7 @@ class MerchandiseReviewTests(unittest.TestCase):
             C.F_ITEM_IDENTIFIER: "000123",
             C.F_ITEM_JOB_NUMBER: "WF-100",
             C.F_ITEM_BRAND: "Topco",
-            C.F_ITEM_DESCRIPTION: "Honeydew 3 lb",
+            C.F_ITEM_FILE_NAME_DESCRIPTION: "Honeydew 3 lb",
             C.F_ITEM_STATUS: "Pending",
         }
         base.update(fields or {})

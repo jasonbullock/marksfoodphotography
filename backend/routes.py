@@ -847,7 +847,6 @@ PHOTO_PRODUCTION_REQUIREMENT_FIELDS = {
     "jobNumber": "WKFT Job Number",
     "brandPrefix": "Brand Prefix",
     "fileNameDescription": "File Name Description",
-    "productDescription": "Product Description",
     "productType": "Product Type",
     "ecommPhotoNotes": "Ecomm Photo Notes",
     "pathToArt": "Valid Artwork Path",
@@ -2414,12 +2413,14 @@ def _intake_destination_field_map():
         "WKFT Job Number": (C.PRODUCTS_TABLE, C.F_ITEM_WKFT_JOB_NUMBER),
         "Mbox Number": (C.PRODUCTS_TABLE, C.F_ITEM_MBOX_NUMBER),
         "Product Type": (C.PRODUCTS_TABLE, C.F_ITEM_PRODUCT_TYPE),
-        "Product Description": (C.PRODUCTS_TABLE, C.F_ITEM_PRODUCT_DESCRIPTION),
+        "File Name Description": (C.PRODUCTS_TABLE, C.F_ITEM_FILE_NAME_DESCRIPTION),
+        # Sheets in the wild still carry the old headings.
+        "Product Description": (C.PRODUCTS_TABLE, C.F_ITEM_FILE_NAME_DESCRIPTION),
+        "Prod Descrip": (C.PRODUCTS_TABLE, C.F_ITEM_FILE_NAME_DESCRIPTION),
         "Link to Prepro/Overlays": (C.PRODUCTS_TABLE, C.F_ITEM_PREPRO_OVERLAYS),
         "Ecomm Photo Notes": (C.PRODUCTS_TABLE, C.F_ITEM_ECOMM_PHOTO_NOTES),
         "Path to Art": (C.PRODUCTS_TABLE, C.F_ITEM_PATH_TO_ART),
         "Product or File Name": (C.PRODUCTS_TABLE, C.F_ITEM_PRODUCT),
-        "Description": (C.PRODUCTS_TABLE, C.F_ITEM_DESCRIPTION),
         "Product Job Number": (C.PRODUCTS_TABLE, C.F_ITEM_JOB_NUMBER),
         "Master or Variant": (C.PRODUCTS_TABLE, C.F_ITEM_MASTER_VARIANT),
         "Pickup Job Number": (C.PRODUCTS_TABLE, C.F_ITEM_PICKUP_JOB_NUMBER),
@@ -2617,7 +2618,10 @@ def _mapping_from_ui_mapping(ui_mapping):
         "WKFT Job Number": "wkft_job_number",
         "Mbox Number": "mbox_number",
         "Product Type": "product_type",
-        "Product Description": "product_description",
+        "File Name Description": "file_name_description",
+        # Sheets in the wild still carry the old headings.
+        "Product Description": "file_name_description",
+        "Prod Descrip": "file_name_description",
         "Link to Prepro/Overlays": "prepro_overlays",
         "Ecomm Photo Notes": "ecomm_photo_notes",
         "Path to Art": "path_to_art",
@@ -2901,7 +2905,7 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
         wkft_job_number = _mapped_value(row, mapping, "wkft_job_number")
         mbox_number = _mapped_value(row, mapping, "mbox_number")
         product_type = _normalize_product_type(_mapped_value(row, mapping, "product_type"))
-        product_description = _mapped_value(row, mapping, "product_description")
+        file_name_description = _mapped_value(row, mapping, "file_name_description")
         prepro_overlays = _mapped_value(row, mapping, "prepro_overlays")
         ecomm_photo_notes = _mapped_value(row, mapping, "ecomm_photo_notes")
         path_to_art = _mapped_value(row, mapping, "path_to_art")
@@ -2963,7 +2967,7 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
             "wkftJobNumber": wkft_job_number,
             "mboxNumber": mbox_number,
             "productType": product_type,
-            "productDescription": product_description,
+            "fileNameDescription": file_name_description,
             "preproOverlays": prepro_overlays,
             "ecommPhotoNotes": ecomm_photo_notes,
             "pathToArt": path_to_art,
@@ -3045,7 +3049,7 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
         wkft_job_number = str(source.get("wkftJobNumber", "") or "").strip()
         mbox_number = str(source.get("mboxNumber", "") or "").strip()
         product_type = _normalize_product_type(source.get("productType", ""))
-        product_description = str(source.get("productDescription", "") or "").strip()
+        file_name_description = str(source.get("fileNameDescription", "") or source.get("productDescription", "") or "").strip()
         prepro_overlays = str(source.get("preproOverlays", "") or "").strip()
         ecomm_photo_notes = str(source.get("ecommPhotoNotes", "") or "").strip()
         path_to_art = str(source.get("pathToArt", "") or "").strip()
@@ -3108,7 +3112,7 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
             "wkftJobNumber": wkft_job_number,
             "mboxNumber": mbox_number,
             "productType": product_type,
-            "productDescription": product_description,
+            "fileNameDescription": file_name_description,
             "preproOverlays": prepro_overlays,
             "ecommPhotoNotes": ecomm_photo_notes,
             "pathToArt": path_to_art,
@@ -3178,7 +3182,7 @@ def _item_fields_from_row(client_id, row):
         "mboxNumber": C.F_ITEM_MBOX_NUMBER,
         "projectName": C.F_ITEM_PROJECT_NAME,
         "productType": C.F_ITEM_PRODUCT_TYPE,
-        "productDescription": C.F_ITEM_PRODUCT_DESCRIPTION,
+        "fileNameDescription": C.F_ITEM_FILE_NAME_DESCRIPTION,
         "preproOverlays": C.F_ITEM_PREPRO_OVERLAYS,
         "ecommPhotoNotes": C.F_ITEM_ECOMM_PHOTO_NOTES,
         "pathToArt": C.F_ITEM_PATH_TO_ART,
@@ -3196,8 +3200,6 @@ def _item_fields_from_row(client_id, row):
         fields[C.F_ITEM_BRAND] = row["brand"]
     if row.get("itemJobNumber"):
         fields[C.F_ITEM_JOB_NUMBER] = row["itemJobNumber"]
-    if row.get("description"):
-        fields[C.F_ITEM_DESCRIPTION] = row["description"]
     if row.get("masterOrVariant"):
         fields[C.F_ITEM_MASTER_VARIANT] = row["masterOrVariant"]
     if row.get("pickupJobNumber"):
@@ -3717,7 +3719,7 @@ def _topco_source_row_to_import_row(source_row):
         "wkftJobNumber": source_data.get("WKFT #") or source_data.get("WKFT Job Number") or "",
         "mboxNumber": source_data.get("Mbox #") or "",
         "productType": source_data.get("Product Type") or "",
-        "productDescription": source_data.get("Prod Descrip") or source_data.get("Product Description") or "",
+        "fileNameDescription": source_data.get("Prod Descrip") or source_data.get("File Name Description") or source_data.get("Product Description") or "",
         "preproOverlays": source_data.get("Link to Prepro/Overlays") or "",
         "ecommPhotoNotes": source_data.get("Photo Notes") or source_data.get("Ecomm Photo Notes") or "",
         "pathToArt": source_data.get("Path to Art") or "",
@@ -4541,13 +4543,11 @@ def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, required_to_sh
         "mboxNumber": f.get(C.F_ITEM_MBOX_NUMBER, ""),
         "projectName": f.get(C.F_ITEM_PROJECT_NAME, ""),
         "productType": f.get(C.F_ITEM_PRODUCT_TYPE, ""),
-        "productDescription": f.get(C.F_ITEM_PRODUCT_DESCRIPTION, ""),
-        "fileNameDescription": f.get(C.F_ITEM_PRODUCT_DESCRIPTION, ""),
+        "fileNameDescription": f.get(C.F_ITEM_FILE_NAME_DESCRIPTION, ""),
         "preproOverlays": f.get(C.F_ITEM_PREPRO_OVERLAYS, ""),
         "ecommPhotoNotes": f.get(C.F_ITEM_ECOMM_PHOTO_NOTES, ""),
         "pathToArt": f.get(C.F_ITEM_PATH_TO_ART, ""),
         "itemJobNumber": f.get(C.F_ITEM_JOB_NUMBER, ""),
-        "description": f.get(C.F_ITEM_DESCRIPTION, ""),
         "masterOrVariant": f.get(C.F_ITEM_MASTER_VARIANT, ""),
         "pickupJobNumber": f.get(C.F_ITEM_PICKUP_JOB_NUMBER, ""),
         "brand": f.get(C.F_ITEM_BRAND, ""),
@@ -4705,8 +4705,6 @@ def _apply_item_fields(fields, body):
             fields[field] = body[key]
     if "itemJobNumber" in body and body["itemJobNumber"] is not None:
         fields[C.F_ITEM_JOB_NUMBER] = _normalize_item_job_number(body.get("itemJobNumber"))
-    if "description" in body and body["description"] is not None:
-        fields[C.F_ITEM_DESCRIPTION] = _normalize_description(body.get("description"))
     if "upc" in body and body["upc"] is not None:
         fields[C.F_ITEM_UPC] = str(body.get("upc") or "").strip()
     if "cvid" in body and body["cvid"] is not None:
@@ -4719,7 +4717,6 @@ def _apply_item_fields(fields, body):
         "mboxNumber": C.F_ITEM_MBOX_NUMBER,
         "projectName": C.F_ITEM_PROJECT_NAME,
         "productType": C.F_ITEM_PRODUCT_TYPE,
-        "productDescription": C.F_ITEM_PRODUCT_DESCRIPTION,
         "preproOverlays": C.F_ITEM_PREPRO_OVERLAYS,
         "ecommPhotoNotes": C.F_ITEM_ECOMM_PHOTO_NOTES,
         "pathToArt": C.F_ITEM_PATH_TO_ART,
@@ -4739,7 +4736,7 @@ def _apply_item_fields(fields, body):
             else:
                 fields[field] = str(value or "").strip()
     if "fileNameDescription" in body and body["fileNameDescription"] is not None:
-        fields[C.F_ITEM_PRODUCT_DESCRIPTION] = str(body.get("fileNameDescription") or "").strip()
+        fields[C.F_ITEM_FILE_NAME_DESCRIPTION] = str(body.get("fileNameDescription") or "").strip()
     if "masterOrVariant" in body and body["masterOrVariant"] is not None:
         normalized = _normalize_master_or_variant(body.get("masterOrVariant"))
         if normalized:
@@ -6092,7 +6089,7 @@ def _product_view_for_requirements(product_fields):
         "cvid": fields.get(C.F_ITEM_CVID, ""),
         "itemJobNumber": fields.get(C.F_ITEM_JOB_NUMBER, ""),
         "brandPrefix": fields.get(C.F_ITEM_BRAND_PREFIX, ""),
-        "productDescription": fields.get(C.F_ITEM_PRODUCT_DESCRIPTION, ""),
+        "fileNameDescription": fields.get(C.F_ITEM_FILE_NAME_DESCRIPTION, ""),
         "productType": fields.get(C.F_ITEM_PRODUCT_TYPE, ""),
         "ecommPhotoNotes": fields.get(C.F_ITEM_ECOMM_PHOTO_NOTES, ""),
         "pathToArt": fields.get(C.F_ITEM_PATH_TO_ART, ""),
@@ -6109,7 +6106,6 @@ def _photo_product_value(product, key):
         "cvid": product.get("cvid"),
         "jobNumber": product.get("itemJobNumber") or product.get("jobNumber") or product.get("wkftJobNumber") or product.get("pickupJobNumber"),
         "brandPrefix": product.get("brandPrefix"),
-        "productDescription": product.get("productDescription") or product.get("description"),
         "productType": product.get("productType"),
         "ecommPhotoNotes": product.get("ecommPhotoNotes"),
         "pathToArt": product.get("pathToArt"),
@@ -6132,7 +6128,7 @@ def _photo_product_value(product, key):
         ]:
             if candidates.get(candidate) not in (None, ""):
                 return candidates[candidate]
-        return product.get("productDescription") or product.get("description") or ""
+        return product.get("fileNameDescription") or ""
     return ""
 
 

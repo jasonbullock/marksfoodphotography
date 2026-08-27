@@ -1758,3 +1758,27 @@ honest, and a match that has since appeared is one click away.
 Unlinking, or dismissing the card, also marks the panel as searching for the rest of that
 item's visit. The record still reads Waiting for Product Data until the step is saved, so
 without that the refresh put the card straight back and the search had to be started twice.
+
+## 2026-08-27 - File Name Description Replaces Product Description
+
+The Airtable field's own description already read "Product name or filename from MySGS",
+so the label was describing something the field is not. The name invited prose into a
+filename token, and the same cell was exposed twice - as `productDescription` and
+`fileNameDescription` - and editable under both labels, in the Products grid and in the
+planning step.
+
+It is now File Name Description everywhere: the Airtable field, the import destination map,
+the Products grid, the source-check config, and the Creative Force feed, which already used
+that name. The code key stays `fileNameDescription`, so client Photo Production Requirements
+need no migration - Topco's JSON already referenced only that token.
+
+"File Name Description" names the use rather than the thing, which is a real cost if the
+value is ever wanted elsewhere. It won anyway: it matches the UI, the naming token and the
+CF feed field, and the alternatives that name the thing ("Short Name", "Display Name") are
+generic enough to invite the prose the rename is meant to prevent.
+
+Old headings still land: "Product Description" and "Prod Descrip" remain aliases in the
+import map so sheets already in circulation keep working.
+
+`F_ITEM_DESCRIPTION` went with it. Products has no Description field and never has, so the
+read always returned "" and the write would have failed with 422 had anyone supplied one.

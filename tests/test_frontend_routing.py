@@ -1967,3 +1967,24 @@ class StagedMatchProductDataTests(unittest.TestCase):
         self.assertIn("return { productId: result?.product?.id || '' };", self.source)
         self.assertIn("latestState.expectedProductId = committedMatch.productId;", self.source)
         self.assertIn("const expectedProductId = state.expectedProductId", self.source)
+
+
+class FileNameDescriptionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+        cls.api = (ROOT / "frontend" / "src" / "api.js").read_text()
+
+    def test_one_field_under_one_name(self):
+        # The same Airtable cell was exposed as productDescription and
+        # fileNameDescription, and edited under both labels in two places.
+        self.assertNotIn("'productDescription'", self.source)
+        self.assertNotIn("productDescription: 'productDescription'", self.source)
+        self.assertNotIn("SKU_PRODUCT_DESCRIPTION", self.api)
+        self.assertIn("id: 'fileNameDescription', header: 'File Name Description'", self.source)
+
+    def test_old_sheet_headings_still_land(self):
+        # Renaming the field must not orphan sheets already in circulation.
+        self.assertIn("'Product Description': 'fileNameDescription'", self.source)
+        self.assertIn("productdescription: 'fileNameDescription'", self.source)
+        self.assertIn("proddescrip: 'fileNameDescription'", self.source)
