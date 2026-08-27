@@ -10808,7 +10808,6 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
       } else {
         await api.matchMerchandiseReviewEntry(item.merchandiseId, matchDraft.id);
       }
-      setMatchDraft(null);
       return true;
     } catch (error) {
       setFinishState({ status: 'error', message: error.message || 'Could not link the Product.' });
@@ -10827,6 +10826,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
           setFinishState({ status: 'error', message: result.message || 'Could not move this card.' });
           return;
         }
+        setMatchDraft(null);
         setFinishState({ status: 'success', message: result?.message || 'Details saved.' });
       } catch (error) {
         setFinishState({ status: 'error', message: error.message || 'Could not move this card.' });
@@ -10851,6 +10851,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
         setFinishState({ status: 'error', message: result.message || 'Could not assign work. Try again.' });
         return;
       }
+      setMatchDraft(null);
       setFinishState({ status: 'success', message: result?.message || 'Merch confirmed.' });
     } catch (error) {
       setFinishState({ status: 'error', message: error.message || 'Could not assign work. Try again.' });
@@ -11129,6 +11130,9 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
             </div>
           )}
           <div className="new-review-footer-actions">
+            <button type="button" className="btn" onClick={onClose} disabled={finishBusy}>
+              Cancel
+            </button>
             {!isWorkstreamCard && (
               <button
                 type="button"

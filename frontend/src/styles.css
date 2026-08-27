@@ -6724,7 +6724,7 @@ input[type="checkbox"]:disabled {
 .planning-release-identity-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   min-width: 0;
 }
 

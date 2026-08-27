@@ -1277,6 +1277,17 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' \u00b7 ')", self.source)
         self.assertIn(".planning-release-cf-line", self.styles)
 
+    def test_a_staged_match_stays_on_screen_until_the_save_lands(self):
+        # Clearing it as the write began made the card vanish and the suggestions
+        # reappear mid-save, which reads as the match having been lost.
+        finish = self.source.split("async function commitMatchDraft()", 1)[1]
+        finish = finish.split("async function finishCurrentVerification", 1)[0]
+        self.assertNotIn("setMatchDraft(null)", finish)
+        self.assertIn("setMatchDraft(null);\n        setFinishState({ status: 'success'", self.source)
+
+    def test_the_review_modal_offers_a_way_out(self):
+        self.assertIn('<button type="button" className="btn" onClick={onClose} disabled={finishBusy}>', self.source)
+
     def test_choosing_a_match_is_staged_until_the_step_is_saved(self):
         # Writing on click meant a mis-click linked a Product - or, for a source
         # row, created one - that then had to be undone.
