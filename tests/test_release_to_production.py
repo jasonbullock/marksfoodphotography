@@ -433,3 +433,16 @@ class ReleaseSchemaUtilityTests(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
+
+class ReleaseGuardTests(unittest.TestCase):
+    def test_the_guard_reads_the_card_not_the_arrival(self):
+        source = (Path(__file__).resolve().parents[1] / "backend" / "routes.py").read_text()
+        start = source.index("def release_merchandise_to_production(entry_id):")
+        body = source[start:start + 3000]
+        # The arrival-level guard returned early once any release had happened, which
+        # would have left Packaging unreleasable after Ecomm went out.
+        self.assertIn("(cards and not pending)", body)
+        # An arrival with no cards keeps its own guard, so a second release cannot
+        # overwrite the original release time.
+        self.assertIn("(not cards and fields.get(C.F_RECEIPT_ENTRY_RELEASED))", body)

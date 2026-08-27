@@ -7569,9 +7569,6 @@ def release_merchandise_to_production(entry_id):
         except requests.HTTPError as error:
             return airtable_err(error)
 
-    if fields.get(C.F_RECEIPT_ENTRY_RELEASED):
-        return jsonify(_shape_verification_entry(entry, receipt, item_record=item_record))
-
     product_fields = item_record.get("fields", {}) if item_record else {}
     requiredToShoot = _evaluate_required_to_shoot_from_fields(
         fields, product_fields, client_config=_client_config_for_entry(fields, receipt)
@@ -7586,7 +7583,8 @@ def release_merchandise_to_production(entry_id):
 
     # A release is of one workstream. Releasing Ecomm must not hand Packaging to
     # Creative Force, and must not mark it released on the board.
-    workstream_type = str(request.get_json(silent=True).get("workstreamType") or "").strip() if request.get_json(silent=True) else ""
+    body = request.get_json(silent=True) or {}
+    workstream_type = str(body.get("workstreamType") or "").strip()
     try:
         cards = _workstream_cards_for_merchandise(entry_id)
     except requests.HTTPError as error:
@@ -7596,6 +7594,14 @@ def release_merchandise_to_production(entry_id):
             card for card in cards
             if str(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_TYPE, "")).strip() == workstream_type
         ]
+    # Releasing again is a no-op for the workstream asked for. Asked at this level
+    # rather than the arrival's, or a released Ecomm would block Packaging forever.
+    # An arrival with no cards at all still releases: there is nothing to have done.
+    pending = [card for card in cards if not card.get("fields", {}).get(C.F_WORKSTREAM_CARD_RELEASED)]
+    already_released = (cards and not pending) or (not cards and fields.get(C.F_RECEIPT_ENTRY_RELEASED))
+    if already_released:
+        return jsonify(_shape_verification_entry(entry, receipt, item_record=item_record))
+    cards = pending
     try:
         synced = _populate_creative_force_feed_for_ready_cards(cards) if cards else []
     except requests.HTTPError as error:
