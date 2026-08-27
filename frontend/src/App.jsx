@@ -1562,7 +1562,7 @@ function PhotoProductionChecklist({ production = {} }) {
 function ReceivingMatchSuggestions({
   title,
   matches = [],
-  limit = 5,
+  limit = 6,
   identifierQuery = '',
   nameOnlyMatchSuggestions = false,
   combinedPartialMatchSuggestions = false,
@@ -1607,6 +1607,11 @@ function ReceivingMatchSuggestions({
       ) : showEmptyState ? (
         !matchLoading && <p className="merch-compare-empty">No matching Products found. Check the package name and UPC / ID.</p>
       ) : null}
+      {matches.length > limit && (
+        <div className="receiving-match-helper">
+          {matches.length - limit} more — narrow the search to see them.
+        </div>
+      )}
       {showNoClearMatchAction && onNoClearMatch && (
         <div className="receiving-match-panel-footer">
           <button type="button" className="receiving-match-secondary-action" onClick={onNoClearMatch} disabled={disabled}>
@@ -3079,7 +3084,6 @@ function ShipmentsPage() {
 	                            <ReceivingMatchSuggestions
 	                              title={matchSuggestionsTitle}
 	                              matches={combinedMatches}
-	                              limit={10}
                               identifierQuery={matchIdentifierQuery}
                               nameOnlyMatchSuggestions={nameOnlyMatchSuggestions}
                               combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
@@ -3128,7 +3132,6 @@ function ShipmentsPage() {
 	                        <ReceivingMatchSuggestions
 	                          title={matchSuggestionsTitle}
 	                          matches={combinedMatches}
-	                          limit={10}
                           identifierQuery={matchIdentifierQuery}
                           nameOnlyMatchSuggestions={nameOnlyMatchSuggestions}
                           combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
@@ -10135,7 +10138,6 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
             <ReceivingMatchSuggestions
               title={matchSuggestionsTitle}
               matches={combinedMatches}
-              limit={10}
               identifierQuery={matchIdentifierQuery}
               nameOnlyMatchSuggestions={nameOnlyMatchSuggestions}
               combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}

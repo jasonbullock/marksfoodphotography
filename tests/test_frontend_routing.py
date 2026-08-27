@@ -1277,6 +1277,15 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' \u00b7 ')", self.source)
         self.assertIn(".planning-release-cf-line", self.styles)
 
+    def test_the_match_list_says_when_it_is_truncated(self):
+        # Silent truncation reads as "this is everything". Six is enough to
+        # recognise the right one; past that the query was too loose.
+        self.assertIn("limit = 6,", self.source)
+        self.assertIn("{matches.length - limit} more — narrow the search to see them.", self.source)
+        self.assertIn("matches.length > limit &&", self.source)
+        # One limit, decided by the component rather than each caller.
+        self.assertNotIn("limit={10}", self.source)
+
     def test_a_candidate_always_shows_its_identifier(self):
         # It used to be hidden once the typed UPC contributed to the match, which is
         # exactly when it is needed: a prefix narrows the list, and the full code is
