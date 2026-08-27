@@ -1278,9 +1278,9 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn(".planning-release-cf-line", self.styles)
 
     def test_the_match_list_says_when_it_is_truncated(self):
-        # Silent truncation reads as "this is everything". Six is enough to
+        # Silent truncation reads as "this is everything". Five is enough to
         # recognise the right one; past that the query was too loose.
-        self.assertIn("limit = 6,", self.source)
+        self.assertIn("limit = 5,", self.source)
         self.assertIn("{matches.length - limit} more — narrow the search to see them.", self.source)
         self.assertIn("matches.length > limit &&", self.source)
         # One limit, decided by the component rather than each caller.

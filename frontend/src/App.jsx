@@ -1562,7 +1562,7 @@ function PhotoProductionChecklist({ production = {} }) {
 function ReceivingMatchSuggestions({
   title,
   matches = [],
-  limit = 6,
+  limit = 5,
   identifierQuery = '',
   nameOnlyMatchSuggestions = false,
   combinedPartialMatchSuggestions = false,
