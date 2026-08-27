@@ -5229,7 +5229,6 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
   const [requirements, setRequirements] = useState(() => ({
     version: 1,
     workstreams: { ...(initial.workstreams || {}) },
-    ...(initial.paths ? { paths: { ...initial.paths } } : {}),
     ...(initial.sourceRefresh ? { sourceRefresh: initial.sourceRefresh } : {}),
   }));
   const [saving, setSaving] = useState(false);
@@ -5299,8 +5298,8 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
     });
   }
 
-  function setPath(key, value) {
-    setRequirements(current => ({ ...current, paths: { ...(current.paths || {}), [key]: value } }));
+  function setPath(type, key, value) {
+    updateType(type, config => ({ ...config, paths: { ...(config.paths || {}), [key]: value } }));
   }
 
   async function save() {
@@ -5327,9 +5326,8 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
           <button className="modal-close" type="button" onClick={onClose} aria-label="Close">×</button>
         </div>
         <div className="client-photo-requirements-grid">
-          {['Packaging', 'Ecomm'].map((type, typeIndex) => {
+          {['Packaging', 'Ecomm'].map(type => {
             const config = configFor(type);
-            const isFirstWorkstream = typeIndex === 0;
             return (
               <section className="client-photo-requirement-column" key={type}>
                 <h3>{type}</h3>
@@ -5402,19 +5400,17 @@ function ClientPhotoProductionRequirementsModal({ client, onClose, onSaved }) {
                     </label>
                   ))}
                 </div>
-                {isFirstWorkstream && <>
-                  <span className="client-photo-requirement-label">Path prefixes</span>
-                  <div className="client-photo-path-fields">
-                    <label>
-                      Artwork
-                      <input value={requirements.paths?.artwork || ''} onChange={event => setPath('artwork', event.target.value)} placeholder="smb://server/Client/_CGI/" />
-                    </label>
-                    <label>
-                      Uploads
-                      <input value={requirements.paths?.upload || ''} onChange={event => setPath('upload', event.target.value)} placeholder="smb://server/Client/" />
-                    </label>
-                  </div>
-                </>}
+                <span className="client-photo-requirement-label">Path prefixes</span>
+                <div className="client-photo-path-fields">
+                  <label>
+                    Artwork
+                    <input value={config.paths?.artwork || ''} onChange={event => setPath(type, 'artwork', event.target.value)} placeholder="smb://server/Client/_CGI/" />
+                  </label>
+                  <label>
+                    Uploads
+                    <input value={config.paths?.upload || ''} onChange={event => setPath(type, 'upload', event.target.value)} placeholder="smb://server/Client/" />
+                  </label>
+                </div>
               </section>
             );
           })}
@@ -5672,7 +5668,8 @@ function SettingsPage({ cards = null } = {}) {
     const sourceRules = sourceCheckRulesForClient(client);
     const sourceRefresh = sourceRefreshConfigForClient(client);
     if (!profile && !sourceRules) return <span className="badge badge-neutral">Standard</span>;
-    const pathPrefixes = Object.entries(client?.photoProductionRequirements?.paths || {});
+    const pathPrefixes = Object.entries(client?.photoProductionRequirements?.workstreams || {})
+      .flatMap(([type, config]) => Object.entries(config?.paths || {}).map(([key, value]) => [`${type} ${key}`, value]));
     const requestTypeMappings = Object.entries(sourceRules?.requestTypeMappings || {});
     const requiredToProceed = Object.entries(sourceRules?.requiredToProceed || {});
     const sourceFieldMappings = sourceRules?.sourceFieldMappings || [];
@@ -11212,7 +11209,6 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
 
   const selectedClient = clients.find(client => client.id === form.clientId) || topcoClient;
   const selectedClientName = selectedClient?.name || 'Client';
-  const pathPrefixes = selectedClient?.photoProductionRequirements?.paths || {};
   const walnutScopeSuggestions = DEFAULT_WALNUT_SCOPE_SUGGESTIONS;
   const dueUrgencySuggestions = activationFieldSuggestions(
     activationHistory.data?.records,
@@ -11342,6 +11338,12 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
     )),
   );
   const fieldIsConfigured = field => configuredRequiredFields.has(normalizeRequirementKey(field));
+  // Packaging and Ecomm can land in different places, so the prefixes follow the
+  // workstream being released. A release covering both takes the first that has one.
+  const pathPrefixes = selectedRequirementConfigs.reduce((prefixes, { config }) => ({
+    artwork: prefixes.artwork || config?.paths?.artwork || '',
+    upload: prefixes.upload || config?.paths?.upload || '',
+  }), { artwork: '', upload: '' });
   const configuredReleaseFields = new Set(
     selectedRequirementConfigs.flatMap(({ config }) => (
       Array.isArray(config?.release?.requiredFields) ? config.release.requiredFields : []

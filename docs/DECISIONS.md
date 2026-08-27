@@ -1804,9 +1804,12 @@ client requires it or someone entered one - the preview previously showed a red 
 for copy the sent email never contained.
 
 Path prefixes moved from `TOPCO_READINESS_PROFILE.pathPrefixes` to `paths: {artwork, upload}`
-in the same Client config, editable in the Admin panel. Topco's record now carries the two
-smb:// values that used to be in the code. No new Airtable columns: the config field already
-existed, and the standing goal is fewer fields, not more.
+in the same Client config, editable in the Admin panel. They sit per workstream, not per
+client: packaging artwork and ecomm uploads can live in different places, and one pair for
+the whole client would have forced a code exception the first time they diverged. The release
+form takes the prefix of the workstream being released. Topco's record now carries the two
+smb:// values that used to be in the code, on both workstreams. No new Airtable columns: the
+config field already existed, and the standing goal is fewer fields, not more.
 
 Where the values are stored is unchanged - Artwork Path and Upload Location stay on the
 Activation, written per release.

@@ -2019,10 +2019,10 @@ class ReleasePathConfigTests(unittest.TestCase):
         cls.source = APP.read_text()
 
     def test_path_prefixes_come_from_the_client(self):
-        self.assertIn(
-            "const pathPrefixes = selectedClient?.photoProductionRequirements?.paths || {};",
-            self.source,
-        )
+        # Packaging and Ecomm can land in different places, so the prefix follows the
+        # workstream being released, not the client as a whole.
+        self.assertIn("const pathPrefixes = selectedRequirementConfigs.reduce(", self.source)
+        self.assertIn("artwork: prefixes.artwork || config?.paths?.artwork || ''", self.source)
         self.assertNotIn("readinessProfile?.pathPrefixes", self.source)
 
     def test_the_asterisks_follow_the_client_config(self):
@@ -2049,12 +2049,9 @@ class ReleasePathConfigTests(unittest.TestCase):
         self.assertIn("Required on the release form", self.source)
         self.assertIn("function toggleReleaseField(type, field)", self.source)
         self.assertIn("Path prefixes", self.source)
-        self.assertIn("setPath('artwork', event.target.value)", self.source)
-        self.assertIn("setPath('upload', event.target.value)", self.source)
-        # One set for the client, shown once under the first workstream rather than
-        # adrift at the bottom of the dialog.
-        self.assertIn("const isFirstWorkstream = typeIndex === 0;", self.source)
-        self.assertEqual(self.source.count("setPath('artwork'"), 1)
+        self.assertIn("setPath(type, 'artwork', event.target.value)", self.source)
+        self.assertIn("setPath(type, 'upload', event.target.value)", self.source)
+        self.assertIn("function setPath(type, key, value)", self.source)
 
     def test_the_handoff_field_labels_read_below_their_heading(self):
         # The section is already titled in caps; repeating "Creative Force" in caps

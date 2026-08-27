@@ -10395,7 +10395,7 @@ input[type="checkbox"]:disabled {
 }
 
 .client-photo-requirements-editor {
-  width: min(980px, calc(100vw - 32px));
+  width: min(1140px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
   overflow: auto;
   display: flex;
@@ -10446,11 +10446,11 @@ input[type="checkbox"]:disabled {
 
 .client-photo-requirement-label {
   display: block;
-  margin: 14px 0 7px;
-  color: var(--text-3);
+  margin: 16px 0 7px;
+  color: var(--text-1);
   font-size: 11px;
-  font-weight: 850;
-  letter-spacing: .04em;
+  font-weight: 900;
+  letter-spacing: .06em;
   text-transform: uppercase;
 }
 

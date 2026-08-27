@@ -409,16 +409,17 @@ class AuthTests(unittest.TestCase):
         # relationship; it no longer carries a second copy of what a photo needs.
         configured = json.dumps({
             "version": 1,
-            "paths": {"artwork": "smb://gfs-marks/Topco/_CGI/03 PROJECTS/", "upload": "smb://gfs-marks/Topco/"},
             "workstreams": {
                 "Packaging": {
                     "requiredProductFields": ["productName", "upc", "jobNumber", "brandPrefix", "fileNameDescription"],
                     "naming": {"template": "{jobNumber}_{brandPrefix}_{fileNameDescription}", "tokens": ["jobNumber", "brandPrefix", "fileNameDescription"], "separator": "_"},
+                    "paths": {"artwork": "smb://gfs-marks/Topco/_CGI/03 PROJECTS/", "upload": "smb://gfs-marks/Topco/"},
                 },
                 "Ecomm": {
                     "requiredProductFields": ["productName", "upc", "cvid"],
                     "naming": {"template": "{cvid}_{view}", "tokens": ["cvid", "view"], "separator": "_"},
                     "release": {"requiredFields": ["uploadLocation"]},
+                    "paths": {"upload": "smb://gfs-marks/Topco/_ECOMM/"},
                 },
             },
         })
@@ -447,8 +448,11 @@ class AuthTests(unittest.TestCase):
         self.assertIn("Quantity received", profile["notRequiredFromActivation"])
 
         photo_requirements = records["Topco"]["photoProductionRequirements"]
-        self.assertEqual(photo_requirements["paths"]["artwork"], "smb://gfs-marks/Topco/_CGI/03 PROJECTS/")
-        self.assertEqual(photo_requirements["paths"]["upload"], "smb://gfs-marks/Topco/")
+        # Packaging and Ecomm can send uploads to different places.
+        self.assertEqual(photo_requirements["workstreams"]["Packaging"]["paths"]["upload"], "smb://gfs-marks/Topco/")
+        self.assertEqual(photo_requirements["workstreams"]["Ecomm"]["paths"]["upload"], "smb://gfs-marks/Topco/_ECOMM/")
+        self.assertNotIn("artwork", photo_requirements["workstreams"]["Ecomm"]["paths"])
+        self.assertNotIn("paths", photo_requirements)
         self.assertEqual(photo_requirements["workstreams"]["Ecomm"]["release"]["requiredFields"], ["uploadLocation"])
         self.assertEqual(photo_requirements["workstreams"]["Packaging"]["naming"]["template"], "{jobNumber}_{brandPrefix}_{fileNameDescription}")
         self.assertNotIn("release", photo_requirements["workstreams"]["Packaging"])
@@ -468,7 +472,6 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         requirements = response.get_json()["records"][0]["photoProductionRequirements"]
         self.assertEqual(requirements["workstreams"], {})
-        self.assertNotIn("paths", requirements)
 
     def test_photo_production_status_reports_missing_product_and_naming_values(self):
         client = {

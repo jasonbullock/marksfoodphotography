@@ -898,6 +898,16 @@ def _normalize_photo_production_requirements(value):
             raise ValueError(f"Unsupported release requirement for {name}: {', '.join(invalid_release)}.")
         if release_fields:
             normalized_config["release"] = {"requiredFields": [str(field) for field in release_fields]}
+        paths = config.get("paths") or {}
+        if not isinstance(paths, dict) or isinstance(paths, list):
+            raise ValueError(f"Photo requirements for {name}.paths must be an object.")
+        normalized_paths = {
+            key: str(paths.get(key) or "").strip()
+            for key in ("artwork", "upload")
+            if str(paths.get(key) or "").strip()
+        }
+        if normalized_paths:
+            normalized_config["paths"] = normalized_paths
         if "creativeForce" in config:
             creative_force = config.get("creativeForce") or {}
             if not isinstance(creative_force, dict) or isinstance(creative_force, list):
@@ -918,17 +928,6 @@ def _normalize_photo_production_requirements(value):
             }
         normalized[name] = normalized_config
     normalized_requirements = {"version": 1, "workstreams": normalized}
-    # Where this client's artwork and uploads live. Client config, not a code branch.
-    paths = value.get("paths") or {}
-    if not isinstance(paths, dict) or isinstance(paths, list):
-        raise ValueError("Photo Production Requirements paths must be an object.")
-    normalized_paths = {
-        key: str(paths.get(key) or "").strip()
-        for key in ("artwork", "upload")
-        if str(paths.get(key) or "").strip()
-    }
-    if normalized_paths:
-        normalized_requirements["paths"] = normalized_paths
     if "sourceRefresh" in value:
         normalized_requirements["sourceRefresh"] = _normalize_source_refresh_config(
             value.get("sourceRefresh"),
