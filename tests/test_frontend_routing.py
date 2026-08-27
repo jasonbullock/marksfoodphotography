@@ -1296,7 +1296,8 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("onMatchDraftChange?.({ type: 'sourceRow', row: sourceRow", self.source)
         # Nothing is written until the step is committed.
         self.assertIn("async function commitMatchDraft()", self.source)
-        self.assertIn("if (!await commitMatchDraft()) return;", self.source)
+        self.assertIn("const committedMatch = await commitMatchDraft();", self.source)
+        self.assertIn("if (!committedMatch) return;", self.source)
         # A staged choice reads as chosen, and says it is not saved yet.
         self.assertIn("const stagedProduct = matchDraft?.item || null;", self.source)
         self.assertIn("Links when you save this step.", self.source)
@@ -1958,3 +1959,11 @@ class StagedMatchProductDataTests(unittest.TestCase):
         # from Ecomm - and a wrong list is worse than no list.
         self.assertNotIn("TOPCO_PHOTO_PRODUCTION_DEFAULTS", self.source)
         self.assertIn("const config = clientRequirements?.workstreams?.[type];", self.source)
+
+    def test_the_saved_product_id_comes_from_the_commit(self):
+        # The modal's copy of the record predates the link the commit just made, so
+        # re-reading it there would send the save off as unmatched.
+        self.assertIn("return { productId: matchDraft.id || '' };", self.source)
+        self.assertIn("return { productId: result?.product?.id || '' };", self.source)
+        self.assertIn("latestState.expectedProductId = committedMatch.productId;", self.source)
+        self.assertIn("const expectedProductId = state.expectedProductId", self.source)

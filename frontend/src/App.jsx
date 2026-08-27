@@ -10717,18 +10717,20 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   }
 
   async function commitMatchDraft() {
-    if (!matchDraft) return true;
+    if (!matchDraft) return { productId: '' };
     try {
       if (matchDraft.type === 'sourceRow') {
-        await api.activateMerchandiseSourceRow(item.merchandiseId,
+        // The row is not a Product yet, so activation is what creates one and only
+        // the response knows its id.
+        const result = await api.activateMerchandiseSourceRow(item.merchandiseId,
           { sourceRowNumber: matchDraft.row?.sourceRowNumber });
-      } else {
-        await api.matchMerchandiseReviewEntry(item.merchandiseId, matchDraft.id);
+        return { productId: result?.product?.id || '' };
       }
-      return true;
+      await api.matchMerchandiseReviewEntry(item.merchandiseId, matchDraft.id);
+      return { productId: matchDraft.id || '' };
     } catch (error) {
       setFinishState({ status: 'error', message: error.message || 'Could not link the Product.' });
-      return false;
+      return null;
     }
   }
 
@@ -10737,7 +10739,8 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     // Before the match commit, so the button reports the save on the click
     // rather than once the first request comes back.
     setFinishState({ status: 'loading', message: '' });
-    if (!await commitMatchDraft()) return;
+    const committedMatch = await commitMatchDraft();
+    if (!committedMatch) return;
     if (isWorkstreamCard) {
       try {
         const result = await onReadyForPhoto?.(item);
@@ -10757,6 +10760,9 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     latestState.assignment = workstreamAssignmentsForDeliverables(latestState.deliverables, totalQuantity, intakeDraft.allocation);
     latestState.readyToAdvance = readyToAdvance;
     latestState.photoDraft = photoDraftValues;
+    // The record this modal was opened with predates the link the commit just made,
+    // so the id travels with the state rather than being re-read from it.
+    latestState.expectedProductId = committedMatch.productId;
     const willShipToThr3d = latestState.thr3dOnly;
     if (willShipToThr3d && !window.confirm(THR3D_SHIP_CONFIRMATION_MESSAGE)) {
       setFinishState({ status: 'idle', message: 'Thr3d shipment cancelled.' });
@@ -12163,7 +12169,10 @@ function MerchandiseReviewV2Page() {
     }
     const deliverables = normalizeDeliverableList(state.deliverables || item.deliverables);
     const assignment = state.assignment || workstreamAssignmentsForDeliverables(deliverables, item.record?.quantity);
-    const expectedProductId = item.record?.linkedItem?.id || item.record?.itemIds?.[0] || '';
+    const expectedProductId = state.expectedProductId
+      || item.record?.linkedItem?.id
+      || item.record?.itemIds?.[0]
+      || '';
     const photoDraft = state.photoDraft || {};
     const manualProductInfo = expectedProductId ? undefined : productDataSourceForPlanningItem(item, photoDraft);
     try {
