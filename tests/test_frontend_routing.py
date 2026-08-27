@@ -2087,3 +2087,11 @@ class PerWorkstreamReleaseTests(unittest.TestCase):
         self.assertIn("...(artworkPathRequired ? [['Artwork Path', row.artworkPath]] : []),", self.source)
         self.assertIn("...(uploadLocationRequired ? [['Upload Location', row.uploadLocation]] : []),", self.source)
         self.assertNotIn("...(showUploadLocation ? [['Upload Location'", self.source)
+
+
+class ReleaseColumnIdentityTests(unittest.TestCase):
+    def test_the_release_column_does_not_restate_the_match(self):
+        # Nothing reaches that column unmatched.
+        source = APP.read_text()
+        self.assertIn("const showMatchState = sectionId !== 'readyToRelease';", source)
+        self.assertIn("{showMatchState && (", source)

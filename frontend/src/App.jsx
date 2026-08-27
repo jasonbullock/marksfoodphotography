@@ -8763,13 +8763,18 @@ function CopyValue({ value, label }) {
 
 function ReleaseCardIdentifierLine({ item, identifier, sectionId }) {
   const matched = productLinkedForPlanningItem(item);
+  // Nothing reaches the release column unmatched, so saying so there tells the
+  // reader something they already know.
+  const showMatchState = sectionId !== 'readyToRelease';
   return (
     <span className="planning-release-identity-line">
       <span className="planning-release-identifier">
         {identifier || 'No UPC'}
         <CopyValue value={identifier} label="Copy UPC" />
       </span>
-      <span className={matched ? 'is-matched' : 'is-unmatched'}>{matched ? '✓ Matched' : '✗ Unmatched'}</span>
+      {showMatchState && (
+        <span className={matched ? 'is-matched' : 'is-unmatched'}>{matched ? '✓ Matched' : '✗ Unmatched'}</span>
+      )}
     </span>
   );
 }
