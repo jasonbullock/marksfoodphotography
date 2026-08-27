@@ -1680,6 +1680,22 @@ does.
 `showSourceMatchPanel = false` still gates two dead renders of the separate source-sheet
 suggestion panel in receiving, left from merging those lists. Worth removing.
 
+## 2026-08-27 - Choosing A Match Is Staged Until The Step Is Saved
+
+Superseded the decision below, and for a better reason than it was made.
+
+Clicking a suggestion wrote the link to Airtable immediately. For a source-sheet row it did
+more: committing that row *creates* a Product. So a mis-click produced a record that then
+had to be found and undone, and the undoing was itself a write.
+
+A chosen match is now held as a draft until the step is committed with Accept merchandise or
+Save, the same way the No Clear Match flag already was. The card shows the choice as made and
+says it links when the step is saved; removing it before then touches nothing.
+
+`Unlink` still exists and still unlinks, for a link that was actually written. The button
+says "Remove" for a staged choice and "Unlink" for a written one, because those are different
+acts.
+
 ## 2026-08-26 - Unlink Means Unlink
 
 Picking a match in the Planning modal writes the link to Airtable immediately. The button

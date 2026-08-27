@@ -9885,7 +9885,7 @@ function productCreationFields(clientRecord, item) {
   });
 }
 
-function NewReviewProductIdentification({ item, product, onRefresh, deferNoClearMatch = false, noClearMatchDraft, onNoClearMatchDraftChange, clientRecord = null }) {
+function NewReviewProductIdentification({ item, product, onRefresh, deferNoClearMatch = false, noClearMatchDraft, onNoClearMatchDraftChange, matchDraft = null, onMatchDraftChange, clientRecord = null }) {
   const record = item.record || {};
   const [matchNameQuery, setMatchNameQuery] = useState(record.productName || record.description || '');
   const [matchIdentifierQuery, setMatchIdentifierQuery] = useState(record.skuId || record.observedIdentifier || '');
@@ -9988,40 +9988,28 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
 
   // Selecting a source row creates or updates the local Product from that row and
   // links it, the same idempotent activation Shipments uses.
-  async function activateSourceRow(sourceRow) {
-    const sourceRowNumber = sourceRow?.sourceRowNumber;
-    if (!sourceRowNumber) return;
-    setSourceActivatingRow(sourceRowNumber);
+  function activateSourceRow(sourceRow) {
+    if (!sourceRow?.sourceRowNumber) return;
+    // A source row is not a Product yet, so committing this creates one. All the
+    // more reason not to do it on a click that might be a mis-click.
+    onMatchDraftChange?.({ type: 'sourceRow', row: sourceRow, item: sourceRowMatchItem(sourceRow) });
+    onNoClearMatchDraftChange?.(false);
+    setNoClearMatch(false);
+    setEditingLinkedProductIdentity(false);
     setNotice('');
-    try {
-      await api.activateMerchandiseSourceRow(item.merchandiseId, { sourceRowNumber });
-      onNoClearMatchDraftChange?.(false);
-      setEditingLinkedProductIdentity(false);
-      await onRefresh?.();
-    } catch (error) {
-      setNotice(error.message || 'Could not match this source row.');
-    } finally {
-      setSourceActivatingRow(null);
-    }
   }
 
   function setField(field, value) {
     setDraft(current => ({ ...current, [field]: value }));
   }
 
-  async function linkProduct(productId) {
-    setBusy(true);
+  function linkProduct(match) {
+    // Staged, not written. Committed when the step is.
+    onMatchDraftChange?.({ type: 'product', id: match.id, item: match });
+    onNoClearMatchDraftChange?.(false);
+    setNoClearMatch(false);
+    setEditingLinkedProductIdentity(false);
     setNotice('');
-    try {
-      await api.matchMerchandiseReviewEntry(item.merchandiseId, productId);
-      onNoClearMatchDraftChange?.(false);
-      setEditingLinkedProductIdentity(false);
-      await onRefresh?.();
-    } catch (error) {
-      setNotice(error.message || 'Could not link Product.');
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function markNoClearMatch() {
@@ -10045,6 +10033,10 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
   }
 
   async function unlinkProduct() {
+    if (stagedProduct) {
+      onMatchDraftChange?.(null);
+      return;
+    }
     setBusy(true);
     setNotice('');
     try {
@@ -10091,7 +10083,9 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
   }
 
 
-  const linked = Boolean(product.id);
+  // A staged choice reads as chosen, because it is - it just is not written yet.
+  const stagedProduct = matchDraft?.item || null;
+  const linked = Boolean(product.id) || Boolean(stagedProduct);
   const effectiveNoClearMatch = deferNoClearMatch ? Boolean(noClearMatchDraft) : noClearMatch;
   const showLinkedProductCard = linked;
   const showProductIdentityFields = (!showLinkedProductCard || editingLinkedProductIdentity) && !createOpen;
@@ -10150,9 +10144,10 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
       {showLinkedProductCard ? (
         <>
           <ProductMatchCard
-            item={product}
-            changeLabel="Unlink"
-            onChange={unlinkProduct}
+            item={stagedProduct || product}
+            meta={stagedProduct ? 'Links when you save this step.' : undefined}
+            changeLabel={stagedProduct ? 'Remove' : 'Unlink'}
+            onChange={stagedProduct ? (() => onMatchDraftChange?.(null)) : unlinkProduct}
             changeDisabled={busy}
             actionDisabled={busy}
           />
@@ -10165,7 +10160,7 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
               combinedPartialMatchSuggestions={combinedPartialMatchSuggestions}
               combinedMatchSearch={combinedMatchSearch}
               matchLoading={matchLoading}
-                onSelect={match => linkProduct(match.id)}
+                onSelect={match => linkProduct(match)}
               disabled={busy}
             />
           )}
@@ -10199,7 +10194,7 @@ function NewReviewProductIdentification({ item, product, onRefresh, deferNoClear
                   activateSourceRow(match.__sourceRow);
                   return;
                 }
-                linkProduct(match.id);
+                linkProduct(match);
               }}
               disabled={busy}
             />
@@ -10606,6 +10601,10 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   const [issueNotes, setIssueNotes] = useState('');
   const [issueState, setIssueState] = useState({ status: 'idle', message: '' });
   const [draftNoClearMatch, setDraftNoClearMatch] = useState(() => Boolean(item.record?.noClearMatch || item.record?.reviewState === 'Waiting for Product Data'));
+  // Choosing a match is a decision in progress until the step is committed. Writing
+  // it on click meant a mis-click linked a Product - or, for a source row, created
+  // one - that then had to be undone.
+  const [matchDraft, setMatchDraft] = useState(null);
   const product = item.record?.linkedItem || {};
   const committedDeliverables = deliverablesForRecord(item.record);
   const productRequestTypeSuggestion = suggestedDeliverablesForRecord(item.record);
@@ -10800,8 +10799,26 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     setIntakeFeedback('');
   }
 
+  async function commitMatchDraft() {
+    if (!matchDraft) return true;
+    try {
+      if (matchDraft.type === 'sourceRow') {
+        await api.activateMerchandiseSourceRow(item.merchandiseId,
+          { sourceRowNumber: matchDraft.row?.sourceRowNumber });
+      } else {
+        await api.matchMerchandiseReviewEntry(item.merchandiseId, matchDraft.id);
+      }
+      setMatchDraft(null);
+      return true;
+    } catch (error) {
+      setFinishState({ status: 'error', message: error.message || 'Could not link the Product.' });
+      return false;
+    }
+  }
+
   async function finishCurrentVerification() {
     if (finishBusy) return;
+    if (!await commitMatchDraft()) return;
     if (isWorkstreamCard) {
       setFinishState({ status: 'loading', message: 'Saving details...' });
       try {
@@ -10954,6 +10971,8 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                 onRefresh={onRefresh}
                 deferNoClearMatch={isMerchAcceptanceReview}
                 noClearMatchDraft={draftNoClearMatch}
+                matchDraft={matchDraft}
+                onMatchDraftChange={setMatchDraft}
                 onNoClearMatchDraftChange={setDraftNoClearMatch}
               />
             </ReviewStep>

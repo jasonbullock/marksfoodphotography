@@ -1277,6 +1277,19 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' \u00b7 ')", self.source)
         self.assertIn(".planning-release-cf-line", self.styles)
 
+    def test_choosing_a_match_is_staged_until_the_step_is_saved(self):
+        # Writing on click meant a mis-click linked a Product - or, for a source
+        # row, created one - that then had to be undone.
+        self.assertIn("function linkProduct(match) {", self.source)
+        self.assertIn("onMatchDraftChange?.({ type: 'product', id: match.id, item: match })", self.source)
+        self.assertIn("onMatchDraftChange?.({ type: 'sourceRow', row: sourceRow", self.source)
+        # Nothing is written until the step is committed.
+        self.assertIn("async function commitMatchDraft()", self.source)
+        self.assertIn("if (!await commitMatchDraft()) return;", self.source)
+        # A staged choice reads as chosen, and says it is not saved yet.
+        self.assertIn("const stagedProduct = matchDraft?.item || null;", self.source)
+        self.assertIn("Links when you save this step.", self.source)
+
     def test_planning_cards_can_copy_the_name_and_upc(self):
         # A span, not a button: the card is itself a button, and nesting one inside
         # another is invalid and behaves unpredictably.
@@ -1296,8 +1309,8 @@ class FrontendRoutingTests(unittest.TestCase):
         # and walking away kept a link the user believed they had undone.
         self.assertIn("async function unlinkProduct()", self.source)
         self.assertIn("api.removeMerchandiseReviewMatch(item.merchandiseId)", self.source)
-        self.assertIn('changeLabel="Unlink"', self.source)
-        self.assertIn("onChange={unlinkProduct}", self.source)
+        self.assertIn("changeLabel={stagedProduct ? 'Remove' : 'Unlink'}", self.source)
+        self.assertIn("onChange={stagedProduct ? (() => onMatchDraftChange?.(null)) : unlinkProduct}", self.source)
         # The state that hid the card while keeping the link is gone.
         self.assertNotIn("choosingReplacementProduct", self.source)
         self.assertNotIn("replacementProductId", self.source)
