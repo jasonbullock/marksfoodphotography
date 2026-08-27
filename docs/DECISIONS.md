@@ -1661,3 +1661,21 @@ can still proceed without linking right now" was shown even when the status read
 and there was nothing below to confirm. The unmatched state now says "Find the Product, or
 establish one" and the matched state says nothing — the green card with the product name and
 a Change button already does.
+
+## 2026-08-26 - The Source Sheet Reassurance Is Obsolete
+
+The merch check footer said "Nothing entered here writes back to the source sheet — it is
+what lets this product move into production." It was added deliberately: people hesitated at
+that button because they assumed they were editing the client's spreadsheet.
+
+That assumption only existed because the sheet was going to be *the* product data source.
+It is not. It is one possible contributor of some data, alongside Structure Forms, chat
+messages, receiving, and records established in this application. Where a value came from is
+now genuinely ambiguous and often internal.
+
+So the sentence has been removed rather than shortened. Reassuring someone they are not
+editing the source sheet reinforces a model where such a sheet governs, and nothing here
+does.
+
+`showSourceMatchPanel = false` still gates two dead renders of the separate source-sheet
+suggestion panel in receiving, left from merging those lists. Worth removing.

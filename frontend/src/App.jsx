@@ -11096,11 +11096,6 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
               <strong className={`is-${finishState.status}`}>{finishState.message}</strong>
             </div>
           )}
-          {/* Stated once, next to the commit action rather than per step: people
-              hesitate here because they assume they are editing the client's sheet. */}
-          <p className="new-review-footer-scope">
-            Nothing entered here writes back to the source sheet — it is what lets this product move into production.
-          </p>
           {issueState.message && (
             <p className={`new-review-footer-feedback is-${issueState.status}`} role={issueState.status === 'error' ? 'alert' : 'status'}>
               {issueState.message}
