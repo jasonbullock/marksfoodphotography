@@ -2079,3 +2079,11 @@ class PerWorkstreamReleaseTests(unittest.TestCase):
         # released when only one had been.
         self.assertIn("released: Boolean(card.released),", self.source)
         self.assertIn("releasedAt: card.releasedAt || '',", self.source)
+
+    def test_the_release_gate_follows_the_client_too(self):
+        # The submit gate had its own hardcoded copy: Upload Location was blocked on
+        # showUploadLocation, which is true whenever a deliverable is picked, and
+        # Artwork Path read the Product field list instead of the release config.
+        self.assertIn("...(artworkPathRequired ? [['Artwork Path', row.artworkPath]] : []),", self.source)
+        self.assertIn("...(uploadLocationRequired ? [['Upload Location', row.uploadLocation]] : []),", self.source)
+        self.assertNotIn("...(showUploadLocation ? [['Upload Location'", self.source)
