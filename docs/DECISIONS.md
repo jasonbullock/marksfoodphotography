@@ -1813,3 +1813,21 @@ config field already existed, and the standing goal is fewer fields, not more.
 
 Where the values are stored is unchanged - Artwork Path and Upload Location stay on the
 Activation, written per release.
+
+## 2026-08-27 - Release Belongs To The Workstream, Not The Arrival
+
+`Released`, `Released At` and `Released By` lived only on Merchandise, so releasing the Ecomm
+card marked the whole arrival released and the Packaging card for the same box showed the
+released badge too. The release also pushed every ready workstream card on that arrival into
+the Creative Force feed, not the one being released - the Packaging card escaped only because
+it was missing Brand Prefix and File Name Description and the sync skipped it. Complete that
+data and releasing Ecomm would have shipped both.
+
+The unit of release is the workstream card. Workstream Cards now carries its own Released,
+Released At and Released By; the release names the workstream it is releasing, the feed sync
+covers only that card, and the badge reads the card. Three new Airtable fields, against the
+standing goal of fewer - taken because nothing else recorded this and the arrival-level flag
+was answering a different question.
+
+The Merchandise flag stays and becomes derived: the arrival is released once every workstream
+on it is. Released At and Released By on Merchandise still record the most recent release.

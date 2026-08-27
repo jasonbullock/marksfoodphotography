@@ -335,7 +335,7 @@ api.confirmAssignMerchandise = async (entryId, payload = {}) => backend('POST', 
 api.listMerchandiseComments = async (entryId) => backend('GET', `/merchandise/${entryId}/comments`);
 api.listMerchandiseHistory = async (entryId) => backend('GET', `/merchandise/${entryId}/history`);
 api.createMerchandiseComment = async (entryId, comment) => backend('POST', `/merchandise/${entryId}/comments`, { comment });
-api.releaseMerchandiseToProduction = async (entryId) => backend('POST', `/merchandise/${entryId}/release`);
+api.releaseMerchandiseToProduction = async (entryId, workstreamType = '') => backend('POST', `/merchandise/${entryId}/release`, workstreamType ? { workstreamType } : {});
 api.markMerchandiseWaitingForProductData = async (entryId, payload = {}) => backend('POST', `/merchandise/review/${entryId}/waiting-product-data`, payload);
 api.createMerchandiseReviewIssue = async (entryId, payload = {}) => backend('POST', `/merchandise/review/${entryId}/issue`, payload);
 api.listLocations = async () => backend('GET', '/locations');

@@ -224,7 +224,13 @@ class ReleaseToProductionTests(unittest.TestCase):
         get_record.side_effect = [entry, self.receipt(), self.product(), self.product()]
         update_record.return_value = entry
         card = {"id": "recCard", "fields": {C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"]}}
-        cards_for_merch.return_value = [card]
+        released_card = {"id": "recCard", "fields": {
+            C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+            C.F_WORKSTREAM_CARD_RELEASED: True,
+        }}
+        # Read once to choose what to release, and again to see whether the arrival
+        # still has a workstream waiting.
+        cards_for_merch.side_effect = [[card], [released_card]]
         populate_feed.return_value = [{"sourceKey": "topco:recCard", "action": "created"}]
 
         response = self.app.post("/api/merchandise/recMerch/release")
@@ -233,9 +239,48 @@ class ReleaseToProductionTests(unittest.TestCase):
         populate_feed.assert_called_once_with([card])
         self.assertEqual(response.get_json()["creativeForceFeed"],
                          [{"sourceKey": "topco:recCard", "action": "created"}])
+        card_write = next(call for call in update_record.call_args_list if call.args[1] == "recCard")
+        self.assertTrue(card_write.args[2][C.F_WORKSTREAM_CARD_RELEASED])
         self.assertTrue(update_record.call_args.args[2][C.F_RECEIPT_ENTRY_RELEASED])
         record_history.assert_called_once()
         self.assertEqual(record_history.call_args.args[1], "Released to photo")
+
+    @patch("routes._record_merchandise_history")
+    @patch("routes._populate_creative_force_feed_for_ready_cards")
+    @patch("routes._workstream_cards_for_merchandise")
+    @patch("routes.airtable.update_record")
+    @patch("routes.airtable.get_record")
+    def test_releasing_one_workstream_leaves_the_other_alone(
+        self, get_record, update_record, cards_for_merch, populate_feed, _history
+    ):
+        # Releasing Ecomm used to hand every ready card on the arrival to Creative
+        # Force and mark the whole arrival released, so Packaging lit up too.
+        entry = self.entry({C.F_RECEIPT_ENTRY_ITEM: ["recProduct"]})
+        get_record.side_effect = [entry, self.receipt(), self.product(), self.product()]
+        update_record.return_value = entry
+        ecomm = {"id": "recEcomm", "fields": {
+            C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+            C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
+        }}
+        packaging = {"id": "recPackaging", "fields": {
+            C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+            C.F_WORKSTREAM_CARD_TYPE: "Packaging",
+        }}
+        cards_for_merch.side_effect = [
+            [ecomm, packaging],
+            [{"id": "recEcomm", "fields": {C.F_WORKSTREAM_CARD_RELEASED: True}}, packaging],
+        ]
+        populate_feed.return_value = []
+
+        response = self.app.post("/api/merchandise/recMerch/release", json={"workstreamType": "Ecomm"})
+
+        self.assertEqual(response.status_code, 200)
+        populate_feed.assert_called_once_with([ecomm])
+        written = {call.args[1] for call in update_record.call_args_list}
+        self.assertIn("recEcomm", written)
+        self.assertNotIn("recPackaging", written)
+        # Packaging is still waiting, so the arrival is not released yet.
+        self.assertNotIn(C.F_RECEIPT_ENTRY_RELEASED, update_record.call_args.args[2])
 
     @patch("routes._populate_creative_force_feed_for_ready_cards")
     @patch("routes._workstream_cards_for_merchandise")
@@ -387,3 +432,4 @@ class ReleaseSchemaUtilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -5385,6 +5385,9 @@ def _shape_workstream_card(record):
         "creativeForce": creative_force_sync,
         "creativeForceStatus": fields.get(C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS, ""),
         "creativeForceStep": fields.get(C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP, ""),
+        "released": bool(fields.get(C.F_WORKSTREAM_CARD_RELEASED, False)),
+        "releasedAt": fields.get(C.F_WORKSTREAM_CARD_RELEASED_AT, ""),
+        "releasedByIds": _as_list(fields.get(C.F_WORKSTREAM_CARD_RELEASED_BY, [])),
     }
 
 
@@ -7581,19 +7584,49 @@ def release_merchandise_to_production(entry_id):
             "requiredToShoot": requiredToShoot,
         }), 400
 
+    # A release is of one workstream. Releasing Ecomm must not hand Packaging to
+    # Creative Force, and must not mark it released on the board.
+    workstream_type = str(request.get_json(silent=True).get("workstreamType") or "").strip() if request.get_json(silent=True) else ""
     try:
         cards = _workstream_cards_for_merchandise(entry_id)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    if workstream_type:
+        cards = [
+            card for card in cards
+            if str(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_TYPE, "")).strip() == workstream_type
+        ]
+    try:
         synced = _populate_creative_force_feed_for_ready_cards(cards) if cards else []
     except requests.HTTPError as error:
         return airtable_err(error)
 
-    update_fields = {
-        C.F_RECEIPT_ENTRY_RELEASED: True,
-        C.F_RECEIPT_ENTRY_RELEASED_AT: _now_iso(),
-    }
+    released_at = _now_iso()
     user_id = _current_user_id()
+    card_fields = {
+        C.F_WORKSTREAM_CARD_RELEASED: True,
+        C.F_WORKSTREAM_CARD_RELEASED_AT: released_at,
+    }
+    if user_id:
+        card_fields[C.F_WORKSTREAM_CARD_RELEASED_BY] = [user_id]
+    try:
+        for card in cards:
+            airtable.update_record(C.WORKSTREAM_CARDS_TABLE, card["id"], card_fields, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    update_fields = {
+        C.F_RECEIPT_ENTRY_RELEASED_AT: released_at,
+    }
     if user_id:
         update_fields[C.F_RECEIPT_ENTRY_RELEASED_BY] = [user_id]
+    # The arrival counts as released once every workstream on it has been.
+    remaining = [
+        card for card in _workstream_cards_for_merchandise(entry_id)
+        if not card.get("fields", {}).get(C.F_WORKSTREAM_CARD_RELEASED)
+    ]
+    if not remaining:
+        update_fields[C.F_RECEIPT_ENTRY_RELEASED] = True
 
     try:
         updated = _update_receipt_entry_record(entry_id, update_fields)

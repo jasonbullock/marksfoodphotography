@@ -206,6 +206,11 @@ class Config:
     F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC = "Creative Force Sync"
     F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS = "Creative Force Status"
     F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP = "Creative Force Step"
+    # Release is per workstream, not per arrival: an Ecomm card can go to photo while
+    # Packaging for the same box is still waiting on data.
+    F_WORKSTREAM_CARD_RELEASED = "Released"
+    F_WORKSTREAM_CARD_RELEASED_AT = "Released At"
+    F_WORKSTREAM_CARD_RELEASED_BY = "Released By"
     WORKSTREAM_TYPE_OPTIONS = ["Ecomm", "Packaging"]
 
     # Field names - THR3D Shipping Items

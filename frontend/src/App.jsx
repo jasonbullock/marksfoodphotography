@@ -8193,6 +8193,8 @@ function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = 
       workstreamQuantity: card.quantity || 0,
       manualProductInfo: card.manualProductInfo || record.manualProductInfo || '',
       photoProduction: productionStatus,
+      released: Boolean(card.released),
+      releasedAt: card.releasedAt || '',
     },
   };
 }
@@ -12146,7 +12148,7 @@ function MerchandiseReviewV2Page() {
     setReleaseSavingId(item.merchandiseId);
     setFeedback('');
     try {
-      await api.releaseMerchandiseToProduction(item.merchandiseId);
+      await api.releaseMerchandiseToProduction(item.merchandiseId, item.workstreamType || '');
       await refreshV2WorkflowData();
       setSelectedId('');
       setWorkspaceOpen(false);

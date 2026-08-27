@@ -2059,3 +2059,23 @@ class ReleasePathConfigTests(unittest.TestCase):
         self.assertIn("<span>Product code</span>", self.source)
         self.assertIn("<span>Category</span>", self.source)
         self.assertNotIn("<span>Creative Force Product Code</span>", self.source)
+
+
+class PerWorkstreamReleaseTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+        cls.api = (ROOT / "frontend" / "src" / "api.js").read_text()
+
+    def test_the_release_names_the_workstream_it_is_releasing(self):
+        self.assertIn("workstreamType ? { workstreamType } : {}", self.api)
+        self.assertIn(
+            "api.releaseMerchandiseToProduction(item.merchandiseId, item.workstreamType || '')",
+            self.source,
+        )
+
+    def test_the_badge_reads_the_card_not_the_arrival(self):
+        # Two cards share one Merchandise, so reading the arrival marked both
+        # released when only one had been.
+        self.assertIn("released: Boolean(card.released),", self.source)
+        self.assertIn("releasedAt: card.releasedAt || '',", self.source)
