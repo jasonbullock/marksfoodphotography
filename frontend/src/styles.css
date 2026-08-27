@@ -8374,7 +8374,7 @@ input[type="checkbox"]:disabled {
 .merch-verify-status,
 .merch-verify-status.wait {
   margin-left: auto;
-  margin-right: 6px;
+  margin-right: 16px;
   padding: 0;
   border: 0;
   background: transparent;
