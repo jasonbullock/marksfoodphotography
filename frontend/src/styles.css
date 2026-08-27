@@ -6799,6 +6799,16 @@ input[type="checkbox"]:disabled {
   white-space: nowrap;
 }
 
+/* Quiet by design: it reports a fact worth knowing before shooting, and blocks
+   nothing. Amber rather than red because a repeat arrival is often deliberate. */
+.planning-release-other-arrival {
+  display: block;
+  color: #92400e;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
 /* The released mark shares the badge line rather than claiming a row of its own. */
 .planning-release-badge-row {
   display: inline-flex;

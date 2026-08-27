@@ -1280,6 +1280,19 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' \u00b7 ')", self.source)
         self.assertIn(".planning-release-cf-line", self.styles)
 
+    def test_a_repeat_arrival_of_a_sku_is_visible(self):
+        # One SKU can arrive twice — more units, or a replacement. Each arrival is
+        # its own Merchandise, and nothing said they were the same thing, so the
+        # second could be shot again for no reason.
+        self.assertIn("function otherArrivalNote(item, arrivalsByProduct)", self.source)
+        self.assertIn("const arrivalsByProduct = boardItems.reduce", self.source)
+        self.assertIn("arrivalsByProduct={arrivalsByProduct}", self.source)
+        self.assertIn("Another arrival of this SKU was released", self.source)
+        self.assertIn("Another arrival of this SKU is ready for release.", self.source)
+        self.assertIn(".planning-release-other-arrival", self.styles)
+        # Reported, never blocked: a repeat arrival is often deliberate.
+        self.assertNotIn("cannot be released because another arrival", self.source)
+
     def test_a_product_can_be_established_from_the_card(self):
         # Hidden on 2026-08-13 while Planning was made product-led, which left no way
         # to establish a Product when none existed. Restored behind the merge.

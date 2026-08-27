@@ -1621,3 +1621,21 @@ offers "No Product exists yet? Establish one".
 An older copy of the fixed-field form survives in `WaitingInformationWorkspace` and still
 says "Primary Match Key" and "Product Job Number", a field the base no longer has. Left
 alone deliberately: different screen, separate cleanup.
+
+## 2026-08-26 - A Repeat Arrival Of A SKU Says So
+
+Receiving the same SKU twice produces two Merchandise records linked to one Product. That
+is correct: a Product is the SKU, and Merchandise is a physical arrival with its own photos,
+condition, quantity and path through Planning. A second Product would fork the data and
+recreate the duplication the merge exists to prevent.
+
+But the board showed two cards with nothing connecting them, so a SKU already released could
+be shot a second time and nobody would know until the files collided.
+
+A card now says when another arrival of the same SKU is further along: released, with the
+date, or ready for release. Only when it is *further* along — two cards in the same state
+tell each other nothing.
+
+It reports and never blocks. A repeat arrival is often deliberate — more units, or a
+replacement for something damaged — so the studio decides. Amber rather than red for the
+same reason.

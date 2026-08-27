@@ -8326,6 +8326,23 @@ function CreativeForceMark({ size = 12 }) {
   );
 }
 
+// What another arrival of this same SKU is already doing, if anything. Only worth
+// saying when that arrival is further along than this one — otherwise it is noise.
+function otherArrivalNote(item, arrivalsByProduct) {
+  const productId = item.record?.itemIds?.[0] || item.record?.linkedItem?.id || '';
+  const siblings = (arrivalsByProduct[productId] || []).filter(other => other.id !== item.id);
+  if (!productId || !siblings.length) return '';
+
+  const released = siblings.filter(other => other.record?.released);
+  if (released.length) {
+    const when = formatInventoryDate(released[0].record?.releasedAt);
+    return `Another arrival of this SKU was released${when ? ` ${when}` : ''}.`;
+  }
+  const awaiting = siblings.filter(other => releaseSectionForPlanningItem(other) === 'readyToRelease');
+  if (awaiting.length) return 'Another arrival of this SKU is ready for release.';
+  return `This SKU arrived ${siblings.length + 1} times.`;
+}
+
 function DeliverableBadges({ values = [], overlay = false, suggested = false, justReleased = false }) {
   const deliverables = normalizeDeliverableList(values);
   if (!deliverables.length) return null;
@@ -8867,6 +8884,7 @@ function PlanningReleaseView({
   onToggleReleaseGroup,
   onReleaseSelected,
   justReleasedIds = [],
+  arrivalsByProduct = {},
 }) {
   const justReleasedSet = new Set(justReleasedIds);
   const itemsBySection = sections.reduce((groups, section) => ({ ...groups, [section.id]: [] }), {});
@@ -9001,6 +9019,11 @@ function PlanningReleaseView({
                               <span className="planning-release-cf-line">
                                 <CreativeForceMark />
                                 <span>{[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' · ')}</span>
+                              </span>
+                            )}
+                            {otherArrivalNote(item, arrivalsByProduct) && (
+                              <span className="planning-release-other-arrival">
+                                {otherArrivalNote(item, arrivalsByProduct)}
                               </span>
                             )}
                             {missingLabel && (
@@ -11911,6 +11934,16 @@ function MerchandiseReviewV2Page() {
     ...receivedMerchItems.filter(item => !childWorkMerchandiseIds.has(String(item.merchandiseId || item.record?.id || '').trim())),
     ...workstreamItems,
   ];
+  // The same SKU can arrive more than once - more units, or a replacement for a
+  // damaged one - and each arrival is its own Merchandise with its own photos and
+  // its own path. Nothing on the board said they were the same thing, so a second
+  // arrival could be shot again for no reason. This does not block anything; it
+  // refuses to let that happen unnoticed.
+  const arrivalsByProduct = boardItems.reduce((byProduct, item) => {
+    const productId = item.record?.itemIds?.[0] || item.record?.linkedItem?.id || '';
+    if (!productId) return byProduct;
+    return { ...byProduct, [productId]: [...(byProduct[productId] || []), item] };
+  }, {});
   const workstreamPhotoCardCounts = workstreamItems.reduce((counts, item) => {
     const key = item.merchandiseId || item.record?.id;
     if (key) counts[key] = (counts[key] || 0) + 1;
@@ -12504,6 +12537,7 @@ function MerchandiseReviewV2Page() {
           onToggleReleaseGroup={toggleReleaseGroup}
           onReleaseSelected={openSelectedReadyRelease}
           justReleasedIds={justReleasedIds}
+          arrivalsByProduct={arrivalsByProduct}
         />
       )}
       {workspaceOpen && selectedItem ? (
