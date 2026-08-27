@@ -10931,7 +10931,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                 />
                 {showProductRequestTypeSuggestion && (
                   <p className="deliverables-suggestion">
-                    Suggested from Product Request Type: <strong>{suggestingRequestType}</strong> → {productRequestTypeSuggestion.join(', ')}
+                    Suggested scope: <strong>{suggestingRequestType}</strong> → {productRequestTypeSuggestion.join(', ')}
                   </p>
                 )}
                 {showQuantityAllocation && (

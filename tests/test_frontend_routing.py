@@ -627,7 +627,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "readOnly disabled",
             "initialReviewDeliverables(item.record)",
             "showProductRequestTypeSuggestion",
-            "Suggested from Product Request Type:",
+            "Suggested scope:",
         ]:
             self.assertIn(text, modal_section)
         self.assertIn("label: 'Needs More Information'", self.source)
