@@ -521,7 +521,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "DeliverablesSelector",
             "INTAKE_DELIVERABLE_OPTIONS",
             "DELIVERABLE_ROUTE_MAP",
-            "Merch Check",
+            "Match or create Product",
             "Linked Product",
             "Search Product",
             "Create Product",
@@ -1856,3 +1856,23 @@ class UnmatchedPanelTests(unittest.TestCase):
         source = APP.read_text()
         self.assertEqual(source.count("const matchSuggestionList = !createOpen"), 1)
         self.assertEqual(source.count("matchSuggestionList}"), 1)
+
+
+class MatchStepTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+
+    def test_the_first_step_is_named_for_what_it_does(self):
+        self.assertIn("'Check the product match' : 'Match or create Product'", self.source)
+        self.assertNotIn("'Merch Check'", self.source)
+
+    def test_a_staged_match_reads_as_matched_before_it_is_saved(self):
+        self.assertIn(
+            "const productChosen = Boolean(wizardState.productLinked) || Boolean(matchDraft?.item);",
+            self.source,
+        )
+        self.assertIn("stepFlagged ? 'Issue' : productChosen ? 'Matched' : 'Unmatched'", self.source)
+
+    def test_deliverables_wait_for_a_product(self):
+        self.assertIn("{!isMerchAcceptanceReview && productChosen && (", self.source)

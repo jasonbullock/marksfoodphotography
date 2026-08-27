@@ -10805,14 +10805,17 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     }
   }
 
-  const identifyDone = isMerchAcceptanceReview ? false : wizardState.productLinked;
+  // A staged match counts. The record is where the status starts, but once someone
+  // picks a Product the screen should say so rather than wait for the save.
+  const productChosen = Boolean(wizardState.productLinked) || Boolean(matchDraft?.item);
+  const identifyDone = isMerchAcceptanceReview ? false : productChosen;
   const deliverablesDone = wizardState.deliverables.length > 0;
   const receivedDateLabel = formatInventoryDate(item.record?.dateReceived || item.record?.received);
   const shipmentRecord = item.record?.receipt || item.record?.shipment || {};
   const shipmentEditHref = shipmentRecord.id ? `/shipments?shipmentId=${encodeURIComponent(shipmentRecord.id)}` : '';
   const shipmentLabel = shipmentRecord.name || 'Shipments';
-  const merchCheckStatusText = stepFlagged ? 'Issue' : wizardState.productLinked ? 'Matched' : 'Unmatched';
-  const merchCheckStatusTone = stepFlagged ? 'flag' : wizardState.productLinked ? 'ok' : 'wait';
+  const merchCheckStatusText = stepFlagged ? 'Issue' : productChosen ? 'Matched' : 'Unmatched';
+  const merchCheckStatusTone = stepFlagged ? 'flag' : productChosen ? 'ok' : 'wait';
 
   return (
     <div className="new-review-modal-backdrop" role="presentation" onClick={() => onClose(item)}>
@@ -10883,7 +10886,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
 
             <ReviewStep
               n={isMerchAcceptanceReview ? 2 : 1}
-              title={isMerchAcceptanceReview ? 'Check the product match' : 'Merch Check'}
+              title={isMerchAcceptanceReview ? 'Check the product match' : 'Match or create Product'}
               done={identifyDone}
               flagged={isMerchAcceptanceReview ? false : stepFlagged}
               statusText={merchCheckStatusText}
@@ -10901,7 +10904,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
               />
             </ReviewStep>
 
-            {!isMerchAcceptanceReview && (
+            {!isMerchAcceptanceReview && productChosen && (
               <ReviewStep
                 n={2}
                 title="Deliverables"
