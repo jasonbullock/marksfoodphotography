@@ -8787,8 +8787,10 @@ function ReleaseCardIdentifierLine({ item, identifier, sectionId }) {
   const matched = productLinkedForPlanningItem(item);
   return (
     <span className="planning-release-identity-line">
-      <span>{identifier || 'No UPC'}</span>
-      <CopyValue value={identifier} label="Copy UPC" />
+      <span className="planning-release-identifier">
+        {identifier || 'No UPC'}
+        <CopyValue value={identifier} label="Copy UPC" />
+      </span>
       <span className={matched ? 'is-matched' : 'is-unmatched'}>{matched ? '✓ Matched' : '✗ Unmatched'}</span>
     </span>
   );

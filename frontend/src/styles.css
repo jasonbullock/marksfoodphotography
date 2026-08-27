@@ -6737,6 +6737,12 @@ input[type="checkbox"]:disabled {
   font-weight: 650;
 }
 
+.planning-release-identifier {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
 .planning-release-missing.is-verify {
   color: #15803d;
 }
@@ -6813,7 +6819,7 @@ input[type="checkbox"]:disabled {
 .copy-value {
   display: inline-flex;
   align-items: center;
-  margin-left: 5px;
+  margin-left: 2px;
   padding: 1px;
   border-radius: 4px;
   color: var(--text-3);
