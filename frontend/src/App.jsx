@@ -1580,12 +1580,6 @@ function ReceivingMatchSuggestions({
       <div className="receiving-match-panel-head">
         <span>{title}</span>
       </div>
-      {nameOnlyMatchSuggestions && (
-        <div className="receiving-match-helper">Enter or scan UPC / ID to confirm the exact Product.</div>
-      )}
-      {combinedPartialMatchSuggestions && (
-        <div className="receiving-match-helper">These match the typed name and UPC / ID prefix. Select the correct Product, then use Product values only when they should replace the observed fields.</div>
-      )}
       {!matchLoading && combinedMatchSearch && matches.length === 0 && (
         <div className="receiving-match-helper">Check the package name and UPC / ID. Clear one field to search by the other.</div>
       )}
