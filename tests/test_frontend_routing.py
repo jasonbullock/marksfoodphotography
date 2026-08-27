@@ -662,7 +662,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "'ecomm pack': ['Ecomm', 'Packaging']",
             "function productRequestTypeDeliverables(requestType)",
             "function suggestedDeliverablesForRecord(record = {}, stagedProduct = null)",
-            "function initialReviewDeliverables(record = {})",
+            "function initialReviewDeliverables(record = {}, stagedProduct = null)",
         ]:
             self.assertIn(text, self.source)
         self.assertIn(".deliverables-suggestion", self.styles)
