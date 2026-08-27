@@ -7984,14 +7984,17 @@ function productRequestTypeDeliverables(requestType) {
   return normalizeDeliverableList(PRODUCT_REQUEST_TYPE_DELIVERABLE_MAP[key] || []);
 }
 
-function suggestedDeliverablesForRecord(record = {}) {
+// A match picked but not yet saved suggests the same way a linked one does. Without
+// stagedProduct the suggestion only arrives after the save, so matching a Product
+// whose Request Type already answers this leaves the step looking empty.
+function suggestedDeliverablesForRecord(record = {}, stagedProduct = null) {
   if (deliverablesForRecord(record).length) return [];
-  return productRequestTypeDeliverables(record.linkedItem?.requestType);
+  return productRequestTypeDeliverables(record.linkedItem?.requestType || stagedProduct?.requestType);
 }
 
-function initialReviewDeliverables(record = {}) {
+function initialReviewDeliverables(record = {}, stagedProduct = null) {
   const committed = deliverablesForRecord(record);
-  return committed.length ? committed : suggestedDeliverablesForRecord(record);
+  return committed.length ? committed : suggestedDeliverablesForRecord(record, stagedProduct);
 }
 
 function isThr3dOnlyDeliverables(deliverables = []) {
@@ -10537,9 +10540,11 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   const [matchDraft, setMatchDraft] = useState(null);
   const product = item.record?.linkedItem || {};
   const committedDeliverables = deliverablesForRecord(item.record);
-  const productRequestTypeSuggestion = suggestedDeliverablesForRecord(item.record);
-  const showProductRequestTypeSuggestion = Boolean(product.requestType && productRequestTypeSuggestion.length && !committedDeliverables.length);
-  const initialDeliverablesKey = initialReviewDeliverables(item.record).join('|');
+  const stagedMatchProduct = matchDraft?.item || null;
+  const productRequestTypeSuggestion = suggestedDeliverablesForRecord(item.record, stagedMatchProduct);
+  const suggestingRequestType = product.requestType || stagedMatchProduct?.requestType || '';
+  const showProductRequestTypeSuggestion = Boolean(suggestingRequestType && productRequestTypeSuggestion.length && !committedDeliverables.length);
+  const initialDeliverablesKey = initialReviewDeliverables(item.record, stagedMatchProduct).join('|');
   const activePhoto = photos[photoIndex] || photos[0];
   const activePhotoUrl = receivingPhotoUrl(activePhoto);
   const wizardState = wizardStateForItem(item, intakeDraft.deliverables, matchDraft?.item || null);
@@ -10624,7 +10629,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   useEffect(() => {
     if (isMerchAcceptanceReview) return;
     if (committedDeliverables.length) return;
-    const suggested = initialReviewDeliverables(item.record);
+    const suggested = initialReviewDeliverables(item.record, stagedMatchProduct);
     if (!suggested.length) return;
     setIntakeDraft(current => (
       normalizeDeliverableList(current.deliverables).length
@@ -10926,7 +10931,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                 />
                 {showProductRequestTypeSuggestion && (
                   <p className="deliverables-suggestion">
-                    Suggested from Product Request Type: <strong>{product.requestType}</strong> → {productRequestTypeSuggestion.join(', ')}
+                    Suggested from Product Request Type: <strong>{suggestingRequestType}</strong> → {productRequestTypeSuggestion.join(', ')}
                   </p>
                 )}
                 {showQuantityAllocation && (

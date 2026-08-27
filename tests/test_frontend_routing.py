@@ -661,7 +661,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "'pack thr3d': ['Packaging', 'Thr3d']",
             "'ecomm pack': ['Ecomm', 'Packaging']",
             "function productRequestTypeDeliverables(requestType)",
-            "function suggestedDeliverablesForRecord(record = {})",
+            "function suggestedDeliverablesForRecord(record = {}, stagedProduct = null)",
             "function initialReviewDeliverables(record = {})",
         ]:
             self.assertIn(text, self.source)
@@ -1894,3 +1894,28 @@ class MatchStepTests(unittest.TestCase):
             "const showDeliverablesStep = productChosen || committedDeliverables.length > 0;",
             self.source,
         )
+
+
+class StagedMatchSuggestionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+
+    def test_a_staged_match_suggests_deliverables_like_a_linked_one(self):
+        self.assertIn(
+            "return productRequestTypeDeliverables(record.linkedItem?.requestType || stagedProduct?.requestType);",
+            self.source,
+        )
+        self.assertIn(
+            "function initialReviewDeliverables(record = {}, stagedProduct = null) {",
+            self.source,
+        )
+
+    def test_the_modal_passes_the_staged_match_to_the_suggestion(self):
+        for text in [
+            "const stagedMatchProduct = matchDraft?.item || null;",
+            "suggestedDeliverablesForRecord(item.record, stagedMatchProduct)",
+            "initialReviewDeliverables(item.record, stagedMatchProduct)",
+            "const suggestingRequestType = product.requestType || stagedMatchProduct?.requestType || '';",
+        ]:
+            self.assertIn(text, self.source)
