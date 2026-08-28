@@ -2166,3 +2166,16 @@ class ReadyForPhotoSavesFirstTests(unittest.TestCase):
         start = self.source.index("async function openReadyForPhoto(item, state = {}) {")
         body = self.source[start:self.source.index("\n  function ", start + 10)]
         self.assertIn("return { ok: false, message: error.message || 'Could not save the Product details.' };", body)
+
+
+class DashboardCreativeForceCountTests(unittest.TestCase):
+    def test_the_count_reads_released_workstreams(self):
+        # It read a Product status field nothing writes any more, so it was always 0.
+        source = APP.read_text()
+        self.assertIn("const workstreamCards = useResource(() => api.listWorkstreamCards());", source)
+        self.assertIn(
+            "const releasedCards = (workstreamCards.data?.records ?? []).filter(card => card.released);",
+            source,
+        )
+        self.assertNotIn("const inCF         = queueCounts['in_creative_force'] ?? 0;", source)
+        self.assertIn("Released to Photo</div>", source)

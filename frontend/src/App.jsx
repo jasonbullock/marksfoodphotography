@@ -1017,6 +1017,7 @@ const QUEUE_COLORS = {
 
 function Dashboard({ navigate }) {
   const skus = useResource(() => api.listProducts());
+  const workstreamCards = useResource(() => api.listWorkstreamCards());
   const receipts = useResource(() => api.listShipments());
   const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
@@ -1034,7 +1035,12 @@ function Dashboard({ navigate }) {
   const totalActive  = skuList.filter(s => !isItemCompleted(s) && !isItemCancelled(s)).length;
   const bottlenecked = skuList.filter(s => isOpenFoodHubItem(s) && ['waiting_for_merchandise','merchandise_issue','missing_data','missing_artwork'].includes(s.requiredToShoot?.state)).length;
   const readyToShoot = queueCounts['ready_for_photo'] ?? 0;
-  const inCF         = queueCounts['in_creative_force'] ?? 0;
+  // What is with Creative Force is what was released to it. The old count read a
+  // Product status field that nothing writes any more, so it was always zero.
+  const releasedCards = (workstreamCards.data?.records ?? []).filter(card => card.released);
+  const inCF = releasedCards
+    .filter(card => String(card.creativeForceStatus || '').trim().toLowerCase() !== 'complete')
+    .length;
   const completed    = queueCounts['completed'] ?? 0;
 
   // The 3 production blockers producers care about
@@ -1126,9 +1132,9 @@ function Dashboard({ navigate }) {
           <div className="dash-kpi-num" style={{ color: '#34d399' }}>{readyToShoot}</div>
           <div className="dash-kpi-lbl">Ready to Shoot</div>
         </div>
-        <div className="dash-kpi-card dash-kpi-clickable" onClick={() => navigate('skus', { queue: 'in_creative_force' })}>
+        <div className="dash-kpi-card dash-kpi-clickable" onClick={() => navigate('planning')}>
           <div className="dash-kpi-num" style={{ color: '#60a5fa' }}>{inCF}</div>
-          <div className="dash-kpi-lbl">In Creative Force</div>
+          <div className="dash-kpi-lbl">Released to Photo</div>
         </div>
         <div className="dash-kpi-card">
           <div className="dash-kpi-num" style={{ color: '#94a3b8' }}>{completed}</div>
