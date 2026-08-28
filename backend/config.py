@@ -22,23 +22,6 @@ class Config:
     )
     SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true" or FLASK_ENV == "production"
 
-    # Photo release email, sent through Microsoft Graph with an app registration.
-    # Absent credentials the release still records the rendered email and simply
-    # does not send, so the board never blocks on mail configuration.
-    MS_GRAPH_TENANT_ID = os.getenv("MS_GRAPH_TENANT_ID", "")
-    MS_GRAPH_CLIENT_ID = os.getenv("MS_GRAPH_CLIENT_ID", "")
-    MS_GRAPH_CLIENT_SECRET = os.getenv("MS_GRAPH_CLIENT_SECRET", "")
-    PHOTO_RELEASE_FROM_ADDRESS = os.getenv("PHOTO_RELEASE_FROM_ADDRESS", "")
-
-    @classmethod
-    def photo_release_email_ready(cls):
-        return all([
-            cls.MS_GRAPH_TENANT_ID,
-            cls.MS_GRAPH_CLIENT_ID,
-            cls.MS_GRAPH_CLIENT_SECRET,
-            cls.PHOTO_RELEASE_FROM_ADDRESS,
-        ])
-
     AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY", "")
     AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID", "")
     R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID", "")

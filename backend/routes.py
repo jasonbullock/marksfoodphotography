@@ -1341,25 +1341,15 @@ def move_activation_to_photo(activation_id):
     except requests.HTTPError as exc:
         return airtable_err(exc)
     shaped_activation = _shape_activation(activation)
-    # Sent last, and never fatal: the release is already recorded, so a mail
-    # failure must not leave merchandise stuck out of photo.
+    # The release email is sent by whoever released it. Sending it from here would
+    # need Microsoft Graph, and the tenant admin consent that requires was declined.
     recipients = mailer.parse_recipients((client or {}).get("photoReleaseRecipients", ""))
-    email_sent, email_detail = False, ""
-    try:
-        email_sent, email_detail = mailer.send_photo_release_email(
-            shaped_activation.get("emailSubject", ""),
-            shaped_activation.get("emailBodyHtml", ""),
-            recipients,
-        )
-    except Exception:  # noqa: BLE001 - reported to the user, never raised
-        current_app.logger.exception("Could not send the photo release email")
-        email_detail = "The release was recorded but the email could not be sent."
     return jsonify({
         "activation": shaped_activation,
         "moved": moved,
         "movedCount": len(moved),
-        "emailSent": email_sent,
-        "emailDetail": email_detail,
+        "emailSent": False,
+        "emailDetail": "The release is recorded. Send the email from here.",
         # Returned whether or not it sent, so the board can hand an unsent
         # release to the user's own mail client instead of losing it.
         "email": {

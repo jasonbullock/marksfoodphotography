@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
@@ -28,46 +29,17 @@ class ParseRecipientsTests(unittest.TestCase):
         self.assertEqual(mailer.parse_recipients(None), [])
 
 
-class SendPhotoReleaseEmailTests(unittest.TestCase):
-    def test_unconfigured_reports_instead_of_raising(self):
-        with patch.object(Config, "photo_release_email_ready", classmethod(lambda cls: False)):
-            sent, detail = mailer.send_photo_release_email("Subject", "<p>Body</p>", ["a@b.com"])
-        self.assertFalse(sent)
-        self.assertIn("not configured", detail)
-
-    def test_no_recipients_is_reported(self):
-        with patch.object(Config, "photo_release_email_ready", classmethod(lambda cls: True)):
-            sent, detail = mailer.send_photo_release_email("Subject", "<p>Body</p>", [])
-        self.assertFalse(sent)
-        self.assertIn("no photo release recipients", detail)
-
-    def test_missing_body_is_reported(self):
-        with patch.object(Config, "photo_release_email_ready", classmethod(lambda cls: True)):
-            sent, detail = mailer.send_photo_release_email("Subject", "", ["a@b.com"])
-        self.assertFalse(sent)
-        self.assertIn("no rendered email", detail)
-
-    @patch("mailer.requests.post")
-    @patch("mailer._access_token", return_value="token")
-    def test_sends_html_to_every_recipient(self, _token, post):
-        post.return_value.raise_for_status.return_value = None
-        with patch.object(Config, "photo_release_email_ready", classmethod(lambda cls: True)), \
-             patch.object(Config, "PHOTO_RELEASE_FROM_ADDRESS", "photo@makemarks.com"):
-            sent, detail = mailer.send_photo_release_email(
-                "Topco Packaging Photo Request", "<p>Body</p>", ["a@b.com", "c@d.com"],
-            )
-
-        self.assertTrue(sent)
-        self.assertIn("a@b.com", detail)
-        message = post.call_args.kwargs["json"]["message"]
-        self.assertEqual(message["subject"], "Topco Packaging Photo Request")
-        self.assertEqual(message["body"]["contentType"], "HTML")
-        self.assertEqual(message["body"]["content"], "<p>Body</p>")
-        self.assertEqual(
-            [entry["emailAddress"]["address"] for entry in message["toRecipients"]],
-            ["a@b.com", "c@d.com"],
-        )
-        self.assertIn("photo@makemarks.com", post.call_args.args[0])
+class NothingIsSentFromHereTests(unittest.TestCase):
+    def test_the_mailer_cannot_send(self):
+        # Automated sending needed Microsoft Graph, and the tenant admin consent
+        # that requires was declined. The release is handed to the person instead.
+        self.assertFalse(hasattr(mailer, "send_photo_release_email"))
+        self.assertFalse(hasattr(Config, "photo_release_email_ready"))
+        for removed in ("MS_GRAPH_TENANT_ID", "MS_GRAPH_CLIENT_ID", "MS_GRAPH_CLIENT_SECRET"):
+            self.assertFalse(hasattr(Config, removed), removed)
+        source = Path(mailer.__file__).read_text(encoding="utf-8")
+        for gone in ("graph.microsoft", "microsoftonline", "requests"):
+            self.assertNotIn(gone, source, gone)
 
 
 class MoveResponseTests(unittest.TestCase):
@@ -76,7 +48,7 @@ class MoveResponseTests(unittest.TestCase):
         # the user's own mail client.
         import routes
         source = open(routes.__file__, encoding="utf-8").read()
-        self.assertIn('"emailSent": email_sent,', source)
+        self.assertIn('"emailSent": False,', source)
         self.assertIn('"email": {', source)
         self.assertIn('"recipients": recipients,', source)
 

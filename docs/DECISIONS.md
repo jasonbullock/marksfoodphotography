@@ -1888,3 +1888,18 @@ post to the channel, so the API reports only `teamsWebhookConfigured`, never the
 
 Nothing here can fail a receipt. The goods are recorded before the post is attempted, and
 an unreachable channel is logged and reported in the response, not raised.
+
+## 2026-08-28 - Microsoft Graph Is Gone
+
+The photo release called Graph `sendMail` on every release. Graph needs tenant admin
+consent, SGS IT declined it, so that call could only ever fail - caught, logged, reported
+as not sent. Live behaviour was already "the person sends it": the release view keeps the
+rendered email open with Copy, which is the path anyone actually used.
+
+The call, the token exchange, the `MS_GRAPH_*` settings and `PHOTO_RELEASE_FROM_ADDRESS`
+are removed. `mailer.py` keeps only `parse_recipients`, which addresses the email for the
+person sending it. The response still reports `emailSent: false` with the recipients and
+rendered body, so the release view behaves exactly as before.
+
+Credentials for a service that cannot authenticate should not sit in an environment file.
+The `MS_GRAPH_*` values need clearing from `backend/.env` and from Render by hand.
