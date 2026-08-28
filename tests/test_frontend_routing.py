@@ -2179,3 +2179,24 @@ class DashboardCreativeForceCountTests(unittest.TestCase):
         )
         self.assertNotIn("const inCF         = queueCounts['in_creative_force'] ?? 0;", source)
         self.assertIn("Released to Photo</div>", source)
+
+
+class ShipmentsMobileLayoutTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.styles = STYLES.read_text()
+
+    def test_the_three_panels_stack_on_a_phone(self):
+        # The page is three fixed columns - 340px, 1fr, 400px - so on a 390px phone
+        # Add Merchandise sat off the right edge. The old override collapsed
+        # .recv-two-col, a layout this screen no longer uses.
+        mobile = self.styles.split("@media (max-width: 700px) {", 1)[1]
+        block = mobile[:mobile.index("\n@media")]
+        self.assertIn(".recv-three-col {\n    grid-template-columns: 1fr;\n  }", block)
+
+    def test_the_panels_scroll_with_the_page(self):
+        mobile = self.styles.split("@media (max-width: 700px) {", 1)[1]
+        block = mobile[:mobile.index("\n@media")]
+        for selector in (".recv-receipt-panel,", ".recv-item-panel,", ".recv-list {"):
+            self.assertIn(selector, block)
+        self.assertIn(".recv-form,\n  .recv-list-items {", block)

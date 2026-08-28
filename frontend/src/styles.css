@@ -16047,6 +16047,29 @@ select.intake-choice-control {
     min-height: 0;
   }
 
+  .recv-three-col {
+    grid-template-columns: 1fr;
+  }
+
+  .recv-receipt-panel,
+  .recv-item-panel,
+  .recv-list {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Each panel scrolls with the page rather than inside itself, so the keyboard
+     cannot trap a field inside a box shorter than the keyboard. */
+  .recv-form,
+  .recv-list-items {
+    max-height: none;
+    overflow: visible;
+    flex: none;
+  }
+
   .recv-form {
     border-right: none;
     overflow: visible;
