@@ -1865,3 +1865,26 @@ withdraws work CF may already hold - its existing guard is on CF *status*, so a 
 released minutes ago is still removable and would leave its feed row behind. Both ask
 before acting on a released card. Neither is blocked: a wrong match after release is a
 real situation, and refusing it only moves the fix into the base.
+
+## 2026-08-28 - Arrivals Are Announced Through A Teams Webhook, Not Graph
+
+Microsoft Graph is not an option here. `mailer.py` already uses it for the release email
+and SGS IT declined the admin consent it needs, so a Graph-posted channel message or a bot
+would need exactly the approval that was refused. Worth knowing separately: that means the
+release email is very likely not sending either, quietly, by design.
+
+A Power Automate "when a webhook request is received" flow needs no tenant admin. The
+channel owner makes it and hands over a URL. Microsoft is retiring the older O365 connector
+webhooks, so this is built on Workflows rather than the legacy connector.
+
+One message per shipment, when receiving is finished, listing what came in - not one per
+item. A delivery of eight cannot flood the channel, and an arrival is how people think
+about it anyway. Long shipments list twelve and say how many more.
+
+The webhook lives on the Clients record beside Photo Release Recipients, which is already
+managed straight in Airtable with no UI. That keeps rollout per client - a client with no
+webhook is simply not notified - and keeps the URL off the wire: holding it is enough to
+post to the channel, so the API reports only `teamsWebhookConfigured`, never the value.
+
+Nothing here can fail a receipt. The goods are recorded before the post is attempted, and
+an unreachable channel is logged and reported in the response, not raised.

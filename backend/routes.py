@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import io
 import mailer
+import notifier
 import structure_form
 import json
 import os
@@ -734,6 +735,9 @@ def _shape_client(r):
         "artworkRequirement": f.get(C.F_CLIENT_ARTWORK_REQUIREMENT, "") or "Optional",
         "merchandiseRequired": f.get(C.F_CLIENT_MERCHANDISE_REQUIRED, True),
         "photoReleaseRecipients": f.get(C.F_CLIENT_PHOTO_RELEASE_RECIPIENTS, ""),
+        # The URL itself never leaves the server: holding it is enough to post to
+        # the channel. The Admin screen only needs to know whether one is set.
+        "teamsWebhookConfigured": bool(str(f.get(C.F_CLIENT_TEAMS_WEBHOOK, "") or "").strip()),
         "holdDays": f.get(C.F_CLIENT_HOLD_DAYS),
         "dispoDays": f.get(C.F_CLIENT_DISPO_DAYS),
         "active": f.get(C.F_CLIENT_ACTIVE, False),
@@ -8705,7 +8709,51 @@ def create_receipt():
         user_ids=receipt_fields.get(C.F_RECEIPT_RECEIVER),
     )
     entries_by_receipt = {data["id"]: shaped_entries}
-    return jsonify(_shape_receipt(data, entries_by_receipt=entries_by_receipt)), 201
+    notified, notice = _notify_shipment_arrival(data, shaped_entries)
+    payload = _shape_receipt(data, entries_by_receipt=entries_by_receipt)
+    payload["teamsNotification"] = {"posted": notified, "detail": notice}
+    return jsonify(payload), 201
+
+
+def _notify_shipment_arrival(receipt, shaped_entries):
+    """Tell the client's Teams channel that merchandise landed.
+
+    The goods are already recorded by the time this runs, so nothing here is
+    allowed to fail the request. A client with no webhook is not notified.
+    """
+    fields = receipt.get("fields", {})
+    client_ids = _as_list(fields.get(C.F_RECEIPT_CLIENT, []))
+    if not client_ids:
+        return False, "Shipment has no client."
+    try:
+        client_record = airtable.get_record(C.CLIENTS_TABLE, client_ids[0], by_field_id=False)
+    except requests.HTTPError:
+        return False, "Could not read the client."
+    client_fields = client_record.get("fields", {})
+    webhook = client_fields.get(C.F_CLIENT_TEAMS_WEBHOOK, "")
+    if not str(webhook or "").strip():
+        return False, "No Teams webhook configured for this client."
+
+    items = []
+    for entry in shaped_entries:
+        name = entry.get("productName") or entry.get("description") or "Unnamed item"
+        identifier = entry.get("skuId") or entry.get("observedIdentifier") or ""
+        quantity = entry.get("quantity") or 1
+        items.append(f"{quantity} x {name}" + (f" - {identifier}" if identifier else ""))
+
+    card = notifier.build_arrival_card(
+        client_name=client_fields.get(C.F_CLIENT_NAME, ""),
+        shipment_name=fields.get(C.F_RECEIPT_NAME, ""),
+        shipment_id=receipt.get("id", ""),
+        carrier=fields.get(C.F_RECEIPT_CARRIER, ""),
+        tracking=fields.get(C.F_RECEIPT_TRACKING, ""),
+        received=fields.get(C.F_RECEIPT_RECEIVED, ""),
+        items=items,
+    )
+    posted, detail = notifier.post_arrival(webhook, card)
+    if not posted:
+        current_app.logger.warning("Teams arrival notification not sent: %s", detail)
+    return posted, detail
 
 
 def _receipt_fields_from_body(body):

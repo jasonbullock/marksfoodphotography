@@ -46,6 +46,9 @@ class Config:
     R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "")
     R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "")
     R2_PUBLIC_BASE_URL = os.getenv("R2_PUBLIC_BASE_URL", "")
+    # Where a notification should send someone. Without it a message still posts,
+    # just without links, rather than linking to localhost.
+    APP_BASE_URL = os.getenv("APP_BASE_URL", "").rstrip("/")
     CREATIVE_FORCE_WEBHOOK_SECRET = os.getenv("CREATIVE_FORCE_WEBHOOK_SECRET", "")
     # Where to relay a copy of each authentic webhook event, so Creative Force can
     # point at one URL forever while a development instance still sees live
@@ -231,6 +234,9 @@ class Config:
     F_CLIENT_DISPO_DAYS = "Dispo Days"
     F_CLIENT_ACTIVE = "Active"
     F_CLIENT_PHOTO_RELEASE_RECIPIENTS = "Photo Release Recipients"
+    # Power Automate webhook for this client's Teams channel. A capability URL:
+    # holding it is enough to post, so it is never sent to the browser.
+    F_CLIENT_TEAMS_WEBHOOK = "Teams Webhook"
     F_CLIENT_IDENTIFIER_LABEL = "Identifier Label"
     F_CLIENT_REQUIRED_TO_SHOOT = "Required to Shoot"
     F_CLIENT_ARTWORK_REQUIREMENT = "Artwork Requirement"
