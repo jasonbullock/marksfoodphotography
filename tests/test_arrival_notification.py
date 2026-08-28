@@ -101,3 +101,14 @@ class WebhookIsNotExposedTests(unittest.TestCase):
         self.assertTrue(shaped["teamsWebhookConfigured"])
         # Holding the URL is enough to post to the channel, so it stays server-side.
         self.assertNotIn("secret-hook", str(shaped))
+
+
+class FinishSessionTests(unittest.TestCase):
+    def test_finishing_a_session_notifies(self):
+        # Saving item by item leaves no moment the server can call the delivery
+        # complete, so the phone says when it is done.
+        source = (Path(__file__).resolve().parents[1] / "backend" / "routes.py").read_text()
+        start = source.index("def finish_receiving_session(record_id):")
+        body = source[start:source.index("@api.", start)]
+        self.assertIn("_notify_shipment_arrival(record, shaped_entries)", body)
+        self.assertIn("_receipt_client_permitted", body)

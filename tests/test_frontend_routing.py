@@ -2200,3 +2200,43 @@ class ShipmentsMobileLayoutTests(unittest.TestCase):
         for selector in (".recv-receipt-panel,", ".recv-item-panel,", ".recv-list {"):
             self.assertIn(selector, block)
         self.assertIn(".recv-form,\n  .recv-list-items {", block)
+
+
+class PhoneReceivingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+        cls.styles = STYLES.read_text()
+        cls.api = (ROOT / "frontend" / "src" / "api.js").read_text()
+
+    def test_a_phone_gets_its_own_screen(self):
+        self.assertIn("function usePhoneLayout(query = '(max-width: 700px)')", self.source)
+        self.assertIn("{tab === 'incoming' && isPhone ? (", self.source)
+        self.assertIn("<PhoneReceiving", self.source)
+
+    def test_the_dead_capture_screen_is_gone(self):
+        # It was never rendered, never sent a client, and referenced a variable it
+        # did not have.
+        self.assertNotIn("QuickReceivingCapture", self.source)
+
+    def test_the_phone_asks_for_a_client(self):
+        # The old one did not, so it would have created client-less shipments.
+        self.assertIn("setError('Choose a client before starting.');", self.source)
+        self.assertIn("clientId: session.clientId,", self.source)
+
+    def test_each_item_is_saved_as_it_is_entered(self):
+        start = self.source.index("async function saveAndNext() {")
+        body = self.source[start:start + 1800]
+        self.assertIn("await api.createReceiptEntry(receipt.id, {", body)
+
+    def test_finishing_announces_the_arrival(self):
+        self.assertIn("api.finishReceivingSession = async (id)", self.api)
+        self.assertIn("await api.finishReceivingSession(receipt.id);", self.source)
+
+    def test_targets_are_thumb_sized_and_save_stays_put(self):
+        self.assertIn(".phone-btn {", self.styles)
+        self.assertIn("min-height: 52px;", self.styles)
+        # 16px inputs stop iOS Safari zooming the page on focus.
+        self.assertIn("font: 600 16px/1.3 system-ui", self.styles)
+        actions = self.styles.split(".phone-recv-actions {", 1)[1].split("}", 1)[0]
+        self.assertIn("position: fixed;", actions)

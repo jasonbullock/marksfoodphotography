@@ -17947,3 +17947,278 @@ select.form-input {
   font-weight: 700;
   line-height: 1.45;
 }
+
+/* ── Phone receiving ──────────────────────────────────────────────────────────
+   Its own screen, not the desk layout squeezed. Targets are 48px so they can be
+   hit while holding a box, and the action bar stays put so Save is never a scroll
+   away. Desktop never sees any of this: the component only renders below 700px. */
+.phone-recv {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 12px calc(84px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface-2);
+  min-height: 100%;
+}
+
+.phone-recv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.phone-recv-head h2 {
+  margin: 2px 0 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.phone-recv-kicker {
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.phone-recv-count {
+  min-width: 40px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--text-1);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.phone-recv-alert {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.phone-recv-alert.is-error {
+  background: rgba(220, 38, 38, 0.12);
+  color: #b91c1c;
+}
+
+.phone-recv-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.phone-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.phone-field > span {
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.phone-field input,
+.phone-field select,
+.phone-field textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-1);
+  /* 16px keeps iOS Safari from zooming the page when a field takes focus. */
+  font: 600 16px/1.3 system-ui, -apple-system, sans-serif;
+}
+
+.phone-field textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.phone-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 14px 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-1);
+  font: 800 16px/1 system-ui, -apple-system, sans-serif;
+  cursor: pointer;
+}
+
+.phone-btn:disabled {
+  opacity: 0.55;
+}
+
+.phone-btn-primary {
+  border-color: var(--text-1);
+  background: var(--text-1);
+  color: #fff;
+}
+
+.phone-btn-camera {
+  border-color: rgba(37, 99, 235, 0.5);
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+}
+
+.phone-photo-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.phone-photo-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.phone-photo-strip button {
+  position: relative;
+  flex: 0 0 auto;
+  width: 68px;
+  height: 68px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.phone-photo-strip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.phone-photo-strip span {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.phone-stepper {
+  display: grid;
+  grid-template-columns: 56px 1fr 56px;
+  gap: 8px;
+}
+
+.phone-stepper button {
+  min-height: 48px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-size: 24px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.phone-stepper input {
+  text-align: center;
+}
+
+.phone-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.phone-chips button {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: 750 14px/1 system-ui, -apple-system, sans-serif;
+  cursor: pointer;
+}
+
+.phone-chips button.is-active {
+  border-color: var(--text-1);
+  background: var(--text-1);
+  color: #fff;
+}
+
+.phone-more-toggle {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 10px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: 800 14px/1 system-ui, -apple-system, sans-serif;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.phone-recv-logged ul {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.phone-recv-logged li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
+
+.phone-recv-logged small {
+  color: var(--text-3);
+  font-weight: 650;
+}
+
+.phone-recv-logged-title {
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* Save is the action of the screen, so it never scrolls out of reach. */
+.phone-recv-actions {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 10px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}

@@ -1788,33 +1788,45 @@ function photoFilesFromInput(files) {
   }));
 }
 
-function QuickReceivingCapture({ locationList }) {
-  const receiptList = useResource(() => api.listShipments());
+// Phones get their own receiving screen. The desktop one is three fixed panels and
+// stays that way; stacking it gave large targets nowhere and buried the entry form
+// under the shipment header.
+function usePhoneLayout(query = '(max-width: 700px)') {
+  const [isPhone, setIsPhone] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const media = window.matchMedia(query);
+    const update = event => setIsPhone(event.matches);
+    media.addEventListener('change', update);
+    setIsPhone(media.matches);
+    return () => media.removeEventListener('change', update);
+  }, [query]);
+  return isPhone;
+}
+
+function PhoneReceiving({ clientList, locationList, carrierOptions, onShipmentSaved }) {
   const [receipt, setReceipt] = useState(null);
-  const [selectedReceiptId, setSelectedReceiptId] = useState('');
   const [session, setSession] = useState({
+    clientId: '',
     carrier: '',
     tracking: '',
     boxQuantity: 1,
     received: toDatetimeLocal(),
   });
-  const [entry, setEntryState] = useState(() => ({
-    ...emptyReceiptEntry(),
-    locationId: '',
-  }));
+  const [entry, setEntryState] = useState(() => ({ ...emptyReceiptEntry() }));
   const [entryPhotos, setEntryPhotos] = useState([]);
-  const [entryCount, setEntryCount] = useState(0);
-  const [saving, setSaving] = useState(false);
+  const [savedEntries, setSavedEntries] = useState([]);
+  const [showMore, setShowMore] = useState(false);
+  const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const productNameRef = useRef(null);
-  const skuIdRef = useRef(null);
   const cameraInputRef = useRef(null);
   const libraryInputRef = useRef(null);
-  const barcodeSupported = typeof window !== 'undefined' && 'BarcodeDetector' in window;
-  const openReceipts = receiptList.data?.records ?? [];
-  const recentLocationIds = loadRecentReceivingLocations();
-  const recentLocations = recentLocationIds
+
+  const recentLocations = loadRecentReceivingLocations()
     .map(id => locationList.find(location => location.id === id))
     .filter(Boolean);
 
@@ -1822,101 +1834,74 @@ function QuickReceivingCapture({ locationList }) {
     setEntryState(prev => ({ ...prev, [field]: value }));
   }
 
-  function resetEntry(defaultLocationId = entry.locationId) {
+  function resetEntry(keepLocationId) {
     setEntryPhotos(prev => {
       prev.forEach(photo => URL.revokeObjectURL(photo.previewUrl));
       return [];
     });
-    setEntryState({
-      ...emptyReceiptEntry(),
-      locationId: defaultLocationId || '',
-    });
-    setTimeout(() => productNameRef.current?.focus(), 0);
+    setEntryState({ ...emptyReceiptEntry(), locationId: keepLocationId || '' });
+    setShowMore(false);
+    window.setTimeout(() => productNameRef.current?.focus(), 0);
   }
 
-  async function addEntryPhotos(files) {
+  function addPhotos(files) {
     const localPhotos = photoFilesFromInput(files);
-    if (!localPhotos.length) return;
-    setEntryPhotos(prev => [...prev, ...localPhotos]);
+    if (localPhotos.length) setEntryPhotos(prev => [...prev, ...localPhotos]);
   }
 
-  function removeEntryPhoto(photoId) {
+  function removePhoto(photoId) {
     setEntryPhotos(prev => {
       const photo = prev.find(item => item.id === photoId);
-      if (!photo) return prev;
-      if (photo.isExisting && photo.objectKey) {
-        // Delete from R2 + update Airtable metadata immediately
-        const rId = receipt?.id;
-        const eId = editingEntryId;
-        if (rId && eId) {
-          api.deleteReceivingEntryPhoto(rId, eId, photo.objectKey).catch(() => {});
-        }
-      } else {
-        URL.revokeObjectURL(photo.previewUrl);
-      }
+      if (photo) URL.revokeObjectURL(photo.previewUrl);
       return prev.filter(item => item.id !== photoId);
     });
   }
 
-  async function ensureReceipt() {
-    if (receipt) return receipt;
-    const created = await api.startReceivingSession({
-      carrier: session.carrier.trim(),
-      tracking: session.tracking.trim(),
-      boxQuantity: Number(session.boxQuantity || 1),
-      received: session.received,
-    });
-    setReceipt(created);
-    setEntryCount(created.entries?.length ?? 0);
-    setNotice('Shipment started.');
-    return created;
-  }
-
-  async function openReceipt(receiptId) {
-    if (!receiptId) return;
-    setError('');
-    setNotice('');
-    try {
-      const data = await api.getReceivingSession(receiptId);
-      setReceipt(data);
-      setSelectedReceiptId(receiptId);
-      setEntryCount(data.entries?.length ?? 0);
-      setSession(prev => ({
-        ...prev,
-        carrier: data.carrier || '',
-        tracking: data.tracking || '',
-        received: data.received ? toDatetimeLocal(data.received) : prev.received,
-      }));
-    } catch (err) {
-      setError(err.message || 'Could not open that shipment.');
+  async function startShipment() {
+    if (!session.clientId) {
+      setError('Choose a client before starting.');
+      return null;
     }
-  }
-
-  async function startDelivery() {
     setError('');
-    setNotice('');
-    setSaving(true);
+    setBusy('shipment');
     try {
-      await ensureReceipt();
+      const created = await api.startReceivingSession({
+        clientId: session.clientId,
+        carrier: session.carrier.trim(),
+        tracking: session.tracking.trim(),
+        boxQuantity: Number(session.boxQuantity || 1),
+        received: session.received,
+      });
+      setReceipt(created);
+      setSavedEntries(created.entries ?? []);
+      setNotice('Shipment started. Add the first item.');
+      window.setTimeout(() => productNameRef.current?.focus(), 0);
+      return created;
     } catch (err) {
-      setError(err.message || 'Could not start shipment.');
+      setError(err.message || 'Could not start the shipment.');
+      return null;
     } finally {
-      setSaving(false);
+      setBusy('');
     }
   }
 
-  async function saveNext() {
-    setError('');
-    setNotice('');
+  async function saveAndNext() {
     const quantity = Number(entry.quantity);
     if (!Number.isFinite(quantity) || quantity < 1) {
       setError('Quantity must be at least 1.');
       return;
     }
-    setSaving(true);
+    if (!receipt) {
+      setError('Start the shipment first.');
+      return;
+    }
+    setError('');
+    setNotice('');
+    setBusy('entry');
     try {
-      const activeReceipt = await ensureReceipt();
-      let saved = await api.createReceiptEntry(activeReceipt.id, {
+      // Saved the moment it is entered: a dropped connection halfway down a pallet
+      // must not cost everything logged so far.
+      let saved = await api.createReceiptEntry(receipt.id, {
         productName: entry.productName.trim(),
         skuId: entry.skuId.trim(),
         quantity,
@@ -1925,168 +1910,202 @@ function QuickReceivingCapture({ locationList }) {
         description: entry.description.trim(),
         notes: entry.notes.trim(),
       });
-      if (entryPhotos.length > 0) {
+      if (entryPhotos.length) {
         try {
           const uploaded = await api.uploadReceivingPhotos(entryPhotos.map(photo => photo.file), {
-            receiptId: activeReceipt.id,
+            receiptId: receipt.id,
             receiptEntryId: saved.id,
           });
           saved = uploaded.entry || { ...saved, photos: uploaded.photos || [] };
         } catch (photoError) {
-          setError(photoError.message || 'Merchandise saved, but photos could not be uploaded.');
+          setError(photoError.message || 'Merchandise saved, but the photos did not upload.');
         }
       }
       if (entry.locationId) saveRecentReceivingLocation(entry.locationId);
-      setReceipt(prev => prev ? { ...prev, entries: [...(prev.entries || []), saved] } : prev);
-      setEntryCount(count => count + 1);
+      setSavedEntries(prev => [...prev, saved]);
       resetEntry(entry.locationId);
-      setNotice('Merchandise saved. Ready for the next merchandise record.');
+      setNotice('Saved. Ready for the next one.');
     } catch (err) {
-      setError(err.message || 'Could not save merchandise.');
+      setError(err.message || 'Could not save this merchandise.');
     } finally {
-      setSaving(false);
+      setBusy('');
     }
   }
 
-  function finishDelivery() {
-    setNotice(receipt ? 'Shipment finished and sent to Merchandise Review.' : 'No shipment has been started yet.');
-    setReceipt(null);
-    setSelectedReceiptId('');
-    setEntryCount(0);
-    setSession({ carrier: '', tracking: '', boxQuantity: 1, received: toDatetimeLocal() });
-    resetEntry('');
+  async function finishShipment() {
+    if (!receipt) return;
+    setError('');
+    setBusy('finish');
+    try {
+      const result = await api.finishReceivingSession(receipt.id);
+      const posted = result?.teamsNotification?.posted;
+      setNotice(posted
+        ? `Shipment finished. ${savedEntries.length} logged and the team was notified.`
+        : `Shipment finished. ${savedEntries.length} logged.`);
+      setReceipt(null);
+      setSavedEntries([]);
+      setSession(prev => ({ ...prev, carrier: '', tracking: '', received: toDatetimeLocal() }));
+      resetEntry('');
+      onShipmentSaved?.();
+    } catch (err) {
+      setError(err.message || 'Could not finish the shipment.');
+    } finally {
+      setBusy('');
+    }
   }
 
+  const clientName = clientList.find(client => client.id === session.clientId)?.name || '';
+
   return (
-    <div className="mobile-receiving-shell">
-      <div className="mobile-receiving-top">
+    <div className="phone-recv">
+      <header className="phone-recv-head">
         <div>
-          <span className="mobile-kicker">Quick Capture</span>
-          <h2>{receipt?.receipt || receipt?.name || receipt?.id || 'New Shipment'}</h2>
+          <span className="phone-recv-kicker">Receiving</span>
+          <h2>{receipt ? (clientName || 'Shipment') : 'New shipment'}</h2>
         </div>
-          <strong>{entryCount} merchandise record{entryCount === 1 ? '' : 's'}</strong>
-      </div>
+        {receipt && <span className="phone-recv-count">{savedEntries.length}</span>}
+      </header>
 
-      {error && <div className="error-state">{error}</div>}
-      {notice && <div className="notice-state">{notice}</div>}
+      {error && <div className="phone-recv-alert is-error" role="alert">{error}</div>}
+      {notice && <div className="phone-recv-alert" role="status">{notice}</div>}
 
-      <div className="mobile-receiving-panel">
-        <div className="mobile-field">
-          <label>Open Shipment</label>
-          <select value={selectedReceiptId} onChange={event => openReceipt(event.target.value)}>
-            <option value="">Start a new shipment</option>
-            {openReceipts.map(item => (
-              <option value={item.id} key={item.id}>
-                {item.receipt || item.name || item.tracking || item.id} · {item.entries?.length ?? 0} merchandise records
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="mobile-field-row">
-          <div className="mobile-field">
-            <label>Carrier</label>
-            <input value={session.carrier} onChange={event => setSession(prev => ({ ...prev, carrier: event.target.value }))} placeholder="Optional" />
-          </div>
-          <div className="mobile-field">
-            <label>Tracking</label>
-            <input value={session.tracking} onChange={event => setSession(prev => ({ ...prev, tracking: event.target.value }))} placeholder="Optional" />
-          </div>
-        </div>
-
-        {!receipt && (
-          <button type="button" className="btn btn-primary mobile-start-button" onClick={startDelivery} disabled={saving}>
-            {saving ? 'Starting...' : 'Begin Shipment'}
+      {!receipt ? (
+        <section className="phone-recv-card">
+          <label className="phone-field">
+            <span>Client</span>
+            <select value={session.clientId} onChange={event => setSession(prev => ({ ...prev, clientId: event.target.value }))}>
+              <option value="">Choose a client...</option>
+              {clientList.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
+            </select>
+          </label>
+          <label className="phone-field">
+            <span>Carrier</span>
+            <select value={session.carrier} onChange={event => setSession(prev => ({ ...prev, carrier: event.target.value }))}>
+              <option value="">Not stated</option>
+              {carrierOptions.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+          <label className="phone-field">
+            <span>Tracking</span>
+            <input value={session.tracking} onChange={event => setSession(prev => ({ ...prev, tracking: event.target.value }))} placeholder="Optional" inputMode="numeric" />
+          </label>
+          <button type="button" className="phone-btn phone-btn-primary" onClick={startShipment} disabled={busy === 'shipment'}>
+            {busy === 'shipment' ? 'Starting...' : 'Start shipment'}
           </button>
-        )}
-      </div>
-
-      <div className="mobile-entry-card">
-        <div className="mobile-field">
-          <label>Photos</label>
-          <div className="mobile-photo-actions">
-            <button type="button" className="mobile-photo-button primary" onClick={() => cameraInputRef.current?.click()}>Take Photo</button>
-            <button type="button" className="mobile-photo-button" onClick={() => libraryInputRef.current?.click()}>Photo Library</button>
-          </div>
-          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" multiple hidden onChange={event => { addEntryPhotos(event.target.files); event.target.value = ''; }} />
-          <input ref={libraryInputRef} type="file" accept="image/*" multiple hidden onChange={event => { addEntryPhotos(event.target.files); event.target.value = ''; }} />
-          {entryPhotos.length > 0 && (
-            <div className="mobile-photo-strip">
-              {entryPhotos.map(photo => (
-                <button type="button" className="mobile-thumb" key={photo.id} onClick={() => removeEntryPhoto(photo.id)} title="Remove photo">
-                  <img src={photo.previewUrl} alt="" />
-                  <span>×</span>
+        </section>
+      ) : (
+        <>
+          <section className="phone-recv-card">
+            <div className="phone-field">
+              <span>Photos</span>
+              <div className="phone-photo-actions">
+                <button type="button" className="phone-btn phone-btn-camera" onClick={() => cameraInputRef.current?.click()}>
+                  <Camera size={20} strokeWidth={2} aria-hidden="true" />Take photo
                 </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="mobile-field">
-          <label>{DOMAIN_TERMS.packageName}</label>
-          <input ref={productNameRef} value={entry.productName} onChange={event => setEntry('productName', event.target.value)} placeholder="Name printed on package" />
-        </div>
-
-        <div className="mobile-field">
-          <label>{DOMAIN_TERMS.merchandiseIdentifier} on Package</label>
-          <div className="mobile-identifier-row">
-            <input ref={skuIdRef} value={entry.skuId} onChange={event => setEntry('skuId', event.target.value)} placeholder="Scan or enter UPC / ID" />
-            {barcodeSupported && <button type="button" className="btn btn-alt">Scan</button>}
-          </div>
-        </div>
-
-        <div className="mobile-field">
-          <label>Quantity</label>
-          <div className="mobile-stepper">
-            <button type="button" onClick={() => setEntry('quantity', Math.max(1, Number(entry.quantity || 1) - 1))}>−</button>
-            <input type="number" min="1" value={entry.quantity} onChange={event => setEntry('quantity', event.target.value)} />
-            <button type="button" onClick={() => setEntry('quantity', Number(entry.quantity || 0) + 1)}>+</button>
-          </div>
-        </div>
-
-        <div className="mobile-field">
-          <label>Storage Location</label>
-          {recentLocations.length > 0 && (
-            <div className="mobile-location-chips">
-              {recentLocations.map(location => (
-                <button type="button" className={entry.locationId === location.id ? 'active' : ''} key={location.id} onClick={() => setEntry('locationId', location.id)}>
-                  {location.name}
+                <button type="button" className="phone-btn" onClick={() => libraryInputRef.current?.click()}>
+                  <Images size={20} strokeWidth={2} aria-hidden="true" />Library
                 </button>
-              ))}
+              </div>
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" multiple hidden onChange={event => { addPhotos(event.target.files); event.target.value = ''; }} />
+              <input ref={libraryInputRef} type="file" accept="image/*" multiple hidden onChange={event => { addPhotos(event.target.files); event.target.value = ''; }} />
+              {entryPhotos.length > 0 && (
+                <div className="phone-photo-strip">
+                  {entryPhotos.map(photo => (
+                    <button type="button" key={photo.id} onClick={() => removePhoto(photo.id)} aria-label="Remove photo">
+                      <img src={photo.previewUrl} alt="" />
+                      <span aria-hidden="true">×</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+
+            <label className="phone-field">
+              <span>{DOMAIN_TERMS.packageName}</span>
+              <input ref={productNameRef} value={entry.productName} onChange={event => setEntry('productName', event.target.value)} placeholder="Name printed on the package" />
+            </label>
+
+            <label className="phone-field">
+              <span>{DOMAIN_TERMS.merchandiseIdentifier} on package</span>
+              <input value={entry.skuId} onChange={event => setEntry('skuId', event.target.value)} placeholder="Scan or type" inputMode="numeric" />
+            </label>
+
+            <div className="phone-field">
+              <span>Quantity</span>
+              <div className="phone-stepper">
+                <button type="button" onClick={() => setEntry('quantity', Math.max(1, Number(entry.quantity || 1) - 1))} aria-label="One fewer">−</button>
+                <input type="number" min="1" inputMode="numeric" value={entry.quantity} onChange={event => setEntry('quantity', event.target.value)} />
+                <button type="button" onClick={() => setEntry('quantity', Number(entry.quantity || 0) + 1)} aria-label="One more">+</button>
+              </div>
+            </div>
+
+            <div className="phone-field">
+              <span>Storage location</span>
+              {recentLocations.length > 0 && (
+                <div className="phone-chips">
+                  {recentLocations.map(location => (
+                    <button type="button" key={location.id} className={entry.locationId === location.id ? 'is-active' : ''} onClick={() => setEntry('locationId', location.id)}>
+                      {location.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <select value={entry.locationId} onChange={event => setEntry('locationId', event.target.value)}>
+                <option value="">Choose a location...</option>
+                {locationList.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
+              </select>
+            </div>
+
+            <button type="button" className="phone-more-toggle" onClick={() => setShowMore(open => !open)}>
+              {showMore ? 'Fewer details' : 'More details'}
+            </button>
+
+            {showMore && (
+              <>
+                <label className="phone-field">
+                  <span>Condition</span>
+                  <select value={entry.condition} onChange={event => setEntry('condition', event.target.value)}>
+                    <option>Good</option>
+                    <option>Damaged</option>
+                    <option>Unknown</option>
+                  </select>
+                </label>
+                <label className="phone-field">
+                  <span>Description</span>
+                  <input value={entry.description} onChange={event => setEntry('description', event.target.value)} placeholder="Optional" />
+                </label>
+                <label className="phone-field">
+                  <span>Notes</span>
+                  <textarea rows="3" value={entry.notes} onChange={event => setEntry('notes', event.target.value)} placeholder="Optional" />
+                </label>
+              </>
+            )}
+          </section>
+
+          {savedEntries.length > 0 && (
+            <section className="phone-recv-card phone-recv-logged">
+              <span className="phone-recv-logged-title">Logged so far</span>
+              <ul>
+                {savedEntries.slice().reverse().map(saved => (
+                  <li key={saved.id}>
+                    <strong>{saved.quantity || 1} x {saved.productName || saved.description || 'Unnamed'}</strong>
+                    {saved.skuId && <small>{saved.skuId}</small>}
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
-          <select value={entry.locationId} onChange={event => setEntry('locationId', event.target.value)}>
-            <option value="">Select location...</option>
-            {locationList.map(location => <option key={location.id} value={location.id}>{location.name}</option>)}
-          </select>
-        </div>
 
-        <div className="mobile-field">
-          <label>Condition</label>
-          <select value={entry.condition} onChange={event => setEntry('condition', event.target.value)}>
-            <option>Good</option>
-            <option>Damaged</option>
-            <option>Unknown</option>
-          </select>
-        </div>
-
-        <div className="mobile-field">
-          <label>Description</label>
-          <input value={entry.description} onChange={event => setEntry('description', event.target.value)} placeholder="Optional" />
-        </div>
-
-        <div className="mobile-field">
-          <label>Notes</label>
-          <textarea value={entry.notes} onChange={event => setEntry('notes', event.target.value)} rows="2" placeholder="Optional" />
-        </div>
-      </div>
-
-      <div className="mobile-receiving-actions">
-        <button type="button" className="btn btn-alt" onClick={finishDelivery} disabled={saving}>Finish Shipment</button>
-        <button type="button" className="btn btn-primary" onClick={saveNext} disabled={saving}>
-          {saving ? 'Saving...' : 'Save & Next'}
-        </button>
-      </div>
+          <div className="phone-recv-actions">
+            <button type="button" className="phone-btn" onClick={finishShipment} disabled={Boolean(busy)}>
+              {busy === 'finish' ? 'Finishing...' : 'Finish'}
+            </button>
+            <button type="button" className="phone-btn phone-btn-primary" onClick={saveAndNext} disabled={Boolean(busy)}>
+              {busy === 'entry' ? 'Saving...' : 'Save & next'}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -2144,6 +2163,7 @@ function ShipmentsPage() {
   const productNameRef = useRef(null);
   const skuIdRef = useRef(null);
 
+  const isPhone = usePhoneLayout();
   const clientList = (clients.data?.records ?? []).filter(c => c.active !== false);
   const topcoTestingClientId = clientList.find(client => String(client.name || '').trim().toLowerCase() === 'topco')?.id || '';
   const locationList = (locations.data?.records ?? []).filter(l => l.active !== false);
@@ -2889,7 +2909,16 @@ function ShipmentsPage() {
         )}
       />
 
-      {tab === 'incoming' ? (
+      {tab === 'incoming' && isPhone ? (
+        /* A phone gets its own screen. The three panels below are a desk layout:
+           stacked, they give large targets nowhere to go and bury the entry form. */
+        <PhoneReceiving
+          clientList={clientList}
+          locationList={locationList}
+          carrierOptions={carrierList}
+          onShipmentSaved={() => allReceipts.reload({ quiet: true }).catch(() => {})}
+        />
+      ) : tab === 'incoming' ? (
         /* ── Three-panel merchandise entry layout ── */
         <div className="recv-three-col">
 

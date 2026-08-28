@@ -8522,6 +8522,28 @@ def get_receiving_session(record_id):
     return jsonify(_shape_receipt(record, entries_by_receipt=entries_by_receipt))
 
 
+@api.post("/receiving/<record_id>/finish")
+def finish_receiving_session(record_id):
+    """Close a shipment logged item by item and announce the arrival.
+
+    Saving as you go means there is no single moment the server can call the
+    delivery complete, so the phone says when it is done. Announcing here keeps
+    a phone-logged arrival as visible as one logged in a single post.
+    """
+    try:
+        record = airtable.get_record(C.SHIPMENTS_TABLE, record_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    if not _receipt_client_permitted(record.get("fields", {}).get(C.F_RECEIPT_CLIENT, [])):
+        return _forbidden()
+    entries_by_receipt = _receipt_entries_by_receipt_id([record_id])
+    shaped_entries = entries_by_receipt.get(record_id, [])
+    notified, notice = _notify_shipment_arrival(record, shaped_entries)
+    payload = _shape_receipt(record, entries_by_receipt=entries_by_receipt)
+    payload["teamsNotification"] = {"posted": notified, "detail": notice}
+    return jsonify(payload)
+
+
 @api.patch("/receiving/<record_id>")
 def update_receiving_session(record_id):
     body = request.get_json(silent=True) or {}
