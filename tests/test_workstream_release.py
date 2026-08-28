@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 import backend.config as C
 
@@ -29,66 +30,14 @@ class WorkstreamReleaseFieldTests(unittest.TestCase):
         self.assertFalse(unreleased["released"])
 
 
-class ReleasedCardResyncTests(unittest.TestCase):
-    def test_only_released_cards_are_resynced(self):
-        from unittest.mock import patch
 
-        from backend.routes import _resync_released_cards
-
-        released = {"id": "recReleased", "fields": {C.Config.F_WORKSTREAM_CARD_RELEASED: True}}
-        never_released = {"id": "recPending", "fields": {}}
-
-        with patch("backend.routes._populate_creative_force_feed_for_ready_cards") as populate:
-            populate.return_value = [{"sourceKey": "topco:recReleased", "action": "updated"}]
-            result = _resync_released_cards([released, never_released])
-
-        populate.assert_called_once_with([released])
-        self.assertEqual(result, [{"sourceKey": "topco:recReleased", "action": "updated"}])
-
-    def test_nothing_released_means_no_feed_call(self):
-        from unittest.mock import patch
-
-        from backend.routes import _resync_released_cards
-
-        with patch("backend.routes._populate_creative_force_feed_for_ready_cards") as populate:
-            self.assertEqual(_resync_released_cards([{"id": "recPending", "fields": {}}]), [])
-        populate.assert_not_called()
-
-    def test_a_feed_failure_does_not_fail_the_edit(self):
-        # The edit already succeeded. A feed that briefly lags beats refusing the save.
-        import requests
-        from unittest.mock import patch
-
-        from backend.routes import _resync_released_cards
-
-        released = {"id": "recReleased", "fields": {C.Config.F_WORKSTREAM_CARD_RELEASED: True}}
-        with _app_context():
-            with patch("backend.routes._populate_creative_force_feed_for_ready_cards", side_effect=requests.HTTPError()):
-                self.assertEqual(_resync_released_cards([released]), [])
-
-    def test_released_cards_are_found_by_product(self):
-        from unittest.mock import patch
-
-        from backend.routes import _released_cards_for_product
-
-        cards = [
-            {"id": "recA", "fields": {
-                C.Config.F_WORKSTREAM_CARD_EXPECTED_PRODUCT: ["recProduct"],
-                C.Config.F_WORKSTREAM_CARD_RELEASED: True,
-            }},
-            {"id": "recB", "fields": {C.Config.F_WORKSTREAM_CARD_EXPECTED_PRODUCT: ["recProduct"]}},
-            {"id": "recC", "fields": {
-                C.Config.F_WORKSTREAM_CARD_EXPECTED_PRODUCT: ["recOther"],
-                C.Config.F_WORKSTREAM_CARD_RELEASED: True,
-            }},
-        ]
-        with patch("backend.routes._list_all_records", return_value=cards):
-            found = _released_cards_for_product("recProduct")
-        self.assertEqual([card["id"] for card in found], ["recA"])
-        self.assertEqual(_released_cards_for_product(""), [])
-
-
-def _app_context():
-    from backend.app import create_app
-
-    return create_app().app_context()
+class ProductEditDoesNotTouchCreativeForceTests(unittest.TestCase):
+    def test_editing_does_not_sync_the_feed(self):
+        # Releasing again is the deliberate act that reaches Creative Force, and the
+        # only place the producer is warned. An edit must not do it quietly.
+        source = (Path(__file__).resolve().parents[1] / "backend" / "routes.py").read_text()
+        self.assertNotIn("_resync_released_cards", source)
+        for handler in ("def update_workstream_card(record_id):", "def update_item(record_id):"):
+            start = source.index(handler)
+            body = source[start:source.index("@api.", start + 10)]
+            self.assertNotIn("_populate_creative_force_feed", body, handler)

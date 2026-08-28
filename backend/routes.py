@@ -4361,12 +4361,9 @@ def update_item(record_id):
     except requests.HTTPError as error:
         return airtable_err(error)
     _log_item_changes(record_id, previous, data, fields)
-    # Product data is most of what the feed carries, so an edit after release has to
-    # reach Creative Force too.
-    try:
-        _resync_released_cards(_released_cards_for_product(record_id))
-    except requests.HTTPError:
-        current_app.logger.warning("Could not look up released cards for Product %s", record_id)
+    # Deliberately not touching the Creative Force feed. Editing a Product changes the
+    # Product; releasing again is what tells Creative Force, and that is where the
+    # producer gets warned.
     return jsonify(_shape_item(data, clients_by_id=_clients_by_id(), issues_by_item_id=_issues_by_item_id()))
 
 
@@ -5812,35 +5809,6 @@ def _sync_creative_force_product_feed_cards(cards):
     return synced
 
 
-def _resync_released_cards(cards):
-    """A released card's feed row is what Creative Force reads, so an edit updates it.
-
-    Quiet by design: the edit succeeded, and a feed that briefly lags is better than
-    refusing the save. Nothing happens for cards that were never released.
-    """
-    released = [card for card in cards if card.get("fields", {}).get(C.F_WORKSTREAM_CARD_RELEASED)]
-    if not released:
-        return []
-    try:
-        return _populate_creative_force_feed_for_ready_cards(released)
-    except requests.HTTPError:
-        current_app.logger.warning(
-            "Could not refresh the Creative Force feed for released cards: %s",
-            [card.get("id") for card in released],
-        )
-        return []
-
-
-def _released_cards_for_product(product_id):
-    if not product_id:
-        return []
-    return [
-        record for record in _list_all_records(C.WORKSTREAM_CARDS_TABLE)
-        if product_id in _as_list(record.get("fields", {}).get(C.F_WORKSTREAM_CARD_EXPECTED_PRODUCT, []))
-        and record.get("fields", {}).get(C.F_WORKSTREAM_CARD_RELEASED)
-    ]
-
-
 def _populate_creative_force_feed_for_ready_cards(cards):
     """Keep the CF table current without exposing a second manual sync workflow."""
     _ensure_creative_force_feed_schema()
@@ -7217,7 +7185,6 @@ def update_workstream_card(record_id):
         )
     except requests.HTTPError as error:
         return airtable_err(error)
-    _resync_released_cards([updated])
     return jsonify({"record": _shape_workstream_card(updated)})
 
 

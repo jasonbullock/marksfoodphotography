@@ -2107,7 +2107,7 @@ class ReleasedCardEditingTests(unittest.TestCase):
         # Editing after release is normal - a typo in CVID should be fixable without
         # undoing the release. Doing it unknowingly is not.
         self.assertIn("const alreadyReleased = Boolean(item.record?.released);", self.source)
-        self.assertIn("Changes here update the Creative Force record.", self.source)
+        self.assertIn("Edits here update the Product only. Release again to send them to Creative Force.", self.source)
         self.assertIn(".new-review-released-mark", self.styles)
 
     def test_the_two_controls_that_are_not_corrections_ask_first(self):
@@ -2119,3 +2119,23 @@ class ReleasedCardEditingTests(unittest.TestCase):
             "'This workstream has been released to photo against this Product. Unlink it anyway?',",
             self.source,
         )
+
+
+class ReReleaseTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+        cls.styles = STYLES.read_text()
+
+    def test_reopening_a_release_starts_from_the_one_already_sent(self):
+        # Nothing should be retyped, and the rows are rebuilt from the merchandise so
+        # any Product edit since is what gets sent.
+        self.assertIn("const priorActivation = (() => {", self.source)
+        self.assertIn("useSavedActivation(priorActivation.id);", self.source)
+
+    def test_releasing_again_warns_and_confirms(self):
+        self.assertIn("const releasingAgain = Boolean(priorActivation || initialActivation?.id);", self.source)
+        self.assertIn("Please contact the photo producer before doing this.", self.source)
+        self.assertIn("Already released. Releasing again rewrites the Creative Force record", self.source)
+        self.assertIn(".activation-rerelease-warning", self.styles)
+        self.assertIn("releasingAgain ? 'Release again' : 'Release to Photo'", self.source)

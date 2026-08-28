@@ -1832,20 +1832,22 @@ was answering a different question.
 The Merchandise flag stays and becomes derived: the arrival is released once every workstream
 on it is. Released At and Released By on Merchandise still record the most recent release.
 
-## 2026-08-27 - An Edit After Release Reaches Creative Force
+## 2026-08-28 - Release Is The Only Thing That Speaks To Creative Force
 
-The Creative Force feed was written once, at release. Everything the feed carries -
-product name, UPC, CVID, job number, brand prefix, file name description - can be edited
-afterwards, and the row kept saying what it said on the day. Creative Force would go on
-working from the released version while the board showed the corrected one.
+Superseded 2026-08-27's automatic feed refresh on edit. That version pushed a Product
+change straight to Creative Force, which meant photo production could change under a
+photographer with nobody seeing a warning.
 
-Saving a released Workstream Card, or a Product that a released card points at, now
-refreshes that card's feed row. The sync was already an upsert keyed on the card id, so
-this reuses it rather than adding a second path.
+Editing a Product now edits the Product and nothing else, and the planning modal says so.
+Creative Force hears about it when someone releases again - one deliberate act, in one
+place, behind a warning and a confirmation naming the risk to work in progress and file
+naming, and asking that the photo producer be contacted first.
 
-It is deliberately quiet. The edit has already been written; a feed row that lags for a
-moment is better than refusing the save because Creative Force was unreachable. Failures
-are logged, not raised. Cards that were never released are untouched.
+Re-releasing does not mean retyping. Reopening the release for merchandise that already
+has a release record starts from that record, so the project name, scope and counts carry
+over. The item rows are rebuilt from the merchandise rather than the stored snapshot, so
+the release carries the Product as it is now, not as it was on the day. The mechanism for
+this already existed as `useSavedActivation` and had never been wired to anything.
 
 ## 2026-08-27 - A Released Card Stays Editable, And Says So
 

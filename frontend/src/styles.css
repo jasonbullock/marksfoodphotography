@@ -17895,21 +17895,32 @@ select.form-input {
 .new-review-released-note {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 4px 0 0;
-  color: var(--text-3);
-  font-size: 11px;
-  font-weight: 650;
+  gap: 10px;
+  margin: 6px 0 0;
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 750;
 }
 
 .new-review-released-mark {
-  padding: 2px 7px;
-  border: 1px solid rgba(22, 163, 74, 0.4);
+  padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(22, 163, 74, 0.08);
-  color: #15803d;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: .04em;
+  background: #15803d;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .05em;
   text-transform: uppercase;
+}
+
+.activation-rerelease-warning {
+  max-width: 60ch;
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid #b45309;
+  background: rgba(251, 191, 36, 0.14);
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
 }

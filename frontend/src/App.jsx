@@ -10862,7 +10862,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
             {alreadyReleased && (
               <p className="new-review-released-note">
                 <span className="new-review-released-mark">Released{releasedOnLabel ? ` ${releasedOnLabel}` : ''}</span>
-                Changes here update the Creative Force record.
+                Edits here update the Product only. Release again to send them to Creative Force.
               </p>
             )}
           </div>
@@ -11287,6 +11287,27 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
     });
   }, [topcoMerchandiseOptions]);
   const updateForm = (key, value) => setForm(current => ({ ...current, [key]: value }));
+  // An item released before already has a release record. Reopening should start
+  // from it rather than a blank form, so nothing is retyped - but the rows are
+  // rebuilt from the merchandise, so any Product edit since is what gets sent.
+  const priorActivation = (() => {
+    if (initialActivation || !initialMerchandiseIdList.length) return null;
+    const candidates = (activationHistory.data?.records || []).filter(record => {
+      const linked = record.linkedMerchandiseIds || [];
+      if (!initialMerchandiseIdList.some(id => linked.includes(id))) return false;
+      if (!scopedDeliverableType) return true;
+      return normalizeDeliverableList(record.deliverables).includes(scopedDeliverableType);
+    });
+    return candidates[candidates.length - 1] || null;
+  })();
+  const appliedPriorActivationId = useRef('');
+  useEffect(() => {
+    if (!priorActivation || editingActivationId) return;
+    if (appliedPriorActivationId.current === priorActivation.id) return;
+    appliedPriorActivationId.current = priorActivation.id;
+    useSavedActivation(priorActivation.id);
+  }, [priorActivation?.id, editingActivationId]);
+
   function useSavedActivation(activationId) {
     const saved = (activationHistory.data?.records || []).find(record => record.id === activationId);
     if (!saved) return;
@@ -11451,6 +11472,9 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
     ...(fieldIsConfigured('fileNameDescription') ? [['File Name Description', row.fileNameDescription]] : []),
   ];
   const modalTitle = initialActivation?.id ? 'Edit Photo Release' : 'Photo Release';
+  // Re-releasing rewrites what Creative Force is working from, which is a different
+  // act from releasing something for the first time.
+  const releasingAgain = Boolean(priorActivation || initialActivation?.id);
   const PreviewValue = ({ value, fallback, children }) => {
     const present = String(value || '').trim();
     return <span className={`activation-preview-token ${present ? 'is-present' : 'is-missing'}`}>{children || present || fallback}</span>;
@@ -11521,6 +11545,11 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
   };
 
   async function saveActivationPackage(action = 'draft') {
+    if (action === 'move' && releasingAgain && !window.confirm(
+      'This has already been released. Releasing again updates the Creative Force record.\n\n'
+      + 'It may affect photo production already in progress, including file naming. '
+      + 'Please contact the photo producer before doing this.',
+    )) return;
     setSaving(true);
     setSaveAction(action);
     setError('');
@@ -11574,6 +11603,12 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
               <h2>{modalTitle}:</h2>
               <DeliverableBadges values={selectedDeliverables} />
             </div>
+            {releasingAgain && (
+              <p className="activation-rerelease-warning" role="status">
+                Already released. Releasing again rewrites the Creative Force record and may affect
+                photo production in progress, including file naming.
+              </p>
+            )}
           </div>
           <button type="button" className="merchandise-detail-close" onClick={onClose} aria-label="Close photo release">
             <Icon.Close />
@@ -11770,7 +11805,7 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
             <footer className="activation-modal-footer">
               <button type="button" className="btn" onClick={onClose}>Cancel</button>
               <button type="button" className="btn btn-primary" onClick={() => saveActivationPackage('move')} disabled={saving || !form.clientId}>
-                {saving && saveAction === 'move' ? 'Releasing...' : 'Release to Photo'}
+                {saving && saveAction === 'move' ? 'Releasing...' : releasingAgain ? 'Release again' : 'Release to Photo'}
               </button>
             </footer>
           )}
