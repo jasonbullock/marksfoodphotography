@@ -2139,3 +2139,30 @@ class ReReleaseTests(unittest.TestCase):
         self.assertIn("Already released. Releasing again rewrites the Creative Force record", self.source)
         self.assertIn(".activation-rerelease-warning", self.styles)
         self.assertIn("releasingAgain ? 'Release again' : 'Release to Photo'", self.source)
+
+
+class ReadyForPhotoSavesFirstTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+
+    def test_the_photo_draft_reaches_the_handler(self):
+        self.assertIn("await onReadyForPhoto?.(item, {", self.source)
+        self.assertIn("photoDraft: photoDraftValues,", self.source)
+
+    def test_the_product_is_written_before_the_release_form_opens(self):
+        # The release form reads the Product. Opening it without writing first showed
+        # the values from before the edit, while the button said Details saved.
+        start = self.source.index("async function openReadyForPhoto(item, state = {}) {")
+        body = self.source[start:self.source.index("\n  function ", start + 10)]
+        self.assertIn("await api.updateProduct(productId, productPatch);", body)
+        self.assertLess(
+            body.index("await api.updateProduct(productId, productPatch);"),
+            body.index("openActivationModal("),
+        )
+        self.assertIn("await refreshV2WorkflowData();", body)
+
+    def test_a_failed_product_write_stops_the_release(self):
+        start = self.source.index("async function openReadyForPhoto(item, state = {}) {")
+        body = self.source[start:self.source.index("\n  function ", start + 10)]
+        self.assertIn("return { ok: false, message: error.message || 'Could not save the Product details.' };", body)

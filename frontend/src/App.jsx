@@ -10775,7 +10775,10 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     if (!committedMatch) return;
     if (isWorkstreamCard) {
       try {
-        const result = await onReadyForPhoto?.(item);
+        const result = await onReadyForPhoto?.(item, {
+          photoDraft: photoDraftValues,
+          expectedProductId: committedMatch.productId,
+        });
         if (result?.ok === false) {
           setFinishState({ status: 'error', message: result.message || 'Could not move this card.' });
           return;
@@ -12418,11 +12421,27 @@ function MerchandiseReviewV2Page() {
     return photoDeliverables.length === 1 ? photoDeliverables[0] : '';
   }
 
-  function openReadyForPhoto(item) {
+  async function openReadyForPhoto(item, state = {}) {
     const merchandiseId = item?.merchandiseId || item?.record?.id || '';
     if (!merchandiseId) return { ok: false, message: 'This item is missing its Merchandise record.' };
     const deliverableType = releaseDeliverableForItem(item);
     if (!deliverableType) return { ok: false, message: 'Choose either Ecomm or Packaging before releasing to photo.' };
+    // The release form reads the Product, so the edits have to be written and read
+    // back before it opens. Without this the form showed the values from before the
+    // edit and the button's "Details saved" was not true.
+    const productId = state.expectedProductId
+      || item.record?.linkedItem?.id
+      || item.record?.itemIds?.[0]
+      || '';
+    const productPatch = productPatchFromPhotoDraft(state.photoDraft || {});
+    if (productId && Object.keys(productPatch).length) {
+      try {
+        await api.updateProduct(productId, productPatch);
+      } catch (error) {
+        return { ok: false, message: error.message || 'Could not save the Product details.' };
+      }
+    }
+    await refreshV2WorkflowData();
     setSelectedId('');
     setWorkspaceOpen(false);
     openActivationModal(null, merchandiseId, deliverableType);
