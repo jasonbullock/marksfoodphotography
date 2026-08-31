@@ -8783,7 +8783,8 @@ def _notify_shipment_arrival(receipt, shaped_entries):
             or ""
         )
         quantity = entry.get("quantity") or 1
-        items.append(f"{quantity} x {name}" + (f" - {identifier}" if identifier else ""))
+        label = f"{quantity} x {name}" + (f" - {identifier}" if identifier else "")
+        items.append((label, entry.get("id", "")))
         for photo in entry.get("photos") or entry.get("itemPhotos") or []:
             url = str((photo or {}).get("url") or (photo or {}).get("public_url") or "").strip()
             if url and url not in image_urls:

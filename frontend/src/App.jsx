@@ -11925,6 +11925,10 @@ function PlanningActivationPackageModal({ clients = [], merchandiseOptions = [],
 function MerchandiseReviewV2Page() {
   const authContext = useAuth();
   const auth = authContext?.auth || {};
+  // A Teams notification links straight at one arrival, so the board can open its
+  // card from the URL rather than leaving the reader to hunt for it.
+  const [planningSearchParams, setPlanningSearchParams] = useSearchParams();
+  const requestedMerchandiseId = planningSearchParams.get('item') || '';
   const entries = useResource(() => api.listMerchandiseReviewEntries());
   const workstreamCards = useResource(() => api.listWorkstreamCards());
   // Needed for board membership: a THR3D-only parent has no workstream card, so a
@@ -12123,6 +12127,21 @@ function MerchandiseReviewV2Page() {
   // its own path. Nothing on the board said they were the same thing, so a second
   // arrival could be shot again for no reason. This does not block anything; it
   // refuses to let that happen unnoticed.
+  useEffect(() => {
+    if (!requestedMerchandiseId || !boardItems.length) return;
+    const target = boardItems.find(item => (
+      item.merchandiseId === requestedMerchandiseId || item.record?.id === requestedMerchandiseId
+    ));
+    if (!target) return;
+    setSelectedId(target.id);
+    setWorkspaceOpen(true);
+    // Cleared so closing the card does not leave a URL that reopens it on refresh.
+    const next = new URLSearchParams(planningSearchParams);
+    next.delete('item');
+    setPlanningSearchParams(next, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedMerchandiseId, boardItems.length]);
+
   const arrivalsByProduct = boardItems.reduce((byProduct, item) => {
     const productId = item.record?.itemIds?.[0] || item.record?.linkedItem?.id || '';
     if (!productId) return byProduct;

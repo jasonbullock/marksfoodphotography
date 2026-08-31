@@ -2269,3 +2269,14 @@ class ShipmentFinishTests(unittest.TestCase):
         # The photo strip clears after each save, so the button greys out again for
         # the next item. Silently, which reads as the form being stuck.
         self.assertIn("Add a merchandise photo to save this item.", self.source)
+
+
+class PlanningDeepLinkTests(unittest.TestCase):
+    def test_planning_opens_the_card_named_in_the_url(self):
+        # A Teams notification links at one arrival; the board should land on it
+        # rather than leave the reader to find it.
+        source = APP.read_text()
+        self.assertIn("const requestedMerchandiseId = planningSearchParams.get('item') || '';", source)
+        self.assertIn("item.merchandiseId === requestedMerchandiseId", source)
+        # Cleared afterwards so a refresh does not reopen a card the reader closed.
+        self.assertIn("next.delete('item');", source)

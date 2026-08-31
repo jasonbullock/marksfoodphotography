@@ -38,7 +38,7 @@ class ArrivalCardTests(unittest.TestCase):
     def test_the_card_says_what_arrived_and_where_to_go(self):
         card = self.card()
         text = str(card)
-        self.assertIn("1 item arrived", text)
+        self.assertIn("1 item arrived at Walnut", text)
         self.assertIn("Sauerkraut 14.5oz", text)
         urls = [action["url"] for action in card["actions"]]
         self.assertIn("https://marks.example/shipments?shipmentId=recShipment", urls)
@@ -47,7 +47,7 @@ class ArrivalCardTests(unittest.TestCase):
     def test_a_long_shipment_is_summarised_rather_than_dumped(self):
         items = [f"1 x Item {index}" for index in range(20)]
         text = str(self.card(items=items))
-        self.assertIn("20 items arrived", text)
+        self.assertIn("20 items arrived at Walnut", text)
         self.assertIn("and 8 more", text)
         self.assertNotIn("Item 19", text)
 
@@ -55,7 +55,7 @@ class ArrivalCardTests(unittest.TestCase):
         notifier.C.APP_BASE_URL = ""
         card = self.card()
         self.assertNotIn("actions", card)
-        self.assertIn("1 item arrived", str(card))
+        self.assertIn("1 item arrived at Walnut", str(card))
 
 
 class ArrivalPostTests(unittest.TestCase):
@@ -160,3 +160,40 @@ class ArrivalNamingTests(unittest.TestCase):
         self.assertIn('matched = entry.get("matchedProduct") or {}', body)
         self.assertLess(body.index('matched.get("name")'), body.index('entry.get("productName")'))
         self.assertIn('matched.get("primaryMatchKey")', body)
+
+
+class ArrivalDeepLinkTests(unittest.TestCase):
+    def setUp(self):
+        self._base = notifier.C.APP_BASE_URL
+        notifier.C.APP_BASE_URL = "https://marks.example"
+
+    def tearDown(self):
+        notifier.C.APP_BASE_URL = self._base
+
+    def test_each_item_links_at_its_own_card(self):
+        card = notifier.build_arrival_card(
+            client_name="Topco", shipment_name="Topco", shipment_id="recShip",
+            carrier="", tracking="", received="",
+            items=[("1 x Raisin Bran", "recMerchA"), ("5 x Toasted Oats", "recMerchB")],
+        )["attachments"][0]["content"]
+        text = str(card)
+        self.assertIn("[1 x Raisin Bran](https://marks.example/planning?item=recMerchA)", text)
+        self.assertIn("[5 x Toasted Oats](https://marks.example/planning?item=recMerchB)", text)
+
+    def test_a_plain_item_still_renders_without_a_link(self):
+        notifier.C.APP_BASE_URL = ""
+        card = notifier.build_arrival_card(
+            client_name="Topco", shipment_name="Topco", shipment_id="recShip",
+            carrier="", tracking="", received="", items=[("1 x Raisin Bran", "recMerchA")],
+        )["attachments"][0]["content"]
+        self.assertIn("- 1 x Raisin Bran", str(card))
+        self.assertNotIn("](", str(card))
+
+    def test_photos_are_shown_large(self):
+        card = notifier.build_arrival_card(
+            client_name="Topco", shipment_name="Topco", shipment_id="recShip",
+            carrier="", tracking="", received="", items=[("1 x Raisin Bran", "recA")],
+            image_urls=["https://cdn.test/a.jpg"],
+        )["attachments"][0]["content"]
+        image_set = next(block for block in card["body"] if block["type"] == "ImageSet")
+        self.assertEqual(image_set["imageSize"], "large")

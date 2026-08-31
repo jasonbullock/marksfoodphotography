@@ -53,8 +53,12 @@ def _shipment_url(shipment_id):
     return f"{C.APP_BASE_URL}/shipments?shipmentId={shipment_id}"
 
 
-def _planning_url():
-    return f"{C.APP_BASE_URL}/planning" if C.APP_BASE_URL else ""
+def _planning_url(merchandise_id=""):
+    if not C.APP_BASE_URL:
+        return ""
+    if merchandise_id:
+        return f"{C.APP_BASE_URL}/planning?item={merchandise_id}"
+    return f"{C.APP_BASE_URL}/planning"
 
 
 def build_arrival_card(*, client_name, shipment_name, shipment_id, carrier, tracking,
@@ -62,7 +66,13 @@ def build_arrival_card(*, client_name, shipment_name, shipment_id, carrier, trac
     """An Adaptive Card describing one arrival, listing what came in."""
     listed = items[:MAX_LISTED_ITEMS]
     remaining = len(items) - len(listed)
-    lines = [f"- {item}" for item in listed]
+    lines = []
+    for item in listed:
+        # Each line links at its own card, so the reader lands on the thing the
+        # line describes rather than on the board to hunt for it.
+        label, merchandise_id = item if isinstance(item, tuple) else (item, "")
+        url = _planning_url(merchandise_id)
+        lines.append(f"- [{label}]({url})" if url else f"- {label}")
     if remaining > 0:
         lines.append(f"- and {remaining} more")
 
@@ -75,7 +85,7 @@ def build_arrival_card(*, client_name, shipment_name, shipment_id, carrier, trac
 
     body = [
         {"type": "TextBlock", "size": "Medium", "weight": "Bolder",
-         "text": f"{len(items)} item{'' if len(items) == 1 else 's'} arrived"},
+         "text": f"{len(items)} item{'' if len(items) == 1 else 's'} arrived at Walnut"},
         {"type": "TextBlock", "spacing": "None", "isSubtle": True, "wrap": True,
          "text": shipment_name or "New shipment"},
         {"type": "FactSet", "facts": facts},
@@ -87,7 +97,7 @@ def build_arrival_card(*, client_name, shipment_name, shipment_id, carrier, trac
     if shown_images:
         body.append({
             "type": "ImageSet",
-            "imageSize": "medium",
+            "imageSize": "large",
             "images": [{"type": "Image", "url": url} for url in shown_images],
         })
         remaining_images = len([url for url in (image_urls or []) if str(url or "").strip()]) - len(shown_images)
