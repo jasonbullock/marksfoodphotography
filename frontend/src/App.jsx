@@ -2098,7 +2098,7 @@ function PhoneReceiving({ clientList, locationList, carrierOptions, onShipmentSa
 
           <div className="phone-recv-actions">
             <button type="button" className="phone-btn" onClick={finishShipment} disabled={Boolean(busy)}>
-              {busy === 'finish' ? 'Finishing...' : 'Finish'}
+              {busy === 'finish' ? 'Posting...' : 'Post to Teams'}
             </button>
             <button type="button" className="phone-btn phone-btn-primary" onClick={saveAndNext} disabled={Boolean(busy)}>
               {busy === 'entry' ? 'Saving...' : 'Save & next'}
@@ -3291,9 +3291,9 @@ function ShipmentsPage() {
                   onClick={finishShipment}
                   disabled={Boolean(saving)}
                 >
-                  {saving === 'finish' ? 'Finishing…' : 'Finish shipment'}
+                  {saving === 'finish' ? 'Posting…' : 'Post to Teams Chat'}
                 </button>
-                <small>Closes the shipment and tells the client's Teams channel what arrived.</small>
+                <small>Closes the shipment and posts what arrived to the client's Teams channel.</small>
               </div>
             )}
           </div>

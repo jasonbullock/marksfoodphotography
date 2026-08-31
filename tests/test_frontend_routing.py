@@ -2259,7 +2259,7 @@ class ShipmentFinishTests(unittest.TestCase):
         # complete. The desktop screen had none - you ended one by starting the
         # next - so nothing ever announced a desk-logged arrival.
         self.assertEqual(self.source.count("await api.finishReceivingSession("), 2)
-        self.assertIn("Finish shipment", self.source)
+        self.assertIn("Post to Teams Chat", self.source)
 
     def test_the_unused_single_post_path_is_not_what_the_ui_calls(self):
         # POST /receipts posts a shipment and its items at once. No screen uses it.
