@@ -4705,6 +4705,11 @@ def _apply_item_fields(fields, body):
         fields[C.F_ITEM_JOB_NUMBER] = _normalize_item_job_number(body.get("itemJobNumber"))
     if "upc" in body and body["upc"] is not None:
         fields[C.F_ITEM_UPC] = str(body.get("upc") or "").strip()
+    # The Product data step patches the client's primary match key by that name.
+    # It was missing from this mapping, so a UPC typed there was accepted, dropped,
+    # and then reported missing when the item tried to move to photo release.
+    if "primaryMatchKey" in body and body["primaryMatchKey"] is not None:
+        fields[C.F_ITEM_IDENTIFIER] = str(body.get("primaryMatchKey") or "").strip()
     if "cvid" in body and body["cvid"] is not None:
         fields[C.F_ITEM_CVID] = str(body.get("cvid") or "").strip()
     if "brandPrefix" in body and body["brandPrefix"] is not None:

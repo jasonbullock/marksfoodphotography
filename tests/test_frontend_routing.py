@@ -1939,7 +1939,28 @@ class StagedMatchProductDataTests(unittest.TestCase):
             "function productDataSourceForPlanningItem(item = {}, draft = {}, stagedProduct = null) {",
             self.source,
         )
-        self.assertIn("if (stagedProduct?.id) return { ...stagedProduct, ...draft };", self.source)
+        self.assertIn(
+            "if (stagedProduct?.id) return { ...observed, ...definedOnly(stagedProduct), ...draft };",
+            self.source,
+        )
+
+    def test_a_upc_read_off_the_box_survives_being_matched(self):
+        # A matched Product wins on anything it states, but it does not blank out a
+        # UPC someone typed into the shipment when it holds none of its own.
+        self.assertIn(
+            "if (linked.id) return { ...observed, ...definedOnly(linked), ...draft };",
+            self.source,
+        )
+        self.assertIn("function observedIdentityForRecord(record = {}) {", self.source)
+        self.assertIn("function definedOnly(source = {}) {", self.source)
+
+    def test_the_upc_stays_editable_until_the_product_itself_holds_it(self):
+        # Hiding it as inherited would leave the value true only on screen: the
+        # editor drops inherited fields from the patch it saves.
+        self.assertIn(
+            "photoProductionProductValue(stagedProduct?.id ? stagedProduct : product, field)",
+            self.source,
+        )
 
     def test_the_photo_checks_pass_the_staged_match_through(self):
         self.assertIn(

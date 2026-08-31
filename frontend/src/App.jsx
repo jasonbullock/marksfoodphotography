@@ -8677,14 +8677,32 @@ function manualProductInfoForItem(item = {}) {
   };
 }
 
+function definedOnly(source = {}) {
+  // A Product that holds no UPC should not blank out one receiving observed, and a
+  // spread of the whole record would do exactly that.
+  return Object.fromEntries(
+    Object.entries(source).filter(([, value]) => !(value === null || value === undefined || value === '')),
+  );
+}
+
+function observedIdentityForRecord(record = {}) {
+  const observed = String(record.skuId || record.observedIdentifier || '').trim();
+  if (!observed) return {};
+  return { upc: observed, primaryMatchKey: observed, identifier: observed };
+}
+
 function productDataSourceForPlanningItem(item = {}, draft = {}, stagedProduct = null) {
   const record = item.record || {};
   const linked = record.linkedItem || {};
-  if (linked.id) return { ...linked, ...draft };
+  // A matched Product wins on anything it states, but a UPC read off the box at
+  // receiving is still the UPC. Without this the number someone typed into the
+  // shipment vanished the moment the row was matched to a Product that had none.
+  const observed = observedIdentityForRecord(record);
+  if (linked.id) return { ...observed, ...definedOnly(linked), ...draft };
   // A match picked but not yet saved carries the same shape a linked one does, so
   // the Product data reads from it. Otherwise the step asks for values the chosen
   // Product already holds, and the UPC on screen is reported as missing.
-  if (stagedProduct?.id) return { ...stagedProduct, ...draft };
+  if (stagedProduct?.id) return { ...observed, ...definedOnly(stagedProduct), ...draft };
   const manual = manualProductInfoForItem(item);
   return {
     name: manual.name || manual.productName || manual.product || record.productName || '',
@@ -8843,7 +8861,7 @@ function PhotoProductionFieldsEditor({ item, production, onDraftChange, stagedPr
   // never teaches it.
   const inheritedIdentityFields = fields.filter(field => (
     ['productName', 'upc'].includes(field)
-    && photoProductionValuePresent(field, photoProductionProductValue(productDataSource, field))
+    && photoProductionValuePresent(field, photoProductionProductValue(stagedProduct?.id ? stagedProduct : product, field))
   ));
   const inheritedIdentityFieldSet = new Set(inheritedIdentityFields);
   const editableFields = fields.filter(field => !inheritedIdentityFieldSet.has(field));
