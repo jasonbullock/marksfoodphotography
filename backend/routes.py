@@ -9253,6 +9253,55 @@ def creative_force_product_code(marks_id, workstream_type):
     return f"{code}-{suffix}" if suffix else code
 
 
+def _shape_printer(record):
+    fields = record.get("fields", {})
+    try:
+        port = int(fields.get(C.F_PRINTER_PORT) or 9100)
+    except (TypeError, ValueError):
+        port = 9100
+    return {
+        "id": record.get("id", ""),
+        "name": fields.get(C.F_PRINTER_NAME, "") or "Unnamed printer",
+        "host": str(fields.get(C.F_PRINTER_HOST, "") or "").strip(),
+        "port": port,
+        "active": bool(fields.get(C.F_PRINTER_ACTIVE, False)),
+        "isDefault": bool(fields.get(C.F_PRINTER_DEFAULT, False)),
+        "notes": fields.get(C.F_PRINTER_NOTES, "") or "",
+    }
+
+
+def _active_printers():
+    """Printers the studio can actually print to, default first."""
+    printers = [_shape_printer(record) for record in _list_all_records(C.PRINTERS_TABLE)]
+    usable = [printer for printer in printers if printer["active"] and printer["host"]]
+    usable.sort(key=lambda printer: (not printer["isDefault"], printer["name"].lower()))
+    return usable
+
+
+def _printer_for_user(user_record=None, requested_id=""):
+    """The printer this print should go to.
+
+    Chosen printer, then the person's remembered one, then the default. A studio
+    with printers on two floors should not make anyone think about this twice.
+    """
+    printers = _active_printers()
+    if not printers:
+        return None
+    by_id = {printer["id"]: printer for printer in printers}
+    remembered = ""
+    if user_record:
+        remembered = str((user_record.get("fields", {}) or {}).get(C.F_USER_PRINTER_ID, "") or "").strip()
+    for candidate in (str(requested_id or "").strip(), remembered):
+        if candidate and candidate in by_id:
+            return by_id[candidate]
+    return printers[0]
+
+
+@api.get("/printers")
+def list_printers():
+    return jsonify({"records": _active_printers()})
+
+
 def _matched_product_summary(product_record, *, clients_by_id=None):
     if not product_record:
         return None

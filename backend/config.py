@@ -106,6 +106,18 @@ class Config:
     RECEIPTS_TABLE = SHIPMENTS_TABLE
     RECEIVING_TABLE = SHIPMENTS_TABLE
     RECEIPT_ENTRIES_TABLE = MERCHANDISE_TABLE
+    # Label printers on the studio network. Their IPs move, so they live in the
+    # base where anyone can correct one without a deploy.
+    PRINTERS_TABLE = os.getenv("AIRTABLE_PRINTERS_TABLE", "Printers")
+    F_PRINTER_NAME = "Printer"
+    F_PRINTER_HOST = "Host"
+    F_PRINTER_PORT = "Port"
+    F_PRINTER_ACTIVE = "Active"
+    F_PRINTER_DEFAULT = "Default"
+    F_PRINTER_NOTES = "Notes"
+    # Which printer this person last chose. Stored on the user so the receiver at
+    # the dock and a PM upstairs are not fighting over one default.
+    F_USER_PRINTER_ID = "Printer Id"
     LOCATIONS_TABLE = "Locations"
     USERS_TABLE = "Users"
     ISSUES_TABLE = "Issues"
