@@ -9340,11 +9340,21 @@ def _merchandise_tag(entry, receipt=None, product_record=None):
 
     marks_id = marks_id_from_number(fields.get(C.F_RECEIPT_ENTRY_MARKS_NUMBER))
     quantity = fields.get(C.F_RECEIPT_ENTRY_QUANTITY)
+    # The matched Product's UPC, falling back to what was read off the box.
+    upc = (
+        product_fields.get(C.F_ITEM_UPC)
+        or product_fields.get(C.F_ITEM_IDENTIFIER)
+        or fields.get(C.F_RECEIPT_ENTRY_SKU_ID)
+        or ""
+    )
+    received_raw = receipt_fields.get(C.F_RECEIPT_RECEIVED) or ""
     return {
         "client": client_name,
         "productName": name,
         "marksId": marks_id,
+        "upc": str(upc or "").strip(),
         "storage": storage,
+        "received": notifier._studio_time(received_raw),
         "arrival": arrival,
         "quantity": f"Qty {quantity}" if quantity else "",
         "qrUrl": f"{C.APP_BASE_URL}/planning?item={entry.get('id', '')}" if C.APP_BASE_URL else "",

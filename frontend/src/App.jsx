@@ -11044,7 +11044,18 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
         <header className="new-review-modal-header">
           <div className="new-review-modal-heading">
             <span className="nr-eyebrow">{item.client}</span>
-            <h2>{item.title}</h2>
+            <div className="new-review-title-row">
+              <h2>{item.title}</h2>
+              <button
+                type="button"
+                className="btn new-review-tag-btn"
+                onClick={printTagForItem}
+                disabled={tagPrinting}
+              >
+                {tagPrinting ? 'Printing…' : 'Print tag'}
+              </button>
+              {tagNotice && <span className="new-review-tag-notice">{tagNotice}</span>}
+            </div>
             {alreadyReleased && (
               <p className="new-review-released-note">
                 <span className="new-review-released-mark">Released{releasedOnLabel ? ` ${releasedOnLabel}` : ''}</span>
@@ -11235,15 +11246,6 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
         <footer className="new-review-modal-footer">
           <div className="new-review-footer-left">
             <span className="new-review-received-date">Received {receivedDateLabel}</span>
-            <button
-              type="button"
-              className="btn new-review-tag-btn"
-              onClick={printTagForItem}
-              disabled={tagPrinting}
-            >
-              {tagPrinting ? 'Printing…' : 'Print tag'}
-            </button>
-            {tagNotice && <span className="new-review-tag-notice">{tagNotice}</span>}
             {isWorkstreamCard && onRemove && (
               <button
                 type="button"

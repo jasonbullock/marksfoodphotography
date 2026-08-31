@@ -16,6 +16,8 @@ def tag(**overrides):
         "storage": "Rack B - Shelf 3",
         "arrival": "Aug 31 - FedEx ...666",
         "quantity": "Qty 7",
+        "upc": "011225017728",
+        "received": "Aug 31, 3:16 PM CDT",
         "qrUrl": "https://food.walnutcontent.com/planning?item=recABC",
     }
     base.update(overrides)
@@ -55,7 +57,7 @@ class TagLayoutTests(unittest.TestCase):
         self.assertNotIn("^BQN", tag(qrUrl="javascript:alert(1)"))
 
     def test_empty_lines_do_not_leave_gaps(self):
-        zpl = tag(storage="", arrival="", quantity="")
+        zpl = tag(storage="", arrival="", quantity="", received="")
         self.assertEqual(zpl.count("^A0N,30,30"), 0)
 
     def test_an_unmatched_item_still_says_something(self):
@@ -83,3 +85,22 @@ class PrinterTests(unittest.TestCase):
     def test_no_host_is_reported_not_attempted(self):
         with self.assertRaises(tag_print.TagPrintError):
             tag_print.send_zpl("^XA^XZ", "")
+
+
+class TagContentTests(unittest.TestCase):
+    def test_the_upc_sits_under_the_code(self):
+        # The number a client asks about, and often the only one on the box itself.
+        zpl = tag(upc="011225017728")
+        self.assertIn("011225017728", zpl)
+
+    def test_the_received_date_is_on_the_tag(self):
+        self.assertIn("Aug 31, 3:16 PM CDT", tag(received="Aug 31, 3:16 PM CDT"))
+
+    def test_the_marks_code_is_no_longer_shouting(self):
+        # It was 66pt, larger than the client name needed to be.
+        zpl = tag()
+        self.assertIn("^A0N,46,46^FDMP-00005", zpl)
+        self.assertNotIn("^A0N,66,66", zpl)
+
+    def test_a_missing_upc_leaves_no_gap(self):
+        self.assertNotIn("^A0N,32,32", tag(upc=""))

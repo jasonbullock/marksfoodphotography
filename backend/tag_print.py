@@ -54,6 +54,8 @@ def build_merchandise_tag_zpl(tag):
     code = clean(tag.get("marksId"), 20)
     storage = clean(tag.get("storage"), 40)
     arrival = clean(tag.get("arrival"), 40)
+    received = clean(tag.get("received"), 40)
+    upc = clean(tag.get("upc"), 24)
     quantity = clean(tag.get("quantity"), 12)
     qr_url = _http_url(tag.get("qrUrl"))
 
@@ -84,14 +86,18 @@ def build_merchandise_tag_zpl(tag):
             f"^BQN,2,{QR_MAGNIFICATION}^FDLA,{clean(qr_url, 512)}^FS"
         )
 
-    lines.extend([
-        f"^FO{MARGIN},{QR_TOP + (QR_MODULES * QR_MAGNIFICATION) + 30}"
-        f"^FB{CONTENT_WIDTH},1,0,C^A0N,66,66^FD{code}^FS",
-        f"^FO{MARGIN},{BARCODE_TOP}^BY3,2,{BARCODE_HEIGHT}^BCN,{BARCODE_HEIGHT},N,N,N^FD{code}^FS",
-    ])
+    code_top = QR_TOP + (QR_MODULES * QR_MAGNIFICATION) + 26
+    lines.append(f"^FO{MARGIN},{code_top}^FB{CONTENT_WIDTH},1,0,C^A0N,46,46^FD{code}^FS")
+    # The UPC sits under the code because that is the number a client asks about,
+    # and it is often the only thing written on the box itself.
+    if upc:
+        lines.append(f"^FO{MARGIN},{code_top + 54}^FB{CONTENT_WIDTH},1,0,C^A0N,32,32^FD{upc}^FS")
+    lines.append(
+        f"^FO{MARGIN},{BARCODE_TOP}^BY3,2,{BARCODE_HEIGHT}^BCN,{BARCODE_HEIGHT},N,N,N^FD{code}^FS"
+    )
 
     y = BARCODE_TOP + BARCODE_HEIGHT + 40
-    for line in [storage, arrival, quantity]:
+    for line in [storage, received, arrival, quantity]:
         if not line:
             continue
         lines.append(f"^FO{MARGIN},{y}^FB{CONTENT_WIDTH},1,0,L^A0N,30,30^FD{line}^FS")
