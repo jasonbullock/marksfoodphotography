@@ -96,6 +96,21 @@ class TagContentTests(unittest.TestCase):
     def test_the_received_date_is_on_the_tag(self):
         self.assertIn("Aug 31, 3:16 PM CDT", tag(received="Aug 31, 3:16 PM CDT"))
 
+    def test_nothing_overlaps_down_the_label(self):
+        # The QR grows with its data, so every position below it is measured from
+        # a reserved block rather than from the code's assumed size.
+        qr_bottom = tag_print.QR_TOP + tag_print.QR_RESERVED
+        self.assertLess(qr_bottom, tag_print.CODE_TOP)
+        self.assertLess(tag_print.CODE_TOP + 46, tag_print.UPC_TOP)
+        self.assertLess(tag_print.UPC_TOP + 32, tag_print.BARCODE_TOP)
+        self.assertLess(
+            tag_print.BARCODE_TOP + tag_print.BARCODE_HEIGHT, tag_print.FOOTER_TOP
+        )
+
+    def test_the_symbols_stay_apart(self):
+        gap = tag_print.BARCODE_TOP - (tag_print.QR_TOP + tag_print.QR_RESERVED)
+        self.assertGreater(gap / 203, 0.75)
+
     def test_the_marks_code_is_no_longer_shouting(self):
         # It was 66pt, larger than the client name needed to be.
         zpl = tag()

@@ -17,18 +17,24 @@ LABEL_HEIGHT_DOTS = 1015
 MARGIN = 24
 CONTENT_WIDTH = LABEL_WIDTH_DOTS - (MARGIN * 2)
 
-# Each QR module is this many dots. 7 still reads from arm's length and leaves
+# Each QR module is this many dots. 6 still reads from arm's length and leaves
 # real space between the two symbols - at 9 they sat close enough that a scanner
 # aimed at one could pick up the other.
-QR_MAGNIFICATION = 7
-QR_MODULES = 33
-QR_TOP = 270
+QR_MAGNIFICATION = 6
+# A planning link is version 4 today, but a longer record id or a longer host
+# pushes it higher, and the printer simply draws a bigger code. Space is reserved
+# for version 6 so the layout below cannot be overrun by data that grew.
+QR_MODULES_RESERVED = 41
+QR_TOP = 262
 # Roughly an inch of clear label between the QR and the barcode, which is what
 # stops a handheld scanner reading the wrong one.
+QR_RESERVED = QR_MODULES_RESERVED * QR_MAGNIFICATION
+CODE_TOP = QR_TOP + QR_RESERVED + 20
+UPC_TOP = CODE_TOP + 54
 BARCODE_TOP = 690
 BARCODE_HEIGHT = 90
-FOOTER_TOP = 790
-FOOTER_LINE_HEIGHT = 32
+FOOTER_TOP = 800
+FOOTER_LINE_HEIGHT = 30
 FOOTER_TEXT = 28
 # A hand-written line at the foot. Fixed, so it is always in the same place on
 # every tag whether or not the details above it are complete.
@@ -86,18 +92,18 @@ def build_merchandise_tag_zpl(tag):
     if qr_url:
         # Centred by measuring the code rather than guessing: a QR carrying a
         # planning link is 33 modules square at this error level.
-        qr_dots = QR_MODULES * QR_MAGNIFICATION
+        # Centred on the reserved block rather than on the code's actual size,
+        # which is not known until the printer renders it.
         lines.append(
-            f"^FO{max(MARGIN, (LABEL_WIDTH_DOTS - qr_dots) // 2)},{QR_TOP}"
+            f"^FO{max(MARGIN, (LABEL_WIDTH_DOTS - QR_RESERVED) // 2)},{QR_TOP}"
             f"^BQN,2,{QR_MAGNIFICATION}^FDLA,{clean(qr_url, 512)}^FS"
         )
 
-    code_top = QR_TOP + (QR_MODULES * QR_MAGNIFICATION) + 26
-    lines.append(f"^FO{MARGIN},{code_top}^FB{CONTENT_WIDTH},1,0,C^A0N,46,46^FD{code}^FS")
+    lines.append(f"^FO{MARGIN},{CODE_TOP}^FB{CONTENT_WIDTH},1,0,C^A0N,46,46^FD{code}^FS")
     # The UPC sits under the code because that is the number a client asks about,
     # and it is often the only thing written on the box itself.
     if upc:
-        lines.append(f"^FO{MARGIN},{code_top + 54}^FB{CONTENT_WIDTH},1,0,C^A0N,32,32^FD{upc}^FS")
+        lines.append(f"^FO{MARGIN},{UPC_TOP}^FB{CONTENT_WIDTH},1,0,C^A0N,32,32^FD{upc}^FS")
     lines.append(
         f"^FO{MARGIN},{BARCODE_TOP}^BY3,2,{BARCODE_HEIGHT}^BCN,{BARCODE_HEIGHT},N,N,N^FD{code}^FS"
     )
