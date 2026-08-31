@@ -692,7 +692,9 @@ class ReceivingTests(unittest.TestCase):
         self.assertEqual(png["stored_filename"], "Unknown-2026-07-12-16-11-1.png")
         self.assertEqual(webp["mime_type"], "image/webp")
         self.assertEqual(webp["stored_filename"], "Unknown-2026-07-12-16-11-2.webp")
-        self.assertEqual(s3.put_object.call_count, 2)
+        # Two originals, and a small reference copy stored beside each.
+        self.assertEqual(s3.put_object.call_count, 4)
+        self.assertEqual(png["thumbnail_key"], "receiving/Unknown-2026-07-12-16-11/Unknown-2026-07-12-16-11-1-display.jpg")
 
     def test_receiving_photo_storage_converts_heic_to_jpeg(self):
         s3 = mock_s3_client()
@@ -739,7 +741,8 @@ class ReceivingTests(unittest.TestCase):
         )
 
         self.assertEqual(photo["object_key"], "receiving/Kroger-2026-07-12-16-11/Kroger-2026-07-12-16-11-1.jpg")
-        self.assertEqual(s3.put_object.call_count, 2)
+        # The rejected attempt, the retry, then the small reference copy.
+        self.assertEqual(s3.put_object.call_count, 3)
         self.assertIn("IfNoneMatch", s3.put_object.call_args_list[0].kwargs)
         self.assertNotIn("IfNoneMatch", s3.put_object.call_args_list[1].kwargs)
 
@@ -758,7 +761,8 @@ class ReceivingTests(unittest.TestCase):
         )
 
         self.assertEqual(photo["object_key"], "receiving/Kroger-2026-07-12-16-11/Kroger-2026-07-12-16-11-1.jpg")
-        self.assertEqual(s3.put_object.call_count, 2)
+        # The rejected attempt, the retry, then the small reference copy.
+        self.assertEqual(s3.put_object.call_count, 3)
         self.assertIn("IfNoneMatch", s3.put_object.call_args_list[0].kwargs)
         self.assertNotIn("IfNoneMatch", s3.put_object.call_args_list[1].kwargs)
 
@@ -1299,3 +1303,49 @@ class ReceivingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DisplayDerivativeTests(unittest.TestCase):
+    def test_the_small_copy_is_a_fraction_of_the_original(self):
+        # The originals are nine megapixels; a chat card and a product feed should
+        # not be pulling five megabytes to show what a box looks like.
+        from PIL import Image
+        from io import BytesIO
+
+        from receiving_photo_storage import build_display_derivative
+
+        big = BytesIO()
+        Image.new("RGB", (2526, 3508), (120, 90, 60)).save(big, format="JPEG", quality=95)
+        original = big.getvalue()
+
+        small = build_display_derivative(original)
+        self.assertIsNotNone(small)
+        self.assertLess(len(small), len(original) / 5)
+        self.assertLessEqual(max(Image.open(BytesIO(small)).size), 900)
+
+    def test_a_derivative_that_cannot_be_made_is_not_fatal(self):
+        # It is a convenience. Losing it must never lose the photo.
+        from receiving_photo_storage import build_display_derivative
+
+        self.assertIsNone(build_display_derivative(b"not an image"))
+
+    def test_the_small_copy_sits_beside_the_original(self):
+        from receiving_photo_storage import display_object_key
+
+        self.assertEqual(
+            display_object_key("receiving/Topco-2026-08-31/Topco-2026-08-31-2.jpg"),
+            "receiving/Topco-2026-08-31/Topco-2026-08-31-2-display.jpg",
+        )
+
+    def test_exif_is_dropped_from_the_derivative(self):
+        # Phone photos carry GPS and device details that have no business in a
+        # chat card or a vendor's product feed.
+        from PIL import Image
+        from io import BytesIO
+
+        from receiving_photo_storage import build_display_derivative
+
+        buffer = BytesIO()
+        Image.new("RGB", (1200, 900), (10, 20, 30)).save(buffer, format="JPEG")
+        small = build_display_derivative(buffer.getvalue())
+        self.assertFalse(Image.open(BytesIO(small)).getexif())

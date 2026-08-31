@@ -1951,3 +1951,20 @@ after receiving, and a tag that waits for a location is a tag nobody prints.
 The first printed label had the QR too large and too close to the barcode for a handheld to
 be sure which it was reading. The QR is now 231 dots square with 0.93 inches of clear label
 between the two symbols.
+
+## 2026-08-31 - A Small Copy Of Every Receiving Photo
+
+Receiving photos are phone originals: nine megapixels, five megabytes. Everywhere they
+were being used for reference - a Teams arrival card, the Creative Force product feed -
+was pulling the full file to show what a box looks like.
+
+Every upload now stores a second object beside the original, 900px on the long edge at
+quality 70, around 77KB - sixty-six times smaller. Anything that only looks at a photo uses
+it; the planning modal and the lightbox keep the original.
+
+EXIF is dropped from the derivative. Phone photos carry GPS and device details, and a chat
+card or a vendor's feed is no place for them.
+
+Making it is best-effort. If Pillow cannot read the file, or the second upload fails, the
+photo is still stored and the original is used - a convenience must never cost the photo.
+Photos taken before this keep working through the same fallback.

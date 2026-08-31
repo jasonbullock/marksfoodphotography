@@ -5670,12 +5670,22 @@ def _workstream_card_context(record):
     return entry, product_record, clients.get(client_id), None
 
 
+def _reference_photo_url(photo):
+    """The small copy if it exists, the original if this photo predates them."""
+    return str(
+        (photo or {}).get("thumbnail_url")
+        or (photo or {}).get("url")
+        or (photo or {}).get("public_url")
+        or ""
+    ).strip()
+
+
 def _first_merchandise_photo_url(entry):
     """The receiving photo, if there is one and storage is configured."""
     if not entry:
         return ""
     for photo in _item_photo_metadata_from_entry(entry.get("fields", {})):
-        url = str(photo.get("url") or photo.get("public_url") or "").strip()
+        url = _reference_photo_url(photo)
         if url:
             return url
     return ""
@@ -8810,7 +8820,8 @@ def _notify_shipment_arrival(receipt, shaped_entries):
         label = f"{quantity} x {name}" + (f" - {identifier}" if identifier else "")
         items.append((label, entry.get("id", "")))
         for photo in entry.get("photos") or entry.get("itemPhotos") or []:
-            url = str((photo or {}).get("url") or (photo or {}).get("public_url") or "").strip()
+            # The small copy: a chat card should not pull five megabytes a photo.
+            url = _reference_photo_url(photo)
             if url and url not in image_urls:
                 image_urls.append(url)
 
@@ -9808,12 +9819,16 @@ def _canonical_photo_manifest(items, include_urls=False):
             entry["uploaded_at"] = str(uploaded_at)
         if include_urls:
             try:
-                display_url = _photo_storage().public_url(object_key)
+                storage = _photo_storage()
+                display_url = storage.public_url(object_key)
+                thumbnail_url = storage.public_url(thumbnail_key) if thumbnail_key else ""
             except ReceivingPhotoStorageError:
-                display_url = ""
+                display_url = thumbnail_url = ""
             if display_url:
                 entry["url"] = display_url
                 entry["public_url"] = display_url
+            if thumbnail_url:
+                entry["thumbnail_url"] = thumbnail_url
         manifest.append(entry)
     manifest.sort(key=lambda photo: photo.get("sort_order") or 0)
     return manifest

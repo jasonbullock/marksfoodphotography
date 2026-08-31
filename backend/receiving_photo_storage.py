@@ -103,6 +103,41 @@ def _convert_heic_to_jpeg(data):
         raise ReceivingPhotoValidationError("Malformed HEIC/HEIF image file.") from exc
 
 
+# A reference image, not the shot. Big enough to tell one salsa from another on a
+# phone or in a chat card, small enough that fetching it costs nothing - the
+# originals are 9 megapixels and five megabytes each.
+DISPLAY_MAX_EDGE = 900
+DISPLAY_QUALITY = 70
+
+
+def build_display_derivative(data):
+    """A small JPEG of the same photo. Returns None if it cannot be made."""
+    from io import BytesIO
+
+    from PIL import Image, ImageOps
+
+    try:
+        with Image.open(BytesIO(data)) as image:
+            # Phones record orientation in EXIF rather than rotating the pixels.
+            image = ImageOps.exif_transpose(image)
+            if image.mode not in ("RGB", "L"):
+                image = image.convert("RGB")
+            image.thumbnail((DISPLAY_MAX_EDGE, DISPLAY_MAX_EDGE), Image.LANCZOS)
+            buffer = BytesIO()
+            # No EXIF on the derivative: it carries GPS and device details that
+            # have no business in a chat card or a vendor's product feed.
+            image.save(buffer, format="JPEG", quality=DISPLAY_QUALITY, optimize=True)
+            return buffer.getvalue()
+    except Exception:
+        # A derivative is a convenience. Losing it must never lose the photo.
+        return None
+
+
+def display_object_key(object_key):
+    base = object_key.rsplit(".", 1)[0]
+    return f"{base}-display.jpg"
+
+
 def _conditional_put_unsupported(error):
     error_type = type(error).__name__
     if error_type == "ParamValidationError" and "IfNoneMatch" in str(error):
@@ -197,7 +232,7 @@ class ReceivingPhotoStorage:
                 continue
             except Exception as exc:
                 raise ReceivingPhotoStorageError("Photo could not be uploaded.") from exc
-            return {
+            uploaded = {
                 "object_key": object_key,
                 "public_url": self.public_url(object_key),
                 "url": self.public_url(object_key),
@@ -208,6 +243,18 @@ class ReceivingPhotoStorage:
                 "size_bytes": len(data),
                 "uploaded_at": uploaded_at,
             }
+            derivative = build_display_derivative(data)
+            if derivative:
+                thumbnail_key = display_object_key(object_key)
+                try:
+                    self._put_object(thumbnail_key, derivative, "image/jpeg", metadata)
+                except Exception:
+                    pass  # The photo is stored; the small copy is a convenience.
+                else:
+                    uploaded["thumbnail_key"] = thumbnail_key
+                    uploaded["thumbnail_url"] = self.public_url(thumbnail_key)
+                    uploaded["thumbnail_size_bytes"] = len(derivative)
+            return uploaded
         raise ReceivingPhotoStorageError("Photo could not be uploaded without overwriting an existing object.")
 
     def upload_shipment_photo(self, file_storage, shipment_id, *, photo_id=None, sort_order=1, uploaded_by=""):
