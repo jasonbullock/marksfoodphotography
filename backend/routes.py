@@ -5914,6 +5914,18 @@ def _sync_creative_force_product_feed_cards(cards):
     for source_key in order:
         feed_fields = merged[source_key]
         if source_key in existing_by_key:
+            # The two workstreams are usually released one at a time, so the merge
+            # has to hold across requests as well as within one. Without this the
+            # second release overwrote the first and the row named only the
+            # workstream that happened to go last.
+            current = existing_by_key[source_key].get("fields", {})
+            for key in list(feed_fields):
+                if not feed_fields[key] and current.get(key):
+                    feed_fields[key] = current[key]
+            feed_fields[C.F_CF_FEED_PRODUCTION_TYPE] = _merged_production_type(
+                current.get(C.F_CF_FEED_PRODUCTION_TYPE, ""),
+                feed_fields.get(C.F_CF_FEED_PRODUCTION_TYPE, ""),
+            )
             saved = airtable.update_record(
                 C.CREATIVE_FORCE_PRODUCT_FEED_TABLE,
                 existing_by_key[source_key]["id"],

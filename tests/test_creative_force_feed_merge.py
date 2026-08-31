@@ -118,6 +118,35 @@ class FeedRowPerBoxTests(unittest.TestCase):
         self.assertEqual(self.created, [])
         self.assertEqual(self.updated[0][0], "recFeedRow")
 
+    def test_the_later_release_adds_its_type_rather_than_replacing_the_first(self):
+        # The two workstreams are released one at a time, so the merge has to hold
+        # across requests. It did not, and the row named only whichever went last.
+        existing = [{"id": "recFeedRow", "fields": {
+            C.F_CF_FEED_SOURCE_KEY: "recMerch",
+            C.F_CF_FEED_PRODUCTION_TYPE: "Ecomm",
+        }}]
+        self.sync([card("recPack", "Packaging", "recMerch")], existing=existing)
+        self.assertEqual(self.updated[0][1][C.F_CF_FEED_PRODUCTION_TYPE], "Ecomm, Packaging")
+
+    def test_the_later_release_does_not_blank_what_the_first_supplied(self):
+        # Ecomm supplied the CVID. Releasing Packaging must not clear it.
+        existing = [{"id": "recFeedRow", "fields": {
+            C.F_CF_FEED_SOURCE_KEY: "recMerch",
+            C.F_CF_FEED_PRODUCTION_TYPE: "Ecomm",
+            "CVID": "23452345",
+        }}]
+        handoff = {"recPack": {"productionType": "Packaging", "extra": {"CVID": ""}}}
+        self.sync([card("recPack", "Packaging", "recMerch")], existing=existing, handoff=handoff)
+        self.assertEqual(self.updated[0][1]["CVID"], "23452345")
+
+    def test_re_releasing_the_same_workstream_does_not_repeat_it(self):
+        existing = [{"id": "recFeedRow", "fields": {
+            C.F_CF_FEED_SOURCE_KEY: "recMerch",
+            C.F_CF_FEED_PRODUCTION_TYPE: "Ecomm, Packaging",
+        }}]
+        self.sync([card("recPack", "Packaging", "recMerch")], existing=existing)
+        self.assertEqual(self.updated[0][1][C.F_CF_FEED_PRODUCTION_TYPE], "Ecomm, Packaging")
+
     def test_an_already_released_card_still_contributes_its_production_type(self):
         # Otherwise releasing Packaging after Ecomm would rewrite the row as
         # packaging-only and drop Ecomm from Category Group.
