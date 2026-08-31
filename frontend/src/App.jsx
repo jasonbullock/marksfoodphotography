@@ -5761,9 +5761,6 @@ function PrintersPanel() {
     <div className="panel">
       <div className="panel-head">
         <span className="panel-title">Printers</span>
-        <span className="panel-sub">
-          Addresses move. Correcting one here takes effect on the next tag, with nothing to redeploy.
-        </span>
       </div>
       {message && <div className="notice-state">{message}</div>}
       <div className="printer-rows">
