@@ -17,9 +17,15 @@ LABEL_HEIGHT_DOTS = 1015
 MARGIN = 24
 CONTENT_WIDTH = LABEL_WIDTH_DOTS - (MARGIN * 2)
 
-# Each QR module is this many dots. A planning link is short enough to stay a
-# small version, so 9 gives a code that scans from arm's length off a shelf.
-QR_MAGNIFICATION = 9
+# Each QR module is this many dots. 7 still reads from arm's length and leaves
+# real space between the two symbols - at 9 they sat close enough that a scanner
+# aimed at one could pick up the other.
+QR_MAGNIFICATION = 7
+QR_MODULES = 33
+QR_TOP = 270
+# Roughly an inch of clear label between the QR and the barcode, which is what
+# stops a handheld scanner reading the wrong one.
+BARCODE_TOP = 690
 BARCODE_HEIGHT = 90
 
 
@@ -72,18 +78,19 @@ def build_merchandise_tag_zpl(tag):
     if qr_url:
         # Centred by measuring the code rather than guessing: a QR carrying a
         # planning link is 33 modules square at this error level.
-        qr_dots = 33 * QR_MAGNIFICATION
+        qr_dots = QR_MODULES * QR_MAGNIFICATION
         lines.append(
-            f"^FO{max(MARGIN, (LABEL_WIDTH_DOTS - qr_dots) // 2)},300"
+            f"^FO{max(MARGIN, (LABEL_WIDTH_DOTS - qr_dots) // 2)},{QR_TOP}"
             f"^BQN,2,{QR_MAGNIFICATION}^FDLA,{clean(qr_url, 512)}^FS"
         )
 
     lines.extend([
-        f"^FO{MARGIN},640^FB{CONTENT_WIDTH},1,0,C^A0N,66,66^FD{code}^FS",
-        f"^FO{MARGIN},720^BY3,2,{BARCODE_HEIGHT}^BCN,{BARCODE_HEIGHT},N,N,N^FD{code}^FS",
+        f"^FO{MARGIN},{QR_TOP + (QR_MODULES * QR_MAGNIFICATION) + 30}"
+        f"^FB{CONTENT_WIDTH},1,0,C^A0N,66,66^FD{code}^FS",
+        f"^FO{MARGIN},{BARCODE_TOP}^BY3,2,{BARCODE_HEIGHT}^BCN,{BARCODE_HEIGHT},N,N,N^FD{code}^FS",
     ])
 
-    y = 840
+    y = BARCODE_TOP + BARCODE_HEIGHT + 40
     for line in [storage, arrival, quantity]:
         if not line:
             continue

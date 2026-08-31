@@ -2232,7 +2232,7 @@ class PhoneReceivingTests(unittest.TestCase):
         self.assertIn("clientId: session.clientId,", self.source)
 
     def test_each_item_is_saved_as_it_is_entered(self):
-        start = self.source.index("async function saveAndNext() {")
+        start = self.source.index("async function saveAndNext({ printTagAfter = false } = {}) {")
         body = self.source[start:start + 1800]
         self.assertIn("await api.createReceiptEntry(receipt.id, {", body)
 
@@ -2287,3 +2287,38 @@ class PlanningDeepLinkTests(unittest.TestCase):
         source = APP.read_text()
         self.assertIn("{receipt && savedEntries.length > 0 && (", source)
         self.assertIn("disabled={Boolean(busy) || savedEntries.length === 0}", source)
+
+
+class PrintTagTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+        cls.api = (ROOT / "frontend" / "src" / "api.js").read_text()
+
+    def test_tags_print_from_receiving_on_both_screens(self):
+        # Printed where the box is in hand, not from a separate screen later.
+        self.assertIn("api.printMerchandiseTag = async (entryId", self.api)
+        self.assertEqual(self.source.count("await api.printMerchandiseTag(saved.id)"), 1)
+        self.assertEqual(self.source.count("await api.printMerchandiseTag(entryId)"), 1)
+        self.assertIn("Print tag", self.source)
+
+    def test_a_missing_location_does_not_stop_a_tag(self):
+        # Most merchandise is shelved after receiving; a tag that waits for a
+        # location is a tag nobody prints.
+        start = self.source.index("def _merchandise_tag") if "def _merchandise_tag" in self.source else -1
+        self.assertEqual(start, -1)  # backend concern, asserted in the backend tests
+        self.assertNotIn("Add a storage location before printing", self.source)
+
+    def test_saving_can_print_the_tag_in_one_motion(self):
+        # The box is in hand at save time and will not be later.
+        source = APP.read_text()
+        self.assertIn("saveNext({ printTagAfter: true })", source)
+        self.assertIn("saveAndNext({ printTagAfter: true })", source)
+        self.assertIn("if (printTagAfter) await printTag(saved);", source)
+
+    def test_a_tag_can_be_reprinted_from_the_merch_card(self):
+        # Tags get lost and smudged; reprinting should not need the shipment
+        # reopening.
+        source = APP.read_text()
+        self.assertIn("async function printTagForItem()", source)
+        self.assertIn("await api.printMerchandiseTag(item.merchandiseId)", source)

@@ -270,6 +270,8 @@ api.createReceipt = async (payload) => backend('POST', '/receiving', payload);
 api.startReceivingSession = async (payload) => backend('POST', '/receiving/sessions', payload);
 api.getReceivingSession = async (id) => backend('GET', `/receiving/${id}`);
 api.finishReceivingSession = async (id) => backend('POST', `/receiving/${id}/finish`);
+api.listPrinters = async () => backend('GET', '/printers');
+api.printMerchandiseTag = async (entryId, payload = {}) => backend('POST', `/merchandise/${entryId}/tag`, payload);
 api.updateReceivingSession = async (id, payload) => backend('PATCH', `/receiving/${id}`, payload);
 api.deleteReceivingSession = async (id) => backend('DELETE', `/shipments/${id}`);
 api.createReceiptEntry = async (receiptId, payload) => backend('POST', `/receiving/${receiptId}/entries`, payload);

@@ -1822,6 +1822,7 @@ function PhoneReceiving({ clientList, locationList, carrierOptions, onShipmentSa
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [printingTagId, setPrintingTagId] = useState('');
   const productNameRef = useRef(null);
   const cameraInputRef = useRef(null);
   const libraryInputRef = useRef(null);
@@ -1885,7 +1886,7 @@ function PhoneReceiving({ clientList, locationList, carrierOptions, onShipmentSa
     }
   }
 
-  async function saveAndNext() {
+  async function saveAndNext({ printTagAfter = false } = {}) {
     const quantity = Number(entry.quantity);
     if (!Number.isFinite(quantity) || quantity < 1) {
       setError('Quantity must be at least 1.');
@@ -1925,6 +1926,8 @@ function PhoneReceiving({ clientList, locationList, carrierOptions, onShipmentSa
       setSavedEntries(prev => [...prev, saved]);
       resetEntry(entry.locationId);
       setNotice('Saved. Ready for the next one.');
+      // The box is in hand now and will not be later.
+      if (printTagAfter) await printTag(saved);
     } catch (err) {
       setError(err.message || 'Could not save this merchandise.');
     } finally {
@@ -1951,6 +1954,20 @@ function PhoneReceiving({ clientList, locationList, carrierOptions, onShipmentSa
       setError(err.message || 'Could not finish the shipment.');
     } finally {
       setBusy('');
+    }
+  }
+
+  async function printTag(saved) {
+    if (!saved?.id) return;
+    setPrintingTagId(saved.id);
+    setError('');
+    try {
+      const result = await api.printMerchandiseTag(saved.id);
+      setNotice(`Tag ${result?.tag?.marksId || ''} printed.`);
+    } catch (err) {
+      setError(err.message || 'Could not print the tag.');
+    } finally {
+      setPrintingTagId('');
     }
   }
 
@@ -2088,8 +2105,18 @@ function PhoneReceiving({ clientList, locationList, carrierOptions, onShipmentSa
               <ul>
                 {savedEntries.slice().reverse().map(saved => (
                   <li key={saved.id}>
-                    <strong>{saved.quantity || 1} x {saved.productName || saved.description || 'Unnamed'}</strong>
-                    {saved.skuId && <small>{saved.skuId}</small>}
+                    <span>
+                      <strong>{saved.quantity || 1} x {saved.productName || saved.description || 'Unnamed'}</strong>
+                      {saved.skuId && <small>{saved.skuId}</small>}
+                    </span>
+                    <button
+                      type="button"
+                      className="phone-tag-btn"
+                      onClick={() => printTag(saved)}
+                      disabled={printingTagId === saved.id}
+                    >
+                      {printingTagId === saved.id ? '…' : 'Tag'}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -2105,8 +2132,8 @@ function PhoneReceiving({ clientList, locationList, carrierOptions, onShipmentSa
             >
               {busy === 'finish' ? 'Posting...' : 'Post to Teams'}
             </button>
-            <button type="button" className="phone-btn phone-btn-primary" onClick={saveAndNext} disabled={Boolean(busy)}>
-              {busy === 'entry' ? 'Saving...' : 'Save & next'}
+            <button type="button" className="phone-btn phone-btn-primary" onClick={() => saveAndNext({ printTagAfter: true })} disabled={Boolean(busy)}>
+              {busy === 'entry' ? 'Saving...' : 'Save & tag'}
             </button>
           </div>
         </>
@@ -2138,6 +2165,22 @@ function ShipmentsPage() {
   const [toast, setToast] = useState('');
   const [recentEntryIds, setRecentEntryIds] = useState([]);
   const [previewPhoto, setPreviewPhoto] = useState(null);
+  const [printingTagId, setPrintingTagId] = useState('');
+
+  async function printTag(saved) {
+    const entryId = saved?.id;
+    if (!entryId) return;
+    setPrintingTagId(entryId);
+    setError('');
+    try {
+      const result = await api.printMerchandiseTag(entryId);
+      setToast(`Tag ${result?.tag?.marksId || ''} printed to ${result?.printer?.name || 'the printer'}.`);
+    } catch (err) {
+      setError(err.message || 'Could not print the tag.');
+    } finally {
+      setPrintingTagId('');
+    }
+  }
   const [showUploadProgress, setShowUploadProgress] = useState(false);
   const [shipmentPhotoPreviews, setShipmentPhotoPreviews] = useState([]);
   const [shipmentPhotoUploading, setShipmentPhotoUploading] = useState(false);
@@ -2560,7 +2603,7 @@ function ShipmentsPage() {
     }
   }
 
-  async function saveNext() {
+  async function saveNext({ printTagAfter = false } = {}) {
     setError('');
     if (!receipt) {
       setError('Add shipment photos in Shipment Details before saving merchandise.');
@@ -2642,6 +2685,9 @@ function ShipmentsPage() {
       if (!newPhotos.length || saved.photos?.length || saved.photoMetadata?.length) {
         setToast(editingEntryId ? 'Merchandise updated' : 'Merchandise saved');
       }
+      // Printed as part of the save, because the box is in hand now and will not
+      // be later. A failure here is reported without undoing the save.
+      if (printTagAfter) await printTag(saved);
     } catch (err) {
       if (uploadDelay) window.clearTimeout(uploadDelay);
       setShowUploadProgress(false);
@@ -3230,9 +3276,19 @@ function ShipmentsPage() {
                       </div>
                     </details>
                     {error && <div className="recv-field-error">{error}</div>}
-                    <button type="button" className="recv-save-btn" onClick={saveNext} disabled={Boolean(saving) || entryPhotos.length === 0}>
-                      {saving === 'entry' ? 'Saving…' : editingEntryId ? 'Update merchandise' : 'Save & next →'}
-                    </button>
+                    <div className="recv-save-row">
+                      <button
+                        type="button"
+                        className="recv-save-btn recv-save-print"
+                        onClick={() => saveNext({ printTagAfter: true })}
+                        disabled={Boolean(saving) || entryPhotos.length === 0 || Boolean(printingTagId)}
+                      >
+                        {printingTagId ? 'Printing…' : 'Save & print tag'}
+                      </button>
+                      <button type="button" className="recv-save-btn" onClick={() => saveNext()} disabled={Boolean(saving) || entryPhotos.length === 0}>
+                        {saving === 'entry' ? 'Saving…' : editingEntryId ? 'Update merchandise' : 'Save & next →'}
+                      </button>
+                    </div>
                     {entryPhotos.length === 0 && !saving && (
                       <small className="recv-save-hint">Add a merchandise photo to save this item.</small>
                     )}
@@ -3272,6 +3328,17 @@ function ShipmentsPage() {
                       <small>Qty {saved.quantity || 1} · {isMatched ? 'Matched' : 'Unmatched'}{locationName ? ` · ${locationName}` : ''}</small>
                     </span>
                     <span className="receiving-current-actions">
+                      {/* Printed here because this is where the box is in hand. A
+                          location is not required: most are shelved later, and a
+                          tag that waits for one is a tag nobody prints. */}
+                      <button
+                        type="button"
+                        className="recv-tag-btn"
+                        onClick={e => { e.stopPropagation(); printTag(saved); }}
+                        disabled={printingTagId === saved.id}
+                      >
+                        {printingTagId === saved.id ? 'Printing…' : 'Print tag'}
+                      </button>
                       <button
                         type="button"
                         className="receiving-current-copy-button is-danger"
@@ -10958,6 +11025,25 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   const shipmentLabel = shipmentRecord.name || 'Shipments';
   // Editing a released card is normal - a typo in CVID should be fixable without
   // undoing the release. What is not normal is doing it without knowing.
+  const [tagPrinting, setTagPrinting] = useState(false);
+  const [tagNotice, setTagNotice] = useState('');
+
+  // A tag gets lost, smudged, or was never printed. Reprinting from the card is
+  // the only path that does not need the shipment reopening.
+  async function printTagForItem() {
+    if (!item.merchandiseId) return;
+    setTagPrinting(true);
+    setTagNotice('');
+    try {
+      const result = await api.printMerchandiseTag(item.merchandiseId);
+      setTagNotice(`${result?.tag?.marksId || 'Tag'} sent to ${result?.printer?.name || 'the printer'}.`);
+    } catch (error) {
+      setTagNotice(error.message || 'Could not print the tag.');
+    } finally {
+      setTagPrinting(false);
+    }
+  }
+
   const alreadyReleased = Boolean(item.record?.released);
   const releasedOnLabel = formatInventoryDate(item.record?.releasedAt);
   const merchCheckStatusText = stepFlagged ? 'Issue' : productChosen ? 'Matched' : 'Unmatched';
@@ -11160,6 +11246,15 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
         <footer className="new-review-modal-footer">
           <div className="new-review-footer-left">
             <span className="new-review-received-date">Received {receivedDateLabel}</span>
+            <button
+              type="button"
+              className="btn new-review-tag-btn"
+              onClick={printTagForItem}
+              disabled={tagPrinting}
+            >
+              {tagPrinting ? 'Printing…' : 'Print tag'}
+            </button>
+            {tagNotice && <span className="new-review-tag-notice">{tagNotice}</span>}
             {isWorkstreamCard && onRemove && (
               <button
                 type="button"

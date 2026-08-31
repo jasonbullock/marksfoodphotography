@@ -1927,3 +1927,27 @@ the card still says To Do, because that is the new step's status.
 The card shows the step name with the work unit's own status - "Final Selection · In
 Progress" - which advances rather than resetting. The step's own status and when it was
 reported are in the tooltip.
+
+## 2026-08-31 - Merchandise Tags
+
+Tags identify the physical box. The client is the top line because that is how a shelf is
+read by eye, then the matched Product's name, a QR at that item's planning card, and the
+MP code both large and as a Code128.
+
+The code is minted by Airtable rather than taken from client data. UPC and CVID are often
+absent or arrive weeks after the box, and an identifier that is sometimes blank cannot be
+printed or trusted. Creative Force receives the same code suffixed per workstream, because
+it recovers a card by Product Code and needs exactly one match.
+
+Printers live in the base, not in a file: Render's disk is ephemeral and these addresses
+move often. Printing picks the explicit choice, then the person's remembered printer, then
+the default.
+
+Printing happens where the box is in hand - Save & print tag on receiving, on both screens -
+and from the merch card, because tags get lost and reprinting should not need the shipment
+reopening. A missing storage location does not block a tag: most merchandise is shelved
+after receiving, and a tag that waits for a location is a tag nobody prints.
+
+The first printed label had the QR too large and too close to the barcode for a handheld to
+be sure which it was reading. The QR is now 231 dots square with 0.93 inches of clear label
+between the two symbols.
