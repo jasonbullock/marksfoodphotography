@@ -5622,17 +5622,28 @@ def _find_creative_force_card(records, sync):
     if not product_code or not production_type:
         return None
 
-    # The feed's Source Key is the authoritative card correlation key. CF does
-    # not echo it in Work Unit events, so recover it by Product Code first.
+    # The feed's Source Key names the box the product was built from. CF does not
+    # echo it in Work Unit events, so recover it by Product Code first. One product
+    # can raise both an Ecomm and a Packaging work unit, so the event's production
+    # type says which of the box's cards it belongs to.
     feed_matches = [record for record in _list_all_records(C.CREATIVE_FORCE_PRODUCT_FEED_TABLE)
                     if str(record.get("fields", {}).get(C.F_CF_FEED_PRODUCT_CODE) or "").strip().casefold() == product_code]
     source_keys = [str(record.get("fields", {}).get(C.F_CF_FEED_SOURCE_KEY) or "").strip()
                    for record in feed_matches]
     source_keys = [key for key in source_keys if key]
     if len(source_keys) == 1:
-        source_match = next((record for record in records if record.get("id") == source_keys[0]), None)
-        if source_match:
-            return source_match
+        source_key = source_keys[0]
+        of_box = [record for record in records
+                  if source_key in (
+                      [record.get("id")]
+                      + _as_list(record.get("fields", {}).get(C.F_WORKSTREAM_CARD_RECEIVED_MERCH, []))
+                  )]
+        by_type = [record for record in of_box
+                   if str(record.get("fields", {}).get(C.F_WORKSTREAM_CARD_TYPE) or "").strip().casefold() == production_type]
+        if len(by_type) == 1:
+            return by_type[0]
+        if len(of_box) == 1:
+            return of_box[0]
 
     matches = []
     code_matches = []
@@ -5776,7 +5787,13 @@ def _creative_force_feed_fields(record, handoff):
         C.F_CF_FEED_PRODUCT_CODE: creative_force.get("productCode", ""),
         C.F_CF_FEED_CATEGORY: creative_force.get("category", ""),
         C.F_CF_FEED_PRODUCTION_TYPE: creative_force.get("productionType", ""),
-        C.F_CF_FEED_SOURCE_KEY: record.get("id", ""),
+        # The box, not the card. One product in Creative Force with the styleguide
+        # deriving its production types, rather than two products that happen to
+        # describe the same thing.
+        C.F_CF_FEED_SOURCE_KEY: (
+            _as_list(record.get("fields", {}).get(C.F_WORKSTREAM_CARD_RECEIVED_MERCH, []))
+            or [record.get("id", "")]
+        )[0],
     }
     # What the box actually looks like. A photographer pulling up a work unit can
     # tell a mild salsa from a hot one without walking to the shelf.
@@ -5820,14 +5837,40 @@ def _workstream_cards_for_merchandise(entry_id):
     return cards
 
 
+def _merged_production_type(*values):
+    """Every production type the box raises, in a fixed order."""
+    seen = []
+    for value in values:
+        for part in str(value or "").split(","):
+            part = part.strip()
+            if part and part not in seen:
+                seen.append(part)
+    ranked = sorted(
+        seen,
+        key=lambda part: (
+            C.WORKSTREAM_TYPE_OPTIONS.index(part)
+            if part in C.WORKSTREAM_TYPE_OPTIONS
+            else len(C.WORKSTREAM_TYPE_OPTIONS)
+        ),
+    )
+    return ", ".join(ranked)
+
+
 def _sync_creative_force_product_feed_cards(cards):
-    """Upsert photo-release cards into the CF feed as part of the release transition."""
+    """Upsert one feed row per box, not per workstream card.
+
+    A box that raises Ecomm and Packaging work is still one product. Writing a row
+    per card made Creative Force import two products describing the same thing, and
+    forced a suffixed code to keep them apart - which stopped the tag scanning.
+    One row means one product, and the styleguide derives the production types.
+    """
     existing = _list_all_records(C.CREATIVE_FORCE_PRODUCT_FEED_TABLE)
     existing_by_key = {
         str(record.get("fields", {}).get(C.F_CF_FEED_SOURCE_KEY) or "").strip(): record
         for record in existing
     }
-    synced = []
+    merged = {}
+    order = []
     for card in cards:
         card_fields = card.get("fields", {})
         if card_fields.get(C.F_WORKSTREAM_CARD_TYPE) not in C.WORKSTREAM_TYPE_OPTIONS:
@@ -5835,10 +5878,36 @@ def _sync_creative_force_product_feed_cards(cards):
         handoff = _creative_force_handoff(card)
         if not isinstance(handoff, dict):
             continue
-        if card_fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) != PLANNING_STATUS_LABELS["awaiting-photo-release"]:
+        if card_fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) not in (
+            PLANNING_STATUS_LABELS["awaiting-photo-release"],
+            PLANNING_STATUS_LABELS["released"],
+        ):
             continue
         feed_fields = _creative_force_feed_fields(card, handoff)
         source_key = feed_fields[C.F_CF_FEED_SOURCE_KEY]
+        if source_key not in merged:
+            merged[source_key] = feed_fields
+            order.append(source_key)
+            continue
+        # Ecomm needs CVID and a job number, Packaging a brand prefix and a file
+        # name description. One product carries both, so the later card fills gaps
+        # rather than replacing what the first one established.
+        row = merged[source_key]
+        for key, value in feed_fields.items():
+            if value not in (None, "") and not row.get(key):
+                row[key] = value
+        # Creative Force reads this into Category Group, so a box that raises both
+        # kinds of work says so - and the styleguide rule asks whether the group
+        # contains "packaging" rather than equals it. Ordered by workstream so the
+        # value doesn't depend on which card happened to be released first.
+        row[C.F_CF_FEED_PRODUCTION_TYPE] = _merged_production_type(
+            row.get(C.F_CF_FEED_PRODUCTION_TYPE, ""),
+            feed_fields.get(C.F_CF_FEED_PRODUCTION_TYPE, ""),
+        )
+
+    synced = []
+    for source_key in order:
+        feed_fields = merged[source_key]
         if source_key in existing_by_key:
             saved = airtable.update_record(
                 C.CREATIVE_FORCE_PRODUCT_FEED_TABLE,
