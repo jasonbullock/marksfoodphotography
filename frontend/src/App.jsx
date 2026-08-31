@@ -5765,7 +5765,7 @@ function PrintersPanel() {
           <span>Printer</span>
           <span>Address</span>
           <span>Port</span>
-          <span />
+          <span>Setup</span>
         </div>
         {records.map(printer => (
           <div className={`printer-grid-row${printer.id === selectedId ? ' is-mine' : ''}`} key={printer.id}>
@@ -5792,30 +5792,32 @@ function PrintersPanel() {
               <button
                 type="button"
                 className={`printer-chip${printer.isDefault ? ' is-on' : ''}`}
-                title="Used by anyone who has not chosen their own"
+                title="Everyone who has not picked their own prints here"
                 onClick={() => !printer.isDefault
-                  && run(printer.id, () => api.updatePrinter(printer.id, { isDefault: true }), 'Default set.')}
+                  && run(printer.id, () => api.updatePrinter(printer.id, { isDefault: true }), 'Studio default set.')}
               >
-                Default
+                Studio default
               </button>
               <button
                 type="button"
-                className={`printer-chip${printer.active ? ' is-on' : ''}`}
+                className={`printer-chip is-claim${printer.id === selectedId ? ' is-on' : ''}`}
+                title="Only your prints go here"
+                disabled={busyId === printer.id || printer.id === selectedId}
+                onClick={() => run(printer.id, () => api.selectPrinter(printer.id), 'Your prints go here now.')}
+              >
+                {printer.id === selectedId ? 'Mine' : 'Make mine'}
+              </button>
+              <button
+                type="button"
+                className={`printer-chip${printer.active ? '' : ' is-off'}`}
+                title={printer.active ? 'In use' : 'Hidden from the app'}
                 onClick={() => run(printer.id, () => api.updatePrinter(printer.id, { active: !printer.active }), 'Saved.')}
               >
-                {printer.active ? 'Active' : 'Off'}
+                {printer.active ? 'On' : 'Off'}
               </button>
               <button type="button" className="printer-chip" disabled={busyId === printer.id}
                 onClick={() => run(printer.id, () => api.testPrinter(printer.id), 'Test label sent.')}>
                 Test
-              </button>
-              <button
-                type="button"
-                className={`printer-chip is-claim${printer.id === selectedId ? ' is-mine' : ''}`}
-                disabled={busyId === printer.id || printer.id === selectedId}
-                onClick={() => run(printer.id, () => api.selectPrinter(printer.id), 'This is your printer now.')}
-              >
-                {printer.id === selectedId ? 'Yours' : 'Use this'}
               </button>
             </div>
           </div>

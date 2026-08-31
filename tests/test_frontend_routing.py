@@ -2348,4 +2348,6 @@ class PrinterAdminTests(unittest.TestCase):
 
     def test_each_person_can_claim_a_printer(self):
         self.assertIn("api.selectPrinter = async id", self.api)
-        self.assertIn("'This is your printer now.'", self.source)
+        self.assertIn("'Your prints go here now.'", self.source)
+        self.assertIn("Studio default", self.source)
+        self.assertIn("Make mine", self.source)
