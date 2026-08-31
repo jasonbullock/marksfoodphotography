@@ -2351,3 +2351,20 @@ class PrinterAdminTests(unittest.TestCase):
         self.assertIn("'Your prints go here now.'", self.source)
         self.assertIn("Studio default", self.source)
         self.assertIn("Make mine", self.source)
+
+
+class SourceRowMatchSurvivesTests(unittest.TestCase):
+    def test_filling_a_blank_does_not_drop_the_match(self):
+        # A source row often has no UPC. Typing one in supplies what the row is
+        # missing; it does not say this is a different product.
+        source = APP.read_text()
+        start = source.index("function setEntry(field, value, options = {}) {")
+        body = source[start:start + 900]
+        self.assertIn("const stated = field === 'skuId'", body)
+        self.assertIn("if (String(stated).trim() && matchValuesConflict(value, stated))", body)
+
+    def test_a_contradicting_value_still_drops_it(self):
+        source = APP.read_text()
+        start = source.index("function setEntry(field, value, options = {}) {")
+        body = source[start:start + 900]
+        self.assertIn("setStagedSourceRow(null);", body)

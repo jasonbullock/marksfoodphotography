@@ -2441,7 +2441,14 @@ function ShipmentsPage() {
       setEditingMatchedEntryIdentity(true);
     }
     if ((field === 'productName' || field === 'skuId') && stagedSourceRow && !options.preserveStagedSourceRow) {
-      setStagedSourceRow(null);
+      const source = stagedSourceRow.sourceData || {};
+      const identity = stagedSourceRow.sourceIdentity || {};
+      const stated = field === 'skuId'
+        ? (source.UPC || identity.upc || '')
+        : (source['Product Name'] || identity.productName || '');
+      if (String(stated).trim() && matchValuesConflict(value, stated)) {
+        setStagedSourceRow(null);
+      }
     }
   }
 
