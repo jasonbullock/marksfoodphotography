@@ -17,10 +17,10 @@ LABEL_HEIGHT_DOTS = 1015
 MARGIN = 24
 CONTENT_WIDTH = LABEL_WIDTH_DOTS - (MARGIN * 2)
 
-# Dots per QR module. 6 still reads from arm's length and leaves real space between
+# Dots per QR module. 5 reads fine from arm's length and leaves real space between
 # the two symbols - at 9 they sat close enough that a scanner aimed at one could
 # pick up the other. Longer data is drawn smaller rather than pushed off the label.
-QR_MAX_MAGNIFICATION = 6
+QR_MAX_MAGNIFICATION = 5
 QR_MIN_MAGNIFICATION = 3
 
 # Byte-mode capacity per QR version at the highest error correction level. The
@@ -28,6 +28,12 @@ QR_MIN_MAGNIFICATION = 3
 # tag came back with a 45-module code where the layout had reserved 41, and the
 # Marks code landed inside it - so the space reserved is worked out at that level
 # rather than at the level requested.
+# Two versions of headroom on top of that. Measuring a printed tag against the
+# label edges put the code at about 49 modules where the table says 45: the
+# printer's automatic encoding is costing a version somewhere we cannot see, so
+# the estimate is treated as a floor rather than an answer.
+QR_VERSION_HEADROOM_MODULES = 8
+
 QR_BYTE_CAPACITY_HIGH = (
     7, 14, 24, 34, 44, 58, 64, 84, 98, 119,
     137, 155, 177, 194, 220, 250, 280, 310, 338, 382,
@@ -38,11 +44,11 @@ QR_ERROR_CORRECTION = "H"
 
 
 def qr_modules_for(data):
-    """How many modules across the printer will draw this data."""
+    """How many modules across to allow for - deliberately more than the minimum."""
     length = len(str(data or "").encode("utf-8"))
     for version, capacity in enumerate(QR_BYTE_CAPACITY_HIGH, start=1):
         if length <= capacity:
-            return 17 + (4 * version)
+            return 17 + (4 * version) + QR_VERSION_HEADROOM_MODULES
     # Past the table it is the largest code the format allows, which will not fit
     # the space and so is left off rather than printed too fine to read.
     return 17 + (4 * 40)

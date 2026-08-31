@@ -184,10 +184,11 @@ class TagSpacingTests(unittest.TestCase):
 class QrSizeTests(unittest.TestCase):
     """The printer draws at high correction whatever the field data asks for."""
 
-    def test_space_is_reserved_for_what_the_printer_actually_draws(self):
-        # A printed tag came back with a 45-module code where 41 had been reserved,
-        # and the Marks code landed inside the QR's bottom edge.
-        self.assertEqual(tag_print.qr_modules_for(QR_URL), 45)
+    def test_more_space_is_reserved_than_the_capacity_table_calls_for(self):
+        # Two printed tags came back with codes larger than the table predicted, the
+        # second still landing on the Marks number. The estimate is a floor now, with
+        # two versions of headroom on top.
+        self.assertEqual(tag_print.qr_modules_for(QR_URL), 45 + tag_print.QR_VERSION_HEADROOM_MODULES)
 
     def test_the_code_grows_in_steps_as_the_data_does(self):
         sizes = [tag_print.qr_modules_for("x" * length) for length in (10, 40, 90, 200)]
@@ -198,7 +199,7 @@ class QrSizeTests(unittest.TestCase):
         # In the barcode parameters and in the field data, so what is drawn matches
         # what was reserved either way the firmware reads it.
         zpl = tag()
-        self.assertIn("^BQN,2,6,H^FDHA,", zpl)
+        self.assertIn("^BQN,2,5,H^FDHA,", zpl)
 
     def test_data_beyond_the_table_still_produces_a_layout(self):
         self.assertLess(tag_print.tag_layout("x" * 5000)["bottom"], tag_print.LABEL_HEIGHT_DOTS)
