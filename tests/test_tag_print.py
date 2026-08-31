@@ -8,6 +8,9 @@ import tag_print  # noqa: E402
 from tag_print import build_merchandise_tag_zpl, clean  # noqa: E402
 
 
+QR_URL = "https://food.walnutcontent.com/planning?item=recICWs1QZBsw2JiO"
+
+
 def tag(**overrides):
     base = {
         "client": "Topco",
@@ -98,17 +101,16 @@ class TagContentTests(unittest.TestCase):
 
     def test_nothing_overlaps_down_the_label(self):
         # The QR grows with its data, so every position below it is measured from
-        # a reserved block rather than from the code's assumed size.
-        qr_bottom = tag_print.QR_TOP + tag_print.QR_RESERVED
-        self.assertLess(qr_bottom, tag_print.CODE_TOP)
-        self.assertLess(tag_print.CODE_TOP + 46, tag_print.UPC_TOP)
-        self.assertLess(tag_print.UPC_TOP + 32, tag_print.BARCODE_TOP)
-        self.assertLess(
-            tag_print.BARCODE_TOP + tag_print.BARCODE_HEIGHT, tag_print.FOOTER_TOP
-        )
+        # the code's real size rather than from an assumed one.
+        layout = tag_print.tag_layout(QR_URL)
+        self.assertLess(layout["qrTop"] + layout["qrReserved"], layout["codeTop"])
+        self.assertLess(layout["codeTop"] + tag_print.CODE_TEXT, layout["upcTop"])
+        self.assertLess(layout["upcTop"] + tag_print.UPC_TEXT, layout["barcodeTop"])
+        self.assertLess(layout["barcodeTop"] + tag_print.BARCODE_HEIGHT, layout["footerTop"])
 
     def test_the_symbols_stay_apart(self):
-        gap = tag_print.BARCODE_TOP - (tag_print.QR_TOP + tag_print.QR_RESERVED)
+        layout = tag_print.tag_layout(QR_URL)
+        gap = layout["barcodeTop"] - (layout["qrTop"] + layout["qrReserved"])
         self.assertGreater(gap / 203, 0.75)
 
     def test_the_marks_code_is_no_longer_shouting(self):
@@ -124,14 +126,14 @@ class TagContentTests(unittest.TestCase):
 class TagFitsTests(unittest.TestCase):
     def test_the_shot_line_does_not_land_on_the_footer(self):
         # Four footer rows plus a hand-written line is the tightest the foot gets.
+        layout = tag_print.tag_layout(QR_URL)
         last_footer_bottom = (
-            tag_print.FOOTER_TOP + (3 * tag_print.FOOTER_LINE_HEIGHT) + tag_print.FOOTER_TEXT
+            layout["footerTop"] + (3 * tag_print.FOOTER_LINE_HEIGHT) + tag_print.FOOTER_TEXT
         )
-        self.assertLess(last_footer_bottom, tag_print.SHOT_DATE_TOP)
+        self.assertLess(last_footer_bottom, layout["shotTop"])
 
     def test_everything_fits_on_the_label(self):
-        rule_bottom = tag_print.SHOT_DATE_TOP + 32
-        self.assertLess(rule_bottom, tag_print.LABEL_HEIGHT_DOTS)
+        self.assertLess(tag_print.tag_layout(QR_URL)["bottom"], tag_print.LABEL_HEIGHT_DOTS)
 
     def test_the_footer_is_labelled(self):
         zpl = tag(received="Aug 31, 3:16 PM CDT", storage="Rack B")
@@ -144,23 +146,64 @@ class TagFitsTests(unittest.TestCase):
 
 
 class TagSpacingTests(unittest.TestCase):
-    def test_no_block_starts_before_the_one_above_it_ends(self):
-        # Every position is derived, so the gaps can be checked rather than trusted.
+    def check_no_overlap(self, qr_url):
         t = tag_print
+        layout = t.tag_layout(qr_url)
         blocks = [
             ("name", t.NAME_TOP, t.NAME_BOTTOM),
-            ("qr", t.QR_TOP, t.QR_TOP + t.QR_RESERVED),
-            ("code", t.CODE_TOP, t.CODE_TOP + t.CODE_TEXT),
-            ("upc", t.UPC_TOP, t.UPC_TOP + t.UPC_TEXT),
-            ("barcode", t.BARCODE_TOP, t.BARCODE_TOP + t.BARCODE_HEIGHT),
-            ("footer", t.FOOTER_TOP, t.FOOTER_TOP + t.FOOTER_LINES * t.FOOTER_LINE_HEIGHT),
-            ("shot", t.SHOT_DATE_TOP, t.SHOT_DATE_TOP + 32),
+            ("qr", layout["qrTop"], layout["qrTop"] + layout["qrReserved"]),
+            ("code", layout["codeTop"], layout["codeTop"] + t.CODE_TEXT),
+            ("upc", layout["upcTop"], layout["upcTop"] + t.UPC_TEXT),
+            ("barcode", layout["barcodeTop"], layout["barcodeTop"] + t.BARCODE_HEIGHT),
+            ("footer", layout["footerTop"], layout["footerTop"] + t.FOOTER_LINES * t.FOOTER_LINE_HEIGHT),
+            ("shot", layout["shotTop"], layout["bottom"]),
         ]
         for (above, _, above_bottom), (below, below_top, _) in zip(blocks, blocks[1:]):
-            self.assertLessEqual(above_bottom, below_top, f"{above} runs into {below}")
-        self.assertLess(blocks[-1][2], t.LABEL_HEIGHT_DOTS)
+            self.assertLessEqual(above_bottom, below_top, f"{above} runs into {below} for {qr_url!r}")
+        self.assertLess(blocks[-1][2], t.LABEL_HEIGHT_DOTS, f"tag overflows for {qr_url!r}")
+
+    def test_no_block_starts_before_the_one_above_it_ends(self):
+        self.check_no_overlap(QR_URL)
+
+    def test_a_longer_link_pushes_the_layout_down_rather_than_into_the_code(self):
+        # A longer host or a longer record id makes the printer draw a bigger code.
+        for length in range(20, 300, 17):
+            self.check_no_overlap("https://example.com/planning?item=" + ("r" * length))
+
+    def test_a_tag_with_no_link_closes_the_gap(self):
+        layout = tag_print.tag_layout("")
+        self.assertEqual(layout["qrReserved"], 0)
+        self.assertEqual(layout["codeTop"], tag_print.QR_TOP)
 
     def test_the_two_symbols_stay_an_inch_apart(self):
-        t = tag_print
-        gap = t.BARCODE_TOP - (t.QR_TOP + t.QR_RESERVED)
+        layout = tag_print.tag_layout(QR_URL)
+        gap = layout["barcodeTop"] - (layout["qrTop"] + layout["qrReserved"])
         self.assertGreaterEqual(gap / 203, 0.85)
+
+
+class QrSizeTests(unittest.TestCase):
+    """The printer draws at high correction whatever the field data asks for."""
+
+    def test_space_is_reserved_for_what_the_printer_actually_draws(self):
+        # A printed tag came back with a 45-module code where 41 had been reserved,
+        # and the Marks code landed inside the QR's bottom edge.
+        self.assertEqual(tag_print.qr_modules_for(QR_URL), 45)
+
+    def test_the_code_grows_in_steps_as_the_data_does(self):
+        sizes = [tag_print.qr_modules_for("x" * length) for length in (10, 40, 90, 200)]
+        self.assertEqual(sizes, sorted(sizes))
+        self.assertLess(sizes[0], sizes[-1])
+
+    def test_high_correction_is_asked_for_where_the_printer_will_read_it(self):
+        # In the barcode parameters and in the field data, so what is drawn matches
+        # what was reserved either way the firmware reads it.
+        zpl = tag()
+        self.assertIn("^BQN,2,6,H^FDHA,", zpl)
+
+    def test_data_beyond_the_table_still_produces_a_layout(self):
+        self.assertLess(tag_print.tag_layout("x" * 5000)["bottom"], tag_print.LABEL_HEIGHT_DOTS)
+
+    def test_a_code_too_fine_to_scan_is_left_off_rather_than_printed(self):
+        # A tag with no QR still prints; one carrying an unreadable code does not
+        # help anyone and costs the space the rest of the tag needs.
+        self.assertEqual(tag_print.tag_layout("x" * 100000)["magnification"], 0)

@@ -17,41 +17,94 @@ LABEL_HEIGHT_DOTS = 1015
 MARGIN = 24
 CONTENT_WIDTH = LABEL_WIDTH_DOTS - (MARGIN * 2)
 
-# Each QR module is this many dots. 6 still reads from arm's length and leaves
-# real space between the two symbols - at 9 they sat close enough that a scanner
-# aimed at one could pick up the other.
-QR_MAGNIFICATION = 6
-# A planning link is version 4 today, but a longer record id or a longer host
-# pushes it higher, and the printer simply draws a bigger code. Space is reserved
-# for version 6 so the layout below cannot be overrun by data that grew.
-QR_MODULES_RESERVED = 41
+# Dots per QR module. 6 still reads from arm's length and leaves real space between
+# the two symbols - at 9 they sat close enough that a scanner aimed at one could
+# pick up the other. Longer data is drawn smaller rather than pushed off the label.
+QR_MAX_MAGNIFICATION = 6
+QR_MIN_MAGNIFICATION = 3
 
-# Everything below is derived so the gaps can be checked rather than trusted. The
-# name is capped at two lines: a third ran into the QR.
+# Byte-mode capacity per QR version at the highest error correction level. The
+# printer renders at high correction whatever the field data asks for - a printed
+# tag came back with a 45-module code where the layout had reserved 41, and the
+# Marks code landed inside it - so the space reserved is worked out at that level
+# rather than at the level requested.
+QR_BYTE_CAPACITY_HIGH = (
+    7, 14, 24, 34, 44, 58, 64, 84, 98, 119,
+    137, 155, 177, 194, 220, 250, 280, 310, 338, 382,
+)
+# High correction is asked for in both places the printer might read it, so what
+# is drawn matches what was reserved.
+QR_ERROR_CORRECTION = "H"
+
+
+def qr_modules_for(data):
+    """How many modules across the printer will draw this data."""
+    length = len(str(data or "").encode("utf-8"))
+    for version, capacity in enumerate(QR_BYTE_CAPACITY_HIGH, start=1):
+        if length <= capacity:
+            return 17 + (4 * version)
+    # Past the table it is the largest code the format allows, which will not fit
+    # the space and so is left off rather than printed too fine to read.
+    return 17 + (4 * 40)
+
+
+# The fixed part of the tag: everything above the QR is the same on every label.
+# The name is capped at two lines - a third ran into the QR.
 NAME_TOP = 118
 NAME_TEXT = 42
 NAME_LINES = 2
 NAME_LINE_SPACING = 8
 NAME_BOTTOM = NAME_TOP + (NAME_LINES * (NAME_TEXT + NAME_LINE_SPACING))
 QR_TOP = NAME_BOTTOM + 20
-# Roughly an inch of clear label between the QR and the barcode, which is what
-# stops a handheld scanner reading the wrong one.
-QR_RESERVED = QR_MODULES_RESERVED * QR_MAGNIFICATION
 CODE_TEXT = 46
-CODE_TOP = QR_TOP + QR_RESERVED + 18
 UPC_TEXT = 32
-UPC_TOP = CODE_TOP + CODE_TEXT + 12
-# Roughly an inch of clear label between the two symbols, which is what stops a
-# handheld reading the wrong one.
-BARCODE_TOP = UPC_TOP + UPC_TEXT + 76
 BARCODE_HEIGHT = 90
-FOOTER_TOP = BARCODE_TOP + BARCODE_HEIGHT + 30
 FOOTER_LINE_HEIGHT = 30
 FOOTER_TEXT = 28
 FOOTER_LINES = 4
-# A hand-written line at the foot. Fixed, so it is always in the same place on
-# every tag whether or not the details above it are complete.
-SHOT_DATE_TOP = FOOTER_TOP + (FOOTER_LINES * FOOTER_LINE_HEIGHT) + 10
+
+
+def tag_layout(qr_url=""):
+    """Where everything sits, measured down from the QR's real size.
+
+    The QR grows with its data, so the blocks below it cannot be placed at fixed
+    positions and hoped for. The code is sized to the space that is actually left
+    once everything below it is accounted for, rather than the label being asked
+    to stretch to fit the code.
+    """
+    below_the_qr = (
+        18 + CODE_TEXT + 12 + UPC_TEXT + 76 + BARCODE_HEIGHT + 30
+        + (FOOTER_LINES * FOOTER_LINE_HEIGHT) + 10 + 32
+    )
+    available = LABEL_HEIGHT_DOTS - QR_TOP - below_the_qr - 1
+    modules = qr_modules_for(qr_url) if qr_url else 0
+    magnification = min(QR_MAX_MAGNIFICATION, available // modules) if modules else 0
+    # Below this the code is too fine to scan reliably off a tag, and a tag with no
+    # QR is better than one carrying a code nobody can read.
+    if magnification < QR_MIN_MAGNIFICATION:
+        magnification = 0
+    reserved = modules * magnification
+
+    code_top = QR_TOP + reserved + (18 if reserved else 0)
+    upc_top = code_top + CODE_TEXT + 12
+    # Roughly an inch of clear label between the two symbols, which is what stops a
+    # handheld scanner reading the wrong one.
+    barcode_top = upc_top + UPC_TEXT + 76
+    footer_top = barcode_top + BARCODE_HEIGHT + 30
+    # A hand-written line at the foot, always in the same place relative to the
+    # details above it.
+    shot_top = footer_top + (FOOTER_LINES * FOOTER_LINE_HEIGHT) + 10
+    return {
+        "magnification": magnification,
+        "qrReserved": reserved,
+        "qrTop": QR_TOP,
+        "codeTop": code_top,
+        "upcTop": upc_top,
+        "barcodeTop": barcode_top,
+        "footerTop": footer_top,
+        "shotTop": shot_top,
+        "bottom": shot_top + 32,
+    }
 
 
 class TagPrintError(Exception):
@@ -82,10 +135,12 @@ def build_merchandise_tag_zpl(tag):
     received = clean(tag.get("received"), 40)
     upc = clean(tag.get("upc"), 24)
     quantity = clean(tag.get("quantity"), 12)
-    qr_url = _http_url(tag.get("qrUrl"))
+    qr_url = clean(_http_url(tag.get("qrUrl")), 512)
 
     if not code:
         raise ValueError("A tag needs its Marks code.")
+
+    layout = tag_layout(qr_url)
 
     lines = [
         "^XA",
@@ -103,30 +158,29 @@ def build_merchandise_tag_zpl(tag):
         f"^A0N,{NAME_TEXT},{NAME_TEXT}^FD{name or 'Unidentified merchandise'}^FS",
     ]
 
-    if qr_url:
-        # Centred by measuring the code rather than guessing: a QR carrying a
-        # planning link is 33 modules square at this error level.
-        # Centred on the reserved block rather than on the code's actual size,
-        # which is not known until the printer renders it.
+    if qr_url and layout["magnification"]:
+        # Centred on the code's own width, which is known now that the module count
+        # is worked out rather than assumed.
         lines.append(
-            f"^FO{max(MARGIN, (LABEL_WIDTH_DOTS - QR_RESERVED) // 2)},{QR_TOP}"
-            f"^BQN,2,{QR_MAGNIFICATION}^FDLA,{clean(qr_url, 512)}^FS"
+            f"^FO{max(MARGIN, (LABEL_WIDTH_DOTS - layout['qrReserved']) // 2)},{layout['qrTop']}"
+            f"^BQN,2,{layout['magnification']},{QR_ERROR_CORRECTION}"
+            f"^FD{QR_ERROR_CORRECTION}A,{qr_url}^FS"
         )
 
     lines.append(
-        f"^FO{MARGIN},{CODE_TOP}^FB{CONTENT_WIDTH},1,0,C^A0N,{CODE_TEXT},{CODE_TEXT}^FD{code}^FS"
+        f"^FO{MARGIN},{layout['codeTop']}^FB{CONTENT_WIDTH},1,0,C^A0N,{CODE_TEXT},{CODE_TEXT}^FD{code}^FS"
     )
     # The UPC sits under the code because that is the number a client asks about,
     # and it is often the only thing written on the box itself.
     if upc:
         lines.append(
-            f"^FO{MARGIN},{UPC_TOP}^FB{CONTENT_WIDTH},1,0,C^A0N,{UPC_TEXT},{UPC_TEXT}^FD{upc}^FS"
+            f"^FO{MARGIN},{layout['upcTop']}^FB{CONTENT_WIDTH},1,0,C^A0N,{UPC_TEXT},{UPC_TEXT}^FD{upc}^FS"
         )
     lines.append(
-        f"^FO{MARGIN},{BARCODE_TOP}^BY3,2,{BARCODE_HEIGHT}^BCN,{BARCODE_HEIGHT},N,N,N^FD{code}^FS"
+        f"^FO{MARGIN},{layout['barcodeTop']}^BY3,2,{BARCODE_HEIGHT}^BCN,{BARCODE_HEIGHT},N,N,N^FD{code}^FS"
     )
 
-    y = FOOTER_TOP
+    y = layout["footerTop"]
     footer = [("Received", received), ("Storage", storage), ("Carrier", arrival), ("", quantity)]
     for label, value in footer:
         if not value:
@@ -139,9 +193,9 @@ def build_merchandise_tag_zpl(tag):
 
     # A ruled line for the shot date. Written on by hand at the bench, because the
     # date is only known once the shoot happens and nobody is reprinting a tag for it.
-    lines.append(f"^FO{MARGIN},{SHOT_DATE_TOP}^A0N,26,26^FDShot^FS")
+    lines.append(f"^FO{MARGIN},{layout['shotTop']}^A0N,26,26^FDShot^FS")
     lines.append(
-        f"^FO{MARGIN + 70},{SHOT_DATE_TOP + 30}^GB{CONTENT_WIDTH - 70},2,2^FS"
+        f"^FO{MARGIN + 70},{layout['shotTop'] + 30}^GB{CONTENT_WIDTH - 70},2,2^FS"
     )
 
     lines.append("^XZ")
