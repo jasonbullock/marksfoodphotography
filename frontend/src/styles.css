@@ -18308,9 +18308,6 @@ select.form-input {
   flex-direction: column;
   gap: 8px;
   padding: 4px 18px 18px;
-  /* A printer name is three words. Left to grow it took the whole monitor and
-     pushed everything worth reading to the far edge. */
-  max-width: 880px;
 }
 
 .printer-grid-head,
