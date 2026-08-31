@@ -8870,9 +8870,14 @@ function PhotoProductionFieldsEditor({ item, production, onDraftChange, stagedPr
   useEffect(() => {
     const nextDraft = Object.fromEntries(fields.map(field => [field, photoProductionProductValue(productDataSource, field)]));
     setDraft(nextDraft);
-    onDraftChange?.(Object.fromEntries(
-      Object.entries(nextDraft).filter(([field]) => !inheritedIdentityFieldSet.has(field)),
-    ));
+    onDraftChange?.(
+      Object.fromEntries(
+        Object.entries(nextDraft).filter(([field]) => !inheritedIdentityFieldSet.has(field)),
+      ),
+      // A seed replaces the draft outright; anything left over belongs to the item
+      // or the deliverables that were on screen before.
+      { replace: true },
+    );
   }, [item?.id, product.id, stagedProduct?.id, item?.manualProductInfo, item?.record?.manualProductInfo, item?.record?.productName, item?.record?.skuId, fields.join('|')]);
 
   if (!entries.length || !fields.length) return null;
@@ -10846,7 +10851,12 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   const [intakeFeedback, setIntakeFeedback] = useState('');
   const [finishState, setFinishState] = useState({ status: 'idle', message: '' });
   const [deliverableState, setDeliverableState] = useState({ status: 'idle', message: '' });
-  const [photoDraftValues, setPhotoDraftValues] = useState({});
+  // Kept against the item it belongs to rather than cleared by an effect. React runs
+  // a child's effects before its parent's, so a reset here always fired after the
+  // editor had seeded its values and threw them away - which is why a UPC nobody
+  // retyped never reached the Product.
+  const [photoDraft, setPhotoDraft] = useState({ itemId: '', values: {} });
+  const photoDraftValues = photoDraft.itemId === item.id ? photoDraft.values : {};
   const [issueDraftOpen, setIssueDraftOpen] = useState(false);
   const [issueType, setIssueType] = useState('Wrong Merch');
   const [issueDescription, setIssueDescription] = useState('');
@@ -10988,10 +10998,6 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
       ? <><span>This merchandise already has Ecomm and Packaging workstreams.</span><br /><span>You cannot add or change one here; remove this card only to end this workstream.</span></>
       : footerOutcomePreview ? <span>{footerOutcomePreview}</span> : null
     : footerOutcomePreview ? <span>{footerOutcomePreview}</span> : null;
-
-  useEffect(() => {
-    setPhotoDraftValues({});
-  }, [item.id, wizardState.deliverables.join('|')]);
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -11366,7 +11372,10 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                   item={item}
                   production={selectedPhotoProduction}
                   stagedProduct={stagedMatchProduct}
-                  onDraftChange={draft => setPhotoDraftValues(current => ({ ...current, ...draft }))}
+                  onDraftChange={(draft, options) => setPhotoDraft(current => {
+                    const base = options?.replace || current.itemId !== item.id ? {} : current.values;
+                    return { itemId: item.id, values: { ...base, ...draft } };
+                  })}
                 />
               </ReviewStep>
             )}

@@ -2389,3 +2389,22 @@ class SourceRowMatchSurvivesTests(unittest.TestCase):
         start = source.index("function setEntry(field, value, options = {}) {")
         body = source[start:start + 900]
         self.assertIn("setStagedSourceRow(null);", body)
+
+
+class PhotoDraftSurvivalTests(unittest.TestCase):
+    """A seeded Product-data value has to reach the patch, not just the screen."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+
+    def test_the_draft_is_held_against_the_item_rather_than_cleared_by_an_effect(self):
+        # React runs a child's effects before its parent's, so a reset in the parent
+        # always fired after the editor seeded its values and threw them away.
+        self.assertIn("const [photoDraft, setPhotoDraft] = useState({ itemId: '', values: {} });", self.source)
+        self.assertIn("const photoDraftValues = photoDraft.itemId === item.id ? photoDraft.values : {};", self.source)
+        self.assertNotIn("setPhotoDraftValues({});", self.source)
+
+    def test_seeding_replaces_the_draft_and_typing_merges_into_it(self):
+        self.assertIn("{ replace: true },", self.source)
+        self.assertIn("options?.replace || current.itemId !== item.id ? {} : current.values", self.source)
