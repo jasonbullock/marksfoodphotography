@@ -5762,73 +5762,84 @@ function PrintersPanel() {
       <div className="panel-head">
         <span className="panel-title">Printers</span>
       </div>
-      {message && <div className="notice-state">{message}</div>}
-      <div className="printer-rows">
+      {message && <div className="printer-message">{message}</div>}
+      <div className="printer-grid">
+        <div className="printer-grid-head">
+          <span>Printer</span>
+          <span>Address</span>
+          <span>Port</span>
+          <span />
+        </div>
         {records.map(printer => (
-          <div className={`printer-row${printer.id === selectedId ? ' is-mine' : ''}`} key={printer.id}>
-            <div className="printer-row-main">
-              <input
-                defaultValue={printer.name}
-                onBlur={event => event.target.value !== printer.name
-                  && run(printer.id, () => api.updatePrinter(printer.id, { name: event.target.value }), 'Renamed.')}
-              />
-              <input
-                defaultValue={printer.host}
-                placeholder="10.1.129.39"
-                onBlur={event => event.target.value !== printer.host
-                  && run(printer.id, () => api.updatePrinter(printer.id, { host: event.target.value }), 'Address saved.')}
-              />
-              <input
-                className="printer-port"
-                defaultValue={printer.port}
-                onBlur={event => Number(event.target.value) !== printer.port
-                  && run(printer.id, () => api.updatePrinter(printer.id, { port: event.target.value }), 'Port saved.')}
-              />
-            </div>
-            <div className="printer-row-actions">
-              <label title="Used by anyone who has not chosen their own">
-                <input
-                  type="checkbox"
-                  checked={printer.isDefault}
-                  onChange={() => run(printer.id, () => api.updatePrinter(printer.id, { isDefault: true }), 'Default set.')}
-                />
+          <div className={`printer-grid-row${printer.id === selectedId ? ' is-mine' : ''}`} key={printer.id}>
+            <input
+              defaultValue={printer.name}
+              aria-label="Printer name"
+              onBlur={event => event.target.value !== printer.name
+                && run(printer.id, () => api.updatePrinter(printer.id, { name: event.target.value }), 'Renamed.')}
+            />
+            <input
+              defaultValue={printer.host}
+              aria-label="Address"
+              placeholder="10.1.129.39"
+              onBlur={event => event.target.value !== printer.host
+                && run(printer.id, () => api.updatePrinter(printer.id, { host: event.target.value }), 'Address saved.')}
+            />
+            <input
+              defaultValue={printer.port}
+              aria-label="Port"
+              onBlur={event => Number(event.target.value) !== printer.port
+                && run(printer.id, () => api.updatePrinter(printer.id, { port: event.target.value }), 'Port saved.')}
+            />
+            <div className="printer-actions">
+              <button
+                type="button"
+                className={`printer-chip${printer.isDefault ? ' is-on' : ''}`}
+                title="Used by anyone who has not chosen their own"
+                onClick={() => !printer.isDefault
+                  && run(printer.id, () => api.updatePrinter(printer.id, { isDefault: true }), 'Default set.')}
+              >
                 Default
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={printer.active}
-                  onChange={() => run(printer.id, () => api.updatePrinter(printer.id, { active: !printer.active }), 'Saved.')}
-                />
-                Active
-              </label>
-              <button type="button" className="btn" disabled={busyId === printer.id}
+              </button>
+              <button
+                type="button"
+                className={`printer-chip${printer.active ? ' is-on' : ''}`}
+                onClick={() => run(printer.id, () => api.updatePrinter(printer.id, { active: !printer.active }), 'Saved.')}
+              >
+                {printer.active ? 'Active' : 'Off'}
+              </button>
+              <button type="button" className="printer-chip" disabled={busyId === printer.id}
                 onClick={() => run(printer.id, () => api.testPrinter(printer.id), 'Test label sent.')}>
                 Test
               </button>
-              <button type="button" className={`btn${printer.id === selectedId ? ' btn-primary' : ''}`}
+              <button
+                type="button"
+                className={`printer-chip is-claim${printer.id === selectedId ? ' is-mine' : ''}`}
                 disabled={busyId === printer.id || printer.id === selectedId}
-                onClick={() => run(printer.id, () => api.selectPrinter(printer.id), 'This is your printer now.')}>
+                onClick={() => run(printer.id, () => api.selectPrinter(printer.id), 'This is your printer now.')}
+              >
                 {printer.id === selectedId ? 'Yours' : 'Use this'}
               </button>
             </div>
           </div>
         ))}
         {!records.length && !printers.loading && (
-          <div className="receiving-current-empty">No printers yet. Add the first below.</div>
+          <div className="printer-empty">No printers yet. Add the first one below.</div>
         )}
-      </div>
-      <div className="printer-add">
-        <input value={draft.name} placeholder="Name, e.g. Dock"
-          onChange={event => setDraft(d => ({ ...d, name: event.target.value }))} />
-        <input value={draft.host} placeholder="10.1.129.39"
-          onChange={event => setDraft(d => ({ ...d, host: event.target.value }))} />
-        <input className="printer-port" value={draft.port}
-          onChange={event => setDraft(d => ({ ...d, port: event.target.value }))} />
-        <button type="button" className="btn btn-primary" disabled={!draft.name.trim() || busyId === 'new'}
-          onClick={() => run('new', () => api.createPrinter(draft).then(() => setDraft({ name: '', host: '', port: 9100 })), 'Printer added.')}>
-          Add printer
-        </button>
+        <div className="printer-grid-row is-new">
+          <input value={draft.name} placeholder="Name, e.g. Dock" aria-label="New printer name"
+            onChange={event => setDraft(d => ({ ...d, name: event.target.value }))} />
+          <input value={draft.host} placeholder="10.1.129.39" aria-label="New printer address"
+            onChange={event => setDraft(d => ({ ...d, host: event.target.value }))} />
+          <input value={draft.port} aria-label="New printer port"
+            onChange={event => setDraft(d => ({ ...d, port: event.target.value }))} />
+          <div className="printer-actions">
+            <button type="button" className="btn btn-primary" disabled={!draft.name.trim() || busyId === 'new'}
+              onClick={() => run('new', () => api.createPrinter(draft).then(() => setDraft({ name: '', host: '', port: 9100 })), 'Printer added.')}>
+              Add
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
