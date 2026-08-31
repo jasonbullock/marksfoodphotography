@@ -8763,11 +8763,31 @@ def _notify_shipment_arrival(receipt, shaped_entries):
         return False, "No Teams webhook configured for this client."
 
     items = []
+    image_urls = []
     for entry in shaped_entries:
-        name = entry.get("productName") or entry.get("description") or "Unnamed item"
-        identifier = entry.get("skuId") or entry.get("observedIdentifier") or ""
+        # The matched Product's name is the one people recognise. What the receiver
+        # read off the box is a means of finding it, not what to call it.
+        matched = entry.get("matchedProduct") or {}
+        name = (
+            matched.get("name")
+            or matched.get("product")
+            or entry.get("productName")
+            or entry.get("description")
+            or "Unnamed item"
+        )
+        identifier = (
+            matched.get("primaryMatchKey")
+            or matched.get("identifier")
+            or entry.get("skuId")
+            or entry.get("observedIdentifier")
+            or ""
+        )
         quantity = entry.get("quantity") or 1
         items.append(f"{quantity} x {name}" + (f" - {identifier}" if identifier else ""))
+        for photo in entry.get("photos") or entry.get("itemPhotos") or []:
+            url = str((photo or {}).get("url") or (photo or {}).get("public_url") or "").strip()
+            if url and url not in image_urls:
+                image_urls.append(url)
 
     card = notifier.build_arrival_card(
         client_name=client_fields.get(C.F_CLIENT_NAME, ""),
@@ -8777,6 +8797,7 @@ def _notify_shipment_arrival(receipt, shaped_entries):
         tracking=fields.get(C.F_RECEIPT_TRACKING, ""),
         received=fields.get(C.F_RECEIPT_RECEIVED, ""),
         items=items,
+        image_urls=image_urls,
     )
     posted, detail = notifier.post_arrival(webhook, card)
     if not posted:

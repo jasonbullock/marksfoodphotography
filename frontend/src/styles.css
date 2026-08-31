@@ -15984,8 +15984,9 @@ select.intake-choice-control {
 }
 
 .recv-finish-btn:not(:disabled):hover {
-  background: #dcfce7;
-  border-color: #059669;
+  background: #059669;
+  border-color: #047857;
+  color: #fff;
 }
 
 .recv-finish-btn:disabled {

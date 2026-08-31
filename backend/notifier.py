@@ -8,6 +8,8 @@ Microsoft Graph is deliberately not used: it needs tenant admin consent, which
 SGS IT declined. A Power Automate "when a webhook request is received" flow needs
 none - the channel owner creates it and hands over a URL.
 """
+from datetime import datetime, timezone, timedelta
+
 import requests
 
 from config import Config as C
@@ -15,10 +17,34 @@ from config import Config as C
 TIMEOUT_SECONDS = 10
 # Beyond this the card is unreadable and Teams truncates it anyway.
 MAX_LISTED_ITEMS = 12
+# The studio is in Chicago and everyone reading this is too, so times are shown
+# there rather than in the UTC the records are stored in.
+STUDIO_UTC_OFFSETS = {"CST": timedelta(hours=-6), "CDT": timedelta(hours=-5)}
+# A row of thumbnails reads at a glance; a wall of photos does not.
+MAX_SHOWN_IMAGES = 6
 
 
 def _fact(name, value):
     return {"title": name, "value": str(value)}
+
+
+def _studio_time(value):
+    """Render a stored UTC timestamp in the studio's own clock."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    utc = parsed.astimezone(timezone.utc)
+    # Central daylight time runs from the second Sunday in March to the first in
+    # November. Close enough to the rule without taking on a tz dependency.
+    label = "CDT" if 3 <= utc.month <= 10 else "CST"
+    local = utc + STUDIO_UTC_OFFSETS[label]
+    return f"{local.strftime('%b %-d, %-I:%M %p')} {label}"
 
 
 def _shipment_url(shipment_id):
@@ -31,7 +57,8 @@ def _planning_url():
     return f"{C.APP_BASE_URL}/planning" if C.APP_BASE_URL else ""
 
 
-def build_arrival_card(*, client_name, shipment_name, shipment_id, carrier, tracking, received, items):
+def build_arrival_card(*, client_name, shipment_name, shipment_id, carrier, tracking,
+                       received, items, image_urls=None):
     """An Adaptive Card describing one arrival, listing what came in."""
     listed = items[:MAX_LISTED_ITEMS]
     remaining = len(items) - len(listed)
@@ -43,7 +70,7 @@ def build_arrival_card(*, client_name, shipment_name, shipment_id, carrier, trac
     if carrier or tracking:
         facts.append(_fact("Carrier", " ".join(part for part in [carrier, tracking] if part)))
     if received:
-        facts.append(_fact("Received", received))
+        facts.append(_fact("Received", _studio_time(received) or received))
     facts.append(_fact("Items", len(items)))
 
     body = [
@@ -55,6 +82,20 @@ def build_arrival_card(*, client_name, shipment_name, shipment_id, carrier, trac
     ]
     if lines:
         body.append({"type": "TextBlock", "wrap": True, "text": "\n".join(lines)})
+
+    shown_images = [url for url in (image_urls or []) if str(url or "").strip()][:MAX_SHOWN_IMAGES]
+    if shown_images:
+        body.append({
+            "type": "ImageSet",
+            "imageSize": "medium",
+            "images": [{"type": "Image", "url": url} for url in shown_images],
+        })
+        remaining_images = len([url for url in (image_urls or []) if str(url or "").strip()]) - len(shown_images)
+        if remaining_images > 0:
+            body.append({
+                "type": "TextBlock", "isSubtle": True, "spacing": "None",
+                "text": f"and {remaining_images} more photo{'' if remaining_images == 1 else 's'}",
+            })
 
     actions = []
     shipment_url = _shipment_url(shipment_id)

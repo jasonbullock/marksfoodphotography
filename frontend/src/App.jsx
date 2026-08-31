@@ -3287,7 +3287,7 @@ function ShipmentsPage() {
               <div className="recv-list-footer">
                 <button
                   type="button"
-                  className="btn btn-primary recv-finish-btn"
+                  className="recv-finish-btn"
                   onClick={finishShipment}
                   disabled={Boolean(saving)}
                 >
