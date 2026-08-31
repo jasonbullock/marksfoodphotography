@@ -323,6 +323,7 @@ class Config:
     F_CF_FEED_CATEGORY = "Category"
     F_CF_FEED_PRODUCTION_TYPE = "Production Type"
     F_CF_FEED_SOURCE_KEY = "Source Key"
+    F_CF_FEED_IMAGE_URL = "Image URL"
 
     CREATIVE_FORCE_FEED_PRODUCT_FIELDS = {
         "productName": "Product Name",

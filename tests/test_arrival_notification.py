@@ -193,3 +193,18 @@ class ArrivalDeepLinkTests(unittest.TestCase):
         )["attachments"][0]["content"]
         image_set = next(block for block in card["body"] if block["type"] == "ImageSet")
         self.assertEqual(image_set["imageSize"], "large")
+
+
+class FeedImageTests(unittest.TestCase):
+    def test_the_feed_carries_the_merchandise_photo(self):
+        # A photographer opening a work unit can tell a mild salsa from a hot one
+        # without walking to the shelf.
+        source = (Path(__file__).resolve().parents[1] / "backend" / "routes.py").read_text()
+        self.assertIn('"merchandise": {"imageUrl": _first_merchandise_photo_url(entry)}', source)
+        self.assertIn("fields[C.F_CF_FEED_IMAGE_URL] = image_url", source)
+
+    def test_no_photo_writes_no_column(self):
+        # An empty URL in a url field is worse than an absent one.
+        source = (Path(__file__).resolve().parents[1] / "backend" / "routes.py").read_text()
+        start = source.index("image_url = payload.get(")
+        self.assertIn("if image_url:", source[start:start + 200])

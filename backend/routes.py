@@ -5670,6 +5670,17 @@ def _workstream_card_context(record):
     return entry, product_record, clients.get(client_id), None
 
 
+def _first_merchandise_photo_url(entry):
+    """The receiving photo, if there is one and storage is configured."""
+    if not entry:
+        return ""
+    for photo in _item_photo_metadata_from_entry(entry.get("fields", {})):
+        url = str(photo.get("url") or photo.get("public_url") or "").strip()
+        if url:
+            return url
+    return ""
+
+
 def _creative_force_handoff(record):
     fields = record.get("fields", {})
     workstream_type = fields.get(C.F_WORKSTREAM_CARD_TYPE, "")
@@ -5694,6 +5705,7 @@ def _creative_force_handoff(record):
     payload = {
         "client": {"id": (client or {}).get("id", ""), "name": (client or {}).get("name", "")},
         "workstream": {"id": record.get("id", ""), "type": workstream_type, "quantity": fields.get(C.F_WORKSTREAM_CARD_QUANTITY, 0)},
+        "merchandise": {"imageUrl": _first_merchandise_photo_url(entry)},
         "product": {
             "marksPhotoId": (product_record or {}).get("id", ""),
             "marksId": marks_id,
@@ -5749,6 +5761,11 @@ def _creative_force_feed_fields(record, handoff):
         C.F_CF_FEED_PRODUCTION_TYPE: creative_force.get("productionType", ""),
         C.F_CF_FEED_SOURCE_KEY: record.get("id", ""),
     }
+    # What the box actually looks like. A photographer pulling up a work unit can
+    # tell a mild salsa from a hot one without walking to the shelf.
+    image_url = payload.get("merchandise", {}).get("imageUrl", "")
+    if image_url:
+        fields[C.F_CF_FEED_IMAGE_URL] = image_url
     for key, value in (product.get("requiredFields") or {}).items():
         label = C.CREATIVE_FORCE_FEED_PRODUCT_FIELDS.get(key)
         if label and value not in (None, ""):
