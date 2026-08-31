@@ -9300,7 +9300,130 @@ def _printer_for_user(user_record=None, requested_id=""):
 
 @api.get("/printers")
 def list_printers():
-    return jsonify({"records": _active_printers()})
+    """Every printer, so Admin can correct one that is switched off or unreachable."""
+    records = [_shape_printer(record) for record in _list_all_records(C.PRINTERS_TABLE)]
+    records.sort(key=lambda printer: (not printer["isDefault"], printer["name"].lower()))
+    chosen = _printer_for_user(_current_user())
+    return jsonify({"records": records, "selectedId": (chosen or {}).get("id", "")})
+
+
+def _printer_fields_from_body(body):
+    fields = {}
+    if "name" in body:
+        name = str(body.get("name") or "").strip()
+        if not name:
+            raise ValueError("A printer needs a name.")
+        fields[C.F_PRINTER_NAME] = name
+    if "host" in body:
+        fields[C.F_PRINTER_HOST] = str(body.get("host") or "").strip()
+    if "port" in body:
+        try:
+            fields[C.F_PRINTER_PORT] = int(body.get("port") or 9100)
+        except (TypeError, ValueError):
+            raise ValueError("Port must be a number.")
+    for key, field in (("active", C.F_PRINTER_ACTIVE), ("isDefault", C.F_PRINTER_DEFAULT)):
+        if key in body:
+            fields[field] = bool(body.get(key))
+    if "notes" in body:
+        fields[C.F_PRINTER_NOTES] = str(body.get("notes") or "")
+    return fields
+
+
+def _clear_other_defaults(keep_id):
+    """Only one default, or nobody knows which printer a tag went to."""
+    for record in _list_all_records(C.PRINTERS_TABLE):
+        if record.get("id") == keep_id:
+            continue
+        if record.get("fields", {}).get(C.F_PRINTER_DEFAULT):
+            airtable.update_record(
+                C.PRINTERS_TABLE, record["id"], {C.F_PRINTER_DEFAULT: False}, by_field_id=False
+            )
+
+
+@api.post("/printers")
+def create_printer():
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    body = request.get_json(silent=True) or {}
+    try:
+        fields = _printer_fields_from_body({"active": True, **body})
+    except ValueError as error:
+        return err(str(error))
+    if not fields.get(C.F_PRINTER_NAME):
+        return err("A printer needs a name.")
+    try:
+        record = airtable.create_record(C.PRINTERS_TABLE, fields, by_field_id=False)
+        if fields.get(C.F_PRINTER_DEFAULT):
+            _clear_other_defaults(record["id"])
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": _shape_printer(record)}), 201
+
+
+@api.patch("/printers/<record_id>")
+def update_printer(record_id):
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    body = request.get_json(silent=True) or {}
+    try:
+        fields = _printer_fields_from_body(body)
+    except ValueError as error:
+        return err(str(error))
+    try:
+        record = airtable.update_record(C.PRINTERS_TABLE, record_id, fields, by_field_id=False)
+        if fields.get(C.F_PRINTER_DEFAULT):
+            _clear_other_defaults(record_id)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": _shape_printer(record)})
+
+
+@api.post("/printers/<record_id>/select")
+def select_printer(record_id):
+    """Remember this person's printer, so they choose once rather than every time."""
+    user = _current_user()
+    if not user:
+        return _forbidden()
+    try:
+        airtable.update_record(
+            C.USERS_TABLE, user["id"], {C.F_USER_PRINTER_ID: record_id}, by_field_id=False
+        )
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"selectedId": record_id})
+
+
+@api.post("/printers/<record_id>/test")
+def test_printer(record_id):
+    """Send one label so a corrected address can be proved before it is needed."""
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    try:
+        record = airtable.get_record(C.PRINTERS_TABLE, record_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    printer = _shape_printer(record)
+    if not printer["host"]:
+        return err("This printer has no address.")
+    zpl = tag_print.build_merchandise_tag_zpl({
+        "client": "Marks Photo",
+        "productName": "Printer test",
+        "marksId": "MP-TEST",
+        "received": _studio_now(),
+        "storage": printer["name"],
+    })
+    try:
+        tag_print.send_zpl(zpl, printer["host"], port=printer["port"])
+    except tag_print.TagPrintError as error:
+        return err(str(error), 502)
+    return jsonify({"printed": True, "printer": printer})
+
+
+def _studio_now():
+    return notifier._studio_time(_now_iso())
 
 
 def _merchandise_tag(entry, receipt=None, product_record=None):

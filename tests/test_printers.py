@@ -74,3 +74,25 @@ class PrinterChoiceTests(unittest.TestCase):
     def test_no_printers_is_reported_rather_than_guessed(self):
         with patch("routes._list_all_records", return_value=[]):
             self.assertIsNone(_printer_for_user(None))
+
+
+class OneDefaultTests(unittest.TestCase):
+    def test_setting_a_default_clears_the_others(self):
+        # Two defaults and nobody can say where a tag went.
+        from unittest.mock import call, patch
+
+        import routes
+
+        records = [
+            {"id": "recA", "fields": {C.F_PRINTER_NAME: "A", C.F_PRINTER_DEFAULT: True}},
+            {"id": "recB", "fields": {C.F_PRINTER_NAME: "B", C.F_PRINTER_DEFAULT: True}},
+            {"id": "recKeep", "fields": {C.F_PRINTER_NAME: "Keep", C.F_PRINTER_DEFAULT: True}},
+        ]
+        with patch("routes._list_all_records", return_value=records), \
+             patch("routes.airtable.update_record") as update:
+            routes._clear_other_defaults("recKeep")
+
+        cleared = [c.args[1] for c in update.call_args_list]
+        self.assertEqual(sorted(cleared), ["recA", "recB"])
+        for c in update.call_args_list:
+            self.assertEqual(c.args[2], {C.F_PRINTER_DEFAULT: False})

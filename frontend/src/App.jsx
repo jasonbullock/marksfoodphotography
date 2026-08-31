@@ -5735,6 +5735,108 @@ function CreativeForceAdminSection() {
   );
 }
 
+function PrintersPanel() {
+  const printers = useResource(() => api.listPrinters());
+  const [busyId, setBusyId] = useState('');
+  const [message, setMessage] = useState('');
+  const [draft, setDraft] = useState({ name: '', host: '', port: 9100 });
+  const records = printers.data?.records ?? [];
+  const selectedId = printers.data?.selectedId || '';
+
+  async function run(id, action, done) {
+    setBusyId(id);
+    setMessage('');
+    try {
+      await action();
+      setMessage(done);
+      await printers.reload({ quiet: true });
+    } catch (error) {
+      setMessage(error.message || 'That did not work.');
+    } finally {
+      setBusyId('');
+    }
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <span className="panel-title">Printers</span>
+        <span className="panel-sub">
+          Addresses move. Correcting one here takes effect on the next tag, with nothing to redeploy.
+        </span>
+      </div>
+      {message && <div className="notice-state">{message}</div>}
+      <div className="printer-rows">
+        {records.map(printer => (
+          <div className={`printer-row${printer.id === selectedId ? ' is-mine' : ''}`} key={printer.id}>
+            <div className="printer-row-main">
+              <input
+                defaultValue={printer.name}
+                onBlur={event => event.target.value !== printer.name
+                  && run(printer.id, () => api.updatePrinter(printer.id, { name: event.target.value }), 'Renamed.')}
+              />
+              <input
+                defaultValue={printer.host}
+                placeholder="10.1.129.39"
+                onBlur={event => event.target.value !== printer.host
+                  && run(printer.id, () => api.updatePrinter(printer.id, { host: event.target.value }), 'Address saved.')}
+              />
+              <input
+                className="printer-port"
+                defaultValue={printer.port}
+                onBlur={event => Number(event.target.value) !== printer.port
+                  && run(printer.id, () => api.updatePrinter(printer.id, { port: event.target.value }), 'Port saved.')}
+              />
+            </div>
+            <div className="printer-row-actions">
+              <label title="Used by anyone who has not chosen their own">
+                <input
+                  type="checkbox"
+                  checked={printer.isDefault}
+                  onChange={() => run(printer.id, () => api.updatePrinter(printer.id, { isDefault: true }), 'Default set.')}
+                />
+                Default
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={printer.active}
+                  onChange={() => run(printer.id, () => api.updatePrinter(printer.id, { active: !printer.active }), 'Saved.')}
+                />
+                Active
+              </label>
+              <button type="button" className="btn" disabled={busyId === printer.id}
+                onClick={() => run(printer.id, () => api.testPrinter(printer.id), 'Test label sent.')}>
+                Test
+              </button>
+              <button type="button" className={`btn${printer.id === selectedId ? ' btn-primary' : ''}`}
+                disabled={busyId === printer.id || printer.id === selectedId}
+                onClick={() => run(printer.id, () => api.selectPrinter(printer.id), 'This is your printer now.')}>
+                {printer.id === selectedId ? 'Yours' : 'Use this'}
+              </button>
+            </div>
+          </div>
+        ))}
+        {!records.length && !printers.loading && (
+          <div className="receiving-current-empty">No printers yet. Add the first below.</div>
+        )}
+      </div>
+      <div className="printer-add">
+        <input value={draft.name} placeholder="Name, e.g. Dock"
+          onChange={event => setDraft(d => ({ ...d, name: event.target.value }))} />
+        <input value={draft.host} placeholder="10.1.129.39"
+          onChange={event => setDraft(d => ({ ...d, host: event.target.value }))} />
+        <input className="printer-port" value={draft.port}
+          onChange={event => setDraft(d => ({ ...d, port: event.target.value }))} />
+        <button type="button" className="btn btn-primary" disabled={!draft.name.trim() || busyId === 'new'}
+          onClick={() => run('new', () => api.createPrinter(draft).then(() => setDraft({ name: '', host: '', port: 9100 })), 'Printer added.')}>
+          Add printer
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SettingsPage({ cards = null } = {}) {
   const { data, loading, error } = useResource(() => api.settings());
   const clients = useResource(() => api.listClients({ all: true }));
@@ -6036,6 +6138,7 @@ function SettingsPage({ cards = null } = {}) {
           </table>
         </div>
       </div>}
+      {hasCard('printers') && <PrintersPanel />}
       {hasCard('developer') && s?.development && (
         <div className="panel">
           <SectionHeader id="developer" title="Developer Tools" />
@@ -13077,6 +13180,7 @@ const ADMIN_CARD_OPTIONS = [
   { id: 'system', label: 'System', icon: '⚙️', description: 'Review Airtable connection and backend configuration.' },
   { id: 'clients', label: 'Clients', icon: '🏷️', description: 'Review client defaults, identifiers, and requirements.' },
   { id: 'creative-force', label: 'Creative Force', icon: '↗', description: 'Review configured handoff requirements and feed eligibility.' },
+  { id: 'printers', label: 'Printers', icon: '🖨️', description: 'Label printers on the studio network and which one you print to.' },
   { id: 'developer', label: 'Developer Tools', icon: '🛠️', description: 'Run local utilities and maintenance tools.' },
 ];
 const DEFAULT_ADMIN_CARDS = {

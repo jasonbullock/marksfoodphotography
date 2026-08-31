@@ -2324,3 +2324,28 @@ class PrintTagTests(unittest.TestCase):
         source = APP.read_text()
         self.assertIn("async function printTagForItem()", source)
         self.assertIn("await api.printMerchandiseTag(item.merchandiseId)", source)
+
+
+class PrinterAdminTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+        cls.api = (ROOT / "frontend" / "src" / "api.js").read_text()
+
+    def test_printers_have_their_own_admin_card(self):
+        self.assertIn("id: 'printers', label: 'Printers'", self.source)
+        self.assertIn("{hasCard('printers') && <PrintersPanel />}", self.source)
+
+    def test_an_address_can_be_corrected_without_a_deploy(self):
+        # These move often; that is the whole reason the panel exists.
+        for call in ("api.updatePrinter = async (id, payload)", "api.createPrinter = async payload"):
+            self.assertIn(call, self.api)
+        self.assertIn("api.updatePrinter(printer.id, { host: event.target.value })", self.source)
+
+    def test_a_corrected_address_can_be_proved_before_it_is_needed(self):
+        self.assertIn("api.testPrinter = async id", self.api)
+        self.assertIn("'Test label sent.'", self.source)
+
+    def test_each_person_can_claim_a_printer(self):
+        self.assertIn("api.selectPrinter = async id", self.api)
+        self.assertIn("'This is your printer now.'", self.source)

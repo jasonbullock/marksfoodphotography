@@ -18300,3 +18300,73 @@ select.form-input {
 .new-review-tag-btn {
   flex: 0 0 auto;
 }
+
+.printer-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 18px;
+}
+
+.printer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.printer-row.is-mine {
+  border-color: #059669;
+  background: rgba(5, 150, 105, 0.05);
+}
+
+.printer-row-main,
+.printer-add {
+  display: flex;
+  gap: 10px;
+  flex: 1 1 380px;
+  min-width: 0;
+}
+
+.printer-add {
+  padding: 0 18px 18px;
+  align-items: center;
+}
+
+.printer-row-main input,
+.printer-add input {
+  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  font: 650 13px/1.2 system-ui, -apple-system, sans-serif;
+}
+
+.printer-port {
+  flex: 0 0 88px !important;
+}
+
+.printer-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.printer-row-actions label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--text-2);
+  white-space: nowrap;
+}
