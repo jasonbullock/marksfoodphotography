@@ -391,6 +391,9 @@ class ActivationReleaseStampTests(unittest.TestCase):
         move = source.split("def move_activation_to_photo", 1)[1].split("\ndef ", 1)[0]
         self.assertIn("update_fields[C.F_RECEIPT_ENTRY_RELEASED] = True", move)
         self.assertIn("update_fields[C.F_RECEIPT_ENTRY_RELEASED_AT] = _now_iso()", move)
+        # Release belongs to the workstream, and this is the path the form uses.
+        self.assertIn("card_update[C.F_WORKSTREAM_CARD_RELEASED] = True", move)
+        self.assertIn("card_update[C.F_WORKSTREAM_CARD_RELEASED_AT] = _now_iso()", move)
         self.assertIn("update_fields[C.F_RECEIPT_ENTRY_RELEASED_BY] = [releaser_id]", move)
 
     def test_an_existing_stamp_is_not_overwritten(self):

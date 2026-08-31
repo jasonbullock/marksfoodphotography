@@ -8210,6 +8210,8 @@ function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = 
     workstreamType: type,
     creativeForceStep: card.creativeForceStep || '',
     creativeForceStatus: card.creativeForceStatus || '',
+    creativeForceWorkUnitStatus: card.creativeForceWorkUnitStatus || '',
+    creativeForceStepReportedAt: card.creativeForceStepReportedAt || '',
     planningStatus,
     workstreamQuantity: card.quantity || 0,
     clientPhotoProductionRequirements: client?.photoProductionRequirements || null,
@@ -8224,6 +8226,8 @@ function buildWorkstreamPlanningItem(card = {}, { clientMap = {}, locationMap = 
       workstreamType: type,
       creativeForceStep: card.creativeForceStep || '',
       creativeForceStatus: card.creativeForceStatus || '',
+      creativeForceWorkUnitStatus: card.creativeForceWorkUnitStatus || '',
+      creativeForceStepReportedAt: card.creativeForceStepReportedAt || '',
       planningStatus,
       workstreamQuantity: card.quantity || 0,
       manualProductInfo: card.manualProductInfo || record.manualProductInfo || '',
@@ -8331,6 +8335,32 @@ function otherArrivalNote(item, arrivalsByProduct) {
     return 'Duplicate SKU · one ready for release';
   }
   return `Duplicate SKU · ${arrivals.size + 1} arrivals`;
+}
+
+// Creative Force reports two things and only one of them moves forward. Each step
+// begins at "To Do", so a card showing the step status alone looks stuck even while
+// the shoot progresses. The work unit's status is the one that advances.
+function humanizeCreativeForceStatus(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  return text.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+}
+
+function creativeForceProgressLabel(item = {}) {
+  const step = String(item.creativeForceStep || '').trim();
+  const overall = humanizeCreativeForceStatus(item.creativeForceWorkUnitStatus);
+  return [step, overall].filter(Boolean).join(' · ')
+    || humanizeCreativeForceStatus(item.creativeForceStatus);
+}
+
+function creativeForceProgressDetail(item = {}) {
+  const step = String(item.creativeForceStep || '').trim();
+  const stepStatus = humanizeCreativeForceStatus(item.creativeForceStatus);
+  const reported = item.creativeForceStepReportedAt
+    ? ` \u00b7 reported ${formatInventoryDate(item.creativeForceStepReportedAt)}`
+    : '';
+  if (!step) return 'Creative Force progress';
+  return `${step} is ${stepStatus || 'not reported'}${reported}`;
 }
 
 function DeliverableBadges({ values = [], overlay = false, suggested = false, justReleased = false }) {
@@ -9054,10 +9084,13 @@ function PlanningReleaseView({
                               <CopyValue value={item.title} label="Copy product name" />
                             </span>
                             <ReleaseCardIdentifierLine item={item} identifier={identifier} sectionId={section.id} />
-                            {item.record?.released && (item.creativeForceStep || item.creativeForceStatus) && (
-                              <span className="planning-release-cf-line">
+                            {(item.creativeForceStep || item.creativeForceStatus) && (
+                              <span
+                                className="planning-release-cf-line"
+                                title={creativeForceProgressDetail(item)}
+                              >
                                 <CreativeForceMark />
-                                <span>{[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' · ')}</span>
+                                <span>{creativeForceProgressLabel(item)}</span>
                               </span>
                             )}
                             {otherArrivalNote(item, arrivalsByProduct) && (

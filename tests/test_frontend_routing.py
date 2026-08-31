@@ -1266,16 +1266,23 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("onClick={onClose}>Done</button>", self.source)
 
     def test_released_cards_show_creative_force_progress(self):
-        # Temporary: where the item stands in Creative Force, shown only on cards
-        # that have been released and only when Creative Force has reported.
+        # Creative Force only reports on work released to it, so its own report is
+        # the proof. Gating this on the released flag hid progress on cards released
+        # before the flag existed, or through a path that did not set it.
         self.assertIn("function CreativeForceMark({ size = 12 })", self.source)
         self.assertIn("creativeForceStatus: card.creativeForceStatus || ''", self.source)
         self.assertIn(
-            "{item.record?.released && (item.creativeForceStep || item.creativeForceStatus) && (",
+            "{(item.creativeForceStep || item.creativeForceStatus) && (",
             self.source,
         )
-        self.assertIn("[item.creativeForceStep, item.creativeForceStatus].filter(Boolean).join(' \u00b7 ')", self.source)
         self.assertIn(".planning-release-cf-line", self.styles)
+
+    def test_progress_shows_the_status_that_moves(self):
+        # Each step restarts at "To Do", so the step status alone reads as stuck.
+        self.assertIn("function creativeForceProgressLabel(item = {})", self.source)
+        self.assertIn("humanizeCreativeForceStatus(item.creativeForceWorkUnitStatus)", self.source)
+        self.assertIn("creativeForceWorkUnitStatus: card.creativeForceWorkUnitStatus || ''", self.source)
+        self.assertIn("title={creativeForceProgressDetail(item)}", self.source)
 
     def test_a_staged_match_stays_on_screen_until_the_save_lands(self):
         # Clearing it as the write began made the card vanish and the suggestions

@@ -1903,3 +1903,27 @@ rendered body, so the release view behaves exactly as before.
 
 Credentials for a service that cannot authenticate should not sit in an environment file.
 The `MS_GRAPH_*` values need clearing from `backend/.env` and from Render by hand.
+
+## 2026-08-31 - Release Is Stamped On The Path The Form Actually Uses
+
+Per-workstream release was added to `POST /merchandise/<id>/release`. The Release to Photo
+button does not go there - it posts to `/activations/<id>/move-to-photo`, which stamped
+Released on the Merchandise only. So the R badge and the dashboard count read nothing while
+work was in Creative Force and shooting.
+
+The card is stamped in the same write that moves it to Awaiting Photo Release, so it costs
+no extra Airtable call.
+
+Creative Force progress is also no longer gated on that flag. CF only reports on work
+released to it, so its own report is the proof; requiring the flag hid progress on anything
+released before the flag existed or through a path that never set it.
+
+## 2026-08-31 - Show The Creative Force Status That Moves
+
+A work unit carries two statuses. Each step restarts at "To Do" when Creative Force advances
+to it, so a card showing the step status alone reads as stuck: Photography can be Done and
+the card still says To Do, because that is the new step's status.
+
+The card shows the step name with the work unit's own status - "Final Selection · In
+Progress" - which advances rather than resetting. The step's own status and when it was
+reported are in the tooltip.

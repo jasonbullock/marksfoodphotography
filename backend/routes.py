@@ -1260,12 +1260,12 @@ def move_activation_to_photo(activation_id):
                 continue
             workstream_type = str(workstream_fields.get(C.F_WORKSTREAM_CARD_TYPE) or "").strip()
             if workstream_type in {"Packaging", "Ecomm"}:
-                photo_cards.append(workstream_fields)
+                photo_cards.append(workstream_record)
         unreleased_siblings = {
-            str(card.get(C.F_WORKSTREAM_CARD_TYPE) or "").strip()
+            str(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_TYPE) or "").strip()
             for card in photo_cards
-            if str(card.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) or "").strip() != PLANNING_STATUS_LABELS["awaiting-photo-release"]
-            and str(card.get(C.F_WORKSTREAM_CARD_TYPE) or "").strip() not in release_types
+            if str(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) or "").strip() != PLANNING_STATUS_LABELS["awaiting-photo-release"]
+            and str(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_TYPE) or "").strip() not in release_types
         }
         update_fields = {
             C.F_RECEIPT_ENTRY_DELIVERABLES: combined_deliverables,
@@ -1313,13 +1313,24 @@ def move_activation_to_photo(activation_id):
             # feed when this photo group is edited or released again.
             ready_workstream_cards.append(workstream_record)
             continue
+        # Release belongs to the workstream, and this is the path the release form
+        # uses. Stamped in the same write that moves the card, so it costs no extra
+        # Airtable call; without it the R badge and the dashboard count read nothing
+        # however much had gone to photo.
+        card_update = {
+            C.F_WORKSTREAM_CARD_PLANNING_STATUS: PLANNING_STATUS_LABELS["awaiting-photo-release"],
+        }
+        if not workstream_fields.get(C.F_WORKSTREAM_CARD_RELEASED):
+            card_update[C.F_WORKSTREAM_CARD_RELEASED] = True
+            card_update[C.F_WORKSTREAM_CARD_RELEASED_AT] = _now_iso()
+            card_releaser_id = _current_user_id()
+            if card_releaser_id:
+                card_update[C.F_WORKSTREAM_CARD_RELEASED_BY] = [card_releaser_id]
         try:
             updated_workstream = airtable.update_record(
                 C.WORKSTREAM_CARDS_TABLE,
                 workstream_record.get("id"),
-                {
-                    C.F_WORKSTREAM_CARD_PLANNING_STATUS: PLANNING_STATUS_LABELS["awaiting-photo-release"],
-                },
+                card_update,
                 by_field_id=False,
                 typecast=True,
             )
@@ -5382,6 +5393,11 @@ def _shape_workstream_card(record):
         "creativeForce": creative_force_sync,
         "creativeForceStatus": fields.get(C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS, ""),
         "creativeForceStep": fields.get(C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP, ""),
+        # The step status restarts at "To Do" every time Creative Force advances a
+        # step, so on its own it reads as though nothing is happening. The work
+        # unit's own status is what actually moves.
+        "creativeForceWorkUnitStatus": creative_force_sync.get("statusRaw", ""),
+        "creativeForceStepReportedAt": creative_force_sync.get("stepReportedAt", ""),
         "released": bool(fields.get(C.F_WORKSTREAM_CARD_RELEASED, False)),
         "releasedAt": fields.get(C.F_WORKSTREAM_CARD_RELEASED_AT, ""),
         "releasedByIds": _as_list(fields.get(C.F_WORKSTREAM_CARD_RELEASED_BY, [])),

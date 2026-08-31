@@ -1245,9 +1245,13 @@ class AuthTests(unittest.TestCase):
         self.assertNotIn(C.F_RECEIPT_ENTRY_PLANNING_STATUS, merch_update)
         self.assertEqual(update_record.call_args_list[1].args[0], C.WORKSTREAM_CARDS_TABLE)
         self.assertEqual(update_record.call_args_list[1].args[1], "recEcommCard")
-        self.assertEqual(update_record.call_args_list[1].args[2], {
-            C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release",
-        })
+        ecomm_update = update_record.call_args_list[1].args[2]
+        self.assertEqual(ecomm_update[C.F_WORKSTREAM_CARD_PLANNING_STATUS], "Awaiting Photo Release")
+        # Release belongs to the workstream, and it is stamped in the same write.
+        self.assertTrue(ecomm_update[C.F_WORKSTREAM_CARD_RELEASED])
+        self.assertTrue(ecomm_update[C.F_WORKSTREAM_CARD_RELEASED_AT])
+        # The Packaging sibling is untouched.
+        self.assertNotIn("recPackagingCard", [call.args[1] for call in update_record.call_args_list])
         self.assertEqual(update_record.call_count, 3)
         populate_feed.assert_called_once_with([updated_ecomm_card])
 
