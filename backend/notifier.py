@@ -86,8 +86,6 @@ def build_arrival_card(*, client_name, shipment_name, shipment_id, carrier, trac
     body = [
         {"type": "TextBlock", "size": "Medium", "weight": "Bolder",
          "text": f"{len(items)} item{'' if len(items) == 1 else 's'} arrived at Walnut"},
-        {"type": "TextBlock", "spacing": "None", "isSubtle": True, "wrap": True,
-         "text": shipment_name or "New shipment"},
         {"type": "FactSet", "facts": facts},
     ]
     if lines:

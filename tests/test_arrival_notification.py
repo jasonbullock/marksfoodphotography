@@ -39,6 +39,8 @@ class ArrivalCardTests(unittest.TestCase):
         card = self.card()
         text = str(card)
         self.assertIn("1 item arrived at Walnut", text)
+        # The generated shipment name repeated the Client and Received facts.
+        self.assertNotIn("Topco - 2026-08-28", text)
         self.assertIn("Sauerkraut 14.5oz", text)
         urls = [action["url"] for action in card["actions"]]
         self.assertIn("https://marks.example/shipments?shipmentId=recShipment", urls)
