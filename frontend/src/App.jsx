@@ -3279,7 +3279,7 @@ function ShipmentsPage() {
                     <div className="recv-save-row">
                       <button
                         type="button"
-                        className="recv-save-btn recv-save-print"
+                        className="recv-save-btn"
                         onClick={() => saveNext({ printTagAfter: true })}
                         disabled={Boolean(saving) || entryPhotos.length === 0 || Boolean(printingTagId)}
                       >
@@ -3328,17 +3328,6 @@ function ShipmentsPage() {
                       <small>Qty {saved.quantity || 1} · {isMatched ? 'Matched' : 'Unmatched'}{locationName ? ` · ${locationName}` : ''}</small>
                     </span>
                     <span className="receiving-current-actions">
-                      {/* Printed here because this is where the box is in hand. A
-                          location is not required: most are shelved later, and a
-                          tag that waits for one is a tag nobody prints. */}
-                      <button
-                        type="button"
-                        className="recv-tag-btn"
-                        onClick={e => { e.stopPropagation(); printTag(saved); }}
-                        disabled={printingTagId === saved.id}
-                      >
-                        {printingTagId === saved.id ? 'Printing…' : 'Print tag'}
-                      </button>
                       <button
                         type="button"
                         className="receiving-current-copy-button is-danger"

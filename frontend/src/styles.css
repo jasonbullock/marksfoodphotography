@@ -18248,29 +18248,6 @@ select.form-input {
   text-align: center;
 }
 
-.recv-tag-btn {
-  min-height: 30px;
-  padding: 5px 11px;
-  border: 1px solid var(--border-strong);
-  border-radius: 7px;
-  background: var(--surface);
-  color: var(--text-2);
-  font: 800 11px/1 system-ui, -apple-system, sans-serif;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.recv-tag-btn:hover:not(:disabled) {
-  border-color: var(--text-1);
-  background: var(--text-1);
-  color: #fff;
-}
-
-.recv-tag-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 .phone-recv-logged li {
   flex-direction: row;
   align-items: center;
@@ -18305,18 +18282,6 @@ select.form-input {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-}
-
-.recv-save-print {
-  background: var(--surface);
-  border: 1.5px solid var(--border-strong);
-  color: var(--text-1);
-}
-
-.recv-save-print:hover:not(:disabled) {
-  border-color: #1e2a3a;
-  background: #1e2a3a;
-  color: #fff;
 }
 
 .new-review-tag-notice {

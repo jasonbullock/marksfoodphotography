@@ -2300,7 +2300,9 @@ class PrintTagTests(unittest.TestCase):
         self.assertIn("api.printMerchandiseTag = async (entryId", self.api)
         self.assertEqual(self.source.count("await api.printMerchandiseTag(saved.id)"), 1)
         self.assertEqual(self.source.count("await api.printMerchandiseTag(entryId)"), 1)
-        self.assertIn("Print tag", self.source)
+        # Not in the logged-entry row: that actions column stacks vertically, and a
+        # button there turns a compact row into three storeys.
+        self.assertNotIn('className="recv-tag-btn"', self.source)
 
     def test_a_missing_location_does_not_stop_a_tag(self):
         # Most merchandise is shelved after receiving; a tag that waits for a
