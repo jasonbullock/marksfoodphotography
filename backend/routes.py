@@ -7,6 +7,7 @@ import io
 import mailer
 import notifier
 import structure_form
+import tag_print
 import json
 import os
 import random
@@ -9300,6 +9301,93 @@ def _printer_for_user(user_record=None, requested_id=""):
 @api.get("/printers")
 def list_printers():
     return jsonify({"records": _active_printers()})
+
+
+def _merchandise_tag(entry, receipt=None, product_record=None):
+    """What goes on the label, in the terms the studio uses."""
+    fields = entry.get("fields", {})
+    receipt_fields = (receipt or {}).get("fields", {})
+    product_fields = (product_record or {}).get("fields", {})
+    client_ids = _as_list(receipt_fields.get(C.F_RECEIPT_CLIENT, []))
+    client_name = ""
+    if client_ids:
+        try:
+            client_record = airtable.get_record(C.CLIENTS_TABLE, client_ids[0], by_field_id=False)
+            client_name = client_record.get("fields", {}).get(C.F_CLIENT_NAME, "")
+        except requests.HTTPError:
+            client_name = ""
+
+    # The matched Product names the thing; what the receiver read off the box is
+    # how it was found, and only stands in when nothing was matched.
+    name = (
+        product_fields.get(C.F_ITEM_NAME)
+        or product_fields.get(C.F_ITEM_PRODUCT)
+        or fields.get(C.F_RECEIPT_ENTRY_NAME)
+        or ""
+    )
+    location_ids = _as_list(fields.get(C.F_RECEIPT_ENTRY_LOCATION, []))
+    storage = ""
+    if location_ids:
+        try:
+            location = airtable.get_record(C.LOCATIONS_TABLE, location_ids[0], by_field_id=False)
+            storage = location.get("fields", {}).get(C.F_LOCATION_NAME, "")
+        except requests.HTTPError:
+            storage = ""
+
+    carrier = str(receipt_fields.get(C.F_RECEIPT_CARRIER, "") or "").strip()
+    tracking = str(receipt_fields.get(C.F_RECEIPT_TRACKING, "") or "").strip()
+    arrival = " · ".join(part for part in [carrier, tracking[-6:] if tracking else ""] if part)
+
+    marks_id = marks_id_from_number(fields.get(C.F_RECEIPT_ENTRY_MARKS_NUMBER))
+    quantity = fields.get(C.F_RECEIPT_ENTRY_QUANTITY)
+    return {
+        "client": client_name,
+        "productName": name,
+        "marksId": marks_id,
+        "storage": storage,
+        "arrival": arrival,
+        "quantity": f"Qty {quantity}" if quantity else "",
+        "qrUrl": f"{C.APP_BASE_URL}/planning?item={entry.get('id', '')}" if C.APP_BASE_URL else "",
+    }
+
+
+@api.post("/merchandise/<entry_id>/tag")
+def print_merchandise_tag(entry_id):
+    """Print one merchandise tag, or return the ZPL without printing."""
+    body = request.get_json(silent=True) or {}
+    entry, receipt, access_error = _permitted_merchandise_or_error(entry_id)
+    if access_error:
+        return access_error
+
+    item_ids = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_ITEM, []))
+    product_record = None
+    if item_ids:
+        try:
+            product_record = airtable.get_record(C.PRODUCTS_TABLE, item_ids[0], by_field_id=False)
+        except requests.HTTPError:
+            product_record = None
+
+    tag = _merchandise_tag(entry, receipt, product_record)
+    if not tag["marksId"]:
+        return err("This merchandise has no Marks number yet, so it cannot be tagged.", 400)
+    try:
+        zpl = tag_print.build_merchandise_tag_zpl(tag)
+    except ValueError as error:
+        return err(str(error), 400)
+
+    # A preview is how the layout gets checked without spending a label.
+    if body.get("preview"):
+        return jsonify({"tag": tag, "zpl": zpl, "printed": False})
+
+    printer = _printer_for_user(_current_user(), body.get("printerId", ""))
+    if not printer:
+        return err("No active printer is configured.", 400)
+    try:
+        tag_print.send_zpl(zpl, printer["host"], port=printer["port"])
+    except tag_print.TagPrintError as error:
+        return err(str(error), 502)
+    _record_merchandise_history(entry_id, f"Tag printed to {printer['name']}")
+    return jsonify({"tag": tag, "printed": True, "printer": printer})
 
 
 def _matched_product_summary(product_record, *, clients_by_id=None):
