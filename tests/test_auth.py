@@ -666,14 +666,14 @@ class AuthTests(unittest.TestCase):
         self.assertTrue(preview.get_json()["ready"])
         # The tag code Marks mints, suffixed for this workstream - not a Product
         # field, which is often absent or arrives late.
-        self.assertEqual(preview.get_json()["payload"]["creativeForce"]["productCode"], "MP-00412-E")
+        self.assertEqual(preview.get_json()["payload"]["creativeForce"]["productCode"], "MP-00412-ECOM")
         self.assertEqual(preview.get_json()["payload"]["creativeForce"]["category"], "Topco")
 
         linked = self.client.patch("/api/workstream-cards/recCard/creative-force-link", json={"workUnitId": "cf-work-1"})
         self.assertEqual(linked.status_code, 200)
         saved = json.loads(update_record.call_args.args[2][C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC])
         self.assertEqual(saved["workUnitId"], "cf-work-1")
-        self.assertEqual(saved["productCode"], "MP-00412-E")
+        self.assertEqual(saved["productCode"], "MP-00412-ECOM")
 
     def test_photo_production_status_accepts_nonblank_artwork_path_text(self):
         client = {

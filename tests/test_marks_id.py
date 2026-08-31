@@ -23,8 +23,8 @@ class CreativeForceProductCodeTests(unittest.TestCase):
     def test_each_workstream_gets_its_own_code(self):
         # Creative Force recovers a card by Product Code and needs exactly one
         # match, so two work units off one box cannot share a code.
-        self.assertEqual(creative_force_product_code("MP-00412", "Ecomm"), "MP-00412-E")
-        self.assertEqual(creative_force_product_code("MP-00412", "Packaging"), "MP-00412-P")
+        self.assertEqual(creative_force_product_code("MP-00412", "Ecomm"), "MP-00412-ECOM")
+        self.assertEqual(creative_force_product_code("MP-00412", "Packaging"), "MP-00412-PACK")
         self.assertNotEqual(
             creative_force_product_code("MP-00412", "Ecomm"),
             creative_force_product_code("MP-00412", "Packaging"),

@@ -9232,7 +9232,7 @@ MARKS_ID_PREFIX = "MP"
 # One tag per box, but a box can raise an Ecomm and a Packaging work unit. Creative
 # Force recovers a card by Product Code and needs exactly one match, so the code it
 # receives is suffixed while the printed tag stays the bare box code.
-CREATIVE_FORCE_WORKSTREAM_SUFFIXES = {"Ecomm": "E", "Packaging": "P", "Thr3d": "T"}
+CREATIVE_FORCE_WORKSTREAM_SUFFIXES = {"Ecomm": "ECOM", "Packaging": "PACK", "Thr3d": "THR3D"}
 
 
 def marks_id_from_number(value):
