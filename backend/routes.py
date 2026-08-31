@@ -5680,8 +5680,13 @@ def _creative_force_handoff(record):
     config = (requirements.get("workstreams") or {}).get(workstream_type) or {}
     status = _photo_production_status(workstream_type, product, client)
     creative_force = config.get("creativeForce") or {}
-    product_code_field = creative_force.get("productCodeField") or ""
-    product_code = _photo_product_value(product, product_code_field) if product_code_field else ""
+    # The code Marks mints and prints on the tag, not a Product field. A client's
+    # UPC or CVID is often absent or arrives late; the tag code always exists, and
+    # the thing on the shelf and the thing in Creative Force now share an identity.
+    entry_fields = entry.get("fields", {}) if entry else {}
+    marks_id = marks_id_from_number(entry_fields.get(C.F_RECEIPT_ENTRY_MARKS_NUMBER))
+    product_code = creative_force_product_code(marks_id, workstream_type)
+    product_code_field = "marksId"
     category_field = creative_force.get("categoryField") or "clientName"
     category = creative_force.get("categoryValue", "") if category_field == "custom" else (
         client or {}).get("name", "") if category_field == "clientName" else _photo_product_value(product, category_field)
@@ -5690,6 +5695,7 @@ def _creative_force_handoff(record):
         "workstream": {"id": record.get("id", ""), "type": workstream_type, "quantity": fields.get(C.F_WORKSTREAM_CARD_QUANTITY, 0)},
         "product": {
             "marksPhotoId": (product_record or {}).get("id", ""),
+            "marksId": marks_id,
             "name": product.get("name", ""),
             "upc": product.get("upc", ""),
             "cvid": product.get("cvid", ""),
@@ -9221,6 +9227,32 @@ def _shape_receipt(r, *, entries_by_receipt=None):
     }
 
 
+MARKS_ID_PREFIX = "MP"
+# One tag per box, but a box can raise an Ecomm and a Packaging work unit. Creative
+# Force recovers a card by Product Code and needs exactly one match, so the code it
+# receives is suffixed while the printed tag stays the bare box code.
+CREATIVE_FORCE_WORKSTREAM_SUFFIXES = {"Ecomm": "E", "Packaging": "P", "Thr3d": "T"}
+
+
+def marks_id_from_number(value):
+    """Render Airtable's sequence as the code people read off a tag."""
+    try:
+        number = int(str(value or "").strip())
+    except (TypeError, ValueError):
+        return ""
+    if number <= 0:
+        return ""
+    return f"{MARKS_ID_PREFIX}-{number:05d}"
+
+
+def creative_force_product_code(marks_id, workstream_type):
+    code = str(marks_id or "").strip()
+    if not code:
+        return ""
+    suffix = CREATIVE_FORCE_WORKSTREAM_SUFFIXES.get(str(workstream_type or "").strip())
+    return f"{code}-{suffix}" if suffix else code
+
+
 def _matched_product_summary(product_record, *, clients_by_id=None):
     if not product_record:
         return None
@@ -9291,6 +9323,7 @@ def _shape_receipt_entry(r, *, products_by_id=None, clients_by_id=None):
         # is the stored Airtable label. Both come from the one Planning Status field.
         "planningStatusLabel": planning_label,
         "planningStatus": planning_status,
+        "marksId": marks_id_from_number(f.get(C.F_RECEIPT_ENTRY_MARKS_NUMBER)),
         "released": bool(f.get(C.F_RECEIPT_ENTRY_RELEASED, False)),
         "released_at": f.get(C.F_RECEIPT_ENTRY_RELEASED_AT, ""),
         "releasedAt": f.get(C.F_RECEIPT_ENTRY_RELEASED_AT, ""),

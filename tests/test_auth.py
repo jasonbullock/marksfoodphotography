@@ -645,7 +645,11 @@ class AuthTests(unittest.TestCase):
             },
         }
         client = {"id": "recClient", "fields": {C.F_CLIENT_NAME: "Topco", C.F_CLIENT_PHOTO_PRODUCTION_REQUIREMENTS: json.dumps(requirements)}}
-        entry = {"id": "recMerch", "fields": {C.F_RECEIPT_ENTRY_RECEIPT: ["recShipment"], C.F_RECEIPT_ENTRY_ITEM: ["recProduct"]}}
+        entry = {"id": "recMerch", "fields": {
+            C.F_RECEIPT_ENTRY_RECEIPT: ["recShipment"],
+            C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
+            C.F_RECEIPT_ENTRY_MARKS_NUMBER: 412,
+        }}
         receipt = {"id": "recShipment", "fields": {C.F_RECEIPT_CLIENT: ["recClient"]}}
         product = {"id": "recProduct", "fields": {C.F_ITEM_NAME: "Ranch Mix", C.F_ITEM_IDENTIFIER: "036800108738", C.F_ITEM_UPC: "036800108738", C.F_ITEM_CVID: "CVID-1", C.F_ITEM_CLIENT: ["recClient"]}}
         card = {"id": "recCard", "fields": {C.F_WORKSTREAM_CARD_TYPE: "Ecomm", C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"], C.F_WORKSTREAM_CARD_EXPECTED_PRODUCT: ["recProduct"], C.F_WORKSTREAM_CARD_QUANTITY: 1}}
@@ -660,14 +664,16 @@ class AuthTests(unittest.TestCase):
         preview = self.client.get("/api/workstream-cards/recCard/creative-force-handoff")
         self.assertEqual(preview.status_code, 200)
         self.assertTrue(preview.get_json()["ready"])
-        self.assertEqual(preview.get_json()["payload"]["creativeForce"]["productCode"], "CVID-1")
+        # The tag code Marks mints, suffixed for this workstream - not a Product
+        # field, which is often absent or arrives late.
+        self.assertEqual(preview.get_json()["payload"]["creativeForce"]["productCode"], "MP-00412-E")
         self.assertEqual(preview.get_json()["payload"]["creativeForce"]["category"], "Topco")
 
         linked = self.client.patch("/api/workstream-cards/recCard/creative-force-link", json={"workUnitId": "cf-work-1"})
         self.assertEqual(linked.status_code, 200)
         saved = json.loads(update_record.call_args.args[2][C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC])
         self.assertEqual(saved["workUnitId"], "cf-work-1")
-        self.assertEqual(saved["productCode"], "CVID-1")
+        self.assertEqual(saved["productCode"], "MP-00412-E")
 
     def test_photo_production_status_accepts_nonblank_artwork_path_text(self):
         client = {

@@ -166,6 +166,9 @@ class Config:
     F_RECEIPT_ENTRY_PLANNING_STATUS = "Planning Status"
     F_RECEIPT_ENTRY_DELIVERABLES = "Deliverables"
     F_RECEIPT_ENTRY_MANUAL_PRODUCT_INFO = "Manual Product Info"
+    # Airtable mints the sequence; the app renders it as MP-00412. This is the code
+    # printed on the tag and, suffixed per workstream, the Creative Force Product Code.
+    F_RECEIPT_ENTRY_MARKS_NUMBER = "Marks Number"
     F_RECEIPT_ENTRY_RELEASED = "Released"
     F_RECEIPT_ENTRY_RELEASED_AT = "Released At"
     F_RECEIPT_ENTRY_RELEASED_BY = "Released By"
