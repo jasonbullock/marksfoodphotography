@@ -6285,7 +6285,10 @@ def _planning_status_for_fields(fields=None):
         fields.get(C.F_RECEIPT_ENTRY_PLANNING_STATUS)
         or fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS, "")
     )
-    if explicit_planning_status in PLANNING_STATUS_VALUES:
+    # Workstream cards carry one status merchandise does not - Released - and a
+    # status this does not recognise is discarded, which dropped a released card
+    # back to the default column.
+    if explicit_planning_status in PLANNING_STATUS_VALUES + WORKSTREAM_CARD_PLANNING_STATUS_VALUES:
         return explicit_planning_status
     if explicit_planning_status:
         # A stored value outside the canonical set has no board placement.

@@ -25,20 +25,33 @@ QR_MAGNIFICATION = 6
 # pushes it higher, and the printer simply draws a bigger code. Space is reserved
 # for version 6 so the layout below cannot be overrun by data that grew.
 QR_MODULES_RESERVED = 41
-QR_TOP = 262
+
+# Everything below is derived so the gaps can be checked rather than trusted. The
+# name is capped at two lines: a third ran into the QR.
+NAME_TOP = 118
+NAME_TEXT = 42
+NAME_LINES = 2
+NAME_LINE_SPACING = 8
+NAME_BOTTOM = NAME_TOP + (NAME_LINES * (NAME_TEXT + NAME_LINE_SPACING))
+QR_TOP = NAME_BOTTOM + 20
 # Roughly an inch of clear label between the QR and the barcode, which is what
 # stops a handheld scanner reading the wrong one.
 QR_RESERVED = QR_MODULES_RESERVED * QR_MAGNIFICATION
-CODE_TOP = QR_TOP + QR_RESERVED + 20
-UPC_TOP = CODE_TOP + 54
-BARCODE_TOP = 690
+CODE_TEXT = 46
+CODE_TOP = QR_TOP + QR_RESERVED + 18
+UPC_TEXT = 32
+UPC_TOP = CODE_TOP + CODE_TEXT + 12
+# Roughly an inch of clear label between the two symbols, which is what stops a
+# handheld reading the wrong one.
+BARCODE_TOP = UPC_TOP + UPC_TEXT + 76
 BARCODE_HEIGHT = 90
-FOOTER_TOP = 800
+FOOTER_TOP = BARCODE_TOP + BARCODE_HEIGHT + 30
 FOOTER_LINE_HEIGHT = 30
 FOOTER_TEXT = 28
+FOOTER_LINES = 4
 # A hand-written line at the foot. Fixed, so it is always in the same place on
 # every tag whether or not the details above it are complete.
-SHOT_DATE_TOP = 934
+SHOT_DATE_TOP = FOOTER_TOP + (FOOTER_LINES * FOOTER_LINE_HEIGHT) + 10
 
 
 class TagPrintError(Exception):
@@ -62,7 +75,7 @@ def _http_url(value):
 def build_merchandise_tag_zpl(tag):
     """One 3x5 portrait tag. Returns ZPL ready to send to the printer."""
     client = clean(tag.get("client"), 28)
-    name = clean(tag.get("productName"), 90)
+    name = clean(tag.get("productName"), 60)
     code = clean(tag.get("marksId"), 20)
     storage = clean(tag.get("storage"), 40)
     arrival = clean(tag.get("arrival"), 40)
@@ -86,7 +99,8 @@ def build_merchandise_tag_zpl(tag):
         f"^FO{MARGIN},96^GB{CONTENT_WIDTH},3,3^FS",
         # Three lines is enough for the longest real product name; beyond that the
         # name is truncated rather than pushing the QR off the label.
-        f"^FO{MARGIN},118^FB{CONTENT_WIDTH},3,8,L^A0N,42,42^FD{name or 'Unidentified merchandise'}^FS",
+        f"^FO{MARGIN},{NAME_TOP}^FB{CONTENT_WIDTH},{NAME_LINES},{NAME_LINE_SPACING},L"
+        f"^A0N,{NAME_TEXT},{NAME_TEXT}^FD{name or 'Unidentified merchandise'}^FS",
     ]
 
     if qr_url:
@@ -99,11 +113,15 @@ def build_merchandise_tag_zpl(tag):
             f"^BQN,2,{QR_MAGNIFICATION}^FDLA,{clean(qr_url, 512)}^FS"
         )
 
-    lines.append(f"^FO{MARGIN},{CODE_TOP}^FB{CONTENT_WIDTH},1,0,C^A0N,46,46^FD{code}^FS")
+    lines.append(
+        f"^FO{MARGIN},{CODE_TOP}^FB{CONTENT_WIDTH},1,0,C^A0N,{CODE_TEXT},{CODE_TEXT}^FD{code}^FS"
+    )
     # The UPC sits under the code because that is the number a client asks about,
     # and it is often the only thing written on the box itself.
     if upc:
-        lines.append(f"^FO{MARGIN},{UPC_TOP}^FB{CONTENT_WIDTH},1,0,C^A0N,32,32^FD{upc}^FS")
+        lines.append(
+            f"^FO{MARGIN},{UPC_TOP}^FB{CONTENT_WIDTH},1,0,C^A0N,{UPC_TEXT},{UPC_TEXT}^FD{upc}^FS"
+        )
     lines.append(
         f"^FO{MARGIN},{BARCODE_TOP}^BY3,2,{BARCODE_HEIGHT}^BCN,{BARCODE_HEIGHT},N,N,N^FD{code}^FS"
     )

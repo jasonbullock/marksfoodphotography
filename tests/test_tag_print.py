@@ -141,3 +141,26 @@ class TagFitsTests(unittest.TestCase):
     def test_there_is_somewhere_to_write_the_shot_date(self):
         # Only known once the shoot happens, and nobody reprints a tag for it.
         self.assertIn("^FDShot^FS", tag())
+
+
+class TagSpacingTests(unittest.TestCase):
+    def test_no_block_starts_before_the_one_above_it_ends(self):
+        # Every position is derived, so the gaps can be checked rather than trusted.
+        t = tag_print
+        blocks = [
+            ("name", t.NAME_TOP, t.NAME_BOTTOM),
+            ("qr", t.QR_TOP, t.QR_TOP + t.QR_RESERVED),
+            ("code", t.CODE_TOP, t.CODE_TOP + t.CODE_TEXT),
+            ("upc", t.UPC_TOP, t.UPC_TOP + t.UPC_TEXT),
+            ("barcode", t.BARCODE_TOP, t.BARCODE_TOP + t.BARCODE_HEIGHT),
+            ("footer", t.FOOTER_TOP, t.FOOTER_TOP + t.FOOTER_LINES * t.FOOTER_LINE_HEIGHT),
+            ("shot", t.SHOT_DATE_TOP, t.SHOT_DATE_TOP + 32),
+        ]
+        for (above, _, above_bottom), (below, below_top, _) in zip(blocks, blocks[1:]):
+            self.assertLessEqual(above_bottom, below_top, f"{above} runs into {below}")
+        self.assertLess(blocks[-1][2], t.LABEL_HEIGHT_DOTS)
+
+    def test_the_two_symbols_stay_an_inch_apart(self):
+        t = tag_print
+        gap = t.BARCODE_TOP - (t.QR_TOP + t.QR_RESERVED)
+        self.assertGreaterEqual(gap / 203, 0.85)
