@@ -3526,7 +3526,7 @@ function ShipmentsPage() {
                           <span className="recv-all-item-meta">{r.carrier || 'Unknown carrier'}</span>
                           <span className="recv-all-item-meta">{r.tracking || '-'}</span>
                           <span className="recv-all-item-meta">{formatInventoryDate(r.received) || '-'}</span>
-                          <span className="recv-session-badge recv-all-items-badge">{entries.length} item{entries.length === 1 ? '' : 's'}</span>
+                          <span className="recv-session-badge recv-all-items-badge">{entries.length}</span>
                         </button>
                         <span className="recv-all-row-actions">
                           <button type="button" className="recv-all-item-edit" onClick={() => openReceiptForEdit(r.id)}>Edit</button>
@@ -5759,9 +5759,6 @@ function PrintersPanel() {
 
   return (
     <div className="panel">
-      <div className="panel-head">
-        <span className="panel-title">Printers</span>
-      </div>
       {message && <div className="printer-message">{message}</div>}
       <div className="printer-grid">
         <div className="printer-grid-head">

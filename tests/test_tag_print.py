@@ -104,3 +104,25 @@ class TagContentTests(unittest.TestCase):
 
     def test_a_missing_upc_leaves_no_gap(self):
         self.assertNotIn("^A0N,32,32", tag(upc=""))
+
+
+class TagFitsTests(unittest.TestCase):
+    def test_the_shot_line_does_not_land_on_the_footer(self):
+        # Four footer rows plus a hand-written line is the tightest the foot gets.
+        last_footer_bottom = (
+            tag_print.FOOTER_TOP + (3 * tag_print.FOOTER_LINE_HEIGHT) + tag_print.FOOTER_TEXT
+        )
+        self.assertLess(last_footer_bottom, tag_print.SHOT_DATE_TOP)
+
+    def test_everything_fits_on_the_label(self):
+        rule_bottom = tag_print.SHOT_DATE_TOP + 32
+        self.assertLess(rule_bottom, tag_print.LABEL_HEIGHT_DOTS)
+
+    def test_the_footer_is_labelled(self):
+        zpl = tag(received="Aug 31, 3:16 PM CDT", storage="Rack B")
+        self.assertIn("Received: Aug 31, 3:16 PM CDT", zpl)
+        self.assertIn("Storage: Rack B", zpl)
+
+    def test_there_is_somewhere_to_write_the_shot_date(self):
+        # Only known once the shoot happens, and nobody reprints a tag for it.
+        self.assertIn("^FDShot^FS", tag())

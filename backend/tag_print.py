@@ -27,6 +27,12 @@ QR_TOP = 270
 # stops a handheld scanner reading the wrong one.
 BARCODE_TOP = 690
 BARCODE_HEIGHT = 90
+FOOTER_TOP = 790
+FOOTER_LINE_HEIGHT = 32
+FOOTER_TEXT = 28
+# A hand-written line at the foot. Fixed, so it is always in the same place on
+# every tag whether or not the details above it are complete.
+SHOT_DATE_TOP = 934
 
 
 class TagPrintError(Exception):
@@ -96,12 +102,23 @@ def build_merchandise_tag_zpl(tag):
         f"^FO{MARGIN},{BARCODE_TOP}^BY3,2,{BARCODE_HEIGHT}^BCN,{BARCODE_HEIGHT},N,N,N^FD{code}^FS"
     )
 
-    y = BARCODE_TOP + BARCODE_HEIGHT + 40
-    for line in [storage, received, arrival, quantity]:
-        if not line:
+    y = FOOTER_TOP
+    footer = [("Received", received), ("Storage", storage), ("Carrier", arrival), ("", quantity)]
+    for label, value in footer:
+        if not value:
             continue
-        lines.append(f"^FO{MARGIN},{y}^FB{CONTENT_WIDTH},1,0,L^A0N,30,30^FD{line}^FS")
-        y += 38
+        text = f"{label}: {value}" if label else value
+        lines.append(
+            f"^FO{MARGIN},{y}^FB{CONTENT_WIDTH},1,0,L^A0N,{FOOTER_TEXT},{FOOTER_TEXT}^FD{text}^FS"
+        )
+        y += FOOTER_LINE_HEIGHT
+
+    # A ruled line for the shot date. Written on by hand at the bench, because the
+    # date is only known once the shoot happens and nobody is reprinting a tag for it.
+    lines.append(f"^FO{MARGIN},{SHOT_DATE_TOP}^A0N,26,26^FDShot^FS")
+    lines.append(
+        f"^FO{MARGIN + 70},{SHOT_DATE_TOP + 30}^GB{CONTENT_WIDTH - 70},2,2^FS"
+    )
 
     lines.append("^XZ")
     return "\n".join(lines)
