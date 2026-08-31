@@ -2247,3 +2247,20 @@ class PhoneReceivingTests(unittest.TestCase):
         self.assertIn("font: 600 16px/1.3 system-ui", self.styles)
         actions = self.styles.split(".phone-recv-actions {", 1)[1].split("}", 1)[0]
         self.assertIn("position: fixed;", actions)
+
+
+class ShipmentFinishTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+
+    def test_both_screens_can_finish_a_shipment(self):
+        # Both log item by item, so both need a moment that says the delivery is
+        # complete. The desktop screen had none - you ended one by starting the
+        # next - so nothing ever announced a desk-logged arrival.
+        self.assertEqual(self.source.count("await api.finishReceivingSession("), 2)
+        self.assertIn("Finish shipment", self.source)
+
+    def test_the_unused_single_post_path_is_not_what_the_ui_calls(self):
+        # POST /receipts posts a shipment and its items at once. No screen uses it.
+        self.assertNotIn("api.createReceipt(", self.source)

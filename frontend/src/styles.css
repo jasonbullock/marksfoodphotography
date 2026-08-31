@@ -18222,3 +18222,18 @@ select.form-input {
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
+
+.recv-list-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.recv-list-footer small {
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.4;
+}

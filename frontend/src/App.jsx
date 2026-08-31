@@ -2646,6 +2646,25 @@ function ShipmentsPage() {
     }
   }
 
+  async function finishShipment() {
+    if (!receipt) return;
+    setError('');
+    setSaving('finish');
+    try {
+      const result = await api.finishReceivingSession(receipt.id);
+      const posted = result?.teamsNotification?.posted;
+      setToast(posted
+        ? `Shipment finished. ${savedEntries.length} logged and the team was notified.`
+        : `Shipment finished. ${savedEntries.length} logged.`);
+      startNewSession();
+      allReceipts.reload({ quiet: true }).catch(() => {});
+    } catch (err) {
+      setError(err.message || 'Could not finish the shipment.');
+    } finally {
+      setSaving('');
+    }
+  }
+
   function startNewSession() {
     setReceipt(null);
     setSavedEntries([]);
@@ -3261,6 +3280,19 @@ function ShipmentsPage() {
                 );
               })}
             </div>
+            {receipt && (
+              <div className="recv-list-footer">
+                <button
+                  type="button"
+                  className="btn btn-primary recv-finish-btn"
+                  onClick={finishShipment}
+                  disabled={Boolean(saving)}
+                >
+                  {saving === 'finish' ? 'Finishing…' : 'Finish shipment'}
+                </button>
+                <small>Closes the shipment and tells the client's Teams channel what arrived.</small>
+              </div>
+            )}
           </div>
 
         </div>
