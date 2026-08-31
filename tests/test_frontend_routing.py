@@ -2264,3 +2264,8 @@ class ShipmentFinishTests(unittest.TestCase):
     def test_the_unused_single_post_path_is_not_what_the_ui_calls(self):
         # POST /receipts posts a shipment and its items at once. No screen uses it.
         self.assertNotIn("api.createReceipt(", self.source)
+
+    def test_the_save_button_says_why_it_is_disabled(self):
+        # The photo strip clears after each save, so the button greys out again for
+        # the next item. Silently, which reads as the form being stuck.
+        self.assertIn("Add a merchandise photo to save this item.", self.source)

@@ -18237,3 +18237,12 @@ select.form-input {
   font-weight: 650;
   line-height: 1.4;
 }
+
+.recv-save-hint {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: center;
+}

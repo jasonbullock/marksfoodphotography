@@ -3228,6 +3228,9 @@ function ShipmentsPage() {
                     <button type="button" className="recv-save-btn" onClick={saveNext} disabled={Boolean(saving) || entryPhotos.length === 0}>
                       {saving === 'entry' ? 'Saving…' : editingEntryId ? 'Update merchandise' : 'Save & next →'}
                     </button>
+                    {entryPhotos.length === 0 && !saving && (
+                      <small className="recv-save-hint">Add a merchandise photo to save this item.</small>
+                    )}
                   </div>{/* end recv-form-content */}
                 </div>
             </>
