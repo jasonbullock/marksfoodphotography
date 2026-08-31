@@ -29,3 +29,29 @@ class CreativeForceProductCodeTests(unittest.TestCase):
 
     def test_no_code_means_no_product_code(self):
         self.assertEqual(creative_force_product_code("", "Ecomm"), "")
+
+
+class WebhookAttributionTests(unittest.TestCase):
+    def test_a_card_reports_the_code_it_was_handed_to_creative_force_under(self):
+        # This read the client's productCodeField, which is what the feed carried
+        # before the Marks code existed - so it compared a UPC against an MP code.
+        from unittest.mock import patch
+
+        import routes
+        from config import Config as C
+
+        card = {"id": "recCard", "fields": {
+            C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+            C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
+        }}
+        merch = {"id": "recMerch", "fields": {C.F_RECEIPT_ENTRY_MARKS_NUMBER: 16}}
+        with patch("routes.airtable.get_record", return_value=merch):
+            self.assertEqual(routes._creative_force_product_code_for_card(card), "MP-00016")
+
+    def test_two_cards_on_one_box_report_the_same_code(self):
+        # Which is why the webhook has to tell them apart by production type.
+        code = marks_id_from_number(16)
+        self.assertEqual(
+            creative_force_product_code(code, "Ecomm"),
+            creative_force_product_code(code, "Packaging"),
+        )

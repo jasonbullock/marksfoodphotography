@@ -5486,34 +5486,25 @@ def _creative_force_sync_from_payload(payload):
 
 
 def _creative_force_product_code_for_card(record):
+    """The code this card was handed to Creative Force under.
+
+    It used to be read from the client's productCodeField, which is what the feed
+    carried before the Marks code existed. Left stale, it compared a UPC against
+    an MP code and never matched - so the tie-break that tells an Ecomm event from
+    a Packaging one had nothing to work with.
+    """
     fields = record.get("fields", {})
-    product_id = (_as_list(fields.get(C.F_WORKSTREAM_CARD_EXPECTED_PRODUCT, [])) or [""])[0]
-    if not product_id:
+    merchandise_id = (_as_list(fields.get(C.F_WORKSTREAM_CARD_RECEIVED_MERCH, [])) or [""])[0]
+    if not merchandise_id:
         return ""
-    product_record = airtable.get_record(C.PRODUCTS_TABLE, product_id, by_field_id=False)
-    product_fields = product_record.get("fields", {})
-    client_id = (_as_list(product_fields.get(C.F_ITEM_CLIENT, [])) or [""])[0]
-    if not client_id:
+    try:
+        entry = airtable.get_record(C.MERCHANDISE_TABLE, merchandise_id, by_field_id=False)
+    except requests.HTTPError:
         return ""
-    client_record = airtable.get_record(C.CLIENTS_TABLE, client_id, by_field_id=False)
-    client_fields = client_record.get("fields", {})
-    requirements, _ = _parse_photo_production_requirements(
-        client_fields.get(C.F_CLIENT_PHOTO_PRODUCTION_REQUIREMENTS, ""),
-        client_fields.get(C.F_CLIENT_NAME, ""),
+    marks_id = marks_id_from_number(
+        entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_MARKS_NUMBER)
     )
-    workstream_type = fields.get(C.F_WORKSTREAM_CARD_TYPE, "")
-    workstream = (requirements.get("workstreams") or {}).get(workstream_type) or {}
-    product_code_field = (workstream.get("creativeForce") or {}).get("productCodeField") or ""
-    if not product_code_field:
-        return ""
-    product = {
-        "name": product_fields.get(C.F_ITEM_NAME, ""),
-        "cvid": product_fields.get(C.F_ITEM_CVID, ""),
-        "upc": product_fields.get(C.F_ITEM_UPC, ""),
-        "jobNumber": product_fields.get(C.F_ITEM_WKFT_JOB_NUMBER, ""),
-        "brandPrefix": product_fields.get(C.F_ITEM_BRAND_PREFIX, ""),
-    }
-    return str(_photo_product_value(product, product_code_field) or "").strip()
+    return creative_force_product_code(marks_id, fields.get(C.F_WORKSTREAM_CARD_TYPE, ""))
 
 
 CREATIVE_FORCE_DONE_STATUSES = {"done", "completed", "complete", "approved"}
