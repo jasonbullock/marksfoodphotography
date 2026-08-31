@@ -192,7 +192,7 @@ class Config:
     # Workstream cards are only created after merchandise is accepted and
     # deliverables are known, so they are born at Needs More Information and can
     # never legitimately be New. New is a parent-merchandise concept.
-    WORKSTREAM_CARD_PLANNING_STATUS_OPTIONS = ["Needs More Information", "Awaiting Photo Release"]
+    WORKSTREAM_CARD_PLANNING_STATUS_OPTIONS = ["Needs More Information", "Awaiting Photo Release", "Released"]
     DELIVERABLE_OPTIONS = ["Packaging", "Ecomm", "Thr3d"]
 
     # Field names - Workstream Cards

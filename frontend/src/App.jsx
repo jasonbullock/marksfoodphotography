@@ -8371,7 +8371,11 @@ function queueIdForPlanningStatus(status) {
     case 'needs-product-work':
     case 'awaiting-info':
       return QUEUE_IDS.waitingInformation;
-    case 'awaiting-photo-release': return QUEUE_IDS.readyProduction;
+    case 'awaiting-photo-release':
+    // Released work stays in the same column for now. The status records what has
+    // happened to the card; the column is still where the work sits.
+    case 'released':
+      return QUEUE_IDS.readyProduction;
     default: return QUEUE_IDS.waitingInformation;
   }
 }

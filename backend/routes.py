@@ -1345,6 +1345,18 @@ def move_activation_to_photo(activation_id):
     try:
         if ready_workstream_cards:
             _populate_creative_force_feed_for_ready_cards(ready_workstream_cards)
+            # Said only once the feed write has landed, so the status means the row
+            # is really there rather than that we intended to write one.
+            for card in ready_workstream_cards:
+                if card.get("fields", {}).get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) == PLANNING_STATUS_LABELS["released"]:
+                    continue
+                airtable.update_record(
+                    C.WORKSTREAM_CARDS_TABLE,
+                    card["id"],
+                    {C.F_WORKSTREAM_CARD_PLANNING_STATUS: PLANNING_STATUS_LABELS["released"]},
+                    by_field_id=False,
+                    typecast=True,
+                )
     except requests.HTTPError as exc:
         return airtable_err(exc)
     try:
@@ -6238,11 +6250,15 @@ def _photo_production_value_is_valid(key, value):
 
 
 PLANNING_STATUS_VALUES = ("new", "needs-more-information", "awaiting-photo-release")
-WORKSTREAM_CARD_PLANNING_STATUS_VALUES = ("needs-more-information", "awaiting-photo-release")
+WORKSTREAM_CARD_PLANNING_STATUS_VALUES = ("needs-more-information", "awaiting-photo-release", "released")
 PLANNING_STATUS_LABELS = {
     "new": "New",
     "needs-more-information": "Needs More Information",
     "awaiting-photo-release": "Awaiting Photo Release",
+    # Reached when the card is written to the Creative Force feed. It stays in the
+    # Awaiting Photo Release column - the board groups by where work sits, and this
+    # says what has happened to it.
+    "released": "Released",
 }
 
 

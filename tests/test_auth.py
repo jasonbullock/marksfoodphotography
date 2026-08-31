@@ -1240,7 +1240,9 @@ class AuthTests(unittest.TestCase):
         }
         get_record.side_effect = [activation, merchandise]
         list_all_records.return_value = [ecomm_card, packaging_card]
-        update_record.side_effect = [updated_merchandise, updated_ecomm_card, released_activation]
+        update_record.side_effect = [
+            updated_merchandise, updated_ecomm_card, updated_ecomm_card, released_activation,
+        ]
 
         response = self.client.post("/api/activations/recActivation/move-to-photo")
 
@@ -1258,7 +1260,7 @@ class AuthTests(unittest.TestCase):
         self.assertTrue(ecomm_update[C.F_WORKSTREAM_CARD_RELEASED_AT])
         # The Packaging sibling is untouched.
         self.assertNotIn("recPackagingCard", [call.args[1] for call in update_record.call_args_list])
-        self.assertEqual(update_record.call_count, 3)
+        self.assertEqual(update_record.call_count, 4)
         populate_feed.assert_called_once_with([updated_ecomm_card])
 
     @patch("routes._list_all_records")
@@ -1311,7 +1313,9 @@ class AuthTests(unittest.TestCase):
         }
         get_record.side_effect = [activation, merchandise]
         list_all_records.return_value = [already_ready_card]
-        update_record.side_effect = [updated_merchandise, already_ready_card, released_activation]
+        update_record.side_effect = [
+            updated_merchandise, already_ready_card, already_ready_card, released_activation,
+        ]
 
         response = self.client.post("/api/activations/recActivation/move-to-photo")
 

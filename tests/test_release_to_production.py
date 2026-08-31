@@ -449,3 +449,20 @@ class ReleaseGuardTests(unittest.TestCase):
         # An arrival with no cards keeps its own guard, so a second release cannot
         # overwrite the original release time.
         self.assertIn("(not cards and fields.get(C.F_RECEIPT_ENTRY_RELEASED))", body)
+
+
+class ReleasedPlanningStatusTests(unittest.TestCase):
+    def test_released_is_written_only_after_the_feed_row_lands(self):
+        # The status should mean the row is really in the feed, not that we meant
+        # to write one.
+        source = (Path(__file__).resolve().parents[1] / "backend" / "routes.py").read_text()
+        start = source.index("_populate_creative_force_feed_for_ready_cards(ready_workstream_cards)")
+        body = source[start:start + 900]
+        self.assertIn('PLANNING_STATUS_LABELS["released"]', body)
+
+    def test_released_work_stays_in_the_same_column(self):
+        app_source = (Path(__file__).resolve().parents[1] / "frontend" / "src" / "App.jsx").read_text()
+        start = app_source.index("function queueIdForPlanningStatus(status)")
+        body = app_source[start:start + 600]
+        self.assertIn("case 'released':", body)
+        self.assertIn("return QUEUE_IDS.readyProduction;", body)
