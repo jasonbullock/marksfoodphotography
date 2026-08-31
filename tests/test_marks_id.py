@@ -20,22 +20,12 @@ class MarksIdTests(unittest.TestCase):
 
 
 class CreativeForceProductCodeTests(unittest.TestCase):
-    def test_each_workstream_gets_its_own_code(self):
-        # Creative Force recovers a card by Product Code and needs exactly one
-        # match, so two work units off one box cannot share a code.
-        self.assertEqual(creative_force_product_code("MP-00412", "Ecomm"), "MP-00412-ECOM")
-        self.assertEqual(creative_force_product_code("MP-00412", "Packaging"), "MP-00412-PACK")
-        self.assertNotEqual(
-            creative_force_product_code("MP-00412", "Ecomm"),
-            creative_force_product_code("MP-00412", "Packaging"),
-        )
-
-    def test_the_printed_code_is_the_bare_box_code(self):
-        # One label serves the box however many workstreams come off it.
-        self.assertEqual(marks_id_from_number(412), "MP-00412")
-
-    def test_an_unknown_workstream_is_left_unsuffixed(self):
-        self.assertEqual(creative_force_product_code("MP-00412", ""), "MP-00412")
+    def test_the_code_creative_force_gets_is_the_code_on_the_tag(self):
+        # Suffixes meant a scanned tag found nothing in Creative Force, and CF
+        # already asks which workstream you mean when a code covers both.
+        self.assertEqual(creative_force_product_code("MP-00412", "Ecomm"), "MP-00412")
+        self.assertEqual(creative_force_product_code("MP-00412", "Packaging"), "MP-00412")
+        self.assertEqual(creative_force_product_code("MP-00412"), "MP-00412")
 
     def test_no_code_means_no_product_code(self):
         self.assertEqual(creative_force_product_code("", "Ecomm"), "")

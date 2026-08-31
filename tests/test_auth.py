@@ -666,14 +666,14 @@ class AuthTests(unittest.TestCase):
         self.assertTrue(preview.get_json()["ready"])
         # The tag code Marks mints, suffixed for this workstream - not a Product
         # field, which is often absent or arrives late.
-        self.assertEqual(preview.get_json()["payload"]["creativeForce"]["productCode"], "MP-00412-ECOM")
+        self.assertEqual(preview.get_json()["payload"]["creativeForce"]["productCode"], "MP-00412")
         self.assertEqual(preview.get_json()["payload"]["creativeForce"]["category"], "Topco")
 
         linked = self.client.patch("/api/workstream-cards/recCard/creative-force-link", json={"workUnitId": "cf-work-1"})
         self.assertEqual(linked.status_code, 200)
         saved = json.loads(update_record.call_args.args[2][C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC])
         self.assertEqual(saved["workUnitId"], "cf-work-1")
-        self.assertEqual(saved["productCode"], "MP-00412-ECOM")
+        self.assertEqual(saved["productCode"], "MP-00412")
 
     def test_photo_production_status_accepts_nonblank_artwork_path_text(self):
         client = {
@@ -1311,12 +1311,17 @@ class AuthTests(unittest.TestCase):
         }
         get_record.side_effect = [activation, merchandise]
         list_all_records.return_value = [already_ready_card]
-        update_record.side_effect = [updated_merchandise, released_activation]
+        update_record.side_effect = [updated_merchandise, already_ready_card, released_activation]
 
         response = self.client.post("/api/activations/recActivation/move-to-photo")
 
         self.assertEqual(response.status_code, 200)
         populate_feed.assert_called_once_with([already_ready_card])
+        # A card reaches Awaiting Photo Release in planning, before anyone releases
+        # it, so this is the normal path - and it still has to be stamped.
+        card_write = next(c for c in update_record.call_args_list if c.args[1] == "recCard")
+        self.assertTrue(card_write.args[2][C.F_WORKSTREAM_CARD_RELEASED])
+        self.assertNotIn(C.F_WORKSTREAM_CARD_PLANNING_STATUS, card_write.args[2])
 
 
 if __name__ == "__main__":

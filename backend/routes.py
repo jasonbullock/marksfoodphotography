@@ -1309,18 +1309,22 @@ def move_activation_to_photo(activation_id):
         workstream_type = str(workstream_fields.get(C.F_WORKSTREAM_CARD_TYPE) or "").strip()
         if not set(received_merchandise).intersection(linked_merchandise_ids) or workstream_type not in linked_types:
             continue
-        if workstream_fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS) == PLANNING_STATUS_LABELS["awaiting-photo-release"]:
-            # An already-ready card still needs to be projected into the CF
-            # feed when this photo group is edited or released again.
+        already_ready = (
+            workstream_fields.get(C.F_WORKSTREAM_CARD_PLANNING_STATUS)
+            == PLANNING_STATUS_LABELS["awaiting-photo-release"]
+        )
+        if already_ready and workstream_fields.get(C.F_WORKSTREAM_CARD_RELEASED):
+            # Released before, and being re-released. Nothing to stamp; it still
+            # needs projecting into the CF feed.
             ready_workstream_cards.append(workstream_record)
             continue
         # Release belongs to the workstream, and this is the path the release form
         # uses. Stamped in the same write that moves the card, so it costs no extra
         # Airtable call; without it the R badge and the dashboard count read nothing
         # however much had gone to photo.
-        card_update = {
-            C.F_WORKSTREAM_CARD_PLANNING_STATUS: PLANNING_STATUS_LABELS["awaiting-photo-release"],
-        }
+        card_update = {}
+        if not already_ready:
+            card_update[C.F_WORKSTREAM_CARD_PLANNING_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
         if not workstream_fields.get(C.F_WORKSTREAM_CARD_RELEASED):
             card_update[C.F_WORKSTREAM_CARD_RELEASED] = True
             card_update[C.F_WORKSTREAM_CARD_RELEASED_AT] = _now_iso()
@@ -9257,10 +9261,6 @@ def _shape_receipt(r, *, entries_by_receipt=None):
 
 
 MARKS_ID_PREFIX = "MP"
-# One tag per box, but a box can raise an Ecomm and a Packaging work unit. Creative
-# Force recovers a card by Product Code and needs exactly one match, so the code it
-# receives is suffixed while the printed tag stays the bare box code.
-CREATIVE_FORCE_WORKSTREAM_SUFFIXES = {"Ecomm": "ECOM", "Packaging": "PACK", "Thr3d": "THR3D"}
 
 
 def marks_id_from_number(value):
@@ -9274,12 +9274,18 @@ def marks_id_from_number(value):
     return f"{MARKS_ID_PREFIX}-{number:05d}"
 
 
-def creative_force_product_code(marks_id, workstream_type):
-    code = str(marks_id or "").strip()
-    if not code:
-        return ""
-    suffix = CREATIVE_FORCE_WORKSTREAM_SUFFIXES.get(str(workstream_type or "").strip())
-    return f"{code}-{suffix}" if suffix else code
+def creative_force_product_code(marks_id, workstream_type=""):
+    """The code on the tag, unchanged.
+
+    It was suffixed per workstream so the webhook could tell an Ecomm event from a
+    Packaging one. That cost more than it bought: scanning a tag into Creative
+    Force found nothing, and Creative Force already asks which workstream you mean
+    when a code covers both. The cost of going bare is that a Creative Force event
+    for a box with two workstreams cannot be attributed to one of them - CF reports
+    the same production type for both - so the board shows its progress on neither.
+    """
+    del workstream_type  # One code per box now, whatever comes off it.
+    return str(marks_id or "").strip()
 
 
 def _shape_printer(record):

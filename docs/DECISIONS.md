@@ -1968,3 +1968,21 @@ card or a vendor's feed is no place for them.
 Making it is best-effort. If Pillow cannot read the file, or the second upload fails, the
 photo is still stored and the original is used - a convenience must never cost the photo.
 Photos taken before this keep working through the same fallback.
+
+
+## 2026-08-31 - The Creative Force Code Is The Code On The Tag
+
+The Product Code was suffixed per workstream - MP-00412-ECOM, MP-00412-PACK - so the
+webhook could tell an Ecomm event from a Packaging one. It cost more than it bought:
+scanning a tag into Creative Force found nothing, because the tag carries the bare code
+and cannot know at print time which workstreams a box will raise. Creative Force already
+asks which workstream you mean when one code covers both.
+
+So the code is bare everywhere. The price is real and worth stating: Creative Force reports
+the same production type for both work units - both come back as "Tabletop" - so an event
+for a box with two workstreams cannot be attributed to one of them, and the board will not
+show its progress. A box with a single deliverable is unaffected.
+
+Separately: a card reaches Awaiting Photo Release during planning, before anyone releases
+it, so the release found it already in that column and skipped the write that stamps it -
+which is why the R badge never appeared. The stamp no longer depends on the card moving.
