@@ -2097,7 +2097,12 @@ function PhoneReceiving({ clientList, locationList, carrierOptions, onShipmentSa
           )}
 
           <div className="phone-recv-actions">
-            <button type="button" className="phone-btn" onClick={finishShipment} disabled={Boolean(busy)}>
+            <button
+              type="button"
+              className="phone-btn"
+              onClick={finishShipment}
+              disabled={Boolean(busy) || savedEntries.length === 0}
+            >
               {busy === 'finish' ? 'Posting...' : 'Post to Teams'}
             </button>
             <button type="button" className="phone-btn phone-btn-primary" onClick={saveAndNext} disabled={Boolean(busy)}>
@@ -3283,7 +3288,7 @@ function ShipmentsPage() {
                 );
               })}
             </div>
-            {receipt && (
+            {receipt && savedEntries.length > 0 && (
               <div className="recv-list-footer">
                 <button
                   type="button"

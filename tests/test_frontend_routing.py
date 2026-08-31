@@ -2280,3 +2280,10 @@ class PlanningDeepLinkTests(unittest.TestCase):
         self.assertIn("item.merchandiseId === requestedMerchandiseId", source)
         # Cleared afterwards so a refresh does not reopen a card the reader closed.
         self.assertIn("next.delete('item');", source)
+
+    def test_an_empty_shipment_has_nothing_to_post(self):
+        # Desktop hides the button; the phone bar is a fixed grid, so it stays put
+        # and goes quiet rather than reflowing mid-task.
+        source = APP.read_text()
+        self.assertIn("{receipt && savedEntries.length > 0 && (", source)
+        self.assertIn("disabled={Boolean(busy) || savedEntries.length === 0}", source)
