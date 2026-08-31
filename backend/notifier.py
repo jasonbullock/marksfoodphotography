@@ -47,12 +47,6 @@ def _studio_time(value):
     return f"{local.strftime('%b %-d, %-I:%M %p')} {label}"
 
 
-def _shipment_url(shipment_id):
-    if not C.APP_BASE_URL or not shipment_id:
-        return ""
-    return f"{C.APP_BASE_URL}/shipments?shipmentId={shipment_id}"
-
-
 def _planning_url(merchandise_id=""):
     if not C.APP_BASE_URL:
         return ""
@@ -61,8 +55,7 @@ def _planning_url(merchandise_id=""):
     return f"{C.APP_BASE_URL}/planning"
 
 
-def build_arrival_card(*, client_name, shipment_name, shipment_id, carrier, tracking,
-                       received, items, image_urls=None):
+def build_arrival_card(*, client_name, carrier, tracking, received, items, image_urls=None):
     """An Adaptive Card describing one arrival, listing what came in."""
     listed = items[:MAX_LISTED_ITEMS]
     remaining = len(items) - len(listed)
@@ -106,9 +99,6 @@ def build_arrival_card(*, client_name, shipment_name, shipment_id, carrier, trac
             })
 
     actions = []
-    shipment_url = _shipment_url(shipment_id)
-    if shipment_url:
-        actions.append({"type": "Action.OpenUrl", "title": "Open shipment", "url": shipment_url})
     planning_url = _planning_url()
     if planning_url:
         actions.append({"type": "Action.OpenUrl", "title": "Go to Planning", "url": planning_url})

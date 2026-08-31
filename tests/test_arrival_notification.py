@@ -25,8 +25,6 @@ class ArrivalCardTests(unittest.TestCase):
     def card(self, **overrides):
         payload = {
             "client_name": "Topco",
-            "shipment_name": "Topco - 2026-08-28",
-            "shipment_id": "recShipment",
             "carrier": "UPS",
             "tracking": "1Z999",
             "received": "2026-08-28T10:00:00Z",
@@ -40,11 +38,11 @@ class ArrivalCardTests(unittest.TestCase):
         text = str(card)
         self.assertIn("1 item arrived at Walnut", text)
         # The generated shipment name repeated the Client and Received facts.
-        self.assertNotIn("Topco - 2026-08-28", text)
+        self.assertNotIn("Topco - 2026", text)
         self.assertIn("Sauerkraut 14.5oz", text)
         urls = [action["url"] for action in card["actions"]]
-        self.assertIn("https://marks.example/shipments?shipmentId=recShipment", urls)
-        self.assertIn("https://marks.example/planning", urls)
+        # Each item links at its own card, so the shipment record is not offered.
+        self.assertEqual(urls, ["https://marks.example/planning"])
 
     def test_a_long_shipment_is_summarised_rather_than_dumped(self):
         items = [f"1 x Item {index}" for index in range(20)]
@@ -130,8 +128,7 @@ class StudioTimeTests(unittest.TestCase):
 class ArrivalImageTests(unittest.TestCase):
     def card(self, image_urls):
         return notifier.build_arrival_card(
-            client_name="Topco", shipment_name="Topco - 2026-08-31", shipment_id="recShip",
-            carrier="USPS", tracking="431241234", received="2026-08-31T18:11:00Z",
+            client_name="Topco", carrier="USPS", tracking="431241234", received="2026-08-31T18:11:00Z",
             items=["1 x cheese"], image_urls=image_urls,
         )["attachments"][0]["content"]
 
@@ -174,8 +171,7 @@ class ArrivalDeepLinkTests(unittest.TestCase):
 
     def test_each_item_links_at_its_own_card(self):
         card = notifier.build_arrival_card(
-            client_name="Topco", shipment_name="Topco", shipment_id="recShip",
-            carrier="", tracking="", received="",
+            client_name="Topco", carrier="", tracking="", received="",
             items=[("1 x Raisin Bran", "recMerchA"), ("5 x Toasted Oats", "recMerchB")],
         )["attachments"][0]["content"]
         text = str(card)
@@ -185,16 +181,14 @@ class ArrivalDeepLinkTests(unittest.TestCase):
     def test_a_plain_item_still_renders_without_a_link(self):
         notifier.C.APP_BASE_URL = ""
         card = notifier.build_arrival_card(
-            client_name="Topco", shipment_name="Topco", shipment_id="recShip",
-            carrier="", tracking="", received="", items=[("1 x Raisin Bran", "recMerchA")],
+            client_name="Topco", carrier="", tracking="", received="", items=[("1 x Raisin Bran", "recMerchA")],
         )["attachments"][0]["content"]
         self.assertIn("- 1 x Raisin Bran", str(card))
         self.assertNotIn("](", str(card))
 
     def test_photos_are_shown_large(self):
         card = notifier.build_arrival_card(
-            client_name="Topco", shipment_name="Topco", shipment_id="recShip",
-            carrier="", tracking="", received="", items=[("1 x Raisin Bran", "recA")],
+            client_name="Topco", carrier="", tracking="", received="", items=[("1 x Raisin Bran", "recA")],
             image_urls=["https://cdn.test/a.jpg"],
         )["attachments"][0]["content"]
         image_set = next(block for block in card["body"] if block["type"] == "ImageSet")

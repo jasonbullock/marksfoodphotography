@@ -8792,8 +8792,6 @@ def _notify_shipment_arrival(receipt, shaped_entries):
 
     card = notifier.build_arrival_card(
         client_name=client_fields.get(C.F_CLIENT_NAME, ""),
-        shipment_name=fields.get(C.F_RECEIPT_NAME, ""),
-        shipment_id=receipt.get("id", ""),
         carrier=fields.get(C.F_RECEIPT_CARRIER, ""),
         tracking=fields.get(C.F_RECEIPT_TRACKING, ""),
         received=fields.get(C.F_RECEIPT_RECEIVED, ""),
