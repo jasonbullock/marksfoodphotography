@@ -1963,7 +1963,7 @@ function PhoneReceiving({ clientList, locationList, carrierOptions, onShipmentSa
     setError('');
     try {
       const result = await api.printMerchandiseTag(saved.id);
-      setNotice(`Tag ${result?.tag?.marksId || ''} printed.`);
+      setNotice(tagPrintOutcome(result));
     } catch (err) {
       setError(err.message || 'Could not print the tag.');
     } finally {
@@ -2174,7 +2174,7 @@ function ShipmentsPage() {
     setError('');
     try {
       const result = await api.printMerchandiseTag(entryId);
-      setToast(`Tag ${result?.tag?.marksId || ''} printed to ${result?.printer?.name || 'the printer'}.`);
+      setToast(tagPrintOutcome(result));
     } catch (err) {
       setError(err.message || 'Could not print the tag.');
     } finally {
@@ -8691,6 +8691,17 @@ function observedIdentityForRecord(record = {}) {
   return { upc: observed, primaryMatchKey: observed, identifier: observed };
 }
 
+function tagPrintOutcome(result) {
+  // From the live site the API cannot reach a studio printer, so it queues the
+  // label for the studio agent. Reporting that as printed would be a lie the
+  // person only discovers by walking to the printer.
+  const code = result?.tag?.marksId || 'Tag';
+  const printer = result?.printer?.name || 'the printer';
+  return result?.queued
+    ? `${code} queued for ${printer}. It prints when the studio agent picks it up.`
+    : `${code} printed to ${printer}.`;
+}
+
 function productDataSourceForPlanningItem(item = {}, draft = {}, stagedProduct = null) {
   const record = item.record || {};
   const linked = record.linkedItem || {};
@@ -11160,19 +11171,19 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   // Editing a released card is normal - a typo in CVID should be fixable without
   // undoing the release. What is not normal is doing it without knowing.
   const [tagPrinting, setTagPrinting] = useState(false);
-  const [tagNotice, setTagNotice] = useState('');
+  const [tagNotice, setTagNotice] = useState(null);
 
   // A tag gets lost, smudged, or was never printed. Reprinting from the card is
   // the only path that does not need the shipment reopening.
   async function printTagForItem() {
     if (!item.merchandiseId) return;
     setTagPrinting(true);
-    setTagNotice('');
+    setTagNotice(null);
     try {
       const result = await api.printMerchandiseTag(item.merchandiseId);
-      setTagNotice(`${result?.tag?.marksId || 'Tag'} sent to ${result?.printer?.name || 'the printer'}.`);
+      setTagNotice({ tone: 'ok', text: tagPrintOutcome(result) });
     } catch (error) {
-      setTagNotice(error.message || 'Could not print the tag.');
+      setTagNotice({ tone: 'error', text: error.message || 'Could not print the tag.' });
     } finally {
       setTagPrinting(false);
     }
@@ -11199,8 +11210,12 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
               >
                 {tagPrinting ? 'Printing…' : 'Print tag'}
               </button>
-              {tagNotice && <span className="new-review-tag-notice">{tagNotice}</span>}
             </div>
+            {tagNotice && (
+              <p className={`new-review-tag-notice is-${tagNotice.tone}`} role="status">
+                {tagNotice.text}
+              </p>
+            )}
             {alreadyReleased && (
               <p className="new-review-released-note">
                 <span className="new-review-released-mark">Released{releasedOnLabel ? ` ${releasedOnLabel}` : ''}</span>

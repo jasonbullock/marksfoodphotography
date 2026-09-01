@@ -62,6 +62,11 @@ PUBLIC_ENDPOINTS = {
     "api.auth_users",
     "api.receiving_photo",
     "api.creative_force_webhook",
+    # The studio print agent has no person behind it and no session. It proves
+    # itself with a shared key on every request instead, the way the Creative
+    # Force webhook proves itself with a signature.
+    "api.claim_print_job",
+    "api.finish_print_job",
 }
 
 
@@ -9428,6 +9433,138 @@ def _printer_for_user(user_record=None, requested_id=""):
     return printers[0]
 
 
+def _queue_print_job(zpl, printer, label="", requested_by=""):
+    """Park a label the API could not send itself."""
+    record = airtable.create_record(
+        C.PRINT_JOBS_TABLE,
+        {
+            C.F_PRINT_JOB_LABEL: label or "Tag",
+            C.F_PRINT_JOB_STATUS: "Queued",
+            C.F_PRINT_JOB_ZPL: zpl,
+            C.F_PRINT_JOB_PRINTER_ID: printer.get("id", ""),
+            C.F_PRINT_JOB_PRINTER_NAME: printer.get("name", ""),
+            C.F_PRINT_JOB_PRINTER_HOST: printer.get("host", ""),
+            C.F_PRINT_JOB_PRINTER_PORT: printer.get("port") or 9100,
+            C.F_PRINT_JOB_REQUESTED_BY: requested_by,
+            C.F_PRINT_JOB_REQUESTED_AT: _now_iso(),
+        },
+        by_field_id=False,
+        typecast=True,
+    )
+    return record
+
+
+def _send_or_queue(zpl, printer, label="", requested_by=""):
+    """Print it here if this machine can reach the printer, otherwise queue it.
+
+    The studio printers sit on private addresses. A server on that network reaches
+    them in milliseconds; the cloud one never will. Rather than make people care
+    which they are using, an unreachable printer becomes a queued job that the
+    studio agent picks up.
+    """
+    try:
+        tag_print.send_zpl(zpl, printer["host"], port=printer["port"])
+        return {"printed": True, "queued": False, "printer": printer}
+    except tag_print.TagPrintError:
+        job = _queue_print_job(zpl, printer, label=label, requested_by=requested_by)
+        return {"printed": False, "queued": True, "printer": printer, "jobId": job.get("id", "")}
+
+
+def _print_agent_or_error():
+    """Agents authenticate with a shared key rather than a person's session."""
+    if not C.PRINT_AGENT_KEY:
+        return None, err("No print agent key is configured on this server.", 503)
+    presented = request.headers.get("X-Print-Agent-Key", "")
+    if not hmac.compare_digest(presented, C.PRINT_AGENT_KEY):
+        return None, err("Not authorised.", 401)
+    name = str(request.headers.get("X-Print-Agent-Name", "") or "agent").strip()[:80]
+    return name, None
+
+
+def _parse_iso(value):
+    try:
+        parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _print_job_is_claimable(fields):
+    status = str(fields.get(C.F_PRINT_JOB_STATUS, "") or "")
+    if status == "Queued":
+        return True
+    if status != "Printing":
+        return False
+    # An agent that died mid-job should not strand the label forever.
+    claimed = _parse_iso(fields.get(C.F_PRINT_JOB_CLAIMED_AT))
+    if not claimed:
+        return True
+    return (datetime.now(timezone.utc) - claimed).total_seconds() > C.PRINT_JOB_CLAIM_SECONDS
+
+
+@api.post("/print-jobs/claim")
+def claim_print_job():
+    """Hand the oldest waiting label to the studio agent that asked for it."""
+    agent, auth_error = _print_agent_or_error()
+    if auth_error:
+        return auth_error
+    body = request.get_json(silent=True) or {}
+    hosts = {str(host).strip() for host in (body.get("hosts") or []) if str(host).strip()}
+
+    waiting = [record for record in _list_all_records(C.PRINT_JOBS_TABLE)
+               if _print_job_is_claimable(record.get("fields", {}))]
+    if hosts:
+        # An agent only takes work for printers it can actually reach.
+        waiting = [record for record in waiting
+                   if str(record.get("fields", {}).get(C.F_PRINT_JOB_PRINTER_HOST, "") or "").strip() in hosts]
+    waiting.sort(key=lambda record: str(record.get("fields", {}).get(C.F_PRINT_JOB_REQUESTED_AT, "") or ""))
+    if not waiting:
+        return jsonify({"job": None})
+
+    job = waiting[0]
+    fields = job.get("fields", {})
+    airtable.update_record(
+        C.PRINT_JOBS_TABLE,
+        job["id"],
+        {
+            C.F_PRINT_JOB_STATUS: "Printing",
+            C.F_PRINT_JOB_CLAIMED_AT: _now_iso(),
+            C.F_PRINT_JOB_AGENT: agent,
+        },
+        by_field_id=False,
+        typecast=True,
+    )
+    return jsonify({"job": {
+        "id": job["id"],
+        "label": fields.get(C.F_PRINT_JOB_LABEL, ""),
+        "zpl": fields.get(C.F_PRINT_JOB_ZPL, ""),
+        "host": fields.get(C.F_PRINT_JOB_PRINTER_HOST, ""),
+        "port": int(fields.get(C.F_PRINT_JOB_PRINTER_PORT) or 9100),
+        "printerName": fields.get(C.F_PRINT_JOB_PRINTER_NAME, ""),
+    }})
+
+
+@api.post("/print-jobs/<job_id>/finish")
+def finish_print_job(job_id):
+    """The agent reporting what happened to a label it claimed."""
+    agent, auth_error = _print_agent_or_error()
+    if auth_error:
+        return auth_error
+    body = request.get_json(silent=True) or {}
+    ok = bool(body.get("ok"))
+    fields = {
+        C.F_PRINT_JOB_STATUS: "Printed" if ok else "Failed",
+        C.F_PRINT_JOB_FINISHED_AT: _now_iso(),
+        C.F_PRINT_JOB_AGENT: agent,
+        C.F_PRINT_JOB_ERROR: "" if ok else str(body.get("error") or "")[:250],
+    }
+    try:
+        airtable.update_record(C.PRINT_JOBS_TABLE, job_id, fields, by_field_id=False, typecast=True)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"ok": True})
+
+
 @api.get("/printers")
 def list_printers():
     """Every printer, so Admin can correct one that is switched off or unreachable."""
@@ -9545,11 +9682,7 @@ def test_printer(record_id):
         "received": _studio_now(),
         "storage": printer["name"],
     })
-    try:
-        tag_print.send_zpl(zpl, printer["host"], port=printer["port"])
-    except tag_print.TagPrintError as error:
-        return err(str(error), 502)
-    return jsonify({"printed": True, "printer": printer})
+    return jsonify(_send_or_queue(zpl, printer, label=f"Test · {printer['name']}"))
 
 
 def _studio_now():
@@ -9645,12 +9778,18 @@ def print_merchandise_tag(entry_id):
     printer = _printer_for_user(_current_user(), body.get("printerId", ""))
     if not printer:
         return err("No active printer is configured.", 400)
-    try:
-        tag_print.send_zpl(zpl, printer["host"], port=printer["port"])
-    except tag_print.TagPrintError as error:
-        return err(str(error), 502)
-    _record_merchandise_history(entry_id, f"Tag printed to {printer['name']}")
-    return jsonify({"tag": tag, "printed": True, "printer": printer})
+    user = _current_user() or {}
+    result = _send_or_queue(
+        zpl,
+        printer,
+        label=f"{tag['marksId']} · {tag.get('client') or 'Tag'}",
+        requested_by=str((user.get("fields", {}) or {}).get(C.F_USER_NAME, "") or ""),
+    )
+    _record_merchandise_history(
+        entry_id,
+        f"Tag {'queued for' if result['queued'] else 'printed to'} {printer['name']}",
+    )
+    return jsonify({"tag": tag, **result})
 
 
 def _matched_product_summary(product_record, *, clients_by_id=None):

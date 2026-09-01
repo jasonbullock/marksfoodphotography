@@ -18284,10 +18284,23 @@ select.form-input {
   gap: 10px;
 }
 
+/* Its own line under the title. In the title row it pushed the heading around as
+   it appeared, and the header's blanket span rule shouted it in uppercase. */
 .new-review-tag-notice {
-  color: var(--text-3);
-  font-size: 11px;
-  font-weight: 700;
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.35;
+}
+
+.new-review-tag-notice.is-ok {
+  color: var(--green-text);
+}
+
+.new-review-tag-notice.is-error {
+  color: var(--red-text);
 }
 
 .new-review-title-row {

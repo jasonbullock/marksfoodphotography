@@ -115,6 +115,29 @@ class Config:
     F_PRINTER_ACTIVE = "Active"
     F_PRINTER_DEFAULT = "Default"
     F_PRINTER_NOTES = "Notes"
+
+    # The cloud API cannot reach a studio printer on a private address, so a label
+    # it cannot send is queued here and an agent on that network sends it.
+    PRINT_JOBS_TABLE = os.getenv("AIRTABLE_PRINT_JOBS_TABLE", "Print Jobs")
+    F_PRINT_JOB_LABEL = "Label"
+    F_PRINT_JOB_STATUS = "Status"
+    F_PRINT_JOB_ZPL = "ZPL"
+    F_PRINT_JOB_PRINTER_ID = "Printer Id"
+    F_PRINT_JOB_PRINTER_NAME = "Printer Name"
+    F_PRINT_JOB_PRINTER_HOST = "Printer Host"
+    F_PRINT_JOB_PRINTER_PORT = "Printer Port"
+    F_PRINT_JOB_REQUESTED_BY = "Requested By"
+    F_PRINT_JOB_REQUESTED_AT = "Requested At"
+    F_PRINT_JOB_CLAIMED_AT = "Claimed At"
+    F_PRINT_JOB_FINISHED_AT = "Finished At"
+    F_PRINT_JOB_AGENT = "Agent"
+    F_PRINT_JOB_ERROR = "Error"
+    PRINT_JOB_STATUSES = ("Queued", "Printing", "Printed", "Failed")
+    # A shared secret the studio agent presents. Without one set, no agent can claim
+    # work - the queue is readable to the app and nothing else.
+    PRINT_AGENT_KEY = os.getenv("PRINT_AGENT_KEY", "")
+    # How long a claimed job may sit before another agent may take it, in seconds.
+    PRINT_JOB_CLAIM_SECONDS = int(os.getenv("PRINT_JOB_CLAIM_SECONDS", "120"))
     # Which printer this person last chose. Stored on the user so the receiver at
     # the dock and a PM upstairs are not fighting over one default.
     F_USER_PRINTER_ID = "Printer Id"

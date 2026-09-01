@@ -2408,3 +2408,32 @@ class PhotoDraftSurvivalTests(unittest.TestCase):
     def test_seeding_replaces_the_draft_and_typing_merges_into_it(self):
         self.assertIn("{ replace: true },", self.source)
         self.assertIn("options?.replace || current.itemId !== item.id ? {} : current.values", self.source)
+
+
+class TagNoticeTests(unittest.TestCase):
+    """The print result is a status line, not an eyebrow."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.source = APP.read_text()
+        cls.styles = (APP.parent / "styles.css").read_text()
+
+    def test_the_notice_carries_a_tone(self):
+        self.assertIn("setTagNotice({ tone: 'error', text:", self.source)
+        self.assertIn("tone: 'ok',", self.source)
+        self.assertIn('className={`new-review-tag-notice is-${tagNotice.tone}`}', self.source)
+
+    def test_it_sits_below_the_title_rather_than_inside_it(self):
+        # In the title row it pushed the heading and the close button around as it
+        # appeared and disappeared.
+        title_row = self.source.split('<div className="new-review-title-row">', 1)[1].split("</div>", 1)[0]
+        self.assertNotIn("new-review-tag-notice", title_row)
+
+    def test_it_is_not_shouted_in_uppercase(self):
+        # The modal header uppercases every span it contains.
+        block = self.styles.split(".new-review-tag-notice {", 1)[1].split("}", 1)[0]
+        self.assertIn("text-transform: none;", block)
+
+    def test_its_colours_are_ones_that_exist(self):
+        for token in ("--green-text", "--red-text"):
+            self.assertIn(f"  {token}:", self.styles, f"{token} is used but never defined")
