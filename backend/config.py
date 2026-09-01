@@ -48,6 +48,20 @@ class Config:
             "Photography,Final Selection,Photo Review,External Post Production,External Post QC,Delivery",
         ).split(",") if value.strip()
     ]
+    # Reading from Creative Force directly, rather than waiting to be told. Client
+    # Credentials: the app acts as a registered application, because nobody is at a
+    # keyboard when the dashboard refreshes. Keep the secret out of any VITE_
+    # variable - those are compiled into the public bundle.
+    CREATIVE_FORCE_CLIENT_ID = os.getenv("CREATIVE_FORCE_CLIENT_ID", "")
+    CREATIVE_FORCE_CLIENT_SECRET = os.getenv("CREATIVE_FORCE_CLIENT_SECRET", "")
+    CREATIVE_FORCE_TOKEN_URL = os.getenv(
+        "CREATIVE_FORCE_TOKEN_URL", "https://accounts.creativeforce.io/connect/token")
+    CREATIVE_FORCE_API_BASE = os.getenv(
+        "CREATIVE_FORCE_API_BASE", "https://gateway.creativeforce.io/v1")
+    # The studio holds every client's work in one place. Ours is one workspace of
+    # eleven, so every read is scoped to it.
+    CREATIVE_FORCE_WORKSPACE = os.getenv("CREATIVE_FORCE_WORKSPACE", "Marks Food")
+
     # The step whose report means the camera work is done. Everything after it is
     # selection, retouch and delivery, none of which needs the box on a shelf.
     CREATIVE_FORCE_SHOOT_STEP = os.getenv("CREATIVE_FORCE_SHOOT_STEP", "Photography")
