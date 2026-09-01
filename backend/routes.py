@@ -5524,6 +5524,12 @@ def _creative_force_status(action, raw_status):
     raw_value = str(raw_status or "").strip()
     value = raw_value.lower().replace("_", " ")
     compact_value = re.sub(r"[^a-z]+", "", value)
+    # Creative Force builds every production type its styleguide knows about and
+    # then disables the ones whose conditions do not apply. The work unit exists,
+    # carries a status of Todo, and is never going to be worked - so reporting that
+    # status reads as queued when the truth is the opposite.
+    if action_value in {"workunitdisabled", "disabled"}:
+        return "Not in production"
     if action_value in {"completed", "workunitcompleted"} or value in {"done", "completed"}:
         return "Complete"
     if action_value in {"rejected", "failed", "workunitreset"} or value in {"rejected", "failed", "error"}:
@@ -6186,12 +6192,15 @@ def creative_force_webhook():
         merged["stepReportedAt"] = current.get("reportedAt") or ""
     if not same_work_unit and existing.get("mainWorkUnitId"):
         merged.setdefault("mainWorkUnitId", existing["mainWorkUnitId"])
+    disabled = merged.get("status") == "Not in production"
     card_fields = {
         C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC: json.dumps(merged, sort_keys=True),
-        C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS: (
+        # A disabled work unit has no progress to report. Its raw status stays Todo
+        # forever, which on a card reads as work that is about to start.
+        C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS: "" if disabled else (
             merged.get("stepStatusRaw") or merged.get("statusRaw", "")
         ),
-        C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP: merged.get("stepName", ""),
+        C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP: "" if disabled else merged.get("stepName", ""),
     }
     # The shoot date is lifted out of the sync blob onto a field of its own, so a
     # question like "what has been on a shelf since June" is a view rather than a

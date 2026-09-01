@@ -364,3 +364,25 @@ class CreativeForceForwardTests(unittest.TestCase):
         reject = handler.index("Invalid Creative Force webhook signature")
         relay = handler.index("_forward_creative_force_event(")
         self.assertLess(reject, relay)
+
+
+class DisabledWorkUnitTests(unittest.TestCase):
+    """Creative Force builds every production type, then switches off the ones
+    whose styleguide conditions do not apply."""
+
+    def test_a_disabled_work_unit_is_not_reported_as_queued(self):
+        # It arrives carrying a status of Todo and keeps it forever. On a card that
+        # reads as work about to start, on a workstream the studio never released.
+        self.assertEqual(_creative_force_status("WorkUnitDisabled", "Todo"), "Not in production")
+
+    def test_it_is_recognised_however_the_action_is_cased(self):
+        self.assertEqual(_creative_force_status("workunitdisabled", "Todo"), "Not in production")
+
+    def test_a_real_work_unit_is_untouched(self):
+        self.assertEqual(_creative_force_status("WorkUnitStatusChanged", "InProgress"), "In Production")
+        self.assertEqual(_creative_force_status("WorkUnitCompleted", "Done"), "Complete")
+
+    def test_the_card_shows_no_step_or_status_for_a_disabled_unit(self):
+        source = (Path(__file__).resolve().parents[1] / "backend" / "routes.py").read_text()
+        self.assertIn('disabled = merged.get("status") == "Not in production"', source)
+        self.assertIn('C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP: "" if disabled else', source)
