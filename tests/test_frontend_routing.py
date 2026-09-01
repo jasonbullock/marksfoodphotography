@@ -1606,7 +1606,6 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("ui-filter-bar", self.source)
         self.assertIn("ui-select", self.source)
         self.assertIn("ui-card", self.source)
-        self.assertIn("Open Merchandise Review", self.source)
         self.assertNotIn("REVIEW_RELEVANT_INVENTORY_STATUSES", self.source)
 
     def test_merchandise_inventory_has_card_list_toggle_and_minimal_cards(self):

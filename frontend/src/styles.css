@@ -17599,12 +17599,6 @@ select.form-input {
   overflow-wrap: anywhere;
 }
 
-.merchandise-detail-actions {
-  padding: 16px 20px 20px;
-  border-top: 1px solid var(--border);
-  background: #fff;
-}
-
 @media (max-width: 1100px) {
   .merchandise-inventory-toolbar,
   .merchandise-inventory-summary-grid {
@@ -18509,6 +18503,13 @@ select.form-input {
   margin-top: 4px;
 }
 
+/* The value, not another label. The body's blanket span rule dresses every span
+   as a field name, which is what made this read in small uppercase grey. */
 .merchandise-detail-shot-line {
   display: block;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }

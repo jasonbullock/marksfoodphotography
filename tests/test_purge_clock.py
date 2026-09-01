@@ -218,4 +218,27 @@ class MerchandiseDrawerTests(unittest.TestCase):
 
 def cls_drawer(source):
     start = source.index('<div className="merchandise-detail-body">')
-    return source[start:source.index("merchandise-detail-actions", start)]
+    return source[start:source.index("</aside>", start)]
+
+
+class MerchandiseDrawerLayoutTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = (ROOT / "frontend" / "src" / "App.jsx").read_text()
+        cls.styles = (ROOT / "frontend" / "src" / "styles.css").read_text()
+        cls.block = cls_drawer(cls.source)
+
+    def test_client_is_the_first_thing_read(self):
+        self.assertLess(self.block.index("<span>Client</span>"), self.block.index("<span>Status</span>"))
+
+    def test_the_shoot_lines_read_as_values_not_labels(self):
+        # The body's blanket span rule dresses every span as a field name.
+        self.assertIn('<div className="merchandise-detail-shot-line"', self.source)
+        rule = self.styles.split(".merchandise-detail-shot-line {", 1)[1].split("}", 1)[0]
+        self.assertIn("text-transform: none;", rule)
+
+    def test_the_merchandise_review_button_is_gone(self):
+        self.assertNotIn("Open Merchandise Review", self.source)
+
+    def test_its_styling_went_with_it(self):
+        self.assertNotIn(".merchandise-detail-actions {", self.styles)

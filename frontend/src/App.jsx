@@ -7557,9 +7557,9 @@ function MerchandiseInventoryPage({ navigate }) {
               </button>
             </div>
             <div className="merchandise-detail-body">
+              <div><span>Client</span><strong>{selectedInventoryRecord.client || '-'}</strong></div>
               <div><span>Status</span><strong>{selectedInventoryRecord.status || 'Received'}</strong></div>
               <div><span>Time Here</span><strong>{selectedInventoryRecord.timeHere || 'Unknown'}</strong></div>
-              <div><span>Client</span><strong>{selectedInventoryRecord.client || '-'}</strong></div>
               <div><span>Quantity</span><strong>{selectedInventoryRecord.quantity ?? 0}</strong></div>
               <div><span>{DOMAIN_TERMS.merchandiseIdentifier}</span><strong>{selectedInventoryRecord.barcodeOrIdNumber || '-'}</strong></div>
               <div><span>Storage Location</span><strong>{selectedInventoryRecord.storageLocation || '-'}</strong></div>
@@ -7569,7 +7569,7 @@ function MerchandiseInventoryPage({ navigate }) {
                 <span>Shot</span>
                 <strong>
                   {shotLines(selectedInventoryRecord).map(line => (
-                    <span className="merchandise-detail-shot-line" key={line.key}>{line.label}</span>
+                    <div className="merchandise-detail-shot-line" key={line.key}>{line.label}</div>
                   ))}
                 </strong>
               </div>
@@ -7586,11 +7586,6 @@ function MerchandiseInventoryPage({ navigate }) {
               </div>
               <div><span>{DOMAIN_TERMS.matchedProduct}</span><strong>{selectedInventoryRecord.matchedProduct?.name || '-'}</strong></div>
               <div><span>{DOMAIN_TERMS.shipment}</span><strong>{selectedInventoryRecord.shipment?.name || '-'}</strong></div>
-            </div>
-            <div className="merchandise-detail-actions">
-              <button type="button" className="btn btn-primary" onClick={() => navigate('merchandise-review')}>
-                Open Merchandise Review
-              </button>
             </div>
           </aside>
         </div>
