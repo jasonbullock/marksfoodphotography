@@ -5481,6 +5481,7 @@ def _purge_state_for_cards(cards, client_config=None, now=None):
 def _shape_workstream_card(record):
     fields = record.get("fields", {})
     creative_force_sync = _parse_creative_force_sync(fields.get(C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC, ""))
+    released = bool(fields.get(C.F_WORKSTREAM_CARD_RELEASED, False))
     visible_notes, _ = _workstream_notes_metadata(fields.get(C.F_WORKSTREAM_CARD_NOTES, ""))
     return {
         "id": record.get("id", ""),
@@ -5493,14 +5494,19 @@ def _shape_workstream_card(record):
         "manualProductInfo": fields.get(C.F_WORKSTREAM_CARD_MANUAL_PRODUCT_INFO, ""),
         "notes": visible_notes,
         "creativeForce": creative_force_sync,
-        "creativeForceStatus": fields.get(C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS, ""),
-        "creativeForceStep": fields.get(C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP, ""),
+        # Creative Force builds every production type a styleguide knows about as
+        # soon as the product lands, so it has something to say about a workstream
+        # the studio has not handed over. Until this card is released that progress
+        # belongs to nobody here, and showing it says the handoff happened. The raw
+        # sync is left intact for diagnostics.
+        "creativeForceStatus": fields.get(C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS, "") if released else "",
+        "creativeForceStep": fields.get(C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP, "") if released else "",
         # The step status restarts at "To Do" every time Creative Force advances a
         # step, so on its own it reads as though nothing is happening. The work
         # unit's own status is what actually moves.
-        "creativeForceWorkUnitStatus": creative_force_sync.get("statusRaw", ""),
-        "creativeForceStepReportedAt": creative_force_sync.get("stepReportedAt", ""),
-        "released": bool(fields.get(C.F_WORKSTREAM_CARD_RELEASED, False)),
+        "creativeForceWorkUnitStatus": creative_force_sync.get("statusRaw", "") if released else "",
+        "creativeForceStepReportedAt": creative_force_sync.get("stepReportedAt", "") if released else "",
+        "released": released,
         "releasedAt": fields.get(C.F_WORKSTREAM_CARD_RELEASED_AT, ""),
         "releasedByIds": _as_list(fields.get(C.F_WORKSTREAM_CARD_RELEASED_BY, [])),
         "shotAt": fields.get(C.F_WORKSTREAM_CARD_SHOT_AT, ""),

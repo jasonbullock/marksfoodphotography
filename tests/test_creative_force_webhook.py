@@ -386,3 +386,37 @@ class DisabledWorkUnitTests(unittest.TestCase):
         source = (Path(__file__).resolve().parents[1] / "backend" / "routes.py").read_text()
         self.assertIn('disabled = merged.get("status") == "Not in production"', source)
         self.assertIn('C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP: "" if disabled else', source)
+
+
+class UnreleasedCardTests(unittest.TestCase):
+    """Progress on a workstream nobody handed over is nobody's progress."""
+
+    def card(self, released):
+        import routes
+        return routes._shape_workstream_card({"id": "recCard", "fields": {
+            Config.F_WORKSTREAM_CARD_TYPE: "Packaging",
+            Config.F_WORKSTREAM_CARD_RELEASED: released,
+            Config.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS: "Todo",
+            Config.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP: "Photography",
+            Config.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC: '{"statusRaw": "Todo", "stepReportedAt": "2026-09-01T15:15:13Z"}',
+        }})
+
+    def test_an_unreleased_card_reports_no_progress(self):
+        # Creative Force builds every production type a styleguide knows about as
+        # soon as the product lands, so it has something to say about work the
+        # studio never sent it.
+        card = self.card(False)
+        self.assertEqual(card["creativeForceStatus"], "")
+        self.assertEqual(card["creativeForceStep"], "")
+        self.assertEqual(card["creativeForceWorkUnitStatus"], "")
+        self.assertEqual(card["creativeForceStepReportedAt"], "")
+
+    def test_a_released_card_reports_it_as_before(self):
+        card = self.card(True)
+        self.assertEqual(card["creativeForceStatus"], "Todo")
+        self.assertEqual(card["creativeForceStep"], "Photography")
+        self.assertEqual(card["creativeForceWorkUnitStatus"], "Todo")
+
+    def test_the_raw_sync_survives_for_diagnostics(self):
+        # Hiding it from the board is not the same as throwing the evidence away.
+        self.assertEqual(self.card(False)["creativeForce"].get("statusRaw"), "Todo")
