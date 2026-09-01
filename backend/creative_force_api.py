@@ -268,6 +268,33 @@ def _elapsed(start, end):
     return round((last - first) / 1000)
 
 
+# Creative Force's work unit statuses, by the ids it reports.
+WORK_UNIT_STATUS = {1000: "New", 2000: "To do", 3000: "In progress", 9000: "Done"}
+
+
+def _is_derived(timeline):
+    """True for a production spawned off a step of another one.
+
+    Derived workflows carry only their own tail of the pipeline - a delivery, say -
+    and never the workflow's opening step. Shown as separate productions they read
+    as duplicates of the real work.
+    """
+    if not timeline:
+        return False
+    first_step = C.CREATIVE_FORCE_STEP_SEQUENCE[0] if C.CREATIVE_FORCE_STEP_SEQUENCE else None
+    if first_step is None:
+        return False
+    return not any(step.get("stepId") == first_step for step in timeline)
+
+
+def step_position(step_id):
+    """Where a step sits in the workflow. Its id is not its order."""
+    try:
+        return C.CREATIVE_FORCE_STEP_SEQUENCE.index(int(step_id))
+    except (TypeError, ValueError):
+        return len(C.CREATIVE_FORCE_STEP_SEQUENCE)
+
+
 def production_snapshot(job_code=None):
     """Every product in our job with its productions and their step timelines.
 
@@ -301,16 +328,32 @@ def production_snapshot(job_code=None):
                  if step["stepId"] == C.CREATIVE_FORCE_SHOOT_STEP_ID and step["finishedAt"]),
                 "",
             )
+            status_id = detail.get("workUnitStatusId")
             entry["productions"].append({
                 "workUnitId": unit.get("workUnitId", ""),
                 "productionType": unit.get("productionTypeName")
                 or types.get(unit.get("productionTypeId"), ""),
                 "isDisabled": bool(unit.get("isDisabled")),
-                "statusId": detail.get("workUnitStatusId"),
+                "statusId": status_id,
+                "status": WORK_UNIT_STATUS.get(status_id, ""),
+                # A production that never runs the workflow's first step is a derived
+                # one - Creative Force spawns it off a step of the main production,
+                # so it is a tail of that work rather than a second job.
+                "isDerived": _is_derived(timeline),
                 "currentStep": (current or {}).get("step", ""),
                 "currentStepSince": (current or {}).get("readyAt", ""),
+                # Finished is not the same as never started, and reading one as the
+                # other put "Not started" on completed work.
+                "isComplete": bool(timeline) and current is None,
                 "shotAt": shot,
                 "steps": timeline,
             })
         rows.append(entry)
-    return {"job": {"jobId": found["jobId"], "jobCode": found.get("jobCode", "")}, "products": rows}
+    return {
+        "job": {"jobId": found["jobId"], "jobCode": found.get("jobCode", "")},
+        # The whole pipeline, so a view can show what is still ahead of a
+        # production rather than only the steps it has already touched.
+        "workflow": [{"stepId": step_id, "step": step_name(step_id)}
+                     for step_id in C.CREATIVE_FORCE_STEP_SEQUENCE],
+        "products": rows,
+    }

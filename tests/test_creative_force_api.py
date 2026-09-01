@@ -163,8 +163,8 @@ class StepNameTests(unittest.TestCase):
         self.assertEqual(cf.step_name(3), "Photography")
 
     def test_an_unknown_step_shows_its_id_rather_than_a_guess(self):
-        # Guessing "Delivery" for step 14 would put a wrong word on a dashboard.
-        self.assertEqual(cf.step_name(14), "Step 14")
+        # A wrong word on a board is worse than a number nobody recognises.
+        self.assertEqual(cf.step_name(999), "Step 999")
 
     def test_junk_does_not_raise(self):
         self.assertEqual(cf.step_name(None), "")
@@ -274,3 +274,31 @@ class SnapshotTests(unittest.TestCase):
         production = snapshot["products"][0]["productions"][0]
         self.assertTrue(production["shotAt"].startswith("2026-09-01T15:16:55"))
         self.assertEqual(production["currentStep"], "Final Selection")
+
+
+class DerivedWorkflowTests(unittest.TestCase):
+    """Creative Force spawns a derived workflow off a step of the main one."""
+
+    def test_a_production_missing_the_opening_step_is_derived(self):
+        # The delivery-only work units showed up beside the real productions
+        # looking like duplicates that had never started.
+        self.assertTrue(cf._is_derived([{"stepId": 14}]))
+
+    def test_a_production_that_starts_at_the_beginning_is_not(self):
+        self.assertFalse(cf._is_derived([{"stepId": 3}, {"stepId": 4}]))
+
+    def test_no_steps_is_not_derived(self):
+        self.assertFalse(cf._is_derived([]))
+
+
+class StepOrderTests(unittest.TestCase):
+    def test_the_workflow_order_is_not_the_id_order(self):
+        # Photo Review is step 15 and runs before External Post, which is step 7.
+        self.assertLess(cf.step_position(15), cf.step_position(7))
+
+    def test_every_workflow_step_is_named(self):
+        for step_id in C.CREATIVE_FORCE_STEP_SEQUENCE:
+            self.assertNotIn("Step ", cf.step_name(step_id), f"step {step_id} is unnamed")
+
+    def test_an_unknown_step_sorts_last_rather_than_first(self):
+        self.assertEqual(cf.step_position(999), len(C.CREATIVE_FORCE_STEP_SEQUENCE))

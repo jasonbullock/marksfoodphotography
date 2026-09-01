@@ -129,15 +129,27 @@ class ProductionUiTests(unittest.TestCase):
 
     def test_a_switched_off_production_is_not_counted_as_work(self):
         # Creative Force builds every production type its styleguide knows about.
-        self.assertIn(".filter(unit => !unit.isDisabled)", self.source)
+        self.assertIn("!unit.isDisabled", self.source)
 
-    def test_it_is_still_shown_though(self):
-        # A production nobody asked for is worth seeing, just not as active work.
-        self.assertIn("Switched off in Creative Force", self.source)
+    def test_the_whole_workflow_is_shown_not_only_the_steps_reached(self):
+        # Seeing what is left is the point; a trail of only-what-happened cannot
+        # say whether a production is nearly done or barely started.
+        self.assertIn("function ProductionTrack({ workflow = [], production }) {", self.source)
+        self.assertIn('"workflow": [{"stepId": step_id, "step": step_name(step_id)}',
+                      (ROOT / "backend" / "creative_force_api.py").read_text())
 
-    def test_waiting_and_working_are_shown_separately(self):
-        self.assertIn("queued {humanDuration(step.waitedSeconds)}", self.source)
-        self.assertIn("worked {humanDuration(step.workedSeconds)}", self.source)
+    def test_a_derived_workflow_is_not_shown_as_a_second_production(self):
+        # It is a tail of the main work - a delivery spawned off Final Selection -
+        # and beside it read as a duplicate that had never started.
+        self.assertIn(".filter(unit => !unit.isDerived && !unit.isDisabled)", self.source)
+
+    def test_finished_work_is_not_labelled_as_not_started(self):
+        self.assertIn("isComplete", self.source)
+
+    def test_durations_are_not_reported_to_the_second(self):
+        # "worked 5s" is noise on a board about a week of production.
+        block = self.source.split("function humanDuration(seconds) {", 1)[1].split("}", 1)[0]
+        self.assertIn("'<1m'", block)
 
     def test_a_gateway_outage_shows_the_last_good_read_rather_than_nothing(self):
         self.assertIn('"staleError"', self.routes)

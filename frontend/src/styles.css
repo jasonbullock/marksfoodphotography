@@ -18528,7 +18528,7 @@ select.form-input {
 .cf-summary-tile {
   display: grid;
   gap: 2px;
-  min-width: 150px;
+  min-width: 140px;
   padding: 12px 14px;
 }
 
@@ -18546,131 +18546,139 @@ select.form-input {
   line-height: 1.1;
 }
 
+.cf-summary-tile.is-quiet strong {
+  color: var(--text-3);
+}
+
 .cf-refresh {
   margin-left: auto;
   align-self: center;
 }
 
-.cf-product-list {
+.cf-rows {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
-.cf-product {
+.cf-row {
   padding: 14px 16px;
 }
 
-.cf-product-head {
+.cf-row.is-complete {
+  opacity: 0.6;
+}
+
+.cf-row-head {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
-.cf-product-thumb {
-  width: 48px;
-  height: 48px;
+.cf-row-thumb {
+  width: 40px;
+  height: 40px;
   border-radius: 6px;
   object-fit: cover;
   flex: 0 0 auto;
 }
 
-.cf-product-identity h2 {
+.cf-row-identity {
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.cf-row-identity h2 {
   margin: 0;
   color: var(--text);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 650;
   line-height: 1.25;
 }
 
-.cf-product-meta {
+.cf-row-meta {
   color: var(--text-3);
   font-size: 12px;
 }
 
-.cf-production {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+.cf-row-type {
+  padding: 2px 10px;
+  border: 1px solid var(--border-mid);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--text-2);
 }
 
-/* Switched off in Creative Force is not work. It stays visible, because a
-   production nobody asked for is worth seeing, but it does not read as active. */
-.cf-production.is-disabled {
-  opacity: 0.55;
-}
-
-.cf-production-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.cf-production-type {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.cf-production-now {
+.cf-row-state {
   color: var(--text-2);
   font-size: 13px;
+  white-space: nowrap;
 }
 
-.cf-production-off,
-.cf-production-shot {
-  color: var(--text-3);
-  font-size: 12px;
+.cf-row-state strong {
+  color: var(--text);
 }
 
-.cf-trail {
+/* The pipeline. Every step of the workflow appears, so what is still to come is
+   as visible as what is finished. */
+.cf-track {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 10px 0 0;
+  gap: 4px;
+  margin: 12px 0 0;
   padding: 0;
   list-style: none;
+  overflow-x: auto;
 }
 
-.cf-trail-step {
+.cf-track-step {
   display: grid;
-  gap: 2px;
-  padding: 6px 10px;
+  gap: 1px;
+  flex: 1 1 0;
+  min-width: 96px;
+  padding: 7px 10px;
+  border-radius: 5px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  min-width: 130px;
+  background: var(--surface, #fff);
 }
 
-.cf-trail-step.is-done {
+.cf-track-step.is-done {
   border-color: var(--green-border);
   background: var(--green-bg);
 }
 
-.cf-trail-step.is-running {
-  border-color: var(--border-mid);
+.cf-track-step.is-here {
+  border-color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--text);
 }
 
-.cf-trail-name {
+.cf-track-step.is-ahead {
+  opacity: 0.5;
+}
+
+.cf-track-name {
   color: var(--text);
   font-size: 12px;
   font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.cf-trail-times {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+.cf-track-note {
   color: var(--text-3);
   font-size: 11px;
+  min-height: 14px;
 }
 
-.cf-trail-running {
+.cf-track-step.is-here .cf-track-note {
   color: var(--text-2);
   font-weight: 650;
 }
 
-.cf-trail-empty,
+.cf-row-tail,
 .cf-fetched {
+  margin: 10px 0 0;
   color: var(--text-3);
   font-size: 12px;
 }

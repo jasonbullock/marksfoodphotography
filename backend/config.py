@@ -63,11 +63,21 @@ class Config:
     # The gateway reports steps by number. These are the names the webhook uses for
     # the same ids, so both sources describe a step the same way. Anything not named
     # here is shown as its id rather than guessed at.
+    # From the Basic Photo workflow definition, in its own order. Creative Force
+    # numbers steps by category rather than by sequence - 15 runs before 7 - so the
+    # order has to be stated rather than sorted.
     CREATIVE_FORCE_STEP_NAMES = {
         int(pair.split(":", 1)[0]): pair.split(":", 1)[1].strip()
-        for pair in os.getenv("CREATIVE_FORCE_STEP_NAMES", "3:Photography,4:Final Selection").split(",")
-        if ":" in pair
+        for pair in os.getenv(
+            "CREATIVE_FORCE_STEP_NAMES",
+            "3:Photography,4:Final Selection,15:Photo Review,"
+            "7:External Post,8:External Post QC,14:Asset Delivery",
+        ).split(",") if ":" in pair
     }
+    CREATIVE_FORCE_STEP_SEQUENCE = [
+        int(value) for value in os.getenv(
+            "CREATIVE_FORCE_STEP_SEQUENCE", "3,4,15,7,8,14").split(",") if value.strip().isdigit()
+    ]
     # The step whose completion means the camera work is done, by id. The gateway
     # gives a finish time for it, which is what the purge clock runs from.
     CREATIVE_FORCE_SHOOT_STEP_ID = int(os.getenv("CREATIVE_FORCE_SHOOT_STEP_ID", "3"))
