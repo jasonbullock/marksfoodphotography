@@ -8196,11 +8196,19 @@ input[type="checkbox"]:disabled {
   color: var(--text);
   font-size: 17px;
   font-weight: 650;
-  line-height: 1.2;
+  line-height: 1.25;
   letter-spacing: 0;
-  white-space: nowrap;
+  /* Wraps rather than truncating - a product name that ends in "..." tells the
+     reader nothing about which variant they are looking at. Capped at two lines
+     so a pasted description cannot push the body off the screen, and long
+     unbroken codes break rather than overhang. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
   max-width: min(68ch, 70vw);
 }
 

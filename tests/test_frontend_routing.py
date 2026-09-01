@@ -2437,3 +2437,22 @@ class TagNoticeTests(unittest.TestCase):
     def test_its_colours_are_ones_that_exist(self):
         for token in ("--green-text", "--red-text"):
             self.assertIn(f"  {token}:", self.styles, f"{token} is used but never defined")
+
+
+class ModalTitleTests(unittest.TestCase):
+    """A truncated product name does not say which variant it is."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.styles = (APP.parent / "styles.css").read_text()
+        cls.block = cls.styles.split(".new-review-modal-header h2 {", 1)[1].split("}", 1)[0]
+
+    def test_the_title_wraps_rather_than_truncating(self):
+        self.assertIn("white-space: normal;", self.block)
+        self.assertNotIn("text-overflow: ellipsis;", self.block)
+
+    def test_it_is_capped_so_a_long_name_cannot_push_the_body_away(self):
+        self.assertIn("-webkit-line-clamp: 2;", self.block)
+
+    def test_an_unbroken_code_breaks_rather_than_overhanging(self):
+        self.assertIn("overflow-wrap: anywhere;", self.block)
