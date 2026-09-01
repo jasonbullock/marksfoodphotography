@@ -168,3 +168,25 @@ class MerchandiseViewTests(unittest.TestCase):
         block = self.styles.split(".merchandise-inventory-shot {", 1)[1]
         for token in set(re.findall(r"var\((--[a-z0-9-]+)\)", block[:900])):
             self.assertIn(f"  {token}:", self.styles, f"{token} is used but never defined")
+
+
+class MerchandiseDrawerTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = (ROOT / "frontend" / "src" / "App.jsx").read_text()
+
+    def test_the_flyout_shows_the_shoot_date(self):
+        block = cls_drawer(self.source)
+        self.assertIn("<span>Shot</span>", block)
+
+    def test_it_names_the_hold_beside_the_count(self):
+        # The number only means something against how long the box is kept.
+        self.assertIn("of ${selectedInventoryRecord.purge.keepAfterShootDays} held", self.source)
+
+    def test_an_unshot_box_says_what_it_is_waiting_on(self):
+        self.assertIn("shotSummary(selectedInventoryRecord).label", self.source)
+
+
+def cls_drawer(source):
+    start = source.index('<div className="merchandise-detail-body">')
+    return source[start:source.index("merchandise-detail-actions", start)]

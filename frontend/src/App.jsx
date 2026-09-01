@@ -7557,6 +7557,23 @@ function MerchandiseInventoryPage({ navigate }) {
               <div><span>Storage Location</span><strong>{selectedInventoryRecord.storageLocation || '-'}</strong></div>
               <div><span>Condition</span><strong>{selectedInventoryRecord.condition || '-'}</strong></div>
               <div><span>Date Received</span><strong>{formatInventoryDate(selectedInventoryRecord.dateReceived)}</strong></div>
+              <div>
+                <span>Shot</span>
+                <strong>{selectedInventoryRecord.purge?.shotAt
+                  ? formatInventoryDate(selectedInventoryRecord.purge.shotAt)
+                  : shotSummary(selectedInventoryRecord).label}</strong>
+              </div>
+              <div>
+                <span>Days Since Shot</span>
+                {/* The hold is named alongside it: the number only means something
+                    against how long this client asks the box to be kept. */}
+                <strong className={selectedInventoryRecord.purge?.state === 'due' ? 'is-due' : ''}>
+                  {selectedInventoryRecord.purge?.daysSinceShoot ?? '-'}
+                  {selectedInventoryRecord.purge?.daysSinceShoot != null
+                    && ` of ${selectedInventoryRecord.purge.keepAfterShootDays} held`}
+                  {selectedInventoryRecord.purge?.state === 'due' && ' · ready to purge'}
+                </strong>
+              </div>
               <div><span>{DOMAIN_TERMS.matchedProduct}</span><strong>{selectedInventoryRecord.matchedProduct?.name || '-'}</strong></div>
               <div><span>{DOMAIN_TERMS.shipment}</span><strong>{selectedInventoryRecord.shipment?.name || '-'}</strong></div>
             </div>

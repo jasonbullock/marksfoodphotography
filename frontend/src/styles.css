@@ -18499,3 +18499,7 @@ select.form-input {
   font-size: 11px;
   font-weight: 700;
 }
+
+.merchandise-detail-body strong.is-due {
+  color: var(--red-text);
+}
