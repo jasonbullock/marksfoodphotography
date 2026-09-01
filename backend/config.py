@@ -58,6 +58,20 @@ class Config:
         "CREATIVE_FORCE_TOKEN_URL", "https://accounts.creativeforce.io/connect/token")
     CREATIVE_FORCE_API_BASE = os.getenv(
         "CREATIVE_FORCE_API_BASE", "https://gateway.creativeforce.io/v1")
+    # The job every Marks Food product is created under.
+    CREATIVE_FORCE_JOB_CODE = os.getenv("CREATIVE_FORCE_JOB_CODE", "Marks Food Photography")
+    # The gateway reports steps by number. These are the names the webhook uses for
+    # the same ids, so both sources describe a step the same way. Anything not named
+    # here is shown as its id rather than guessed at.
+    CREATIVE_FORCE_STEP_NAMES = {
+        int(pair.split(":", 1)[0]): pair.split(":", 1)[1].strip()
+        for pair in os.getenv("CREATIVE_FORCE_STEP_NAMES", "3:Photography,4:Final Selection").split(",")
+        if ":" in pair
+    }
+    # The step whose completion means the camera work is done, by id. The gateway
+    # gives a finish time for it, which is what the purge clock runs from.
+    CREATIVE_FORCE_SHOOT_STEP_ID = int(os.getenv("CREATIVE_FORCE_SHOOT_STEP_ID", "3"))
+
     # The studio holds every client's work in one place. Ours is one workspace of
     # eleven, so every read is scoped to it.
     CREATIVE_FORCE_WORKSPACE = os.getenv("CREATIVE_FORCE_WORKSPACE", "Marks Food")

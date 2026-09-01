@@ -156,3 +156,121 @@ class TimestampTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StepNameTests(unittest.TestCase):
+    def test_a_known_step_is_named(self):
+        self.assertEqual(cf.step_name(3), "Photography")
+
+    def test_an_unknown_step_shows_its_id_rather_than_a_guess(self):
+        # Guessing "Delivery" for step 14 would put a wrong word on a dashboard.
+        self.assertEqual(cf.step_name(14), "Step 14")
+
+    def test_junk_does_not_raise(self):
+        self.assertEqual(cf.step_name(None), "")
+
+
+class ElapsedTests(unittest.TestCase):
+    def test_it_measures_between_two_moments(self):
+        self.assertEqual(
+            cf._elapsed("2026-09-01T15:16:42+00:00", "2026-09-01T15:16:55+00:00"), 13)
+
+    def test_a_step_that_has_not_finished_has_no_duration(self):
+        # Rather than counting to now, which would read as work still being done
+        # on something that was abandoned.
+        self.assertIsNone(cf._elapsed("2026-09-01T15:16:42+00:00", ""))
+        self.assertIsNone(cf._elapsed("", "2026-09-01T15:16:55+00:00"))
+
+    def test_time_running_backwards_is_refused(self):
+        self.assertIsNone(cf._elapsed("2026-09-01T15:16:55+00:00", "2026-09-01T15:16:42+00:00"))
+
+
+class StepTimelineTests(unittest.TestCase):
+    def timeline(self):
+        return cf._step_timeline([
+            {"taskId": "t1", "stepId": 3, "stepStatusId": 9000,
+             "readyToStartDatetimeUtc": 1788275687000,
+             "startedDatetimeUtc": 1788275802043,
+             "finishedDatetimeUtc": 1788275815366},
+            {"taskId": "t2", "stepId": 4, "stepStatusId": 2000,
+             "readyToStartDatetimeUtc": 1788275815812},
+        ])
+
+    def test_waiting_and_working_are_kept_apart(self):
+        # One is a queue and the other is the work; a single "time in step" hides
+        # which of the two is the problem.
+        first = self.timeline()[0]
+        self.assertEqual(first["waitedSeconds"], 115)
+        self.assertEqual(first["workedSeconds"], 13)
+
+    def test_a_running_step_reports_no_duration_yet(self):
+        second = self.timeline()[1]
+        self.assertIsNone(second["workedSeconds"])
+        self.assertEqual(second["finishedAt"], "")
+
+    def test_steps_are_named(self):
+        self.assertEqual([step["step"] for step in self.timeline()],
+                         ["Photography", "Final Selection"])
+
+    def test_no_steps_is_an_empty_timeline_not_a_crash(self):
+        self.assertEqual(cf._step_timeline(None), [])
+
+
+class PagingTests(unittest.TestCase):
+    def test_it_stops_on_a_short_page(self):
+        pages = [{"pageData": [1] * 100}, {"pageData": [1] * 7}]
+        with patch("creative_force_api.get", side_effect=pages) as get:
+            rows = cf._pages("products", page_size=100)
+        self.assertEqual(len(rows), 107)
+        self.assertEqual(get.call_count, 2)
+
+    def test_it_stops_at_the_limit_rather_than_walking_the_studio(self):
+        with patch("creative_force_api.get", return_value={"pageData": [1] * 100}):
+            rows = cf._pages("products", page_size=100, limit=250)
+        self.assertEqual(len(rows), 250)
+
+    def test_an_empty_first_page_is_not_an_error(self):
+        with patch("creative_force_api.get", return_value={"pageData": []}):
+            self.assertEqual(cf._pages("products"), [])
+
+
+class ProductionTypeCacheTests(unittest.TestCase):
+    def setUp(self):
+        cf._production_types.update({"at": 0.0, "value": {}})
+        self.addCleanup(lambda: cf._production_types.update({"at": 0.0, "value": {}}))
+
+    def test_it_maps_ids_to_names(self):
+        page = {"pageData": [{"productionTypeId": 1031, "productionTypeName": "Packaging"},
+                             {"productionTypeId": 1032, "productionTypeName": "Ecomm"}]}
+        with patch("creative_force_api.get", return_value=page):
+            self.assertEqual(cf.production_types(), {1031: "Packaging", 1032: "Ecomm"})
+
+    def test_studio_configuration_is_not_fetched_on_every_read(self):
+        page = {"pageData": [{"productionTypeId": 1032, "productionTypeName": "Ecomm"}]}
+        with patch("creative_force_api.get", return_value=page) as get:
+            cf.production_types()
+            cf.production_types()
+        self.assertEqual(get.call_count, 1)
+
+
+class SnapshotTests(unittest.TestCase):
+    def test_a_missing_job_is_reported_rather_than_guessed_at(self):
+        with patch("creative_force_api.job", return_value=None):
+            snapshot = cf.production_snapshot()
+        self.assertIsNone(snapshot["job"])
+        self.assertEqual(snapshot["products"], [])
+
+    def test_the_shoot_date_comes_from_the_step_that_finished(self):
+        with patch("creative_force_api.job", return_value={"jobId": "j1", "jobCode": "Marks Food Photography"}), \
+                patch("creative_force_api.production_types", return_value={1032: "Ecomm"}), \
+                patch("creative_force_api.products", return_value=[{"productId": "p1", "productCode": "MP-1"}]), \
+                patch("creative_force_api.work_units_for_product",
+                      return_value=[{"workUnitId": "w1", "productionTypeId": 1032, "isDisabled": False}]), \
+                patch("creative_force_api.work_unit", return_value={"steps": [
+                    {"stepId": 3, "finishedDatetimeUtc": 1788275815366},
+                    {"stepId": 4, "readyToStartDatetimeUtc": 1788275815812},
+                ]}):
+            snapshot = cf.production_snapshot()
+        production = snapshot["products"][0]["productions"][0]
+        self.assertTrue(production["shotAt"].startswith("2026-09-01T15:16:55"))
+        self.assertEqual(production["currentStep"], "Final Selection")

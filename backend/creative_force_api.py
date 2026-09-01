@@ -156,3 +156,161 @@ def to_millis(value):
     if not parsed.tzinfo:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return int(parsed.timestamp() * 1000)
+
+
+# ── Reading our own corner of the studio ────────────────────────────────────
+# Every Marks Food product lives under one job, so that job is the root of every
+# read here. The studio holds eleven other workspaces and hundreds of thousands
+# of productions; none of them are ours.
+
+_production_types = {"at": 0.0, "value": {}}
+# Production types are studio configuration - they change when someone adds a new
+# kind of shoot, which is not often.
+PRODUCTION_TYPE_CACHE_SECONDS = 600
+
+
+def production_types():
+    """{id: name} for every production type, e.g. {1031: "Packaging", 1032: "Ecomm"}."""
+    if _production_types["value"] and time.time() - _production_types["at"] < PRODUCTION_TYPE_CACHE_SECONDS:
+        return _production_types["value"]
+    page = get("productiontypes", {"pageSize": 200})
+    value = {
+        int(row.get("productionTypeId")): str(row.get("productionTypeName") or "")
+        for row in page.get("pageData", []) if row.get("productionTypeId") is not None
+    }
+    _production_types.update({"at": time.time(), "value": value})
+    return value
+
+
+def step_name(step_id):
+    """A step's name, or its id when nobody has told us what it is called."""
+    try:
+        number = int(step_id)
+    except (TypeError, ValueError):
+        return str(step_id or "")
+    return C.CREATIVE_FORCE_STEP_NAMES.get(number) or f"Step {number}"
+
+
+def _pages(path, params=None, page_size=100, limit=2000):
+    """Every page of a listing, stopping at a limit rather than running forever."""
+    collected = []
+    page_number = 1
+    while len(collected) < limit:
+        page = get(path, {**(params or {}), "pageNumber": page_number, "pageSize": page_size})
+        rows = page.get("pageData") if isinstance(page, dict) else page
+        if not rows:
+            break
+        collected.extend(rows)
+        if len(rows) < page_size:
+            break
+        page_number += 1
+    return collected[:limit]
+
+
+def job(job_code=None):
+    """The job our products are created under, by its code."""
+    wanted = str(job_code or C.CREATIVE_FORCE_JOB_CODE or "").strip()
+    for row in _pages("jobs", page_size=100):
+        if str(row.get("jobCode") or "").strip() == wanted:
+            return row
+    return None
+
+
+def products(job_id):
+    return _pages("products", {"jobId": job_id})
+
+
+def work_units_for_product(product_id):
+    """Every production Creative Force built for one product, disabled ones included."""
+    rows = get("workunits/get-production-state", {"productId": product_id})
+    return rows if isinstance(rows, list) else []
+
+
+def work_unit(work_unit_id):
+    """One production with its step timeline."""
+    return get(f"workunits/{work_unit_id}")
+
+
+def job_status_overview(job_id):
+    rows = get(f"jobs/{job_id}/get-job-status-overview")
+    return rows if isinstance(rows, list) else []
+
+
+def _step_timeline(raw_steps):
+    """Each step as ready / started / finished, in the order the gateway gave them."""
+    timeline = []
+    for step in raw_steps or []:
+        ready = to_iso(step.get("readyToStartDatetimeUtc"))
+        started = to_iso(step.get("startedDatetimeUtc"))
+        finished = to_iso(step.get("finishedDatetimeUtc"))
+        timeline.append({
+            "stepId": step.get("stepId"),
+            "step": step_name(step.get("stepId")),
+            "taskId": step.get("taskId", ""),
+            "stepStatusId": step.get("stepStatusId"),
+            "readyAt": ready,
+            "startedAt": started,
+            "finishedAt": finished,
+            # Waiting and working are different problems: one is a queue, the other
+            # is the work itself, and a single "time in step" hides which it was.
+            "waitedSeconds": _elapsed(ready, started),
+            "workedSeconds": _elapsed(started, finished),
+        })
+    return timeline
+
+
+def _elapsed(start, end):
+    if not start or not end:
+        return None
+    first, last = to_millis(start), to_millis(end)
+    if first is None or last is None or last < first:
+        return None
+    return round((last - first) / 1000)
+
+
+def production_snapshot(job_code=None):
+    """Every product in our job with its productions and their step timelines.
+
+    One call per product and one per production, which is fine at our volume and
+    would not be at the studio's - the gateway allows 20 requests a second and this
+    walks the job rather than filtering server-side.
+    """
+    found = job(job_code)
+    if not found:
+        return {"job": None, "products": []}
+
+    types = production_types()
+    rows = []
+    for product in products(found["jobId"]):
+        entry = {
+            "productId": product.get("productId", ""),
+            "productCode": product.get("productCode", ""),
+            "productName": product.get("productName", ""),
+            "category": (product.get("category") or {}).get("categoryName", ""),
+            "styleGuide": (product.get("styleGuide") or {}).get("styleGuideName", ""),
+            "createdAt": to_iso(product.get("productCreatedDateUtc")),
+            "displayImages": product.get("productDisplayImages") or [],
+            "productions": [],
+        }
+        for unit in work_units_for_product(entry["productId"]):
+            detail = work_unit(unit.get("workUnitId")) or {}
+            timeline = _step_timeline(detail.get("steps"))
+            current = next((step for step in timeline if not step["finishedAt"]), None)
+            shot = next(
+                (step["finishedAt"] for step in timeline
+                 if step["stepId"] == C.CREATIVE_FORCE_SHOOT_STEP_ID and step["finishedAt"]),
+                "",
+            )
+            entry["productions"].append({
+                "workUnitId": unit.get("workUnitId", ""),
+                "productionType": unit.get("productionTypeName")
+                or types.get(unit.get("productionTypeId"), ""),
+                "isDisabled": bool(unit.get("isDisabled")),
+                "statusId": detail.get("workUnitStatusId"),
+                "currentStep": (current or {}).get("step", ""),
+                "currentStepSince": (current or {}).get("readyAt", ""),
+                "shotAt": shot,
+                "steps": timeline,
+            })
+        rows.append(entry)
+    return {"job": {"jobId": found["jobId"], "jobCode": found.get("jobCode", "")}, "products": rows}
