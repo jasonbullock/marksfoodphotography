@@ -9903,6 +9903,114 @@ def _merchandise_deliverables_in_scope(entry_id, entry_fields, body=None):
     return narrowed or available
 
 
+@api.get("/dashboard/creative-force")
+def dashboard_creative_force_pipeline():
+    """Where released work is sitting in Creative Force right now.
+
+    Counts by step, and for each step the item that has been there longest -
+    a count says how much is in Post Production, but the name is what someone
+    actually does something about.
+    """
+    now = datetime.now(timezone.utc)
+    receipts_by_id = {
+        record["id"]: record
+        for record in _list_all_records(C.SHIPMENTS_TABLE)
+        if _receipt_client_permitted(record.get("fields", {}).get(C.F_RECEIPT_CLIENT, []))
+    }
+    clients_by_id = {record["id"]: record for record in _client_records()}
+    merchandise_by_id = {record["id"]: record for record in _list_all_records(C.MERCHANDISE_TABLE)}
+
+    steps = {}
+    by_client = {}
+    by_workstream = {}
+    unreported = []
+    total = 0
+
+    for card in _list_all_records(C.WORKSTREAM_CARDS_TABLE):
+        fields = card.get("fields", {})
+        if not fields.get(C.F_WORKSTREAM_CARD_RELEASED, False):
+            continue  # not handed over, so not Creative Force's to be holding
+        shaped = _shape_workstream_card(card)
+        if str(shaped.get("creativeForceStatus") or "").strip().casefold() in CREATIVE_FORCE_DONE_STATUSES:
+            continue
+
+        merchandise_id = (shaped.get("receivedMerchIds") or [""])[0]
+        entry = merchandise_by_id.get(merchandise_id, {})
+        entry_fields = entry.get("fields", {})
+        receipt_ids = _as_list(entry_fields.get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+        receipt = next((receipts_by_id[rid] for rid in receipt_ids if rid in receipts_by_id), None)
+        if receipt_ids and not receipt:
+            continue
+        client_ids = _as_list((receipt or {}).get("fields", {}).get(C.F_RECEIPT_CLIENT, []))
+        client = clients_by_id.get(client_ids[0], {}).get("fields", {}).get(C.F_CLIENT_NAME, "") if client_ids else ""
+
+        # How long it has sat where it is, which is the number that matters. Falls
+        # back to the release: a card Creative Force has never reported on has been
+        # waiting since it was handed over.
+        since = shaped.get("creativeForceStepReportedAt") or shaped.get("releasedAt") or ""
+        parsed = _parse_iso(since)
+        days = (now - parsed).days if parsed else None
+
+        item = {
+            "cardId": card["id"],
+            "merchandiseId": merchandise_id,
+            "marksId": marks_id_from_number(entry_fields.get(C.F_RECEIPT_ENTRY_MARKS_NUMBER)),
+            "name": entry_fields.get(C.F_RECEIPT_ENTRY_NAME, ""),
+            "client": client,
+            "workstream": shaped.get("type", ""),
+            "step": shaped.get("creativeForceStep", ""),
+            "status": shaped.get("creativeForceWorkUnitStatus", ""),
+            "since": since,
+            "days": days,
+        }
+        total += 1
+        by_client[client or "Unknown client"] = by_client.get(client or "Unknown client", 0) + 1
+        if item["workstream"]:
+            by_workstream[item["workstream"]] = by_workstream.get(item["workstream"], 0) + 1
+
+        step_name = item["step"] or ""
+        if not step_name:
+            unreported.append(item)
+            continue
+        bucket = steps.setdefault(step_name, {"step": step_name, "count": 0, "items": []})
+        bucket["count"] += 1
+        bucket["items"].append(item)
+
+    def step_position(name):
+        order = [value.casefold() for value in C.CREATIVE_FORCE_STEP_ORDER]
+        key = str(name or "").strip().casefold()
+        return order.index(key) if key in order else len(order)
+
+    ordered = []
+    for name in sorted(steps, key=lambda value: (step_position(value), value.casefold())):
+        bucket = steps[name]
+        # Longest-waiting first: that is the one someone has to chase.
+        bucket["items"].sort(key=lambda item: (item["days"] is None, -(item["days"] or 0)))
+        bucket["oldest"] = bucket["items"][0] if bucket["items"] else None
+        ordered.append(bucket)
+
+    if unreported:
+        unreported.sort(key=lambda item: (item["days"] is None, -(item["days"] or 0)))
+        ordered.append({
+            # Released, accepted by Creative Force, and no step reported yet. Worth
+            # showing rather than dropping: a card that stays here is a handoff that
+            # did not land.
+            "step": "Not yet reported",
+            "count": len(unreported),
+            "items": unreported,
+            "oldest": unreported[0],
+        })
+
+    return jsonify({
+        "steps": ordered,
+        "total": total,
+        "byClient": [{"client": name, "count": count}
+                     for name, count in sorted(by_client.items(), key=lambda pair: (-pair[1], pair[0]))],
+        "byWorkstream": [{"workstream": name, "count": by_workstream.get(name, 0)}
+                         for name in C.WORKSTREAM_TYPE_OPTIONS if by_workstream.get(name)],
+    })
+
+
 @api.get("/inventory/purge")
 def inventory_purge_list():
     """What is still on a shelf, and how long it has been there since its shoot.
