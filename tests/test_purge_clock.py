@@ -14,9 +14,10 @@ from config import Config as C  # noqa: E402
 NOW = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
 
 
-def card(workstream, shot_at=None):
+def card(workstream, shot_at=None, released=True):
     return {"id": "rec" + workstream, "fields": {
         C.F_WORKSTREAM_CARD_TYPE: workstream,
+        C.F_WORKSTREAM_CARD_RELEASED: released,
         **({C.F_WORKSTREAM_CARD_SHOT_AT: shot_at} if shot_at else {}),
     }}
 
@@ -59,12 +60,37 @@ class PurgeStateTests(unittest.TestCase):
     def state(self, cards, client=None):
         return routes._purge_state_for_cards(cards, client, now=NOW)
 
-    def test_an_unshot_workstream_holds_the_whole_box(self):
+    def test_a_released_workstream_that_is_unshot_holds_the_whole_box(self):
         # Packaging can be shot weeks before Ecomm, and shipping the merchandise
         # after the first shoot is how a reshoot becomes impossible.
         result = self.state([card("Packaging", days_ago(90)), card("Ecomm")])
         self.assertEqual(result["state"], "awaiting-shoot")
         self.assertEqual(result["awaitingShoot"], ["Ecomm"])
+
+    def test_a_workstream_that_was_never_released_does_not_hold_anything(self):
+        # There is no Packaging shoot coming until someone releases it, so waiting
+        # on one would keep the box on a shelf forever.
+        result = self.state([
+            card("Ecomm", days_ago(C.KEEP_AFTER_SHOOT_DAYS + 1)),
+            card("Packaging", released=False),
+        ])
+        self.assertEqual(result["awaitingShoot"], [])
+        self.assertEqual(result["state"], "due")
+
+    def test_a_box_with_nothing_released_is_not_on_a_purge_clock(self):
+        self.assertEqual(self.state([card("Ecomm", released=False)])["state"], "not-scheduled")
+
+    def test_each_released_workstream_is_reported_separately(self):
+        # They are shot weeks apart, so one shared date says nothing useful.
+        result = self.state([card("Ecomm", days_ago(3)), card("Packaging")])
+        self.assertEqual(
+            [(shoot["workstream"], bool(shoot["shotAt"])) for shoot in result["shoots"]],
+            [("Ecomm", True), ("Packaging", False)],
+        )
+
+    def test_an_unreleased_workstream_is_not_listed_at_all(self):
+        result = self.state([card("Ecomm", days_ago(3)), card("Packaging", released=False)])
+        self.assertEqual([shoot["workstream"] for shoot in result["shoots"]], ["Ecomm"])
 
     def test_the_clock_runs_from_the_last_shoot_not_the_first(self):
         result = self.state([card("Packaging", days_ago(90)), card("Ecomm", days_ago(10))])
@@ -144,12 +170,15 @@ class MerchandiseViewTests(unittest.TestCase):
         block = self.routes.split("def _list_merchandise_inventory_records():", 1)[1].split("\n\n\n", 1)[0]
         self.assertIn("cards_by_merchandise.setdefault", block)
 
-    def test_the_card_shows_the_date_and_how_long_ago(self):
-        self.assertIn("function shotSummary(record) {", self.source)
-        self.assertIn("merchandise-inventory-shot", self.source)
+    def test_the_card_names_each_workstream_and_its_date(self):
+        self.assertIn("function shotLines(record) {", self.source)
+        self.assertIn("`${shoot.workstream} shot ${formatInventoryDate(shoot.shotAt)}${since}`", self.source)
 
-    def test_an_unshot_workstream_is_named_rather_than_left_blank(self):
-        self.assertIn("`Awaiting ${waiting} shoot`", self.source)
+    def test_a_released_but_unshot_workstream_is_named_rather_than_left_blank(self):
+        self.assertIn("`${shoot.workstream}: awaiting shoot`", self.source)
+
+    def test_a_box_with_nothing_released_says_so(self):
+        self.assertIn("'Not released for photo'", self.source)
 
     def test_the_list_view_has_both_columns(self):
         self.assertIn("header: 'Shot'", self.source)
@@ -183,8 +212,8 @@ class MerchandiseDrawerTests(unittest.TestCase):
         # The number only means something against how long the box is kept.
         self.assertIn("of ${selectedInventoryRecord.purge.keepAfterShootDays} held", self.source)
 
-    def test_an_unshot_box_says_what_it_is_waiting_on(self):
-        self.assertIn("shotSummary(selectedInventoryRecord).label", self.source)
+    def test_the_flyout_lists_the_same_lines_as_the_card(self):
+        self.assertIn("shotLines(selectedInventoryRecord).map(line =>", self.source)
 
 
 def cls_drawer(source):

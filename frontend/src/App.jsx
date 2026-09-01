@@ -7233,6 +7233,12 @@ const AGE_FILTERS = [
   { value: 'unknown', label: 'Unknown' },
 ];
 
+function daysSince(value) {
+  const parsed = value ? new Date(value) : null;
+  if (!parsed || Number.isNaN(parsed.getTime())) return null;
+  return Math.max(0, Math.floor((Date.now() - parsed.getTime()) / 86400000));
+}
+
 function formatInventoryDate(value) {
   if (!value) return '-';
   return formatCentralDateTime(value, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).replace('—', '-');
@@ -7342,24 +7348,25 @@ function MerchandiseInventoryPage({ navigate }) {
     return record.daysHere === null || record.daysHere === undefined ? '—' : `${record.daysHere}d`;
   }
 
-  // How long the box still needs to be kept, which is a different question from how
-  // long it has been here. A workstream that has not been shot holds the whole box,
-  // so the line says what is being waited on rather than showing a blank.
-  function shotSummary(record) {
+  // Per workstream, because they are shot separately and weeks apart. A box that
+  // only released Ecomm has no Packaging shoot coming, so saying it is awaiting one
+  // would keep it on a shelf forever.
+  function shotLines(record) {
     const purge = record.purge || {};
-    if (purge.state === 'awaiting-shoot') {
-      const waiting = (purge.awaitingShoot || []).join(' and ');
-      return { label: waiting ? `Awaiting ${waiting} shoot` : 'Not shot yet', tone: 'wait' };
-    }
-    if (!purge.shotAt) return { label: 'No shoot recorded', tone: 'wait' };
-    const when = formatInventoryDate(purge.shotAt);
-    const days = purge.daysSinceShoot;
-    const since = days === 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`;
-    return {
-      label: `${when} · ${since}`,
-      tone: purge.state === 'due' ? 'due' : 'ok',
-      due: purge.state === 'due',
-    };
+    const shoots = purge.shoots || [];
+    if (!shoots.length) return [{ key: 'none', label: 'Not released for photo', tone: 'wait' }];
+    return shoots.map(shoot => {
+      if (!shoot.shotAt) {
+        return { key: shoot.workstream, label: `${shoot.workstream}: awaiting shoot`, tone: 'wait' };
+      }
+      const days = daysSince(shoot.shotAt);
+      const since = days === null ? '' : days === 0 ? ' · today' : days === 1 ? ' · 1 day ago' : ` · ${days} days ago`;
+      return {
+        key: shoot.workstream,
+        label: `${shoot.workstream} shot ${formatInventoryDate(shoot.shotAt)}${since}`,
+        tone: 'ok',
+      };
+    });
   }
 
   return (
@@ -7482,15 +7489,16 @@ function MerchandiseInventoryPage({ navigate }) {
               <div className="merchandise-inventory-location">
                 <span className="merchandise-inventory-meta-label">Storage Location:</span> {record.storageLocation || '-'}
               </div>
-              {(() => {
-                const shot = shotSummary(record);
-                return (
-                  <div className={`merchandise-inventory-shot is-${shot.tone}`}>
-                    <span className="merchandise-inventory-meta-label">Shot:</span> {shot.label}
-                    {shot.due && <span className="merchandise-inventory-purge-flag">Ready to purge</span>}
+              <div className="merchandise-inventory-shots">
+                {shotLines(record).map(line => (
+                  <div className={`merchandise-inventory-shot is-${line.tone}`} key={line.key}>
+                    {line.label}
                   </div>
-                );
-              })()}
+                ))}
+                {record.purge?.state === 'due' && (
+                  <span className="merchandise-inventory-purge-flag">Ready to purge</span>
+                )}
+              </div>
             </div>
           </article>
           );
@@ -7559,9 +7567,11 @@ function MerchandiseInventoryPage({ navigate }) {
               <div><span>Date Received</span><strong>{formatInventoryDate(selectedInventoryRecord.dateReceived)}</strong></div>
               <div>
                 <span>Shot</span>
-                <strong>{selectedInventoryRecord.purge?.shotAt
-                  ? formatInventoryDate(selectedInventoryRecord.purge.shotAt)
-                  : shotSummary(selectedInventoryRecord).label}</strong>
+                <strong>
+                  {shotLines(selectedInventoryRecord).map(line => (
+                    <span className="merchandise-detail-shot-line" key={line.key}>{line.label}</span>
+                  ))}
+                </strong>
               </div>
               <div>
                 <span>Days Since Shot</span>

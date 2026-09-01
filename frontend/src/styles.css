@@ -18473,11 +18473,6 @@ select.form-input {
 
 /* When the box was last in front of a camera, and whether it still has to be kept. */
 .merchandise-inventory-shot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 4px;
   font-size: 13px;
   color: var(--text-2);
 }
@@ -18491,6 +18486,7 @@ select.form-input {
 }
 
 .merchandise-inventory-purge-flag {
+  margin-top: 4px;
   padding: 1px 8px;
   border: 1px solid var(--red-border);
   border-radius: 999px;
@@ -18502,4 +18498,17 @@ select.form-input {
 
 .merchandise-detail-body strong.is-due {
   color: var(--red-text);
+}
+
+/* One line per workstream: they are shot separately and often weeks apart. */
+.merchandise-inventory-shots {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.merchandise-detail-shot-line {
+  display: block;
 }

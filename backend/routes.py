@@ -5431,49 +5431,57 @@ def _keep_after_shoot_days(client_config=None):
 def _purge_state_for_cards(cards, client_config=None, now=None):
     """When a box can leave the shelf, and whether it can yet.
 
-    A box is not free because one of its workstreams is done. Packaging can be
-    shot weeks before Ecomm, and shipping the merchandise after the first shoot
-    is how a reshoot becomes impossible. So the clock starts at the last shoot,
-    and a workstream that has not been shot holds the whole box.
+    Only released workstreams count. A Packaging card that was never handed to
+    Creative Force has no shoot coming, so waiting on one would keep the box on a
+    shelf forever. Among the workstreams that were released, the clock starts at
+    the last of them: Packaging can be shot weeks before Ecomm, and shipping the
+    merchandise after the first shoot is how a reshoot becomes impossible.
     """
     now = now or datetime.now(timezone.utc)
-    photo_cards = [
-        card for card in cards
-        if str(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_TYPE, "") or "") in C.WORKSTREAM_TYPE_OPTIONS
-    ]
     keep_days = _keep_after_shoot_days(client_config)
-    if not photo_cards:
-        return {"shotAt": "", "awaitingShoot": [], "keepAfterShootDays": keep_days,
-                "purgeDueAt": "", "daysSinceShoot": None, "state": "not-scheduled"}
+    released = []
+    for card in cards:
+        fields = card.get("fields", {})
+        workstream = str(fields.get(C.F_WORKSTREAM_CARD_TYPE, "") or "")
+        if workstream not in C.WORKSTREAM_TYPE_OPTIONS:
+            continue
+        if not fields.get(C.F_WORKSTREAM_CARD_RELEASED, False):
+            continue
+        released.append({
+            "workstream": workstream,
+            "shotAt": str(fields.get(C.F_WORKSTREAM_CARD_SHOT_AT, "") or "").strip(),
+        })
+    released.sort(key=lambda shoot: C.WORKSTREAM_TYPE_OPTIONS.index(shoot["workstream"]))
 
-    shoot_dates = []
-    awaiting = []
-    for card in photo_cards:
-        shot = str(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_SHOT_AT, "") or "").strip()
-        if shot:
-            shoot_dates.append(shot)
-        else:
-            awaiting.append(str(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_TYPE, "") or ""))
-
-    if awaiting or not shoot_dates:
-        return {"shotAt": max(shoot_dates, default=""), "awaitingShoot": awaiting,
-                "keepAfterShootDays": keep_days, "purgeDueAt": "",
-                "daysSinceShoot": None, "state": "awaiting-shoot"}
-
-    last_shoot = max(shoot_dates)
-    parsed = _parse_iso(last_shoot)
-    if not parsed:
-        return {"shotAt": last_shoot, "awaitingShoot": [], "keepAfterShootDays": keep_days,
-                "purgeDueAt": "", "daysSinceShoot": None, "state": "awaiting-shoot"}
-
-    days_since = (now - parsed).days
-    due = parsed + timedelta(days=keep_days)
-    return {
-        "shotAt": last_shoot,
+    base = {
+        "shoots": released,
+        "shotAt": "",
         "awaitingShoot": [],
         "keepAfterShootDays": keep_days,
+        "purgeDueAt": "",
+        "daysSinceShoot": None,
+        "state": "not-scheduled",
+    }
+    if not released:
+        return base
+
+    awaiting = [shoot["workstream"] for shoot in released if not shoot["shotAt"]]
+    shoot_dates = [shoot["shotAt"] for shoot in released if shoot["shotAt"]]
+    base["shotAt"] = max(shoot_dates, default="")
+    if awaiting or not shoot_dates:
+        return {**base, "awaitingShoot": awaiting, "state": "awaiting-shoot"}
+
+    parsed = _parse_iso(base["shotAt"])
+    if not parsed:
+        # An unreadable date holds rather than purges. Guessing wrong in the other
+        # direction throws merchandise away.
+        return {**base, "state": "awaiting-shoot"}
+
+    due = parsed + timedelta(days=keep_days)
+    return {
+        **base,
+        "daysSinceShoot": (now - parsed).days,
         "purgeDueAt": due.isoformat(),
-        "daysSinceShoot": days_since,
         "state": "due" if now >= due else "holding",
     }
 
