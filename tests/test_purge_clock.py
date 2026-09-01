@@ -125,3 +125,46 @@ class ClientSettingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MerchandiseViewTests(unittest.TestCase):
+    """The shoot date belongs where people look at what is on the shelf."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.source = (ROOT / "frontend" / "src" / "App.jsx").read_text()
+        cls.styles = (ROOT / "frontend" / "src" / "styles.css").read_text()
+        cls.routes = (ROOT / "backend" / "routes.py").read_text()
+
+    def test_the_rows_carry_the_purge_state(self):
+        self.assertIn('"purge": _purge_state_for_cards(', self.routes)
+
+    def test_the_cards_are_loaded_once_for_the_whole_list(self):
+        # A lookup per row would be one Airtable call per box on the shelf.
+        block = self.routes.split("def _list_merchandise_inventory_records():", 1)[1].split("\n\n\n", 1)[0]
+        self.assertIn("cards_by_merchandise.setdefault", block)
+
+    def test_the_card_shows_the_date_and_how_long_ago(self):
+        self.assertIn("function shotSummary(record) {", self.source)
+        self.assertIn("merchandise-inventory-shot", self.source)
+
+    def test_an_unshot_workstream_is_named_rather_than_left_blank(self):
+        self.assertIn("`Awaiting ${waiting} shoot`", self.source)
+
+    def test_the_list_view_has_both_columns(self):
+        self.assertIn("header: 'Shot'", self.source)
+        self.assertIn("header: 'Days Since Shot'", self.source)
+
+    def test_sorting_by_days_compares_numbers(self):
+        # As a string, "9" sorts after "30".
+        self.assertIn("if (sortKey === 'daysSinceShoot') {", self.source)
+
+    def test_never_shot_sorts_last_rather_than_as_today(self):
+        block = self.source.split("if (sortKey === 'daysSinceShoot') {", 1)[1].split("}", 1)[0]
+        self.assertIn("?? -1", block)
+
+    def test_its_colours_are_ones_that_exist(self):
+        import re
+        block = self.styles.split(".merchandise-inventory-shot {", 1)[1]
+        for token in set(re.findall(r"var\((--[a-z0-9-]+)\)", block[:900])):
+            self.assertIn(f"  {token}:", self.styles, f"{token} is used but never defined")

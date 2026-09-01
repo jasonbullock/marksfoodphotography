@@ -6955,7 +6955,8 @@ def _derive_merchandise_inventory_status(entry, linked_product=None, client=None
     return merch_status or "Received"
 
 
-def _shape_merchandise_inventory_entry(entry, *, receipts_by_id, products_by_id, clients_by_id, locations_by_id, now=None):
+def _shape_merchandise_inventory_entry(entry, *, receipts_by_id, products_by_id, clients_by_id,
+                                       locations_by_id, cards_by_merchandise=None, now=None):
     shaped = _shape_receipt_entry(entry)
     receipt = next(
         (receipts_by_id.get(receipt_id) for receipt_id in _as_list(shaped.get("receiptIds")) if receipts_by_id.get(receipt_id)),
@@ -7002,6 +7003,13 @@ def _shape_merchandise_inventory_entry(entry, *, receipts_by_id, products_by_id,
         "ageGroup": _age_group_for_days(days_here),
         "status": status,
         "inventoryStatus": status,
+        # How long the box still needs to be here, which is a different question
+        # from how long it has been here.
+        "purge": _purge_state_for_cards(
+            (cards_by_merchandise or {}).get(entry.get("id", ""), []),
+            _client_config(client_ids[0]) if client_ids else {},
+            now=now,
+        ),
     }
 
 
@@ -7016,6 +7024,10 @@ def _list_merchandise_inventory_records():
     products_by_id = {record["id"]: record for record in products}
     clients_by_id = {record["id"]: _shape_client(record) for record in clients}
     locations_by_id = {record["id"]: _shape_location(record) for record in locations}
+    cards_by_merchandise = {}
+    for card in _list_all_records(C.WORKSTREAM_CARDS_TABLE):
+        for merchandise_id in _as_list(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_RECEIVED_MERCH, [])):
+            cards_by_merchandise.setdefault(merchandise_id, []).append(card)
     now = _now_utc()
     records = []
     for entry in entries:
@@ -7034,6 +7046,7 @@ def _list_merchandise_inventory_records():
             products_by_id=products_by_id,
             clients_by_id=clients_by_id,
             locations_by_id=locations_by_id,
+            cards_by_merchandise=cards_by_merchandise,
             now=now,
         ))
     records.sort(key=lambda record: (

@@ -7300,6 +7300,8 @@ function MerchandiseInventoryPage({ navigate }) {
     { key: 'daysHere', header: 'Days Here', value: record => record.daysHere ?? '' },
     { key: 'timeHere', header: 'Time Here', value: record => record.timeHere || 'Unknown' },
     { key: 'dateReceived', header: 'Date Received', value: record => formatInventoryDate(record.dateReceived) },
+    { key: 'shotAt', header: 'Shot', value: record => (record.purge?.shotAt ? formatInventoryDate(record.purge.shotAt) : '') },
+    { key: 'daysSinceShoot', header: 'Days Since Shot', value: record => record.purge?.daysSinceShoot ?? '' },
     { key: 'matchedProduct', header: DOMAIN_TERMS.matchedProduct, value: record => record.matchedProduct?.name || '' },
     { key: 'matchedProductIdentifier', header: 'Matched Product ID', value: record => record.matchedProduct?.identifier || '' },
     { key: 'shipment', header: DOMAIN_TERMS.shipment, value: record => record.shipment?.name || '' },
@@ -7311,6 +7313,12 @@ function MerchandiseInventoryPage({ navigate }) {
     const getValue = record => column?.value ? column.value(record) : record[sortKey];
     const aValue = getValue(a);
     const bValue = getValue(b);
+    if (sortKey === 'daysSinceShoot') {
+      // Never shot sorts last rather than as zero days ago.
+      const aDays = a.purge?.daysSinceShoot ?? -1;
+      const bDays = b.purge?.daysSinceShoot ?? -1;
+      return sortDirection === 'asc' ? aDays - bDays : bDays - aDays;
+    }
     if (sortKey === 'daysHere') {
       const aDays = a.daysHere ?? -1;
       const bDays = b.daysHere ?? -1;
@@ -7332,6 +7340,26 @@ function MerchandiseInventoryPage({ navigate }) {
 
   function compactAgeBadgeLabel(record) {
     return record.daysHere === null || record.daysHere === undefined ? '—' : `${record.daysHere}d`;
+  }
+
+  // How long the box still needs to be kept, which is a different question from how
+  // long it has been here. A workstream that has not been shot holds the whole box,
+  // so the line says what is being waited on rather than showing a blank.
+  function shotSummary(record) {
+    const purge = record.purge || {};
+    if (purge.state === 'awaiting-shoot') {
+      const waiting = (purge.awaitingShoot || []).join(' and ');
+      return { label: waiting ? `Awaiting ${waiting} shoot` : 'Not shot yet', tone: 'wait' };
+    }
+    if (!purge.shotAt) return { label: 'No shoot recorded', tone: 'wait' };
+    const when = formatInventoryDate(purge.shotAt);
+    const days = purge.daysSinceShoot;
+    const since = days === 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`;
+    return {
+      label: `${when} · ${since}`,
+      tone: purge.state === 'due' ? 'due' : 'ok',
+      due: purge.state === 'due',
+    };
   }
 
   return (
@@ -7454,6 +7482,15 @@ function MerchandiseInventoryPage({ navigate }) {
               <div className="merchandise-inventory-location">
                 <span className="merchandise-inventory-meta-label">Storage Location:</span> {record.storageLocation || '-'}
               </div>
+              {(() => {
+                const shot = shotSummary(record);
+                return (
+                  <div className={`merchandise-inventory-shot is-${shot.tone}`}>
+                    <span className="merchandise-inventory-meta-label">Shot:</span> {shot.label}
+                    {shot.due && <span className="merchandise-inventory-purge-flag">Ready to purge</span>}
+                  </div>
+                );
+              })()}
             </div>
           </article>
           );
