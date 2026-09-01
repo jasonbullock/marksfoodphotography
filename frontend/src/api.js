@@ -276,6 +276,7 @@ api.updatePrinter = async (id, payload) => backend('PATCH', `/printers/${id}`, p
 api.selectPrinter = async id => backend('POST', `/printers/${id}/select`);
 api.testPrinter = async id => backend('POST', `/printers/${id}/test`);
 api.printMerchandiseTag = async (entryId, payload = {}) => backend('POST', `/merchandise/${entryId}/tag`, payload);
+api.requestMissingInformation = async entryId => backend('POST', `/merchandise/${entryId}/request-info`, {});
 api.updateReceivingSession = async (id, payload) => backend('PATCH', `/receiving/${id}`, payload);
 api.deleteReceivingSession = async (id) => backend('DELETE', `/shipments/${id}`);
 api.createReceiptEntry = async (receiptId, payload) => backend('POST', `/receiving/${receiptId}/entries`, payload);

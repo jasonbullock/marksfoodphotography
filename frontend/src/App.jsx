@@ -11172,6 +11172,27 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   // undoing the release. What is not normal is doing it without knowing.
   const [tagPrinting, setTagPrinting] = useState(false);
   const [tagNotice, setTagNotice] = useState(null);
+  const [askingClient, setAskingClient] = useState(false);
+  const [askNotice, setAskNotice] = useState(null);
+
+  // Chasing missing data is most of what holds a shoot up, and it was happening in
+  // Teams anyway - retyped by hand, from a screen nobody else could see.
+  async function askClientForMissingInfo() {
+    if (!item.merchandiseId) return;
+    setAskingClient(true);
+    setAskNotice(null);
+    try {
+      const result = await api.requestMissingInformation(item.merchandiseId);
+      setAskNotice({
+        tone: 'ok',
+        text: `Asked in Teams for ${(result?.missing || []).join(', ')}.`,
+      });
+    } catch (error) {
+      setAskNotice({ tone: 'error', text: error.message || 'Could not post to Teams.' });
+    } finally {
+      setAskingClient(false);
+    }
+  }
 
   // A tag gets lost, smudged, or was never printed. Reprinting from the card is
   // the only path that does not need the shipment reopening.
@@ -11392,6 +11413,21 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                     return { itemId: item.id, values: { ...base, ...draft } };
                   })}
                 />
+                {!photoProductionReady && (
+                  <div className="photo-production-ask">
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={askClientForMissingInfo}
+                      disabled={askingClient}
+                    >
+                      {askingClient ? 'Posting…' : 'Ask client in Teams'}
+                    </button>
+                    {askNotice
+                      ? <span className={`photo-production-ask-note is-${askNotice.tone}`} role="status">{askNotice.text}</span>
+                      : <span className="photo-production-ask-note">Posts the missing fields to this client's channel.</span>}
+                  </div>
+                )}
               </ReviewStep>
             )}
 

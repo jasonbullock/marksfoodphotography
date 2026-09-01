@@ -9747,6 +9747,67 @@ def _merchandise_tag(entry, receipt=None, product_record=None):
     }
 
 
+@api.post("/merchandise/<entry_id>/request-info")
+def request_missing_information(entry_id):
+    """Ask the client's Teams channel for the fields holding this item up.
+
+    The list is worked out here rather than taken from the request. A caller that
+    named its own fields could ask the client for something already supplied, or
+    quietly ask for nothing at all.
+    """
+    entry, receipt, access_error = _permitted_merchandise_or_error(entry_id)
+    if access_error:
+        return access_error
+
+    entry_fields = entry.get("fields", {})
+    item_ids = _as_list(entry_fields.get(C.F_RECEIPT_ENTRY_ITEM, []))
+    product_record = None
+    if item_ids:
+        try:
+            product_record = airtable.get_record(C.PRODUCTS_TABLE, item_ids[0], by_field_id=False)
+        except requests.HTTPError:
+            product_record = None
+
+    client_config = _client_config_for_entry(entry_fields, receipt)
+    readiness = _evaluate_required_to_shoot_from_fields(
+        entry_fields,
+        product_record.get("fields", {}) if product_record else {},
+        client_config=client_config,
+    )
+    missing = readiness.get("missing") or []
+    if not missing:
+        return err("Nothing is missing on this item.", 400)
+
+    client_ids = _as_list(entry_fields.get(C.F_RECEIPT_CLIENT, [])) or _as_list(
+        (receipt or {}).get("fields", {}).get(C.F_RECEIPT_CLIENT, []))
+    client_record = None
+    if client_ids:
+        try:
+            client_record = airtable.get_record(C.CLIENTS_TABLE, client_ids[0], by_field_id=False)
+        except requests.HTTPError:
+            client_record = None
+    client_fields = (client_record or {}).get("fields", {})
+    webhook = str(client_fields.get(C.F_CLIENT_TEAMS_WEBHOOK, "") or "").strip()
+    if not webhook:
+        return err("This client has no Teams channel configured.", 400)
+
+    tag = _merchandise_tag(entry, receipt, product_record)
+    user = _current_user() or {}
+    card = notifier.build_missing_info_card(
+        client_name=tag.get("client", ""),
+        item_label=tag.get("productName", ""),
+        missing=missing,
+        merchandise_id=entry_id,
+        image_url=_first_merchandise_photo_url(entry) or "",
+        asked_by=str((user.get("fields", {}) or {}).get(C.F_USER_NAME, "") or ""),
+    )
+    posted, detail = notifier.post_arrival(webhook, card)
+    if not posted:
+        return err(detail, 502)
+    _record_merchandise_history(entry_id, f"Asked Teams for: {', '.join(missing)}")
+    return jsonify({"posted": True, "missing": missing, "detail": detail})
+
+
 @api.post("/merchandise/<entry_id>/tag")
 def print_merchandise_tag(entry_id):
     """Print one merchandise tag, or return the ZPL without printing."""

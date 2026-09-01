@@ -1,4 +1,4 @@
-"""Teams notifications for merchandise arrivals.
+"""Teams notifications for merchandise arrivals and for information we need back.
 
 Posting is optional by design. A client with no webhook is simply not notified,
 and a channel that is unreachable never stops a shipment being logged - the
@@ -111,6 +111,48 @@ def build_arrival_card(*, client_name, carrier, tracking, received, items, image
     }
     if actions:
         card["actions"] = actions
+    return {"type": "message", "attachments": [
+        {"contentType": "application/vnd.microsoft.card.adaptive", "content": card},
+    ]}
+
+
+def build_missing_info_card(*, client_name, item_label, missing, merchandise_id="", image_url="", asked_by=""):
+    """A card asking the client for the fields that are holding a shoot up.
+
+    Named for what the reader has to do rather than for the state of a record:
+    nobody in a Teams channel knows what "3 required product fields" means, but
+    everybody knows what "CVID" means when it is asked for by name.
+    """
+    fields = [str(name).strip() for name in (missing or []) if str(name).strip()]
+    url = _planning_url(merchandise_id)
+    heading = f"Information needed for {item_label}" if item_label else "Information needed"
+
+    body = [
+        {"type": "TextBlock", "size": "Medium", "weight": "Bolder", "text": heading},
+        {"type": "FactSet", "facts": [
+            fact for fact in [
+                _fact("Client", client_name or "Unknown client"),
+                _fact("Asked by", asked_by) if asked_by else None,
+            ] if fact
+        ]},
+    ]
+    if fields:
+        body.append({"type": "TextBlock", "wrap": True, "weight": "Bolder", "text": "Still needed"})
+        body.append({"type": "TextBlock", "wrap": True,
+                     "text": "\n".join(f"- {name}" for name in fields)})
+    body.append({"type": "TextBlock", "wrap": True, "isSubtle": True,
+                 "text": "This item cannot be released to photo production until these are filled in."})
+    if image_url:
+        body.append({"type": "Image", "url": image_url, "size": "Large"})
+
+    card = {
+        "type": "AdaptiveCard",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "version": "1.4",
+        "body": body,
+    }
+    if url:
+        card["actions"] = [{"type": "Action.OpenUrl", "title": "Open the item", "url": url}]
     return {"type": "message", "attachments": [
         {"contentType": "application/vnd.microsoft.card.adaptive", "content": card},
     ]}
