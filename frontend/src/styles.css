@@ -18516,3 +18516,185 @@ select.form-input {
   letter-spacing: inherit;
   text-transform: none;
 }
+
+/* ── Production: where Creative Force has our work ─────────────────────────── */
+.cf-summary-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cf-summary-tile {
+  display: grid;
+  gap: 2px;
+  min-width: 150px;
+  padding: 12px 14px;
+}
+
+.cf-summary-tile span {
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cf-summary-tile strong {
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.cf-refresh {
+  margin-left: auto;
+  align-self: center;
+}
+
+.cf-product-list {
+  display: grid;
+  gap: 12px;
+}
+
+.cf-product {
+  padding: 14px 16px;
+}
+
+.cf-product-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cf-product-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.cf-product-identity h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.cf-product-meta {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.cf-production {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* Switched off in Creative Force is not work. It stays visible, because a
+   production nobody asked for is worth seeing, but it does not read as active. */
+.cf-production.is-disabled {
+  opacity: 0.55;
+}
+
+.cf-production-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cf-production-type {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cf-production-now {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.cf-production-off,
+.cf-production-shot {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.cf-trail {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cf-trail-step {
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-width: 130px;
+}
+
+.cf-trail-step.is-done {
+  border-color: var(--green-border);
+  background: var(--green-bg);
+}
+
+.cf-trail-step.is-running {
+  border-color: var(--border-mid);
+}
+
+.cf-trail-name {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.cf-trail-times {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.cf-trail-running {
+  color: var(--text-2);
+  font-weight: 650;
+}
+
+.cf-trail-empty,
+.cf-fetched {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.dash-cf-steps {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 4px 0 2px;
+}
+
+.dash-cf-step {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.dash-cf-step strong {
+  color: var(--text);
+  font-size: 18px;
+  margin-right: 4px;
+}
+
+.dash-cf-oldest {
+  margin: 8px 0 0;
+  color: var(--text-2);
+  font-size: 13px;
+}

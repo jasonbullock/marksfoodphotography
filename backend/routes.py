@@ -8,6 +8,7 @@ import mailer
 import notifier
 import structure_form
 import tag_print
+import creative_force_api
 import json
 import os
 import random
@@ -9901,6 +9902,47 @@ def _merchandise_deliverables_in_scope(entry_id, entry_fields, body=None):
     requested = [str(name).strip() for name in ((body or {}).get("deliverables") or [])]
     narrowed = [name for name in available if name in requested]
     return narrowed or available
+
+
+_CF_SNAPSHOT = {"at": 0.0, "value": None}
+# The snapshot is one gateway call per product plus one per production. Nobody
+# needs it fresher than this, and without a cache every open of the page would
+# walk the whole job again.
+CF_SNAPSHOT_CACHE_SECONDS = 45
+
+
+@api.get("/production/creative-force")
+def production_from_creative_force():
+    """Everything Creative Force is holding for us, as it stands right now."""
+    if not creative_force_api.configured():
+        return jsonify({
+            "configured": False,
+            "job": None,
+            "products": [],
+            "message": "Creative Force API credentials are not set on this server.",
+        })
+
+    fresh = str(request.args.get("refresh", "")).strip() == "1"
+    if not fresh and _CF_SNAPSHOT["value"] and time.time() - _CF_SNAPSHOT["at"] < CF_SNAPSHOT_CACHE_SECONDS:
+        return jsonify({**_CF_SNAPSHOT["value"], "cached": True})
+
+    try:
+        snapshot = creative_force_api.production_snapshot()
+    except creative_force_api.CreativeForceError as error:
+        # A gateway that is down should not take the page with it - the last good
+        # snapshot is more use than an error, as long as it says how old it is.
+        if _CF_SNAPSHOT["value"]:
+            return jsonify({**_CF_SNAPSHOT["value"], "cached": True, "staleError": str(error)})
+        return err(str(error), 502)
+
+    payload = {
+        "configured": True,
+        "fetchedAt": _now_iso(),
+        "cached": False,
+        **snapshot,
+    }
+    _CF_SNAPSHOT.update({"at": time.time(), "value": payload})
+    return jsonify(payload)
 
 
 @api.get("/dashboard/creative-force")

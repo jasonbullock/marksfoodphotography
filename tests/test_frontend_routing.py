@@ -1571,9 +1571,16 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("item.path === '/shipments'", self.source)
 
     def test_role_navigation_uses_canonical_paths(self):
-        self.assertIn("Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/products']", self.source)
+        self.assertIn("Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/production', '/products']", self.source)
         self.assertIn("Receiver:     ['/shipments', '/merchandise']", self.source)
-        self.assertIn("PM:           ['/dashboard', '/merchandise', '/planning', '/products']", self.source)
+        self.assertIn("PM:           ['/dashboard', '/merchandise', '/planning', '/production', '/products']", self.source)
+
+    def test_production_is_reachable_by_the_people_who_run_it(self):
+        # The route existed but sat outside every role that plans work, so the tab
+        # was unreachable for the people it is for.
+        for role in ("Admin", "Producer", "PM", "Photographer", "Retoucher"):
+            line = self.source.split(f"  {role}:", 1)[1].split("\n", 1)[0]
+            self.assertIn("/production", line, f"{role} cannot reach Production")
 
     def test_merchandise_inventory_page_has_required_filters(self):
         for text in [

@@ -1165,6 +1165,8 @@ function Dashboard({ navigate }) {
         </div>
       </div>
 
+      <CreativeForceStrip navigate={navigate} />
+
       {!receipts.loading && newlyReceivedMerch.length > 0 && (
         <div className="dash-card">
           <div className="dash-section-title-row">
@@ -13328,13 +13330,13 @@ const AuthContext = createContext(null);
 function useAuth() { return useContext(AuthContext); }
 
 const ROLE_NAV = {
-  Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/products'],
-  Producer:     ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/products'],
+  Admin:        ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/production', '/products'],
+  Producer:     ['/dashboard', '/imports', '/shipments', '/merchandise', '/planning', '/production', '/products'],
   Merch:        ['/shipments', '/merchandise'],
   'Merch Receiver': ['/shipments', '/merchandise'],
   Receiver:     ['/shipments', '/merchandise'],
   User:         ['/dashboard', '/shipments', '/merchandise', '/planning', '/products'],
-  PM:           ['/dashboard', '/merchandise', '/planning', '/products'],
+  PM:           ['/dashboard', '/merchandise', '/planning', '/production', '/products'],
   Photographer: ['/dashboard', '/production', '/products'],
   Retoucher:    ['/dashboard', '/production', '/products'],
   Viewer:       ['/dashboard', '/merchandise', '/products'],
@@ -14116,6 +14118,7 @@ const NAV_ITEMS = [
   { path: '/shipments', label: 'Shipments', icon: <Icon.NavShipments /> },
   { path: '/merchandise', label: 'Merchandise', icon: <Icon.NavMerchandise /> },
   { path: '/planning', label: 'Planning', icon: <Icon.NavWork /> },
+  { path: '/production', label: 'Production', icon: <Icon.NavProduction /> },
   { path: '/products', label: 'Products', icon: <Icon.NavProducts /> },
 ];
 
@@ -14206,21 +14209,217 @@ function isTopNavVisible(item, allowed) {
   return allowed.includes(item.path) || (item.aliases || []).some(path => allowed.includes(path));
 }
 
-function ProductionPage() {
+function humanDuration(seconds) {
+  if (seconds === null || seconds === undefined) return '';
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 86400) return `${(seconds / 3600).toFixed(1)}h`;
+  return `${Math.round(seconds / 86400)}d`;
+}
+
+// How long the thing in front of you has been sitting there, which is the number
+// that decides whether anyone needs to do something about it.
+function sinceLabel(value) {
+  if (!value) return '';
+  const days = daysSince(value);
+  if (days === null) return '';
+  if (days > 0) return days === 1 ? '1 day' : `${days} days`;
+  const hours = Math.floor((Date.now() - new Date(value).getTime()) / 3600000);
+  if (hours >= 1) return hours === 1 ? '1 hour' : `${hours} hours`;
+  return 'just now';
+}
+
+// The dashboard answers "is anything stuck"; the Production tab answers "what
+// exactly". This is the first question only - counts by step, and the one item
+// that has been waiting longest, because that is the thing worth chasing today.
+function CreativeForceStrip({ navigate }) {
+  const production = useResource(() => api.listCreativeForceProduction());
+  const data = production.data || {};
+  if (data.configured === false || production.error) return null;
+
+  const live = (data.products || []).flatMap(product => (product.productions || [])
+    .filter(unit => !unit.isDisabled && unit.currentStep)
+    .map(unit => ({ ...unit, product })));
+  if (!production.loading && !live.length) return null;
+
+  const byStep = live.reduce((map, unit) => {
+    map[unit.currentStep] = (map[unit.currentStep] || 0) + 1;
+    return map;
+  }, {});
+  const waiting = [...live]
+    .filter(unit => unit.currentStepSince)
+    .sort((a, b) => new Date(a.currentStepSince) - new Date(b.currentStepSince));
+  const oldest = waiting[0];
+
   return (
-    <div className="page-stack shell-workspace-page">
+    <div className="dash-card">
+      <div className="dash-section-title-row">
+        <span>In Creative Force</span>
+        <button type="button" className="dash-section-link" onClick={() => navigate('production')}>
+          Open Production
+        </button>
+      </div>
+      {production.loading ? (
+        <p className="cf-fetched">Reading Creative Force…</p>
+      ) : (
+        <>
+          <div className="dash-cf-steps">
+            {Object.entries(byStep).map(([step, count]) => (
+              <span className="dash-cf-step" key={step}>
+                <strong>{count}</strong> {step}
+              </span>
+            ))}
+          </div>
+          {oldest && (
+            <p className="dash-cf-oldest">
+              Longest waiting: <strong>{oldest.product.productName || oldest.product.productCode}</strong>
+              {' '}({oldest.productionType}) — {oldest.currentStep} for {sinceLabel(oldest.currentStepSince)}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function ProductionStepTrail({ steps = [] }) {
+  if (!steps.length) return <span className="cf-trail-empty">No steps reported</span>;
+  return (
+    <ol className="cf-trail">
+      {steps.map(step => {
+        const done = Boolean(step.finishedAt);
+        const running = !done && Boolean(step.readyAt);
+        return (
+          <li key={`${step.stepId}-${step.taskId}`} className={`cf-trail-step ${done ? 'is-done' : running ? 'is-running' : ''}`}>
+            <span className="cf-trail-name">{step.step}</span>
+            {/* Waiting and working are separate numbers on purpose: one is a queue,
+                the other is the work, and a single figure hides which is the problem. */}
+            <span className="cf-trail-times">
+              {step.waitedSeconds !== null && step.waitedSeconds !== undefined && (
+                <span title="Waiting to be picked up">queued {humanDuration(step.waitedSeconds)}</span>
+              )}
+              {step.workedSeconds !== null && step.workedSeconds !== undefined && (
+                <span title="Being worked on">worked {humanDuration(step.workedSeconds)}</span>
+              )}
+              {running && <span className="cf-trail-running">here {sinceLabel(step.readyAt)}</span>}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function ProductionPage() {
+  const production = useResource(() => api.listCreativeForceProduction());
+  const [refreshing, setRefreshing] = useState(false);
+  const data = production.data || {};
+  const products = data.products || [];
+
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      await api.listCreativeForceProduction({ refresh: true });
+      await production.reload({ quiet: true });
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  // A disabled production is one Creative Force built and switched off. It is not
+  // work, and counting it would overstate what the studio has on.
+  const live = products.flatMap(product => (product.productions || [])
+    .filter(unit => !unit.isDisabled)
+    .map(unit => ({ ...unit, product })));
+  const byStep = live.reduce((map, unit) => {
+    const key = unit.currentStep || 'Not started';
+    map[key] = (map[key] || 0) + 1;
+    return map;
+  }, {});
+
+  return (
+    <div className="page-stack cf-production-page">
       <WorkspaceHeader
         title="Production"
-        description="Track where active merchandise is in production."
+        description="Where Creative Force has our work right now."
       />
-      <WorkspaceLayout
-        queue={<QueuePanel title="Production Queue" empty="Production queues are not connected yet." />}
-        inspector={<InspectorPanel title="Production Inspector" />}
-      >
-        <EmptyState title="Production workspace not implemented yet.">
-          This shell is ready for photography, THR3D routing, and disposition work in a later phase.
-        </EmptyState>
-      </WorkspaceLayout>
+
+      {production.error && <div className="error-state">{production.error}</div>}
+      {data.configured === false && (
+        <div className="empty-state">{data.message || 'Creative Force is not connected.'}</div>
+      )}
+      {data.staleError && (
+        <div className="error-state">
+          Showing the last good read — Creative Force did not answer: {data.staleError}
+        </div>
+      )}
+
+      {data.configured !== false && (
+        <>
+          <div className="cf-summary-row">
+            {Object.entries(byStep).map(([step, count]) => (
+              <div className="cf-summary-tile ui-card" key={step}>
+                <span>{step}</span>
+                <strong>{count}</strong>
+              </div>
+            ))}
+            <button type="button" className="btn cf-refresh" onClick={refresh} disabled={refreshing}>
+              {refreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
+
+          {production.loading && <div className="empty-state">Reading Creative Force…</div>}
+          {!production.loading && !products.length && (
+            <div className="empty-state">Creative Force is holding nothing for this job yet.</div>
+          )}
+
+          <div className="cf-product-list">
+            {products.map(product => (
+              <article className="cf-product ui-card" key={product.productId}>
+                <header className="cf-product-head">
+                  {product.displayImages?.[0] && (
+                    <img src={product.displayImages[0]} alt="" className="cf-product-thumb" />
+                  )}
+                  <div className="cf-product-identity">
+                    <h2>{product.productName || 'Unnamed product'}</h2>
+                    <span className="cf-product-meta">
+                      {product.productCode}
+                      {product.category ? ` · ${product.category}` : ''}
+                      {product.styleGuide ? ` · ${product.styleGuide} styleguide` : ''}
+                    </span>
+                  </div>
+                </header>
+                {(product.productions || []).map(unit => (
+                  <div className={`cf-production ${unit.isDisabled ? 'is-disabled' : ''}`} key={unit.workUnitId}>
+                    <div className="cf-production-head">
+                      <span className="cf-production-type">{unit.productionType}</span>
+                      {unit.isDisabled
+                        ? <span className="cf-production-off">Switched off in Creative Force</span>
+                        : (
+                          <span className="cf-production-now">
+                            {unit.currentStep || 'Not started'}
+                            {unit.currentStepSince && ` · here ${sinceLabel(unit.currentStepSince)}`}
+                          </span>
+                        )}
+                      {unit.shotAt && (
+                        <span className="cf-production-shot">Shot {formatInventoryDate(unit.shotAt)}</span>
+                      )}
+                    </div>
+                    <ProductionStepTrail steps={unit.steps} />
+                  </div>
+                ))}
+              </article>
+            ))}
+          </div>
+
+          {data.fetchedAt && (
+            <p className="cf-fetched">
+              Read from Creative Force {formatInventoryDate(data.fetchedAt)}
+              {data.cached ? ' · cached' : ''}
+            </p>
+          )}
+        </>
+      )}
     </div>
   );
 }

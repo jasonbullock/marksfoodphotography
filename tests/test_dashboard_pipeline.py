@@ -113,3 +113,44 @@ class PipelineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProductionUiTests(unittest.TestCase):
+    """The tab answers "what exactly"; the dashboard answers "is anything stuck"."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.source = (ROOT / "frontend" / "src" / "App.jsx").read_text()
+        cls.routes = (ROOT / "backend" / "routes.py").read_text()
+
+    def test_the_page_reads_from_creative_force_rather_than_our_own_records(self):
+        self.assertIn("api.listCreativeForceProduction()", self.source)
+        self.assertIn('@api.get("/production/creative-force")', self.routes)
+
+    def test_a_switched_off_production_is_not_counted_as_work(self):
+        # Creative Force builds every production type its styleguide knows about.
+        self.assertIn(".filter(unit => !unit.isDisabled)", self.source)
+
+    def test_it_is_still_shown_though(self):
+        # A production nobody asked for is worth seeing, just not as active work.
+        self.assertIn("Switched off in Creative Force", self.source)
+
+    def test_waiting_and_working_are_shown_separately(self):
+        self.assertIn("queued {humanDuration(step.waitedSeconds)}", self.source)
+        self.assertIn("worked {humanDuration(step.workedSeconds)}", self.source)
+
+    def test_a_gateway_outage_shows_the_last_good_read_rather_than_nothing(self):
+        self.assertIn('"staleError"', self.routes)
+        self.assertIn("Showing the last good read", self.source)
+
+    def test_the_snapshot_is_cached(self):
+        # It is one gateway call per product plus one per production; every page
+        # open would otherwise walk the whole job again.
+        self.assertIn("CF_SNAPSHOT_CACHE_SECONDS", self.routes)
+
+    def test_the_dashboard_names_the_longest_waiting_item(self):
+        self.assertIn("Longest waiting:", self.source)
+        self.assertIn("function CreativeForceStrip({ navigate }) {", self.source)
+
+    def test_the_dashboard_strip_stays_out_of_the_way_when_there_is_nothing_to_say(self):
+        self.assertIn("if (data.configured === false || production.error) return null;", self.source)
