@@ -86,7 +86,7 @@ class AskButtonTests(unittest.TestCase):
 
     def test_the_button_only_shows_while_something_is_missing(self):
         self.assertIn("{!photoProductionReady && (", self.source)
-        self.assertIn('Ask client in Teams', self.source)
+        self.assertIn("'Ask for Info in Teams'", self.source)
 
     def test_it_reports_what_it_asked_for(self):
         self.assertIn("Asked in Teams for ${(result?.missing || []).join(', ')}", self.source)
@@ -99,3 +99,60 @@ class AskButtonTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DeliverableScopeTests(unittest.TestCase):
+    """Which fields a client requires depends on the work the box raises."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.source = (ROOT / "backend" / "routes.py").read_text()
+
+    def test_the_scope_comes_from_the_workstream_cards(self):
+        # Evaluated without them the item looked as though it were missing its
+        # Deliverables, and that is what the client was asked for.
+        block = self.source.split("def _merchandise_deliverables_in_scope(", 1)[1].split("\n\n\n", 1)[0]
+        self.assertIn("_workstream_cards_for_merchandise(entry_id)", block)
+
+    def test_a_caller_cannot_invent_a_workstream_the_box_does_not_have(self):
+        import routes
+        with patch("routes._workstream_cards_for_merchandise", return_value=[
+            {"fields": {routes.C.F_WORKSTREAM_CARD_TYPE: "Packaging"}},
+        ]):
+            scope = routes._merchandise_deliverables_in_scope("recX", {}, body={"deliverables": ["Ecomm"]})
+        self.assertEqual(scope, ["Packaging"])
+
+    def test_a_caller_may_narrow_to_the_card_it_is_looking_at(self):
+        import routes
+        with patch("routes._workstream_cards_for_merchandise", return_value=[
+            {"fields": {routes.C.F_WORKSTREAM_CARD_TYPE: "Packaging"}},
+            {"fields": {routes.C.F_WORKSTREAM_CARD_TYPE: "Ecomm"}},
+        ]):
+            scope = routes._merchandise_deliverables_in_scope("recX", {}, body={"deliverables": ["Ecomm"]})
+        self.assertEqual(scope, ["Ecomm"])
+
+    def test_asking_for_nothing_in_particular_covers_every_workstream(self):
+        import routes
+        with patch("routes._workstream_cards_for_merchandise", return_value=[
+            {"fields": {routes.C.F_WORKSTREAM_CARD_TYPE: "Packaging"}},
+            {"fields": {routes.C.F_WORKSTREAM_CARD_TYPE: "Ecomm"}},
+        ]):
+            scope = routes._merchandise_deliverables_in_scope("recX", {}, body={})
+        self.assertEqual(sorted(scope), ["Ecomm", "Packaging"])
+
+
+class AskButtonWordingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = (ROOT / "frontend" / "src" / "App.jsx").read_text()
+
+    def test_the_button_says_what_it_does(self):
+        self.assertIn("'Ask for Info in Teams'", self.source)
+        self.assertNotIn("Ask client in Teams", self.source)
+
+    def test_it_names_the_fields_before_you_press_it(self):
+        # The difference between sending a message and knowing what you just sent.
+        self.assertIn("Asks this client's channel for {photoProductionMissingLabels.join(', ')}", self.source)
+
+    def test_the_card_in_view_sets_the_scope(self):
+        self.assertIn("api.requestMissingInformation(item.merchandiseId, wizardState.deliverables)", self.source)

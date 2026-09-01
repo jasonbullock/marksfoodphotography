@@ -10927,7 +10927,12 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     }
   ));
   const photoProductionReady = photoProductionChecksForSelection.every(check => check.present);
-  const photoProductionMissingCount = photoProductionChecksForSelection.filter(check => !check.present).length;
+  const photoProductionMissing = photoProductionChecksForSelection.filter(check => !check.present);
+  const photoProductionMissingCount = photoProductionMissing.length;
+  // The same names the fields carry above, so the button and the grid agree.
+  const photoProductionMissingLabels = photoProductionMissing.map(check => (
+    PHOTO_PRODUCTION_EDITABLE_FIELDS[check.key]?.label || check.label || check.key
+  ));
   const packagingAllocation = assignmentPreview.workstreams.find(workstream => workstream.type === 'Packaging')?.quantity || 0;
   const thr3dAllocation = assignmentPreview.thr3d?.quantity || defaultThr3dAllocation(totalQuantity);
   const allocatedQuantity = splitDeliverablesSelected ? packagingAllocation + thr3dAllocation : totalQuantity;
@@ -11182,7 +11187,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     setAskingClient(true);
     setAskNotice(null);
     try {
-      const result = await api.requestMissingInformation(item.merchandiseId);
+      const result = await api.requestMissingInformation(item.merchandiseId, wizardState.deliverables);
       setAskNotice({
         tone: 'ok',
         text: `Asked in Teams for ${(result?.missing || []).join(', ')}.`,
@@ -11421,11 +11426,17 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                       onClick={askClientForMissingInfo}
                       disabled={askingClient}
                     >
-                      {askingClient ? 'Posting…' : 'Ask client in Teams'}
+                      {askingClient ? 'Posting…' : 'Ask for Info in Teams'}
                     </button>
                     {askNotice
                       ? <span className={`photo-production-ask-note is-${askNotice.tone}`} role="status">{askNotice.text}</span>
-                      : <span className="photo-production-ask-note">Posts the missing fields to this client's channel.</span>}
+                      : (
+                        // Naming them beforehand is the difference between sending a
+                        // message and knowing what you just sent.
+                        <span className="photo-production-ask-note">
+                          Asks this client's channel for {photoProductionMissingLabels.join(', ')}.
+                        </span>
+                      )}
                   </div>
                 )}
               </ReviewStep>

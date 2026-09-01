@@ -9747,6 +9747,25 @@ def _merchandise_tag(entry, receipt=None, product_record=None):
     }
 
 
+def _merchandise_deliverables_in_scope(entry_id, entry_fields, body=None):
+    """The photo work this box actually raises.
+
+    A caller may narrow it to the card it is looking at, but only to a workstream
+    the box really has - so a request cannot invent scope the studio never agreed
+    to, or ask the client for fields no one needs.
+    """
+    on_cards = [
+        str(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_TYPE, "") or "").strip()
+        for card in _workstream_cards_for_merchandise(entry_id)
+    ]
+    available = [name for name in on_cards if name in C.WORKSTREAM_TYPE_OPTIONS]
+    if not available:
+        available = _deliverable_values(entry_fields.get(C.F_RECEIPT_ENTRY_DELIVERABLES, ""))
+    requested = [str(name).strip() for name in ((body or {}).get("deliverables") or [])]
+    narrowed = [name for name in available if name in requested]
+    return narrowed or available
+
+
 @api.post("/merchandise/<entry_id>/request-info")
 def request_missing_information(entry_id):
     """Ask the client's Teams channel for the fields holding this item up.
@@ -9768,9 +9787,14 @@ def request_missing_information(entry_id):
         except requests.HTTPError:
             product_record = None
 
+    # Which fields a client requires depends on the work the box raises, and that
+    # lives on its workstream cards rather than on the merchandise row. Evaluated
+    # without them the item looked as though it were missing its Deliverables, and
+    # that is what the client was asked for.
+    deliverables = _merchandise_deliverables_in_scope(entry_id, entry_fields, body=request.get_json(silent=True) or {})
     client_config = _client_config_for_entry(entry_fields, receipt)
     readiness = _evaluate_required_to_shoot_from_fields(
-        entry_fields,
+        {**entry_fields, C.F_RECEIPT_ENTRY_DELIVERABLES: deliverables},
         product_record.get("fields", {}) if product_record else {},
         client_config=client_config,
     )
