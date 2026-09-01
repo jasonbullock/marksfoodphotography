@@ -18503,13 +18503,16 @@ select.form-input {
   margin-top: 4px;
 }
 
-/* The value, not another label. The body's blanket span rule dresses every span
-   as a field name, which is what made this read in small uppercase grey. */
-.merchandise-detail-shot-line {
+/* Every row in this panel is a div, and the body styles all of them as a padded
+   white box - which turned each nested shoot line into an indented one. Undo the
+   box and inherit everything else, so a shoot line reads exactly like Condition
+   or Date Received rather than like a thing of its own. */
+.merchandise-detail-body .merchandise-detail-shot-line {
   display: block;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
   text-transform: none;
 }

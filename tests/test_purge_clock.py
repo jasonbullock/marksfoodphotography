@@ -234,8 +234,18 @@ class MerchandiseDrawerLayoutTests(unittest.TestCase):
     def test_the_shoot_lines_read_as_values_not_labels(self):
         # The body's blanket span rule dresses every span as a field name.
         self.assertIn('<div className="merchandise-detail-shot-line"', self.source)
-        rule = self.styles.split(".merchandise-detail-shot-line {", 1)[1].split("}", 1)[0]
+        rule = self.styles.split(".merchandise-detail-body .merchandise-detail-shot-line {", 1)[1].split("}", 1)[0]
         self.assertIn("text-transform: none;", rule)
+
+    def test_a_shoot_line_is_not_styled_differently_from_the_rows_around_it(self):
+        # The body styles every div as a padded white box, which indented each
+        # nested line; overriding the font made it lighter than its bold siblings.
+        rule = self.styles.split(".merchandise-detail-body .merchandise-detail-shot-line {", 1)[1].split("}", 1)[0]
+        self.assertIn("padding: 0;", rule)
+        self.assertIn("background: none;", rule)
+        self.assertIn("font: inherit;", rule)
+        self.assertNotIn("font-size:", rule)
+        self.assertNotIn("font-weight:", rule)
 
     def test_the_merchandise_review_button_is_gone(self):
         self.assertNotIn("Open Merchandise Review", self.source)
