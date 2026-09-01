@@ -744,6 +744,7 @@ def _shape_client(r):
         # The URL itself never leaves the server: holding it is enough to post to
         # the channel. The Admin screen only needs to know whether one is set.
         "teamsWebhookConfigured": bool(str(f.get(C.F_CLIENT_TEAMS_WEBHOOK, "") or "").strip()),
+        "keepAfterShootDays": f.get(C.F_CLIENT_KEEP_AFTER_SHOOT_DAYS, None),
         "holdDays": f.get(C.F_CLIENT_HOLD_DAYS),
         "dispoDays": f.get(C.F_CLIENT_DISPO_DAYS),
         "active": f.get(C.F_CLIENT_ACTIVE, False),
@@ -995,6 +996,20 @@ def _client_fields_from_body(body, *, creating=False):
         fields[C.F_CLIENT_REQUIRED_TO_SHOOT] = [str(field) for field in required if str(field).strip()]
     if "merchandiseRequired" in body:
         fields[C.F_CLIENT_MERCHANDISE_REQUIRED] = bool(body["merchandiseRequired"])
+    if "keepAfterShootDays" in body:
+        # Cleared rather than zeroed, so the client falls back to the studio default
+        # instead of asking for merchandise to be purged the day it is shot.
+        raw = str(body.get("keepAfterShootDays") or "").strip()
+        if not raw:
+            fields[C.F_CLIENT_KEEP_AFTER_SHOOT_DAYS] = None
+        else:
+            try:
+                days = int(raw)
+            except ValueError:
+                raise ValueError("keepAfterShootDays must be a whole number of days.")
+            if days < 0:
+                raise ValueError("keepAfterShootDays cannot be negative.")
+            fields[C.F_CLIENT_KEEP_AFTER_SHOOT_DAYS] = days
     if "active" in body:
         fields[C.F_CLIENT_ACTIVE] = bool(body["active"])
     if "holdDays" in body:
@@ -5403,6 +5418,66 @@ def _workstream_notes_with_metadata(value, metadata):
     return f"{visible}\n\n{_WORKSTREAM_META_PREFIX}{json.dumps(metadata, separators=(',', ':'))}{_WORKSTREAM_META_SUFFIX}".strip()
 
 
+def _keep_after_shoot_days(client_config=None):
+    """How long this client's merchandise is held after its last shoot."""
+    raw = (client_config or {}).get("keepAfterShootDays")
+    try:
+        days = int(raw)
+    except (TypeError, ValueError):
+        return C.KEEP_AFTER_SHOOT_DAYS
+    return days if days >= 0 else C.KEEP_AFTER_SHOOT_DAYS
+
+
+def _purge_state_for_cards(cards, client_config=None, now=None):
+    """When a box can leave the shelf, and whether it can yet.
+
+    A box is not free because one of its workstreams is done. Packaging can be
+    shot weeks before Ecomm, and shipping the merchandise after the first shoot
+    is how a reshoot becomes impossible. So the clock starts at the last shoot,
+    and a workstream that has not been shot holds the whole box.
+    """
+    now = now or datetime.now(timezone.utc)
+    photo_cards = [
+        card for card in cards
+        if str(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_TYPE, "") or "") in C.WORKSTREAM_TYPE_OPTIONS
+    ]
+    keep_days = _keep_after_shoot_days(client_config)
+    if not photo_cards:
+        return {"shotAt": "", "awaitingShoot": [], "keepAfterShootDays": keep_days,
+                "purgeDueAt": "", "daysSinceShoot": None, "state": "not-scheduled"}
+
+    shoot_dates = []
+    awaiting = []
+    for card in photo_cards:
+        shot = str(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_SHOT_AT, "") or "").strip()
+        if shot:
+            shoot_dates.append(shot)
+        else:
+            awaiting.append(str(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_TYPE, "") or ""))
+
+    if awaiting or not shoot_dates:
+        return {"shotAt": max(shoot_dates, default=""), "awaitingShoot": awaiting,
+                "keepAfterShootDays": keep_days, "purgeDueAt": "",
+                "daysSinceShoot": None, "state": "awaiting-shoot"}
+
+    last_shoot = max(shoot_dates)
+    parsed = _parse_iso(last_shoot)
+    if not parsed:
+        return {"shotAt": last_shoot, "awaitingShoot": [], "keepAfterShootDays": keep_days,
+                "purgeDueAt": "", "daysSinceShoot": None, "state": "awaiting-shoot"}
+
+    days_since = (now - parsed).days
+    due = parsed + timedelta(days=keep_days)
+    return {
+        "shotAt": last_shoot,
+        "awaitingShoot": [],
+        "keepAfterShootDays": keep_days,
+        "purgeDueAt": due.isoformat(),
+        "daysSinceShoot": days_since,
+        "state": "due" if now >= due else "holding",
+    }
+
+
 def _shape_workstream_card(record):
     fields = record.get("fields", {})
     creative_force_sync = _parse_creative_force_sync(fields.get(C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC, ""))
@@ -5428,6 +5503,7 @@ def _shape_workstream_card(record):
         "released": bool(fields.get(C.F_WORKSTREAM_CARD_RELEASED, False)),
         "releasedAt": fields.get(C.F_WORKSTREAM_CARD_RELEASED_AT, ""),
         "releasedByIds": _as_list(fields.get(C.F_WORKSTREAM_CARD_RELEASED_BY, [])),
+        "shotAt": fields.get(C.F_WORKSTREAM_CARD_SHOT_AT, ""),
     }
 
 
@@ -5552,6 +5628,24 @@ def _creative_force_steps_after_event(existing_steps, sync):
         "reportedAt": sync.get("lastReportedAt") or sync.get("lastSyncedAt") or "",
     }
     return steps
+
+
+def _creative_force_shot_at(steps):
+    """When the camera work happened, from the step Creative Force names for it.
+
+    The latest report wins rather than the first. A reshoot resets the clock on
+    how long the box has to stay on a shelf - the studio has to be able to put
+    it back in front of a camera.
+    """
+    wanted = str(C.CREATIVE_FORCE_SHOOT_STEP or "").strip().casefold()
+    if not wanted:
+        return ""
+    reported = [
+        str(step.get("reportedAt") or "")
+        for step in (steps or {}).values()
+        if str(step.get("name") or "").strip().casefold() == wanted
+    ]
+    return max((value for value in reported if value), default="")
 
 
 def _creative_force_current_step(steps):
@@ -6092,16 +6186,23 @@ def creative_force_webhook():
         merged["stepReportedAt"] = current.get("reportedAt") or ""
     if not same_work_unit and existing.get("mainWorkUnitId"):
         merged.setdefault("mainWorkUnitId", existing["mainWorkUnitId"])
+    card_fields = {
+        C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC: json.dumps(merged, sort_keys=True),
+        C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS: (
+            merged.get("stepStatusRaw") or merged.get("statusRaw", "")
+        ),
+        C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP: merged.get("stepName", ""),
+    }
+    # The shoot date is lifted out of the sync blob onto a field of its own, so a
+    # question like "what has been on a shelf since June" is a view rather than a
+    # scan of JSON.
+    shot_at = _creative_force_shot_at(merged.get("steps"))
+    if shot_at:
+        card_fields[C.F_WORKSTREAM_CARD_SHOT_AT] = shot_at
     updated = airtable.update_record(
         C.WORKSTREAM_CARDS_TABLE,
         target["id"],
-        {
-            C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC: json.dumps(merged, sort_keys=True),
-            C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS: (
-                merged.get("stepStatusRaw") or merged.get("statusRaw", "")
-            ),
-            C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP: merged.get("stepName", ""),
-        },
+        card_fields,
         by_field_id=False,
         typecast=True,
     )
@@ -9764,6 +9865,64 @@ def _merchandise_deliverables_in_scope(entry_id, entry_fields, body=None):
     requested = [str(name).strip() for name in ((body or {}).get("deliverables") or [])]
     narrowed = [name for name in available if name in requested]
     return narrowed or available
+
+
+@api.get("/inventory/purge")
+def inventory_purge_list():
+    """What is still on a shelf, and how long it has been there since its shoot.
+
+    The question this answers is "what can go", which is not the same as "what has
+    been shot": a box whose Ecomm card has never been photographed still has to be
+    kept even if its Packaging shoot was in March.
+    """
+    wanted = str(request.args.get("state", "") or "").strip()
+    now = datetime.now(timezone.utc)
+
+    receipts_by_id = {
+        record["id"]: record
+        for record in _list_all_records(C.SHIPMENTS_TABLE)
+        if _receipt_client_permitted(record.get("fields", {}).get(C.F_RECEIPT_CLIENT, []))
+    }
+    clients_by_id = {record["id"]: record for record in _client_records()}
+    cards_by_merchandise = {}
+    for card in _list_all_records(C.WORKSTREAM_CARDS_TABLE):
+        for merchandise_id in _as_list(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_RECEIVED_MERCH, [])):
+            cards_by_merchandise.setdefault(merchandise_id, []).append(card)
+
+    rows = []
+    for entry in _list_all_records(C.MERCHANDISE_TABLE):
+        entry_fields = entry.get("fields", {})
+        receipt_ids = _as_list(entry_fields.get(C.F_RECEIPT_ENTRY_RECEIPT, []))
+        receipt = next((receipts_by_id[rid] for rid in receipt_ids if rid in receipts_by_id), None)
+        if receipt_ids and not receipt:
+            continue  # not this person's client to see
+
+        client_ids = _as_list((receipt or {}).get("fields", {}).get(C.F_RECEIPT_CLIENT, [])) \
+            or _as_list(entry_fields.get(C.F_RECEIPT_CLIENT, []))
+        client_record = clients_by_id.get(client_ids[0]) if client_ids else None
+        client_config = _client_config_for_entry(entry_fields, receipt)
+        purge = _purge_state_for_cards(cards_by_merchandise.get(entry["id"], []), client_config, now=now)
+        if purge["state"] == "not-scheduled":
+            continue  # no photo work was ever asked for, so nothing is being held for it
+        if wanted and wanted != "all" and purge["state"] != wanted:
+            continue
+
+        rows.append({
+            "merchandiseId": entry["id"],
+            "marksId": marks_id_from_number(entry_fields.get(C.F_RECEIPT_ENTRY_MARKS_NUMBER)),
+            "name": entry_fields.get(C.F_RECEIPT_ENTRY_NAME, ""),
+            "client": (client_record or {}).get("fields", {}).get(C.F_CLIENT_NAME, ""),
+            "quantity": entry_fields.get(C.F_RECEIPT_ENTRY_QUANTITY, 0),
+            "locationIds": _as_list(entry_fields.get(C.F_RECEIPT_ENTRY_LOCATION, [])),
+            **purge,
+        })
+
+    # Longest-held first: that is the order anyone clearing a shelf works in.
+    rows.sort(key=lambda row: (row["daysSinceShoot"] is None, -(row["daysSinceShoot"] or 0)))
+    counts = {}
+    for row in rows:
+        counts[row["state"]] = counts.get(row["state"], 0) + 1
+    return jsonify({"records": rows, "counts": counts, "defaultKeepDays": C.KEEP_AFTER_SHOOT_DAYS})
 
 
 @api.post("/merchandise/<entry_id>/request-info")

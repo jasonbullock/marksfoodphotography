@@ -48,6 +48,11 @@ class Config:
             "Photography,Final Selection,Photo Review,External Post Production,External Post QC,Delivery",
         ).split(",") if value.strip()
     ]
+    # The step whose report means the camera work is done. Everything after it is
+    # selection, retouch and delivery, none of which needs the box on a shelf.
+    CREATIVE_FORCE_SHOOT_STEP = os.getenv("CREATIVE_FORCE_SHOOT_STEP", "Photography")
+    # How long merchandise is kept after its last shoot when a client has not said.
+    KEEP_AFTER_SHOOT_DAYS = int(os.getenv("KEEP_AFTER_SHOOT_DAYS", "30"))
     # Creative Force posts every client's events to one endpoint. Restrict to ours.
     CREATIVE_FORCE_CLIENT_IDS = [
         value.strip() for value in os.getenv("CREATIVE_FORCE_CLIENT_IDS", "").split(",") if value.strip()
@@ -230,6 +235,7 @@ class Config:
     F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC = "Creative Force Sync"
     F_WORKSTREAM_CARD_CREATIVE_FORCE_STATUS = "Creative Force Status"
     F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP = "Creative Force Step"
+    F_WORKSTREAM_CARD_SHOT_AT = "Shot At"
     # Release is per workstream, not per arrival: an Ecomm card can go to photo while
     # Packaging for the same box is still waiting on data.
     F_WORKSTREAM_CARD_RELEASED = "Released"
@@ -258,6 +264,7 @@ class Config:
     # Power Automate webhook for this client's Teams channel. A capability URL:
     # holding it is enough to post, so it is never sent to the browser.
     F_CLIENT_TEAMS_WEBHOOK = "Teams Webhook"
+    F_CLIENT_KEEP_AFTER_SHOOT_DAYS = "Keep After Shoot Days"
     F_CLIENT_IDENTIFIER_LABEL = "Identifier Label"
     F_CLIENT_REQUIRED_TO_SHOOT = "Required to Shoot"
     F_CLIENT_ARTWORK_REQUIREMENT = "Artwork Requirement"
