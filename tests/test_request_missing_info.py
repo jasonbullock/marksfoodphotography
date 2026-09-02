@@ -156,3 +156,25 @@ class AskButtonWordingTests(unittest.TestCase):
 
     def test_the_card_in_view_sets_the_scope(self):
         self.assertIn("api.requestMissingInformation(item.merchandiseId, wizardState.deliverables)", self.source)
+
+
+class IntakeScopeTests(unittest.TestCase):
+    """An item still in intake has its deliverables on screen and saved nowhere."""
+
+    def scope(self, cards, entry_fields=None, body=None):
+        import routes
+        with patch("routes._workstream_cards_for_merchandise", return_value=cards):
+            return routes._merchandise_deliverables_in_scope("recX", entry_fields or {}, body=body or {})
+
+    def test_the_chosen_deliverable_is_honoured_before_anything_is_saved(self):
+        # Evaluated against an empty scope the item looked as though it were
+        # missing its Deliverables, so that is what the client was asked for.
+        self.assertEqual(self.scope([], body={"deliverables": ["Packaging"]}), ["Packaging"])
+
+    def test_it_still_cannot_name_something_that_is_not_a_workstream(self):
+        self.assertEqual(self.scope([], body={"deliverables": ["Whatever"]}), [])
+
+    def test_saved_cards_still_win_over_what_is_on_screen(self):
+        import routes
+        cards = [{"fields": {routes.C.F_WORKSTREAM_CARD_TYPE: "Ecomm"}}]
+        self.assertEqual(self.scope(cards, body={"deliverables": ["Packaging"]}), ["Ecomm"])

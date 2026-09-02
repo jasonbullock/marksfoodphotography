@@ -9899,9 +9899,19 @@ def _merchandise_deliverables_in_scope(entry_id, entry_fields, body=None):
     available = [name for name in on_cards if name in C.WORKSTREAM_TYPE_OPTIONS]
     if not available:
         available = _deliverable_values(entry_fields.get(C.F_RECEIPT_ENTRY_DELIVERABLES, ""))
-    requested = [str(name).strip() for name in ((body or {}).get("deliverables") or [])]
-    narrowed = [name for name in available if name in requested]
-    return narrowed or available
+    requested = [name for name in
+                 (str(value).strip() for value in ((body or {}).get("deliverables") or []))
+                 if name in C.WORKSTREAM_TYPE_OPTIONS]
+    if available:
+        narrowed = [name for name in available if name in requested]
+        return narrowed or available
+    # Nothing committed yet. An item still in intake has its deliverables chosen on
+    # screen and saved nowhere, and evaluating it against an empty scope reported
+    # the deliverables themselves as the missing thing - so the client was asked
+    # for "Deliverables" while the screen listed Brand Prefix and File Name
+    # Description. The request can only name a real workstream, so trusting it here
+    # cannot invent work.
+    return requested
 
 
 _CF_SNAPSHOT = {"at": 0.0, "value": None}
