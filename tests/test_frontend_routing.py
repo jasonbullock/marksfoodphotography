@@ -1976,7 +1976,8 @@ class StagedMatchProductDataTests(unittest.TestCase):
 
     def test_the_field_editor_reads_the_staged_match_too(self):
         self.assertIn(
-            "function PhotoProductionFieldsEditor({ item, production, onDraftChange, stagedProduct = null }) {",
+            "function PhotoProductionFieldsEditor({ item, production, onDraftChange, "
+            "stagedProduct = null, brandPrefixes = [] }) {",
             self.source,
         )
         self.assertIn("productDataSourceForPlanningItem(item, {}, stagedProduct)", self.source)

@@ -9,6 +9,7 @@ import notifier
 import structure_form
 import tag_print
 import creative_force_api
+import file_name_description
 import json
 import os
 import random
@@ -247,6 +248,36 @@ def _reference_table_records(table_name):
     records = airtable.list_records(table_name, by_field_id=False).get("records", [])
     _remember_reference_records(table_name, list(records))
     return records
+
+
+def _parse_brand_prefixes(raw):
+    """A client's brand prefixes, one per line as "CODE - Full Brand Name".
+
+    The code is what a Product stores and what appears in a delivered file name;
+    the label is what a person picks from and what tells us which words to strip
+    out of a generated File Name Description. Both come from one line so they
+    cannot drift apart.
+    """
+    prefixes = []
+    seen = set()
+    for line in str(raw or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        code, _, label = line.partition("-")
+        code = code.strip()
+        label = label.strip()
+        if not code or code.casefold() in seen:
+            continue
+        seen.add(code.casefold())
+        prefixes.append({
+            "code": code,
+            "name": label,
+            # What the dropdown shows. A prefix with no spelled-out name is still
+            # choosable rather than being dropped for being half-configured.
+            "label": f"{code} - {label}" if label else code,
+        })
+    return prefixes
 
 
 def _client_records():
@@ -746,6 +777,7 @@ def _shape_client(r):
         # the channel. The Admin screen only needs to know whether one is set.
         "teamsWebhookConfigured": bool(str(f.get(C.F_CLIENT_TEAMS_WEBHOOK, "") or "").strip()),
         "keepAfterShootDays": f.get(C.F_CLIENT_KEEP_AFTER_SHOOT_DAYS, None),
+        "brandPrefixes": _parse_brand_prefixes(f.get(C.F_CLIENT_BRAND_PREFIXES, "")),
         "holdDays": f.get(C.F_CLIENT_HOLD_DAYS),
         "dispoDays": f.get(C.F_CLIENT_DISPO_DAYS),
         "active": f.get(C.F_CLIENT_ACTIVE, False),
@@ -997,6 +1029,10 @@ def _client_fields_from_body(body, *, creating=False):
         fields[C.F_CLIENT_REQUIRED_TO_SHOOT] = [str(field) for field in required if str(field).strip()]
     if "merchandiseRequired" in body:
         fields[C.F_CLIENT_MERCHANDISE_REQUIRED] = bool(body["merchandiseRequired"])
+    if "brandPrefixes" in body:
+        fields[C.F_CLIENT_BRAND_PREFIXES] = "\n".join(
+            line.strip() for line in str(body.get("brandPrefixes") or "").splitlines() if line.strip()
+        )
     if "keepAfterShootDays" in body:
         # Cleared rather than zeroed, so the client falls back to the studio default
         # instead of asking for merchandise to be purged the day it is shot.
@@ -4531,6 +4567,23 @@ def _derive_product_production_summary(*, merchandise, workstreams, thr3d):
     }
 
 
+def _brand_names_for_item(item_fields, client=None):
+    """Every way this product's brand might be written in its name.
+
+    The Product's own brand, plus the client's configured prefix that matches the
+    one recorded on the Product - the tracker writes "FC -FoodClub" while the
+    product name says "Food Club", and both have to go.
+    """
+    brands = [str(item_fields.get(C.F_ITEM_BRAND, "") or "").strip()]
+    prefix = str(item_fields.get(C.F_ITEM_BRAND_PREFIX, "") or "").strip()
+    if prefix:
+        brands.append(prefix)
+        for entry in (client or {}).get("brandPrefixes") or []:
+            if entry.get("code", "").casefold() == prefix.casefold():
+                brands.append(entry.get("label", ""))
+    return [brand for brand in brands if brand]
+
+
 def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, required_to_shoot_full=False, production_summary=None):
     f = r.get("fields", {})
     code_type = f.get(C.F_ITEM_IDENTIFIER_TYPE, "")
@@ -4563,6 +4616,15 @@ def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, required_to_sh
         "projectName": f.get(C.F_ITEM_PROJECT_NAME, ""),
         "productType": f.get(C.F_ITEM_PRODUCT_TYPE, ""),
         "fileNameDescription": f.get(C.F_ITEM_FILE_NAME_DESCRIPTION, ""),
+        # Offered when the Product carries none, so the field arrives filled in
+        # rather than blank. Never used in place of a value someone has written.
+        "fileNameDescriptionSuggestion": (
+            "" if str(f.get(C.F_ITEM_FILE_NAME_DESCRIPTION, "") or "").strip()
+            else file_name_description.suggest(
+                f.get(C.F_ITEM_NAME, "") or f.get(C.F_ITEM_PRODUCT, ""),
+                brands=_brand_names_for_item(f, client),
+            )
+        ),
         "preproOverlays": f.get(C.F_ITEM_PREPRO_OVERLAYS, ""),
         "ecommPhotoNotes": f.get(C.F_ITEM_ECOMM_PHOTO_NOTES, ""),
         "pathToArt": f.get(C.F_ITEM_PATH_TO_ART, ""),

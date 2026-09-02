@@ -8903,6 +8903,9 @@ function photoProductionProductValue(product = {}, field) {
   if (field === 'jobNumber') return product.itemJobNumber || product.jobNumber || product.wkftJobNumber || product.pickupJobNumber || '';
   if (field === 'fileNameDescription' && product.fileNameDescription) return product.fileNameDescription;
   if (field === 'fileNameDescription') {
+    // Built from the product name when nothing has been written yet, so the field
+    // arrives filled rather than blank. It saves like anything typed here.
+    if (product.fileNameDescriptionSuggestion) return product.fileNameDescriptionSuggestion;
     return referenceDataValue(product, ['File Name Description', 'fileNameDescription', 'Prod Descrip', 'Product Description'])
       || product.fileNameDescription
       || '';
@@ -8915,7 +8918,9 @@ function photoProductionValuePresent(field, value) {
   return Boolean(text);
 }
 
-function PhotoProductionFieldsEditor({ item, production, onDraftChange, stagedProduct = null }) {
+const OTHER_BRAND_PREFIX = '__other__';
+
+function PhotoProductionFieldsEditor({ item, production, onDraftChange, stagedProduct = null, brandPrefixes = [] }) {
   const product = item?.record?.linkedItem || {};
   const productDataSource = productDataSourceForPlanningItem(item, {}, stagedProduct);
   const entries = production?.workstreamType
@@ -8968,14 +8973,36 @@ function PhotoProductionFieldsEditor({ item, production, onDraftChange, stagedPr
                 <b aria-hidden="true">{present ? '✓' : '×'}</b>
                 {definition.label}
               </span>
-              <input
-                value={draft[field] ?? ''}
-                onChange={event => {
-                  const value = event.target.value;
-                  setDraft(current => ({ ...current, [field]: value }));
-                  onDraftChange?.({ [field]: value });
-                }}
-              />
+              {field === 'brandPrefix' && brandPrefixes.length ? (
+                <select
+                  className="ui-select"
+                  value={brandPrefixes.some(entry => entry.code === draft[field]) || !draft[field]
+                    ? (draft[field] ?? '')
+                    : OTHER_BRAND_PREFIX}
+                  onChange={event => {
+                    // "Other" clears the field so the person types it, rather than
+                    // storing the word "Other" as a brand code.
+                    const value = event.target.value === OTHER_BRAND_PREFIX ? '' : event.target.value;
+                    setDraft(current => ({ ...current, [field]: value }));
+                    onDraftChange?.({ [field]: value });
+                  }}
+                >
+                  <option value="">Choose a brand</option>
+                  {brandPrefixes.map(entry => (
+                    <option key={entry.code} value={entry.code}>{entry.label}</option>
+                  ))}
+                  <option value={OTHER_BRAND_PREFIX}>Other — type it</option>
+                </select>
+              ) : (
+                <input
+                  value={draft[field] ?? ''}
+                  onChange={event => {
+                    const value = event.target.value;
+                    setDraft(current => ({ ...current, [field]: value }));
+                    onDraftChange?.({ [field]: value });
+                  }}
+                />
+              )}
             </label>
           );
         })}
@@ -11474,6 +11501,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                   item={item}
                   production={selectedPhotoProduction}
                   stagedProduct={stagedMatchProduct}
+                  brandPrefixes={clientRecord?.brandPrefixes || []}
                   onDraftChange={(draft, options) => setPhotoDraft(current => {
                     const base = options?.replace || current.itemId !== item.id ? {} : current.values;
                     return { itemId: item.id, values: { ...base, ...draft } };

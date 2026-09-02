@@ -128,3 +128,46 @@ class RealTrackerTests(unittest.TestCase):
         suggestion = fnd.suggest("CF Ice Cream Pumpkin Scr 48oz", brands=["CF -CravinFlavor"])
         self.assertEqual(sorted(suggestion.casefold().split()),
                          sorted("Pumpkin Ice Cream".casefold().split()))
+
+
+class BrandPrefixConfigTests(unittest.TestCase):
+    """One configured line gives the code, the label and the words to strip."""
+
+    @classmethod
+    def setUpClass(cls):
+        import routes
+        cls.routes = routes
+        cls.source = (Path(__file__).resolve().parents[1] / "frontend" / "src" / "App.jsx").read_text()
+
+    def test_a_line_yields_a_code_and_a_label(self):
+        self.assertEqual(
+            self.routes._parse_brand_prefixes("FC - Food Club"),
+            [{"code": "FC", "name": "Food Club", "label": "FC - Food Club"}],
+        )
+
+    def test_a_prefix_with_no_spelled_out_name_is_still_choosable(self):
+        # Dropping it for being half-configured would make it unpickable.
+        self.assertEqual(self.routes._parse_brand_prefixes("GG")[0]["label"], "GG")
+
+    def test_the_same_code_twice_is_listed_once(self):
+        self.assertEqual(len(self.routes._parse_brand_prefixes("FC - Food Club\nFC - Other")), 1)
+
+    def test_blank_lines_are_ignored(self):
+        self.assertEqual(self.routes._parse_brand_prefixes("\n\nFC - Food Club\n\n")[0]["code"], "FC")
+
+    def test_the_dropdown_shows_the_label_and_stores_the_code(self):
+        # The code is what goes in the delivered file name.
+        self.assertIn("<option key={entry.code} value={entry.code}>{entry.label}</option>", self.source)
+
+    def test_other_clears_the_field_rather_than_storing_the_word_other(self):
+        self.assertIn("event.target.value === OTHER_BRAND_PREFIX ? '' : event.target.value", self.source)
+
+    def test_a_client_with_no_list_still_gets_a_plain_box(self):
+        # Not every client has brand prefixes, and none should be blocked.
+        self.assertIn("field === 'brandPrefix' && brandPrefixes.length ?", self.source)
+
+    def test_the_suggestion_never_displaces_a_written_value(self):
+        self.assertIn("if (field === 'fileNameDescription' && product.fileNameDescription) return product.fileNameDescription;",
+                      self.source)
+        self.assertIn("if (product.fileNameDescriptionSuggestion) return product.fileNameDescriptionSuggestion;",
+                      self.source)

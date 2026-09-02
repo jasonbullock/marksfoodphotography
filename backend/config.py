@@ -303,6 +303,7 @@ class Config:
     # holding it is enough to post, so it is never sent to the browser.
     F_CLIENT_TEAMS_WEBHOOK = "Teams Webhook"
     F_CLIENT_KEEP_AFTER_SHOOT_DAYS = "Keep After Shoot Days"
+    F_CLIENT_BRAND_PREFIXES = "Brand Prefixes"
     F_CLIENT_IDENTIFIER_LABEL = "Identifier Label"
     F_CLIENT_REQUIRED_TO_SHOOT = "Required to Shoot"
     F_CLIENT_ARTWORK_REQUIREMENT = "Artwork Requirement"
