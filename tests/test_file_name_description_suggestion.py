@@ -131,7 +131,7 @@ class RealTrackerTests(unittest.TestCase):
 
 
 class BrandPrefixConfigTests(unittest.TestCase):
-    """One configured line gives the code, the label and the words to strip."""
+    """The list mirrors the source sheet, so values written either side match."""
 
     @classmethod
     def setUpClass(cls):
@@ -139,35 +139,47 @@ class BrandPrefixConfigTests(unittest.TestCase):
         cls.routes = routes
         cls.source = (Path(__file__).resolve().parents[1] / "frontend" / "src" / "App.jsx").read_text()
 
-    def test_a_line_yields_a_code_and_a_label(self):
-        self.assertEqual(
-            self.routes._parse_brand_prefixes("FC - Food Club"),
-            [{"code": "FC", "name": "Food Club", "label": "FC - Food Club"}],
-        )
+    def test_the_value_is_the_sheet_line_verbatim(self):
+        # A product matched from the sheet and one picked in the app have to carry
+        # the same string or they cannot be compared.
+        entry = self.routes._parse_brand_prefixes("FC -FoodClub")[0]
+        self.assertEqual(entry["value"], "FC -FoodClub")
+        self.assertEqual(entry["label"], "FC -FoodClub")
+
+    def test_the_file_name_code_is_derived_rather_than_stored_separately(self):
+        # Kept apart they would drift; derived they cannot.
+        self.assertEqual(self.routes.brand_prefix_code("FC -FoodClub"), "FC")
+        self.assertEqual(self.routes.brand_prefix_code("CV - Cape Covelle"), "CV")
+        self.assertEqual(self.routes.brand_prefix_code("BC"), "BC")
+
+    def test_the_column_heading_is_not_an_option(self):
+        # "Brand Prefixes" is the sheet's placeholder, and two products are saved
+        # with it as their brand.
+        self.assertEqual(self.routes._parse_brand_prefixes("Brand Prefixes\nFC -FoodClub"),
+                         self.routes._parse_brand_prefixes("FC -FoodClub"))
 
     def test_a_prefix_with_no_spelled_out_name_is_still_choosable(self):
-        # Dropping it for being half-configured would make it unpickable.
-        self.assertEqual(self.routes._parse_brand_prefixes("GG")[0]["label"], "GG")
+        self.assertEqual(self.routes._parse_brand_prefixes("BC")[0]["label"], "BC")
 
     def test_the_identical_line_twice_is_listed_once(self):
-        self.assertEqual(len(self.routes._parse_brand_prefixes("FC - Food Club\nFC - Food Club")), 1)
+        self.assertEqual(len(self.routes._parse_brand_prefixes("FC -FoodClub\nFC -FoodClub")), 1)
 
     def test_but_one_code_against_two_brands_keeps_both(self):
-        # Real in Topco's list, and dropping either makes that brand unpickable.
-        self.assertEqual(len(self.routes._parse_brand_prefixes("PY - Pure Harmony\nPY - Pantry Fresh")), 2)
+        # PY is against PureHarmony and Pantry Fresh in the real sheet.
+        self.assertEqual(len(self.routes._parse_brand_prefixes("PY -PureHarmony\nPY")), 2)
 
-    def test_blank_lines_are_ignored(self):
-        self.assertEqual(self.routes._parse_brand_prefixes("\n\nFC - Food Club\n\n")[0]["code"], "FC")
+    def test_the_dropdown_offers_the_line_itself(self):
+        self.assertIn("<option key={entry.value} value={entry.value}>{entry.label}</option>", self.source)
 
-    def test_the_dropdown_shows_the_label_and_stores_the_code(self):
-        # The code is what goes in the delivered file name.
-        self.assertIn("<option key={entry.code} value={entry.code}>{entry.label}</option>", self.source)
+    def test_there_is_no_invented_other_option(self):
+        # The sheet's own list carries "Other - Non Topco"; a second one confuses.
+        self.assertNotIn("Other \u2014 type it", self.source)
+        self.assertNotIn("OTHER_BRAND_PREFIX", self.source)
 
-    def test_other_clears_the_field_rather_than_storing_the_word_other(self):
-        self.assertIn("event.target.value === OTHER_BRAND_PREFIX ? '' : event.target.value", self.source)
+    def test_a_value_not_on_the_list_is_shown_rather_than_swapped_away(self):
+        self.assertIn("(not on this client's list)", self.source)
 
     def test_a_client_with_no_list_still_gets_a_plain_box(self):
-        # Not every client has brand prefixes, and none should be blocked.
         self.assertIn("field === 'brandPrefix' && brandPrefixes.length ?", self.source)
 
     def test_the_suggestion_never_displaces_a_written_value(self):
@@ -189,23 +201,33 @@ class BrandPrefixWarningTests(unittest.TestCase):
         return self.routes._brand_prefix_warnings(self.routes._parse_brand_prefixes(raw))
 
     def test_two_brands_sharing_a_code_are_both_kept(self):
-        # Topco's list has PY against Pure Harmony and Pantry Fresh. Dropping the
-        # second would make that brand unpickable.
-        prefixes = self.routes._parse_brand_prefixes("PY - Pure Harmony\nPY - Pantry Fresh")
-        self.assertEqual([entry["name"] for entry in prefixes], ["Pure Harmony", "Pantry Fresh"])
+        # The real sheet has PY against PureHarmony and against Pantry Fresh.
+        # Dropping the second would make that brand unpickable.
+        prefixes = self.routes._parse_brand_prefixes("PY -PureHarmony\nPY")
+        self.assertEqual([entry["value"] for entry in prefixes], ["PY -PureHarmony", "PY"])
 
     def test_and_the_clash_is_reported(self):
         # Guessing which brand owns the code would silently rename a delivery.
-        warnings = self.warnings("PY - Pure Harmony\nPY - Pantry Fresh")
+        warnings = self.warnings("PY -PureHarmony\nPY")
         self.assertEqual(len(warnings), 1)
-        self.assertIn("Pure Harmony", warnings[0])
-        self.assertIn("Pantry Fresh", warnings[0])
+        self.assertIn("PY", warnings[0])
 
     def test_a_code_that_cannot_go_in_a_file_name_is_reported(self):
         self.assertTrue(any("file name" in w for w in self.warnings("No Brand/Branding")))
 
+    def test_the_real_topco_list_reports_exactly_the_two_known_problems(self):
+        real = "\n".join([
+            "FC -FoodClub", "FX -FullCircleMarket", "CD -CornershotCuts", "CF -CravinFlavor",
+            "CT -CulinaryTours", "CV - Cape Covelle", "P7 -PawsHappyLife", "PY -PureHarmony",
+            "SD -SimpleDone", "S6 -SweetPeas", "TS -ThatsSmart", "T1 -TippyToes", "TR -TopCare",
+            "WA -WideAwake", "BB -BasketBushel", "BC", "CK", "FF", "GG", "HV", "OTT", "PY",
+            "Other - Non Topco", "No Brand/Branding",
+        ])
+        self.assertEqual(len(self.routes._parse_brand_prefixes(real)), 24)
+        self.assertEqual(len(self.warnings(real)), 2)
+
     def test_a_clean_list_reports_nothing(self):
-        self.assertEqual(self.warnings("FC - Food Club\nFX - Full Circle Market"), [])
+        self.assertEqual(self.warnings("FC -FoodClub\nFX -FullCircleMarket"), [])
 
     def test_the_same_line_twice_is_not_a_clash(self):
-        self.assertEqual(self.warnings("FC - Food Club\nFC - Food Club"), [])
+        self.assertEqual(self.warnings("FC -FoodClub\nFC -FoodClub"), [])

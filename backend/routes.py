@@ -250,36 +250,50 @@ def _reference_table_records(table_name):
     return records
 
 
-def _parse_brand_prefixes(raw):
-    """A client's brand prefixes, one per line as "CODE - Full Brand Name".
+# The tracker's own placeholder. It is the column heading sitting in the dropdown,
+# and two products have been saved with it as their brand.
+BRAND_PREFIX_PLACEHOLDER = "brand prefixes"
 
-    The code is what a Product stores and what appears in a delivered file name;
-    the label is what a person picks from and what tells us which words to strip
-    out of a generated File Name Description. Both come from one line so they
-    cannot drift apart.
+
+def brand_prefix_code(value):
+    """The part of a brand prefix that goes into a file name.
+
+    Stored values match the source sheet exactly - "FC -FoodClub", "CV - Cape
+    Covelle", "BC" - but a delivered file is named with the code alone.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    head = text.split("-", 1)[0].strip()
+    # "Other - Non Topco" and "No Brand/Branding" are list entries rather than
+    # codes; whatever stands before the dash is the best we have.
+    return head or text
+
+
+def _parse_brand_prefixes(raw):
+    """A client's brand prefixes, written exactly as the source sheet writes them.
+
+    The stored value is the whole line, so a product matched from the sheet and a
+    product picked in the app carry the same string and can be compared. The code
+    for file naming is derived from it rather than kept separately, which is how
+    the two stay in step.
     """
     prefixes = []
     seen = set()
     for line in str(raw or "").splitlines():
         line = line.strip()
-        if not line:
+        if not line or line.casefold() == BRAND_PREFIX_PLACEHOLDER:
             continue
-        code, _, label = line.partition("-")
-        code = code.strip()
-        label = label.strip()
-        # Two brands can genuinely share a code - Topco's list has PY against both
-        # Pure Harmony and Pantry Fresh. Dropping the second would make that brand
-        # unpickable, so both are listed and the clash is reported instead.
-        key = (code.casefold(), label.casefold())
-        if not code or key in seen:
+        if line.casefold() in seen:
             continue
-        seen.add(key)
+        seen.add(line.casefold())
+        code = brand_prefix_code(line)
+        _, _, name = line.partition("-")
         prefixes.append({
+            "value": line,
+            "label": line,
             "code": code,
-            "name": label,
-            # What the dropdown shows. A prefix with no spelled-out name is still
-            # choosable rather than being dropped for being half-configured.
-            "label": f"{code} - {label}" if label else code,
+            "name": name.strip() or line,
         })
     return prefixes
 

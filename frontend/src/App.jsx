@@ -8918,8 +8918,6 @@ function photoProductionValuePresent(field, value) {
   return Boolean(text);
 }
 
-const OTHER_BRAND_PREFIX = '__other__';
-
 function PhotoProductionFieldsEditor({ item, production, onDraftChange, stagedProduct = null, brandPrefixes = [] }) {
   const product = item?.record?.linkedItem || {};
   const productDataSource = productDataSourceForPlanningItem(item, {}, stagedProduct);
@@ -8974,24 +8972,29 @@ function PhotoProductionFieldsEditor({ item, production, onDraftChange, stagedPr
                 {definition.label}
               </span>
               {field === 'brandPrefix' && brandPrefixes.length ? (
+                // The same closed list the source sheet offers, written the same
+                // way, so a product matched from that sheet and one picked here
+                // carry an identical value. "Other - Non Topco" and "No
+                // Brand/Branding" are entries on it, so there is nothing to type.
                 <select
                   className="ui-select"
-                  value={brandPrefixes.some(entry => entry.code === draft[field]) || !draft[field]
-                    ? (draft[field] ?? '')
-                    : OTHER_BRAND_PREFIX}
+                  value={draft[field] ?? ''}
                   onChange={event => {
-                    // "Other" clears the field so the person types it, rather than
-                    // storing the word "Other" as a brand code.
-                    const value = event.target.value === OTHER_BRAND_PREFIX ? '' : event.target.value;
+                    const value = event.target.value;
                     setDraft(current => ({ ...current, [field]: value }));
                     onDraftChange?.({ [field]: value });
                   }}
                 >
                   <option value="">Choose a brand</option>
                   {brandPrefixes.map(entry => (
-                    <option key={entry.code} value={entry.code}>{entry.label}</option>
+                    <option key={entry.value} value={entry.value}>{entry.label}</option>
                   ))}
-                  <option value={OTHER_BRAND_PREFIX}>Other — type it</option>
+                  {/* A value already on the Product that is not on the list - an
+                      older record, or a brand since removed - stays visible rather
+                      than being silently swapped for the first option. */}
+                  {draft[field] && !brandPrefixes.some(entry => entry.value === draft[field]) && (
+                    <option value={draft[field]}>{draft[field]} (not on this client's list)</option>
+                  )}
                 </select>
               ) : (
                 <input
