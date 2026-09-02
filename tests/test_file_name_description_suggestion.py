@@ -149,8 +149,12 @@ class BrandPrefixConfigTests(unittest.TestCase):
         # Dropping it for being half-configured would make it unpickable.
         self.assertEqual(self.routes._parse_brand_prefixes("GG")[0]["label"], "GG")
 
-    def test_the_same_code_twice_is_listed_once(self):
-        self.assertEqual(len(self.routes._parse_brand_prefixes("FC - Food Club\nFC - Other")), 1)
+    def test_the_identical_line_twice_is_listed_once(self):
+        self.assertEqual(len(self.routes._parse_brand_prefixes("FC - Food Club\nFC - Food Club")), 1)
+
+    def test_but_one_code_against_two_brands_keeps_both(self):
+        # Real in Topco's list, and dropping either makes that brand unpickable.
+        self.assertEqual(len(self.routes._parse_brand_prefixes("PY - Pure Harmony\nPY - Pantry Fresh")), 2)
 
     def test_blank_lines_are_ignored(self):
         self.assertEqual(self.routes._parse_brand_prefixes("\n\nFC - Food Club\n\n")[0]["code"], "FC")
@@ -171,3 +175,37 @@ class BrandPrefixConfigTests(unittest.TestCase):
                       self.source)
         self.assertIn("if (product.fileNameDescriptionSuggestion) return product.fileNameDescriptionSuggestion;",
                       self.source)
+
+
+class BrandPrefixWarningTests(unittest.TestCase):
+    """Problems in a client's brand list that only surface in a delivered file."""
+
+    @classmethod
+    def setUpClass(cls):
+        import routes
+        cls.routes = routes
+
+    def warnings(self, raw):
+        return self.routes._brand_prefix_warnings(self.routes._parse_brand_prefixes(raw))
+
+    def test_two_brands_sharing_a_code_are_both_kept(self):
+        # Topco's list has PY against Pure Harmony and Pantry Fresh. Dropping the
+        # second would make that brand unpickable.
+        prefixes = self.routes._parse_brand_prefixes("PY - Pure Harmony\nPY - Pantry Fresh")
+        self.assertEqual([entry["name"] for entry in prefixes], ["Pure Harmony", "Pantry Fresh"])
+
+    def test_and_the_clash_is_reported(self):
+        # Guessing which brand owns the code would silently rename a delivery.
+        warnings = self.warnings("PY - Pure Harmony\nPY - Pantry Fresh")
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("Pure Harmony", warnings[0])
+        self.assertIn("Pantry Fresh", warnings[0])
+
+    def test_a_code_that_cannot_go_in_a_file_name_is_reported(self):
+        self.assertTrue(any("file name" in w for w in self.warnings("No Brand/Branding")))
+
+    def test_a_clean_list_reports_nothing(self):
+        self.assertEqual(self.warnings("FC - Food Club\nFX - Full Circle Market"), [])
+
+    def test_the_same_line_twice_is_not_a_clash(self):
+        self.assertEqual(self.warnings("FC - Food Club\nFC - Food Club"), [])

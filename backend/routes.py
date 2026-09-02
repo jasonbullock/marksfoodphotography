@@ -267,9 +267,13 @@ def _parse_brand_prefixes(raw):
         code, _, label = line.partition("-")
         code = code.strip()
         label = label.strip()
-        if not code or code.casefold() in seen:
+        # Two brands can genuinely share a code - Topco's list has PY against both
+        # Pure Harmony and Pantry Fresh. Dropping the second would make that brand
+        # unpickable, so both are listed and the clash is reported instead.
+        key = (code.casefold(), label.casefold())
+        if not code or key in seen:
             continue
-        seen.add(code.casefold())
+        seen.add(key)
         prefixes.append({
             "code": code,
             "name": label,
@@ -278,6 +282,31 @@ def _parse_brand_prefixes(raw):
             "label": f"{code} - {label}" if label else code,
         })
     return prefixes
+
+
+def _brand_prefix_warnings(prefixes):
+    """Problems with a client's brand list that only show up in a file name.
+
+    Reported rather than corrected: the list is the client's, and guessing which
+    of two brands owns a code would silently rename someone's delivery.
+    """
+    warnings = []
+    by_code = {}
+    for entry in prefixes:
+        by_code.setdefault(entry["code"].casefold(), []).append(entry)
+    for code, entries in by_code.items():
+        if len(entries) > 1:
+            names = ", ".join(entry["name"] or entry["code"] for entry in entries)
+            warnings.append(
+                f"{entries[0]['code']} is used by more than one brand ({names}), "
+                "so their delivered files cannot be told apart."
+            )
+    for entry in prefixes:
+        if re.search(r'[\\/:*?"<>|]', entry["code"]):
+            warnings.append(
+                f"\u201c{entry['code']}\u201d cannot go in a file name as written."
+            )
+    return warnings
 
 
 def _client_records():
@@ -778,6 +807,8 @@ def _shape_client(r):
         "teamsWebhookConfigured": bool(str(f.get(C.F_CLIENT_TEAMS_WEBHOOK, "") or "").strip()),
         "keepAfterShootDays": f.get(C.F_CLIENT_KEEP_AFTER_SHOOT_DAYS, None),
         "brandPrefixes": _parse_brand_prefixes(f.get(C.F_CLIENT_BRAND_PREFIXES, "")),
+        "brandPrefixWarnings": _brand_prefix_warnings(
+            _parse_brand_prefixes(f.get(C.F_CLIENT_BRAND_PREFIXES, ""))),
         "holdDays": f.get(C.F_CLIENT_HOLD_DAYS),
         "dispoDays": f.get(C.F_CLIENT_DISPO_DAYS),
         "active": f.get(C.F_CLIENT_ACTIVE, False),
