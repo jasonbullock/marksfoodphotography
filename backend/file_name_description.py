@@ -114,3 +114,62 @@ def suggest(product_name, brands=(), keep_size=False):
         kept.append(word)
 
     return sanitise(" ".join(kept))
+
+
+# ── Naming ──────────────────────────────────────────────────────────────────
+# A delivered pack image is job number, brand prefix, description, shot number.
+# The brand prefix is a segment like any other: when a product has no brand the
+# segment is absent, not empty, so "No Brand" does not leave a double underscore
+# in the middle of every file name.
+
+def image_name(*parts):
+    """Join the parts of a file name, dropping any that are empty."""
+    return "_".join(str(part).strip() for part in parts if str(part or "").strip())
+
+
+# Words a brand is never recognised by on their own: too short or too common to
+# mean anything, and matching on them would brand half the catalogue.
+UNRECOGNISABLE_BRAND_WORDS = {"the", "and", "co", "of", "no"}
+
+
+def infer_brand(product_name, prefixes):
+    """Which of the client's brands this product name begins with, if any.
+
+    The tracker leads a product name with its brand - "CF Ice Cream Scrounds",
+    "Food Club thicky & chunky salsa" - so the brand can be read off the front.
+    Matched from the start rather than anywhere in the name: "Ice Cream Brown Cow"
+    should not become Cape Covelle because the letters CV appear somewhere.
+
+    Returns the one matching prefix, or None. Two brands sharing a code - Topco's
+    PY is against both Pure Harmony and Pantry Fresh - is not a match: picking one
+    would put the wrong brand on a delivered file.
+    """
+    words = [
+        re.sub(r"[^A-Za-z0-9]+", "", word).casefold()
+        for word in re.split(r"\s+", str(product_name or "").strip())
+    ]
+    words = [word for word in words if word]
+    if not words:
+        return None
+
+    matches = []
+    for entry in prefixes or []:
+        tokens = _brand_tokens([entry.get("value") or "", entry.get("name") or ""])
+        tokens = {token for token in tokens if token not in UNRECOGNISABLE_BRAND_WORDS}
+        if not tokens:
+            continue
+        # The brand may be one word at the front ("CF") or several ("Food Club"),
+        # so the longest run of leading words this brand accounts for wins.
+        for depth in range(min(4, len(words)), 0, -1):
+            if all(word in tokens for word in words[:depth]):
+                matches.append((depth, entry))
+                break
+
+    if not matches:
+        return None
+    # The longest run of leading words wins: "Food Club" over a stray "FC".
+    best = max(depth for depth, _ in matches)
+    winners = [entry for depth, entry in matches if depth == best]
+    if len({entry["code"].casefold() for entry in winners}) != 1 or len(winners) != 1:
+        return None
+    return winners[0]

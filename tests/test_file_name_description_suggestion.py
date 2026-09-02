@@ -231,3 +231,87 @@ class BrandPrefixWarningTests(unittest.TestCase):
 
     def test_the_same_line_twice_is_not_a_clash(self):
         self.assertEqual(self.warnings("FC -FoodClub\nFC -FoodClub"), [])
+
+
+class ImageNameTests(unittest.TestCase):
+    """Job number, brand prefix, description, shot number."""
+
+    def test_a_product_with_a_brand_gets_its_prefix(self):
+        self.assertEqual(fnd.image_name("26007267", "CF", "Pumpkin Ice Cream", "1"),
+                         "26007267_CF_Pumpkin Ice Cream_1")
+
+    def test_no_brand_means_no_segment_rather_than_an_empty_one(self):
+        # Otherwise every unbranded file carries a double underscore where the
+        # brand would have been.
+        self.assertEqual(fnd.image_name("26007267", "", "Pumpkin Ice Cream", "1"),
+                         "26007267_Pumpkin Ice Cream_1")
+
+    def test_a_missing_job_number_does_not_lead_with_an_underscore(self):
+        self.assertEqual(fnd.image_name("", "CF", "Pumpkin Ice Cream", "1"),
+                         "CF_Pumpkin Ice Cream_1")
+
+    def test_whitespace_only_counts_as_missing(self):
+        self.assertEqual(fnd.image_name("26007267", "   ", "Thing", "1"), "26007267_Thing_1")
+
+
+class BrandInferenceTests(unittest.TestCase):
+    """The tracker leads a product name with its brand, so it can be read off."""
+
+    @classmethod
+    def setUpClass(cls):
+        import routes
+        cls.prefixes = routes._parse_brand_prefixes("\n".join([
+            "FC -FoodClub", "FX -FullCircleMarket", "CF -CravinFlavor",
+            "CT -CulinaryTours", "CV - Cape Covelle", "PY -PureHarmony", "PY",
+            "Other - Non Topco", "No Brand/Branding",
+        ]))
+
+    def infer(self, name):
+        entry = fnd.infer_brand(name, self.prefixes)
+        return entry["value"] if entry else None
+
+    def test_a_leading_code_is_recognised(self):
+        self.assertEqual(self.infer("CF Ice Cream Scrounds DFA"), "CF -CravinFlavor")
+
+    def test_a_leading_brand_name_is_recognised_though_the_list_runs_it_together(self):
+        self.assertEqual(self.infer("Food Club thicky & chunky salsa medium 16oz"), "FC -FoodClub")
+
+    def test_a_two_word_brand_is_recognised(self):
+        self.assertEqual(self.infer("Culinary Tours Bang Bang Sauce 12oz"), "CT -CulinaryTours")
+
+    def test_a_product_with_no_brand_in_its_name_is_left_alone(self):
+        self.assertIsNone(self.infer("Salsa Hot Pineapple Jalapeno"))
+
+    def test_letters_appearing_later_in_the_name_do_not_brand_it(self):
+        # "Cape Covelle" is CV; a name containing those letters is not that brand.
+        self.assertIsNone(self.infer("ICE CREAM BROWN COW SCR 48 OZ"))
+
+    def test_two_brands_sharing_a_code_infer_nothing(self):
+        # Picking one would put the wrong brand on a delivered file.
+        self.assertIsNone(self.infer("PY Something Or Other"))
+
+    def test_the_longer_brand_wins_over_a_shorter_coincidence(self):
+        self.assertEqual(self.infer("Pure Harmony Dog Food"), "PY -PureHarmony")
+
+    def test_an_empty_name_infers_nothing(self):
+        self.assertIsNone(self.infer(""))
+
+    def test_no_configured_brands_infers_nothing(self):
+        self.assertIsNone(fnd.infer_brand("Food Club Salsa", []))
+
+
+class InferenceWiringTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.routes_source = (Path(__file__).resolve().parents[1] / "backend" / "routes.py").read_text()
+        cls.app_source = (Path(__file__).resolve().parents[1] / "frontend" / "src" / "App.jsx").read_text()
+
+    def test_a_product_that_already_has_a_brand_is_not_second_guessed(self):
+        self.assertIn('"" if str(f.get(C.F_ITEM_BRAND_PREFIX, "") or "").strip()', self.routes_source)
+
+    def test_an_inferred_brand_still_comes_out_of_the_description(self):
+        # Even before anyone picks it, "Food Club" should not be in the file name.
+        self.assertIn("# No brand recorded yet, but the name may still start with one", self.routes_source)
+
+    def test_the_field_shows_the_stored_value_before_the_suggestion(self):
+        self.assertIn("return product.brandPrefix || product.brandPrefixSuggestion || '';", self.app_source)

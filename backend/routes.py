@@ -4621,6 +4621,15 @@ def _brand_names_for_item(item_fields, client=None):
     """
     brands = [str(item_fields.get(C.F_ITEM_BRAND, "") or "").strip()]
     prefix = str(item_fields.get(C.F_ITEM_BRAND_PREFIX, "") or "").strip()
+    if not prefix:
+        # No brand recorded yet, but the name may still start with one, and its
+        # words should come out of the description either way.
+        inferred = file_name_description.infer_brand(
+            item_fields.get(C.F_ITEM_NAME, "") or item_fields.get(C.F_ITEM_PRODUCT, ""),
+            (client or {}).get("brandPrefixes") or [],
+        )
+        if inferred:
+            brands.append(inferred["value"])
     if prefix:
         brands.append(prefix)
         for entry in (client or {}).get("brandPrefixes") or []:
@@ -4661,6 +4670,15 @@ def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, required_to_sh
         "projectName": f.get(C.F_ITEM_PROJECT_NAME, ""),
         "productType": f.get(C.F_ITEM_PRODUCT_TYPE, ""),
         "fileNameDescription": f.get(C.F_ITEM_FILE_NAME_DESCRIPTION, ""),
+        # Read off the front of the product name when the Product has no brand.
+        # Only offered, never stored behind someone's back.
+        "brandPrefixSuggestion": (
+            "" if str(f.get(C.F_ITEM_BRAND_PREFIX, "") or "").strip()
+            else (file_name_description.infer_brand(
+                f.get(C.F_ITEM_NAME, "") or f.get(C.F_ITEM_PRODUCT, ""),
+                (client or {}).get("brandPrefixes") or [],
+            ) or {}).get("value", "")
+        ),
         # Offered when the Product carries none, so the field arrives filled in
         # rather than blank. Never used in place of a value someone has written.
         "fileNameDescriptionSuggestion": (

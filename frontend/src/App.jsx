@@ -8901,6 +8901,9 @@ function photoProductionProductValue(product = {}, field) {
   if (field === 'productName') return product.name || product.product || product.productName || '';
   if (field === 'upc') return product.upc || product.primaryMatchKey || product.identifier || product.productId || product.skuId || '';
   if (field === 'jobNumber') return product.itemJobNumber || product.jobNumber || product.wkftJobNumber || product.pickupJobNumber || '';
+  // Read off the front of the product name when nothing is recorded, the same way
+  // the description is built. Saved like anything chosen by hand.
+  if (field === 'brandPrefix') return product.brandPrefix || product.brandPrefixSuggestion || '';
   if (field === 'fileNameDescription' && product.fileNameDescription) return product.fileNameDescription;
   if (field === 'fileNameDescription') {
     // Built from the product name when nothing has been written yet, so the field
