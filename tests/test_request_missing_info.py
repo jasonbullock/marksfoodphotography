@@ -36,7 +36,7 @@ class MissingInfoCardTests(unittest.TestCase):
             card = notifier.build_missing_info_card(
                 client_name="Topco", item_label="Thing", missing=["CVID"], merchandise_id="recX")
         actions = card["attachments"][0]["content"]["actions"]
-        self.assertEqual(actions[0]["url"], "https://food.walnutcontent.com/planning?item=recX")
+        self.assertEqual(actions[0]["url"], "https://food.walnutcontent.com/workspace?view=board&item=recX")
 
     def test_a_card_without_a_link_still_posts(self):
         # APP_BASE_URL is not always set, and a card is still worth sending.
@@ -63,14 +63,34 @@ class RequestEndpointTests(unittest.TestCase):
         self.assertIn("_evaluate_required_to_shoot_from_fields(", block)
         self.assertNotIn('body.get("missing")', block)
 
-    def test_an_item_missing_nothing_is_not_posted_about(self):
-        self.assertIn('return err("Nothing is missing on this item.", 400)', self.source)
+    def test_an_item_missing_no_client_information_is_not_posted_about(self):
+        self.assertIn('return err("No client information is missing on this item.", 400)', self.source)
+
+    def test_live_modal_product_values_are_used_without_saving_first(self):
+        import routes
+        fields = routes._product_fields_with_review_draft({}, {
+            "fileNameDescription": "Ice Cream Pumpkin",
+            "cvid": "",
+        })
+        self.assertEqual(fields[routes.C.F_ITEM_FILE_NAME_DESCRIPTION], "Ice Cream Pumpkin")
+        self.assertEqual(fields[routes.C.F_ITEM_CVID], "")
+
+    def test_internal_review_checks_are_not_sent_to_the_client(self):
+        import routes
+        missing = routes._client_answerable_missing_requirements({"requirements": [
+            {"key": "merchandise-verified", "label": "Merchandise Verified", "ready": False},
+            {"key": "deliverables", "label": "Deliverables", "ready": False},
+            {"key": "product-linked", "label": "Product Linked", "ready": False},
+            {"key": "fileNameDescription", "label": "File Name Description", "ready": True},
+            {"key": "cvid", "label": "CVID", "ready": False},
+        ]})
+        self.assertEqual(missing, ["CVID"])
 
     def test_a_client_without_a_channel_is_told_so_rather_than_failing_silently(self):
-        self.assertIn('return err("This client has no Teams channel configured.", 400)', self.source)
+        self.assertIn('return err("This client has no Chat channel configured.", 400)', self.source)
 
     def test_the_ask_is_recorded_on_the_item(self):
-        self.assertIn('_record_merchandise_history(entry_id, f"Asked Teams for:', self.source)
+        self.assertIn('_record_merchandise_history(entry_id, f"Asked in Chat for:', self.source)
 
 
 def cls_block(source):
@@ -86,10 +106,10 @@ class AskButtonTests(unittest.TestCase):
 
     def test_the_button_only_shows_while_something_is_missing(self):
         self.assertIn("{!photoProductionReady && (", self.source)
-        self.assertIn("'Ask for Info in Teams'", self.source)
+        self.assertIn("'Ask in Chat'", self.source)
 
     def test_it_reports_what_it_asked_for(self):
-        self.assertIn("Asked in Teams for ${(result?.missing || []).join(', ')}", self.source)
+        self.assertIn("Asked in Chat for ${(result?.missing || []).join(', ')}", self.source)
 
     def test_its_colours_are_ones_that_exist(self):
         used = set(re.findall(r"var\((--[a-z0-9-]+)\)", self.styles.split(".photo-production-ask")[1]))
@@ -147,15 +167,15 @@ class AskButtonWordingTests(unittest.TestCase):
         cls.source = (ROOT / "frontend" / "src" / "App.jsx").read_text()
 
     def test_the_button_says_what_it_does(self):
-        self.assertIn("'Ask for Info in Teams'", self.source)
-        self.assertNotIn("Ask client in Teams", self.source)
+        self.assertIn("'Ask in Chat'", self.source)
+        self.assertNotIn("Mark Waiting on Client", self.source)
 
     def test_it_names_the_fields_before_you_press_it(self):
         # The difference between sending a message and knowing what you just sent.
-        self.assertIn("Asks this client's channel for {photoProductionMissingLabels.join(', ')}", self.source)
+        self.assertIn("Sends a Chat message asking for {photoProductionMissingLabels.join(', ')}", self.source)
 
     def test_the_card_in_view_sets_the_scope(self):
-        self.assertIn("api.requestMissingInformation(item.merchandiseId, wizardState.deliverables)", self.source)
+        self.assertIn("productPatchFromPhotoDraft(photoDraftValues)", self.source)
 
 
 class IntakeScopeTests(unittest.TestCase):

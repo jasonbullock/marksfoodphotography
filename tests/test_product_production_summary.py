@@ -84,12 +84,14 @@ class ProductProductionSummaryTests(unittest.TestCase):
     def test_creative_force_status_is_reported_without_overwriting_planning_status(self):
         summary = _derive_product_production_summary(
             merchandise=[record(**{"Merch Status": "Received", "Planning Status": "Awaiting Photo Release"})],
-            workstreams=[record(**{C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release", "Creative Force Sync": '{"status": "In Production"}'})],
+            workstreams=[record(**{C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release", "Creative Force Sync": '{"status": "In Production", "stepName": "Photography", "stepReportedAt": "2026-09-18T12:00:00Z"}'})],
             thr3d=[],
         )
         self.assertEqual(summary["status"], "In Production")
         self.assertEqual(summary["workstreamStatuses"], ["Awaiting Photo Release"])
         self.assertEqual(summary["creativeForceStatuses"], ["In Production"])
+        self.assertEqual(summary["creativeForceSteps"], ["Photography"])
+        self.assertEqual(summary["creativeForceStepReportedAt"], "2026-09-18T12:00:00Z")
 
     def test_physical_issue_wins_over_production_summary(self):
         summary = _derive_product_production_summary(
@@ -152,7 +154,7 @@ class ProductProductionSummaryTests(unittest.TestCase):
         card = {
             "id": "recReadyCard",
             "fields": {
-                "Workstream Type": "Ecomm",
+                C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
                 C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Awaiting Photo Release",
             },
         }

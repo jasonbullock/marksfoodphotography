@@ -1,5 +1,60 @@
 # Product Decisions
 
+## 2026-09-21 - Planning View Controls Keep A Stable Anchor
+
+The Table / Board switcher is persistent Planning navigation, so it must occupy the same top-left control-row position in both views and during loading. Table summaries and Board feedback may use trailing row space, but view-specific content must not recenter or right-align the switcher. Table and Board filters should share control height, spacing, and surface treatment while their underlying data presentations remain distinct.
+
+## 2026-09-21 - Review Is The Route-Commit Checkpoint
+
+Saving commits Merchandise and Product data but never creates or activates route-specific work. Newly Received always saves into Review. `Move to Ready to Activate` performs final validation and creates separate Proposed Ecomm/Packaging Actions; those cards may then be activated individually or in compatible same-client, same-deliverable batches. THR3D route commitment creates the outbound shipping Action owned by Shipments and does not enter photo activation.
+
+## 2026-09-21 - Workspace View Switcher Belongs With Filters
+
+The Workspace Table / Board switcher should sit at the left edge of the active view controls instead of being centered in the page header. It is a view/filter control, so it belongs beside the table filters on Table and beside deliverable/group controls on Board. This does not change the saved user preference or URL query behavior.
+
+## 2026-09-21 - Source-Linked Products Can Be Refreshed In Context
+
+The Merchandise modal may refresh an already source-linked Product from its exact source
+row. The control appears only when the Product carries source-row metadata and uses the
+existing idempotent source activation path; it does not run the admin bulk sync or create
+an unrelated Product. Automatic source refresh remains client-configurable and defaults
+to five minutes for Topco.
+
+## 2026-09-21 - File Name Description Is Filename-Safe
+
+File Name Description is stored and displayed as a filename-safe token containing only
+ASCII letters, numbers, and underscores. Suggestions, imports, modal drafts, and Product
+writes remove apostrophes, convert punctuation and whitespace to underscores, and collapse
+repeated separators. For example, `Ice Cream Cones (Original, Chocolate, Strawberry)`
+becomes `Ice_Cream_Cones_Original_Chocolate_Strawberry` before downstream use.
+
+## 2026-09-21 - Chat Requests Use Live Values And Exclude Internal Checks
+
+`Ask in Chat` evaluates the Product draft currently visible in the Merchandise modal as
+well as saved Airtable values. It does not require Save Changes before recognizing a filled
+field. Outgoing requests contain only information the client can answer; Merchandise
+Verified, Deliverables, and Product Linked remain internal review checks and are never
+listed in the client message.
+
+## 2026-09-21 - Workspace Remembers Each User's View
+
+Workspace offers Table first and Board second. Table remains the fallback for a user with
+no saved choice. Selecting either view stores that preference for the signed-in user in
+browser storage, and a later plain `/workspace` visit restores it. Explicit `?view=table`
+or `?view=board` links remain authoritative and update the saved preference.
+
+## 2026-09-19 - Action is the canonical unit of intent and authorization
+
+The former Workstream Cards table evolves in place into Actions; Marks Photo must not maintain a permanent second child-work concept beside it. An Action is linked to Merchandise and has one type and one status. Initial types are Ecomm, Pack, THR3D, Replacement, and Not Needed. Status is exactly Proposed, Activated, Executing, Done, or Cancelled. Activation and reversal are action-level operations and write History.
+
+The Action record stays deliberately small: Merchandise, Action Type, Status, optional Quantity, Activated At, Activated By, External Reference, and Cancellation / Reversal Reason. Product and Request links are derived through Merchandise and are not duplicated on Action.
+
+Existing photo fields on the renamed table and existing THR3D Shipping Items remain temporary compatibility surfaces while Creative Force and Shipments integrations are moved onto Actions. They are not separate domain concepts. No new dashboard design or database platform migration is part of Phase 1.
+
+## 2026-09-19 - MediaBox begins as a Product reference
+
+The existing Airtable Products.Mbox Number field remains storage for the user-facing MediaBox Number. It is treated as a searchable, prominent reference and future API lookup key. Marks Photo will not add a MediaBox table until the API proves that MediaBox projects have independent identity, shared metadata, and relationships that Product cannot represent cleanly.
+
 ## 2026-08-19 - A Scan That Resolves To One Row Matches Itself
 
 A scanned UPC links merchandise on its own only when it is unambiguous: at least eight digits, resolving to exactly one candidate by whole-value equality. Prefix and substring hits never auto-link, because prefix matching is what makes the suggestion list ambiguous in the first place. Anything short, absent or ambiguous leaves the merchandise unmatched for a PM to resolve, and is reported as an ordinary outcome rather than an error so a receiver never sees a failure because a barcode did not resolve.
@@ -1986,3 +2041,302 @@ show its progress. A box with a single deliverable is unaffected.
 Separately: a card reaches Awaiting Photo Release during planning, before anyone releases
 it, so the release found it already in that column and skipped the write that stamps it -
 which is why the R badge never appeared. The stamp no longer depends on the card moving.
+
+
+## 2026-09-17 - Workspace is the high-volume merchandise control surface
+
+The primary high-volume editing surface is a top-level `Workspace` grid with one row per Merchandise arrival. It is a lens over the existing Merchandise, Product, Client configuration, and Planning records, not a new domain object or workflow.
+
+The grid's Product columns are derived dynamically from the selected photo deliverables and each client's existing photo-production requirements. It may edit fields on a linked Product inline, but matching, deliverable decisions, queue changes, and release remain in Planning under the Draft -> Commit contract. Missing information is a visual condition, not a new status.
+
+Before deliverables are selected, Workspace presents the union of that client's configured Packaging/Ecomm Product requirements. Once photo deliverables are selected, it scopes the row to those work types. THR3D-only merchandise shows no photo Product requirements, preserving its minimal Planning path.
+
+This preserves the product-led data model while giving studio operators a merchandise-first working view. Product source authority may continue to vary by client; the Workspace consumes the normalized Product record and does not become a second source configuration system.
+
+Workspace replaces Merchandise in primary navigation. The existing `/merchandise` inventory route remains a compatibility and direct-access surface; hiding its tab does not remove the Inventory perspective or alter Merchandise ownership.
+
+
+## 2026-09-17 - Admin access lives in the user menu
+
+Admin is utility access, not a primary operational workspace. It does not appear in desktop or mobile primary navigation. Users with admin authorization can open it from their user menu; users without admin authorization receive no Admin menu option. Workspace sits immediately before Planning and uses a distinct list icon so the two adjacent operational surfaces do not read as the same view.
+
+Workspace does not dedicate a second column to Product match state. Product Name is the matched Product identity: a green check denotes a link, while an unmatched row says `Not matched` in that cell. This keeps matching quiet and gives table width to actionable Product fields.
+
+## 2026-09-18 - Kroger begins as a focused workbook upload
+
+Kroger source data initially enters Marks Photo through the existing manual Product Import workflow. The source contract belongs to Kroger's Client `Product Import Profiles` setting so the same mapping can later back a synchronized provider without changing Product semantics or creating a second source configuration system.
+
+The initial Kroger contract reads worksheet `Master Tracker Sierra` with headers on row 3. It maps `MySGS Job Number`, `UPC`, `Product Description`, `On Hold/Live`, and `If on hold, reason` into Product fields and retains `Structure/Cap Color`, `Visible Product?`, and `Structure Status` as Product Reference Data. Sierra file-pull, photography, outlining, retouching, and delivery milestones are not imported into Products. Uploading source data does not write the workbook, create Merchandise, or bypass Planning's Draft -> Commit workflow. A future sync may replace the transport, but it must preserve this client-owned mapping and remain read-only until a separate writeback decision is approved.
+
+## 2026-09-18 - Non-admin operational views have one active Client
+
+Client access and active workspace scope are distinct. User assignments continue to define which Clients a person may enter. The signed session carries the one Client currently active for operational reads and writes. A one-Client non-admin is selected automatically; a multi-Client non-admin must choose one and cannot use an all-client view. Only Admin and Administrator roles may use `All Clients` or deliberately compare Clients at the same time.
+
+The backend enforces active scope through the same permission helpers used by record lists and mutations; the selector is not merely a frontend filter. The Client entitlement list is the exception because it must remain available to populate the chooser. Switching Client reloads the application to discard client-specific drafts and cached responses. Active selection is session state, not an Airtable User field, because it is navigation context rather than durable business data.
+
+Per-client source mappings and Product/photo requirements continue to determine the data shown inside that workspace. Whole-workflow availability, including whether a Client has any THR3D path, should become explicit Client configuration rather than being guessed from existing records or photo requirements. That capability setting is a follow-up decision and is not part of this session-state change.
+
+## 2026-09-18 - Roles are canonical application policy
+
+Role permissions are shared application policy, not browser preferences. Operational workspace access is stored as one row per role in Airtable `Role Policies`; checked-in defaults provide a safe fallback and initial seed. Admin > Roles is the editing surface. The removed browser-local permission store was both inconsistent and unsafe because its values differed by device.
+
+Admin and Administrator are the only administrative roles. Administration access is not editable through Role Policies. Navigation visibility, direct frontend routes, User management APIs, all-client access, Role Policy writes, and Developer Tools mutations must agree with that boundary. Non-admin users retain self-service profile and PIN editing through the dedicated current-user endpoint.
+
+## 2026-09-18 - Workspace spans the lifecycle without owning Production
+
+Workspace may show Planning and Production in one row for operational scanning, but the grouped headers preserve ownership. Planning fields and client-required Product data remain actionable there. Production remains a glance-only projection of Workstream Cards and Creative Force Sync, with detailed production work staying in Production.
+
+Released items belong in Workspace even though they no longer belong on the Planning board. The Workspace read therefore explicitly requests released Merchandise; the default review feed remains unreleased-only. Empty Production cells must communicate meaning: `Not released` for planned photo work that has not crossed the handoff, and `Not applicable` for work with no photo-production path.
+
+Workspace may invoke the one canonical `Release to Photo` handoff as a shortcut, but it does not make or bypass Planning decisions. The shortcut is available only after Planning has committed the workstream to `Awaiting Photo Release` and Required to Shoot is complete. It releases Ecomm and Packaging independently through the existing workstream-scoped endpoint, because releasing one must never silently release its sibling. Deliverable selection, matching, queue changes, and blocker resolution remain in Planning; detailed execution remains in Production and Creative Force.
+
+## 2026-09-18 - A matched Product owns the displayed Merchandise name
+
+The observed package name is receiving evidence, not the canonical identity of matched Merchandise. When Merchandise links to a Product, operational titles use the Product name. The observed name remains stored on Merchandise, searchable, and visible as `Received as` or `Name on package` where comparison or audit context matters. Matching never copies the Product name into the observed Merchandise field. Unmatched Merchandise falls back to its observed name and description. This is a presentation rule over the existing relationship, not a schema migration or ownership change.
+## 2026-09-18 - Workspace row grain follows work ownership
+
+Workspace is a cross-lifecycle operational index with explicit All, Planning, and Production views. Before photo child work exists, its row grain is Merchandise and the record appears in Planning. Once Ecomm or Packaging Workstream Cards exist, the parent Merchandise row leaves Planning and each Workstream Card becomes its own Production row. Merchandise with both production types therefore has two Production rows with independent status and Creative Force progress. All is the union of those mutually exclusive sets with section labels, not a flattened table that displays both parent and child records.
+
+This is a read-model and presentation decision only. It adds no workflow state or schema. THR3D remains an outbound shipment concern inside Shipments and never becomes a photo-production row.
+
+## 2026-09-18 - Brand Prefix is a filename token
+
+Brand Prefix on Product is the compact filename token, not the descriptive Client option label. Client configuration may pair the token with a readable brand name for selection, but imports, edits, production requirements, and downstream filename generation use the token. Legacy descriptive Product values are normalized at read time and on subsequent writes; no bulk data migration or new field is required.
+
+
+## 2026-09-19 - Expected means an active Request, not Product existence
+
+A Product is lightweight reference data. Its presence in Airtable or a client source sheet does not mean Walnut is actively waiting for the physical item. That operational intent is represented only by an optional Request.
+
+Request status is Waiting, Fulfilled, or Cancelled. Merchandise may fulfill a Request when it is matched after arrival. Merchandise itself begins at Received; its derived lifecycle is Received -> Review -> Activate -> Execute -> Done.
+
+The Issues object is retired. Physical damage and condition stay on Merchandise, review blockers are derived reasons, discussion stays in comments/history, and cancelled work is represented by Action status plus cancellation/reversal reason. The empty legacy Airtable table may be deleted manually after its Deprecated Issues - Delete rename.
+
+
+## 2026-09-19 - Deliverables are independently selectable
+
+Packaging, Ecomm, and THR3D are independent deliverable choices. Planning may select any one, any pair, or all three on the same Merchandise record. Ecomm and THR3D are no longer treated as mutually exclusive GS1 paths. Packaging plus THR3D retains quantity allocation because those paths may divide physical units; adding Ecomm does not alter that allocation.
+
+
+## 2026-09-19 - Lifecycle header communicates status, not field validation
+
+The Received -> Review -> Activate -> Execute -> Done header identifies the completed, current, and upcoming lifecycle stages. It does not summarize missing Creative Force fields. Missing requirements belong beside the Product Data, matching, or Deliverables control that resolves them; generic lifecycle badges such as `Missing CF Data` are too vague and may appear before a production deliverable is chosen.
+
+
+## 2026-09-19 - Review is the public name for the middle planning state
+
+The application uses `Review` consistently as the user-facing name for the Received -> Review -> Activate -> Execute -> Done lifecycle stage. The persisted Airtable `Planning Status` value `Needs More Information` remains a compatibility detail and is translated to `Review` at presentation boundaries until a deliberate data migration retires it.
+
+
+## 2026-09-19 - MediaBox is visible by default and required by Client configuration
+
+MediaBox Number is normal Product context and should remain visible in Merchandise Product Data even when it is not mandatory. Each Client may require it independently for Packaging and Ecomm through the existing Photo Production Requirements `requiredProductFields` configuration. Only a configured requirement may make a missing MediaBox Number block release.
+
+
+### 2026-09-19 - Workspace views and activation vocabulary
+
+Workspace is one operational surface with user-selectable Board and Table views. Board shows active Received and Reviewed work; Table provides the broader filterable record view. Activated work leaves the active Board but remains discoverable in Table and its downstream destination. Planning remains only a compatibility route and storage vocabulary, not a separate primary-navigation workspace.
+
+The canonical user-facing Merchandise milestones are Received, Reviewed, and Activated. Activation is official PM approval for execution. Photo deliverables route to Production; THR3D routes to Shipments / Outgoing. Review and activation may happen in one modal session when requirements are already satisfied. The activation email is optional and does not define activation. Packaging, Ecomm, and THR3D remain independently selectable.
+
+Existing Airtable Planning Status and Released fields remain compatibility storage in this phase; no schema migration was made.
+
+
+### 2026-09-19 - Activation history stays contextual
+
+Activation records remain durable audit and email-package records, but they are not a separate Board workflow. The global `Edit Activations` and `Activate Ready Items` controls are removed. Users activate from the merchandise context or a selected ready group; historical activation facts are surfaced through Merchandise History and the Workspace Table.
+
+
+### 2026-09-19 - Activation is initiated from individual Merchandise only
+
+The legacy Activation list editor and bulk ready-item selection workflow are removed completely. Users activate from the individual Merchandise review context. Historical Activation records remain durable audit/email-package data and are not deleted. This supersedes the earlier same-day decision that selected ready groups could still be activated together.
+
+### 2026-09-19 - Newly Received is a queue, not a lifecycle milestone
+
+`Newly Received` is the Workspace Board inbox for physically received Merchandise awaiting its first PM review. It is not a fourth lifecycle milestone and must not make the Merchandise modal show `Receive` as current. Merchandise opened from this queue shows `Received` complete and `Review` current. Matched items expose the full review form in that same modal so review and activation can be completed without a round trip.
+
+### 2026-09-19 - Product matching status belongs with Product Match
+
+The lifecycle header does not display a `Needs Product Match` badge. The Product Match section already shows `Unmatched` and provides the controls needed to resolve it, so repeating that state above the form adds noise without new information. Matching remains required before new Deliverables can be chosen.
+
+### 2026-09-19 - Airtable Product wins over its source-sheet candidate
+
+Product matching presents one candidate for one business Product. When a durable Airtable Product represents a source-sheet row, the picker shows the Airtable Product because it owns current editable data and suppresses the redundant source candidate. Identity is resolved by source-row snapshot, then UPC/ID, then exact normalized name only when both records lack an identifier. Source rows with no corresponding Product remain selectable.
+
+### 2026-09-19 - Active queues use command tense
+
+User-facing Workspace queues describe the work users are in or can act on, so they use command/present labels: `Received`, `Review`, and `Review · Ready to Activate`. Past-tense `Reviewed` is reserved for internal persisted lifecycle state or explicitly completed historical facts, not an active queue heading.
+
+### 2026-09-19 - Product selection seeds filename data before commit
+
+File Name Description is draft data as soon as a Product is selected. Existing Products use their saved value or suggestion; source-sheet candidates use the same server-owned suggestion rule before activation. Saving or refreshing is not required to see or edit the calculated value.
+
+### 2026-09-19 - Review completion does not imply activation authority
+
+`Save Changes` and `Activate` are distinct commands. Reviewers may save complete or incomplete review work; ready work remains in `Review · Ready to Activate`. Activation is the explicit authorization and downstream handoff, available only through the role-level `activate_merchandise` capability. Admin and Producer have the capability by default, and administrators may configure it for other existing roles. UI visibility and backend authorization enforce the same policy. THR3D Outgoing creation is an activation effect, not a save effect.
+
+### 2026-09-19 - An unavailable activation is not presented as an option
+
+`Activate` is hidden, rather than disabled, until the review satisfies every activation requirement. This keeps incomplete work unambiguously in Review while preserving `Save Changes` as the command for retaining progress.
+
+### 2026-09-21 - Activation is the Planning-to-Production boundary
+
+- Creating Ecomm or Packaging action rows during review does not put merchandise in Production.
+- Unreleased action rows remain in Planning and may appear as ready to activate.
+- Only released/activated action rows belong to Production and count in Production views.
+- This is a derived UI classification over existing release state; it does not add an Airtable status or field.
+
+### 2026-09-21 - THR3D execution remains a shipment view
+
+- Workspace may display THR3D Shipping Items for cross-functional visibility.
+- THR3D rows remain a distinct Shipments section and do not count as photo Production.
+- The existing THR3D Shipping Item status is the source of truth for `Not shipped` versus `Shipped`; Workspace does not add a parallel flag.
+- Mixed photo plus THR3D merchandise may have separate photo-action and shipping rows because those are independent execution paths.
+
+### 2026-09-21 - THR3D visibility uses shipment-specific presentation
+
+- Workspace presents THR3D in a separate shipment table rather than forcing shipping facts into photo Planning/Production columns.
+- Quantity comes from the THR3D Shipping Item; shipped date comes from its linked outbound Shipment.
+- The Dashboard `Ship to THR3D` KPI counts open shipping items, not physical units.
+- THR3D remains owned and executed in Shipments; Workspace and Dashboard provide visibility and navigation only.
+
+
+### 2026-09-21 - Workspace table preferences are user-local
+
+- Workspace is the high-use operational screen, so its photo-work and THR3D shipment columns may be shown or hidden independently.
+- Merchandise identity is always visible; supporting operational columns are optional.
+- Column visibility is stored per signed-in user in browser storage. It is a presentation preference and does not belong in Airtable.
+- Existing main-table column resizing remains independent from visibility preferences.
+
+
+### 2026-09-21 - THR3D outbound shipments default to FedEx
+
+- FedEx is the initial carrier for THR3D outbound shipping; users may select another configured carrier.
+- Shipping completion continues to use the outbound Shipment as the source of truth for the shipped date.
+- Completing Ship marks the THR3D Shipping Item `Shipped`; no parallel status or date field is introduced.
+
+
+### 2026-09-21 - Planning is the user-facing name for the PM workspace
+
+- The primary navigation label and page title are `Planning`.
+- `/workspace` remains the canonical route for compatibility with saved links and redirects.
+- Internal `workspace` names may remain where they describe a generic UI surface or stable implementation contract.
+- This vocabulary change does not create a new workspace, route, queue, or lifecycle state.
+
+
+### 2026-09-21 - THR3D physical location follows the quantity boundary
+
+- A full-quantity THR3D shipment updates the existing Merchandise to `Shipped` and links it to the existing active `Shipped to Thr3d` Location.
+- A partial THR3D shipment does not move the parent Merchandise location because the remaining quantity is still physically at Walnut.
+- The linked THR3D Shipping Item and outbound Shipment are the durable record of the shipped portion; the app does not create a duplicate Merchandise record.
+- Missing identifier, source-Shipment, and current-location values are omitted from outbound cards instead of being presented as operational warnings.
+
+
+### 2026-09-21 - THR3D is an exclusive Planning view
+
+- `All`, `Planning`, `Production`, and `THR3D` are mutually exclusive Planning table views.
+- THR3D remains shipment-owned data, but its Planning visibility behaves like the other record-type scopes rather than an independent overlay toggle.
+- Selecting THR3D displays only the THR3D shipment table; selecting another scope displays only the photo-work table.
+- This supersedes the earlier same-day decision that THR3D would toggle independently beneath the selected photo-work scope.
+
+
+### 2026-09-21 - Dashboard operational counts use Planning membership
+
+- The Dashboard top badges are `Newly Received Merch`, `Needs Review`, and `Awaiting Activation`.
+- Their counts must be derived from the canonical Planning item set and section routing, not from Product readiness or ad hoc status totals.
+- Parent Merchandise is not counted alongside its photo or THR3D child work; released photo cards are excluded from Planning counts.
+- The badges navigate to Planning. THR3D shipping remains visible through its dedicated dashboard and Shipments navigation outside this three-badge row.
+
+
+### 2026-09-21 - All combines photo work and THR3D visibility
+
+- `All` is the combined Planning table view and includes the main photo-work table plus the separate THR3D shipment table.
+- `Planning` and `Production` remain focused photo-work views; `THR3D` remains the shipment-only view.
+- Counts for `All` include the rows from both visible tables.
+- THR3D remains owned by Shipments; combining visibility in `All` does not merge its workflow or data model into photo production.
+- This supersedes the earlier same-day decision that every Planning scope, including `All`, was mutually exclusive.
+
+
+### 2026-09-21 - Creative Force fields are post-activation facts
+
+- Creative Force Status and Current Step are blank for photo work that has not been activated.
+- Pre-activation progress belongs in Planning Status, including `Awaiting Activation`.
+- Creative Force values appear only after activation has created or updated executable photo work.
+- THR3D shipping status remains independent and continues to appear in its shipping table.
+
+### 2026-09-21 - MediaBox table visibility is independent from readiness
+
+Decision: MediaBox Number is available as an optional Planning table column and is off by default. Showing or hiding the column is a per-user presentation preference only. Whether MediaBox blocks activation remains controlled by the client photo requirements.
+
+### 2026-09-21 - Planning, Production, and THR3D use independent table configurations
+
+- Planning table view has three independently rendered tables: Planning, Production, and Ship to THR3D.
+- `All` stacks the three tables; each named scope shows only its own table.
+- Column visibility and widths are saved per user and per table, so changing one table does not alter another.
+- Creative Force Status and Current Step belong only to Production; Planning does not display or configure them.
+- All three tables use the same direct section title/count and column-header presentation.
+- This is a presentation and preference decision only; it does not add lifecycle states, duplicate THR3D ownership, or change Airtable schema.
+
+
+### 2026-09-21 - Table column order is a user-local preference
+
+- Planning, Production, and THR3D columns can be reordered independently by dragging their entries in the Columns menu.
+- Visibility and order are stored per signed-in user in browser storage and do not belong in Airtable.
+- Planning defaults to review data with MediaBox Number off. Production defaults to operational and Creative Force data, including Current Step Date, while CVID, WKFT #, Brand Prefix, and File Name Description start off.
+- Current Step Date is derived from the existing Creative Force step reported timestamp; no new domain or Airtable field is introduced.
+
+
+### 2026-09-21 - MP Number remains a Merchandise reference
+
+- MP Number in Planning and Production displays the existing Merchandise Marks Number; it is not Product data.
+- The optional column is off by default and is independently configurable per table and user.
+- The column is read-only because Airtable continues to mint the underlying sequence.
+
+
+### 2026-09-21 - Planning board grouping is an exclusive presentation choice
+
+- Planning cards can be grouped by their received Shipment, by the matched Product's MediaBox Number, or shown without grouping.
+- The three modes are mutually exclusive; Shipment grouping is the default.
+- Products without a MediaBox Number remain visible in an explicit `No MediaBox #` group.
+- Grouping changes presentation only and does not create records, alter readiness, or add workflow state.
+
+
+### 2026-09-21 - Saving and activating are distinct Planning commands
+
+- `Save Changes` persists editable Product details and does not activate work.
+- Complete, unreleased cards in Awaiting Activation expose `Activate` beside `Save Changes` for users with activation permission.
+- `Activate` saves pending edits before opening the activation package.
+- Incomplete, unauthorized, and already activated cards do not expose the activation command.
+
+
+### 2026-09-21 - THR3D quantity allocation is not Packaging-specific
+
+- Selecting THR3D with any Walnut-retained photo deliverable (Ecomm, Packaging, or both) requires one shared quantity split.
+- `THR3D ships` is the quantity assigned to the outbound THR3D action; `Walnut keeps` is the remainder assigned to each selected photo action.
+- The split is merchandise allocation, not a separate workflow state or THR3D-specific Merchandise record.
+
+### 2026-09-21 - Required photo data is route-aware
+
+- Merchandise with no selected deliverable has no applicable photo-production requirements yet.
+- Selecting Ecomm or Packaging applies that route's client-configured Product requirements.
+- THR3D-only merchandise does not inherit Ecomm or Packaging requirements.
+- Planning tables must show neutral values until a photo route is chosen, rather than predicting requirements from every configured route.
+
+### 2026-09-21 - Complete saves can skip the intermediate Review placement
+
+- A complete save from Newly Received routes its proposed photo deliverable cards directly to Awaiting Activation and closes the draft modal after refresh.
+- This is a Planning placement change only. It does not activate work, create a Creative Force job, or send an activation email.
+- Incomplete saves remain in Review, and `Activate` remains a separate permission-controlled command.
+
+### 2026-09-21 - Existing deliverables follow complete Review saves
+
+- When proposed Ecomm or Packaging cards already exist, a complete Review save promotes all photo deliverables for that merchandise together to Awaiting Activation.
+- Saving remains distinct from activation and does not send an activation email.
+
+
+### 2026-09-21 - Activation packages are merchandise-led
+
+- Activation opened from Planning must start with the selected Merchandise already linked and preload current linked Product data.
+- Project name is optional; merchandise description provides the internal fallback when no project name is entered.
+- MediaBox # is optional activation context and appears when present without becoming a new requirement or schema field.
+- The global `All Clients` filter is presentation state and must never be treated as a client identifier.

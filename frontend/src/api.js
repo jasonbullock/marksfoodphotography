@@ -184,7 +184,7 @@ export const api = {
 
   createActivation: async (payload = {}) => backend('POST', '/activations', payload),
   updateActivation: async (id, payload = {}) => backend('PATCH', `/activations/${id}`, payload),
-  moveActivationToPhoto: async (id) => backend('POST', `/activations/${id}/move-to-photo`),
+  moveActivationToPhoto: async (id, payload = {}) => backend('POST', `/activations/${id}/move-to-photo`, payload),
 
   listSkus: async () => backend('GET', '/items'),
 
@@ -276,7 +276,7 @@ api.updatePrinter = async (id, payload) => backend('PATCH', `/printers/${id}`, p
 api.selectPrinter = async id => backend('POST', `/printers/${id}/select`);
 api.testPrinter = async id => backend('POST', `/printers/${id}/test`);
 api.printMerchandiseTag = async (entryId, payload = {}) => backend('POST', `/merchandise/${entryId}/tag`, payload);
-api.requestMissingInformation = async (entryId, deliverables = []) => backend('POST', `/merchandise/${entryId}/request-info`, { deliverables });
+api.requestMissingInformation = async (entryId, deliverables = [], productDraft = {}) => backend('POST', `/merchandise/${entryId}/request-info`, { deliverables, productDraft });
 api.listCreativeForceProduction = async ({ refresh = false } = {}) => backend('GET', `/production/creative-force${refresh ? '?refresh=1' : ''}`);
 api.updateReceivingSession = async (id, payload) => backend('PATCH', `/receiving/${id}`, payload);
 api.deleteReceivingSession = async (id) => backend('DELETE', `/shipments/${id}`);
@@ -302,7 +302,7 @@ api.uploadShipmentPhotos = async (shipmentId, files) => {
 api.deleteShipmentPhoto = async (shipmentId, photoId) => backend('DELETE', `/shipments/${shipmentId}/photos/${photoId}`);
 api.listMerchandise = async () => backend('GET', '/merchandise');
 api.listVerificationEntries = async () => backend('GET', '/verification/entries');
-api.listMerchandiseReviewEntries = async () => backend('GET', '/merchandise/review');
+api.listMerchandiseReviewEntries = async ({ includeReleased = false } = {}) => backend('GET', `/merchandise/review${includeReleased ? '?includeReleased=1' : ''}`);
 api.listCommentReads = async () => backend('GET', '/comment-reads');
 api.markCommentRead = async id => backend('POST', `/comment-reads/${id}`);
 api.listWorkstreamCards = async () => backend('GET', '/workstream-cards');
@@ -315,6 +315,11 @@ api.previewCreativeForceProductFeed = async () => backend('GET', '/integrations/
 api.getCreativeForceWebhookDiagnostics = async () => backend('GET', '/integrations/creative-force/webhook/diagnostics');
 api.listThr3dShippingItems = async () => backend('GET', '/thr3d-shipping-items');
 api.shipThr3dShippingItem = async (id, payload) => backend('POST', `/thr3d-shipping-items/${id}/ship`, payload);
+api.listActions = async () => backend('GET', '/actions');
+api.updateAction = async (id, payload) => backend('PATCH', `/actions/${id}`, payload);
+api.listRequests = async () => backend('GET', '/requests');
+api.createRequest = async payload => backend('POST', '/requests', payload);
+api.updateRequest = async (id, payload) => backend('PATCH', `/requests/${id}`, payload);
 api.searchVerificationItems = async ({ q, clientId, includeItemId } = {}) => {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
@@ -346,14 +351,16 @@ api.listMerchandiseHistory = async (entryId) => backend('GET', `/merchandise/${e
 api.createMerchandiseComment = async (entryId, comment) => backend('POST', `/merchandise/${entryId}/comments`, { comment });
 api.releaseMerchandiseToProduction = async (entryId, workstreamType = '') => backend('POST', `/merchandise/${entryId}/release`, workstreamType ? { workstreamType } : {});
 api.markMerchandiseWaitingForProductData = async (entryId, payload = {}) => backend('POST', `/merchandise/review/${entryId}/waiting-product-data`, payload);
-api.createMerchandiseReviewIssue = async (entryId, payload = {}) => backend('POST', `/merchandise/review/${entryId}/issue`, payload);
 api.listLocations = async () => backend('GET', '/locations');
 
 api.listUsers = async () => backend('GET', '/users');
+api.listRolePolicies = async () => backend('GET', '/role-policies');
+api.updateRolePolicy = async (role, data) => backend('PUT', `/role-policies/${encodeURIComponent(role)}`, data);
 api.listLoginUsers = async () => backend('GET', '/auth/users');
 api.loginUser = async (userId, pin) => backend('POST', '/auth/login', { userId, pin });
 api.currentUser = async () => backend('GET', '/auth/me');
 api.updateCurrentUser = async (data) => backend('PUT', '/auth/me', data);
+api.setActiveClient = async (clientId) => backend('PUT', '/auth/active-client', { clientId });
 api.logoutUser = async () => backend('POST', '/auth/logout');
 api.createUser = async (data) => backend('POST', '/users', data);
 api.updateUser = async (id, data) => backend('PUT', `/users/${id}`, data);
@@ -388,11 +395,12 @@ api.intakeListClients = async () => {
 
 api.intakeMappingTargets = async () => backend('GET', '/intake/mapping-targets');
 
-api.previewSpreadsheet = async ({ clientId, file, headerRow = '' }) => {
+api.previewSpreadsheet = async ({ clientId, file, headerRow = '', sheetName = '' }) => {
   const form = new FormData();
   form.append('clientId', clientId);
   form.append('file', file);
   if (headerRow) form.append('headerRow', headerRow);
+  if (sheetName) form.append('sheetName', sheetName);
   try {
     return await backend('POST', '/intake/preview', form);
   } catch (e) {

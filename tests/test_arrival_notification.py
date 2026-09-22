@@ -42,7 +42,7 @@ class ArrivalCardTests(unittest.TestCase):
         self.assertIn("Sauerkraut 14.5oz", text)
         urls = [action["url"] for action in card["actions"]]
         # Each item links at its own card, so the shipment record is not offered.
-        self.assertEqual(urls, ["https://marks.example/planning"])
+        self.assertEqual(urls, ["https://marks.example/workspace?view=board"])
 
     def test_a_long_shipment_is_summarised_rather_than_dumped(self):
         items = [f"1 x Item {index}" for index in range(20)]
@@ -175,8 +175,8 @@ class ArrivalDeepLinkTests(unittest.TestCase):
             items=[("1 x Raisin Bran", "recMerchA"), ("5 x Toasted Oats", "recMerchB")],
         )["attachments"][0]["content"]
         text = str(card)
-        self.assertIn("[1 x Raisin Bran](https://marks.example/planning?item=recMerchA)", text)
-        self.assertIn("[5 x Toasted Oats](https://marks.example/planning?item=recMerchB)", text)
+        self.assertIn("[1 x Raisin Bran](https://marks.example/workspace?view=board&item=recMerchA)", text)
+        self.assertIn("[5 x Toasted Oats](https://marks.example/workspace?view=board&item=recMerchB)", text)
 
     def test_a_plain_item_still_renders_without_a_link(self):
         notifier.C.APP_BASE_URL = ""

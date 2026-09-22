@@ -145,7 +145,7 @@ class ProductSchemaTests(unittest.TestCase):
         })
 
         self.assertEqual(fields[C.Config.F_ITEM_JOB_NUMBER], "000-ABC")
-        self.assertEqual(fields[C.Config.F_ITEM_FILE_NAME_DESCRIPTION], "Organic whole milk")
+        self.assertEqual(fields[C.Config.F_ITEM_FILE_NAME_DESCRIPTION], "Organic_whole_milk")
         self.assertEqual(fields[C.Config.F_ITEM_MASTER_VARIANT], "Master")
         self.assertEqual(fields[C.Config.F_ITEM_PICKUP_JOB_NUMBER], "PICK-123")
 

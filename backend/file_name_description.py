@@ -57,6 +57,15 @@ def sanitise(value):
     return text
 
 
+def normalize(value):
+    """Return the description as the filename segment used downstream."""
+    text = sanitise(value)
+    # Apostrophes belong inside words; other punctuation separates words.
+    text = re.sub(r"['`]", "", text)
+    text = re.sub(r"[^A-Za-z0-9]+", "_", text)
+    return re.sub(r"_+", "_", text).strip("_")
+
+
 def _brand_tokens(brands):
     """Every word a brand might appear as in a product name.
 
@@ -113,7 +122,7 @@ def suggest(product_name, brands=(), keep_size=False):
             continue
         kept.append(word)
 
-    return sanitise(" ".join(kept))
+    return normalize(" ".join(kept))
 
 
 # ── Naming ──────────────────────────────────────────────────────────────────

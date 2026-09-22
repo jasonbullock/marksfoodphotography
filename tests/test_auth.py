@@ -39,6 +39,7 @@ def user_record(user_id="recUser", role="Producer", active=True, all_clients=Fal
 
 def shaped_session_user(record):
     fields = record["fields"]
+    client_ids = fields.get(C.F_USER_CLIENTS, []) or []
     return {
         "id": record["id"],
         "name": fields.get(C.F_USER_NAME, ""),
@@ -48,8 +49,9 @@ def shaped_session_user(record):
         "email": fields.get(C.F_USER_EMAIL, ""),
         "role": fields.get(C.F_USER_ROLE, ""),
         "active": fields.get(C.F_USER_ACTIVE, False),
-        "clientIds": fields.get(C.F_USER_CLIENTS, []) or [],
+        "clientIds": client_ids,
         "allClients": fields.get(C.F_USER_ALL_CLIENTS, False),
+        "activeClientId": client_ids[0] if len(client_ids) == 1 else "",
         "avatar": fields.get(C.F_USER_AVATAR, ""),
         "hasPIN": bool(fields.get(C.F_USER_PIN_HASH, "")),
     }
@@ -201,7 +203,16 @@ class AuthTests(unittest.TestCase):
         self.assertNotIn(C.LOCATIONS_TABLE, deleted_tables)
 
     @patch("routes.airtable.list_records")
-    def test_non_admin_user_can_access_non_admin_users(self, list_records):
+    def test_non_admin_cannot_run_developer_reset(self, list_records):
+        self.authenticate(user_record(role="Producer", client_ids=["recClient"]))
+
+        response = self.client.post("/api/dev/clear-core-tables")
+
+        self.assertEqual(response.status_code, 403)
+        list_records.assert_not_called()
+
+    @patch("routes.airtable.list_records")
+    def test_non_admin_user_cannot_access_users(self, list_records):
         self.authenticate(user_record(role="Producer"))
         list_records.return_value = {"records": [
             user_record(user_id="recAdmin", role="Admin"),
@@ -210,9 +221,8 @@ class AuthTests(unittest.TestCase):
 
         response = self.client.get("/api/users")
 
-        self.assertEqual(response.status_code, 200)
-        roles = [record["role"] for record in response.get_json()["records"]]
-        self.assertEqual(roles, ["Merch"])
+        self.assertEqual(response.status_code, 403)
+        list_records.assert_not_called()
 
     @patch("routes.airtable.get_record")
     @patch("routes.airtable.update_record")
@@ -264,6 +274,77 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["records"][0]["role"], "Admin")
 
+    @patch("routes.airtable.list_records")
+    def test_authenticated_user_can_read_shared_role_policies(self, list_records):
+        self.authenticate(user_record(role="Producer", client_ids=["recClient"]))
+        list_records.return_value = {"records": [{
+            "id": "recProducerPolicy",
+            "fields": {
+                C.F_ROLE_POLICY_ROLE: "Producer",
+                C.F_ROLE_POLICY_PATHS: json.dumps(["/dashboard", "/workspace"]),
+            },
+        }]}
+
+        response = self.client.get("/api/role-policies")
+
+        self.assertEqual(response.status_code, 200)
+        producer = next(policy for policy in response.get_json()["records"] if policy["role"] == "Producer")
+        self.assertEqual(producer["paths"], ["/dashboard", "/workspace"])
+
+    @patch("routes.airtable.list_records")
+    @patch("routes.airtable.update_record")
+    def test_admin_can_update_shared_role_policy(self, update_record, list_records):
+        self.authenticate(user_record(role="Admin", all_clients=True))
+        list_records.return_value = {"records": [{
+            "id": "recProducerPolicy",
+            "fields": {C.F_ROLE_POLICY_ROLE: "Producer"},
+        }]}
+        update_record.return_value = {
+            "id": "recProducerPolicy",
+            "fields": {
+                C.F_ROLE_POLICY_ROLE: "Producer",
+                C.F_ROLE_POLICY_PATHS: json.dumps({
+                    "paths": ["/dashboard", "/planning"],
+                    "capabilities": [],
+                }),
+            },
+        }
+
+        response = self.client.put("/api/role-policies/Producer", json={
+            "paths": ["/dashboard", "/planning", "/not-real"],
+            "capabilities": [],
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["policy"]["paths"], ["/dashboard", "/planning"])
+        self.assertEqual(response.get_json()["policy"]["capabilities"], [])
+        saved_policy = json.loads(update_record.call_args.args[2][C.F_ROLE_POLICY_PATHS])
+        self.assertEqual(saved_policy, {
+            "paths": ["/dashboard", "/planning"],
+            "capabilities": [],
+        })
+
+    @patch("routes.airtable.get_record")
+    @patch("routes.airtable.list_records")
+    def test_user_without_activation_capability_cannot_activate(self, list_records, get_record):
+        self.authenticate(user_record(role="User", client_ids=["recTopco"]))
+        list_records.return_value = {"records": []}
+
+        response = self.client.post("/api/activations/recActivation/move-to-photo")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["error"], "Activation permission required")
+        get_record.assert_not_called()
+
+    @patch("routes.airtable.list_records")
+    def test_non_admin_cannot_update_shared_role_policy(self, list_records):
+        self.authenticate(user_record(role="Producer", client_ids=["recClient"]))
+
+        response = self.client.put("/api/role-policies/Producer", json={"paths": ["/dashboard"]})
+
+        self.assertEqual(response.status_code, 403)
+        list_records.assert_not_called()
+
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.create_record")
     def test_admin_user_can_create_user_with_typecast_role(self, create_record, update_record):
@@ -288,7 +369,7 @@ class AuthTests(unittest.TestCase):
 
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.create_record")
-    def test_non_admin_user_can_create_non_admin_user(self, create_record, update_record):
+    def test_non_admin_user_cannot_create_non_admin_user(self, create_record, update_record):
         self.authenticate(user_record(role="Producer"))
         create_record.return_value = user_record(user_id="recNew", role="Viewer", pin="")
         update_record.return_value = user_record(user_id="recNew", role="Viewer", pin="1234")
@@ -304,8 +385,9 @@ class AuthTests(unittest.TestCase):
             "clientIds": [],
         })
 
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.get_json()["user"]["role"], "Viewer")
+        self.assertEqual(response.status_code, 403)
+        create_record.assert_not_called()
+        update_record.assert_not_called()
 
     @patch("routes.airtable.create_record")
     def test_non_admin_user_cannot_create_admin_user(self, create_record):
@@ -341,7 +423,7 @@ class AuthTests(unittest.TestCase):
 
     @patch("routes.airtable.get_record")
     @patch("routes.airtable.update_record")
-    def test_non_admin_user_can_update_non_admin_user(self, update_record, get_record):
+    def test_non_admin_user_cannot_update_non_admin_user(self, update_record, get_record):
         self.authenticate(user_record(role="Producer"))
         get_record.return_value = user_record(user_id="recExisting", role="Viewer")
         update_record.return_value = user_record(user_id="recExisting", role="User")
@@ -353,8 +435,9 @@ class AuthTests(unittest.TestCase):
             "clientIds": [],
         })
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["user"]["role"], "User")
+        self.assertEqual(response.status_code, 403)
+        get_record.assert_not_called()
+        update_record.assert_not_called()
 
     @patch("routes.airtable.get_record")
     @patch("routes.airtable.update_record")
@@ -388,6 +471,76 @@ class AuthTests(unittest.TestCase):
         self.assertEqual([record["id"] for record in response.get_json()["records"]], ["recAllowed"])
 
     @patch("routes.airtable.list_records")
+    def test_multi_client_user_can_list_assignments_before_selecting_client(self, list_records):
+        self.authenticate(user_record(all_clients=False, client_ids=["recOne", "recTwo"]))
+        list_records.return_value = {"records": [
+            {"id": "recOne", "fields": {C.F_CLIENT_NAME: "One", C.F_CLIENT_ACTIVE: True}},
+            {"id": "recTwo", "fields": {C.F_CLIENT_NAME: "Two", C.F_CLIENT_ACTIVE: True}},
+            {"id": "recOther", "fields": {C.F_CLIENT_NAME: "Other", C.F_CLIENT_ACTIVE: True}},
+        ]}
+
+        response = self.client.get("/api/clients")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([record["id"] for record in response.get_json()["records"]], ["recOne", "recTwo"])
+
+    @patch("routes.airtable.get_record")
+    def test_multi_client_user_can_select_an_assigned_active_client(self, get_record):
+        self.authenticate(user_record(all_clients=False, client_ids=["recOne", "recTwo"]))
+        get_record.return_value = {
+            "id": "recTwo",
+            "fields": {C.F_CLIENT_NAME: "Two", C.F_CLIENT_ACTIVE: True},
+        }
+
+        response = self.client.put("/api/auth/active-client", json={"clientId": "recTwo"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["user"]["activeClientId"], "recTwo")
+
+    @patch("routes.airtable.get_record")
+    def test_multi_client_user_cannot_select_an_unassigned_client(self, get_record):
+        self.authenticate(user_record(all_clients=False, client_ids=["recOne", "recTwo"]))
+
+        response = self.client.put("/api/auth/active-client", json={"clientId": "recOther"})
+
+        self.assertEqual(response.status_code, 403)
+        get_record.assert_not_called()
+
+    def test_non_admin_cannot_clear_active_client(self):
+        self.authenticate(user_record(all_clients=False, client_ids=["recOne"]))
+
+        response = self.client.put("/api/auth/active-client", json={"clientId": ""})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_admin_can_return_to_all_clients(self):
+        self.authenticate(user_record(role="Admin", all_clients=True))
+        with self.client.session_transaction() as session:
+            session[AUTH_SESSION_KEY]["activeClientId"] = "recOne"
+
+        response = self.client.put("/api/auth/active-client", json={"clientId": ""})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["user"]["activeClientId"], "")
+
+    @patch("routes.airtable.get_record")
+    def test_active_client_blocks_updates_to_another_assigned_client(self, get_record):
+        self.authenticate(user_record(all_clients=False, client_ids=["recOne", "recTwo"]))
+        with self.client.session_transaction() as session:
+            session[AUTH_SESSION_KEY]["activeClientId"] = "recOne"
+        get_record.return_value = {
+            "id": "recProduct",
+            "fields": {
+                C.F_ITEM_NAME: "Other client product",
+                C.F_ITEM_CLIENT: ["recTwo"],
+            },
+        }
+
+        response = self.client.patch("/api/products/recProduct", json={"productName": "Changed"})
+
+        self.assertEqual(response.status_code, 403)
+
+    @patch("routes.airtable.list_records")
     def test_admin_can_request_all_clients_for_user_assignment(self, list_records):
         self.authenticate(user_record(role="Admin", all_clients=False, client_ids=["recAllowed"]))
         list_records.return_value = {
@@ -401,6 +554,18 @@ class AuthTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual([record["id"] for record in response.get_json()["records"]], ["recAllowed", "recOther"])
+
+    @patch("routes.airtable.list_records")
+    def test_non_admin_cannot_request_all_clients(self, list_records):
+        self.authenticate(user_record(role="Producer", client_ids=["recAllowed"]))
+        list_records.return_value = {"records": [
+            {"id": "recAllowed", "fields": {C.F_CLIENT_NAME: "Allowed Client"}},
+            {"id": "recOther", "fields": {C.F_CLIENT_NAME: "Other Client"}},
+        ]}
+
+        response = self.client.get("/api/clients?all=1")
+
+        self.assertEqual(response.status_code, 403)
 
     @patch("routes.airtable.list_records")
     def test_topco_client_includes_activation_readiness_profile(self, list_records):
@@ -955,7 +1120,7 @@ class AuthTests(unittest.TestCase):
 
     @patch("routes.airtable.list_records")
     def test_list_activations_filters_by_client_access(self, list_records):
-        self.authenticate(user_record(role="PM", all_clients=False, client_ids=["recTopco"]))
+        self.authenticate(user_record(role="Producer", all_clients=False, client_ids=["recTopco"]))
         list_records.return_value = {
             "records": [
                 {"id": "recActivation1", "fields": {C.F_ACTIVATION_NAME: "Topco Melons", C.F_ACTIVATION_CLIENT: ["recTopco"]}},
@@ -972,7 +1137,7 @@ class AuthTests(unittest.TestCase):
 
     @patch("routes.airtable.create_record")
     def test_create_activation_writes_topco_activation_fields(self, create_record):
-        self.authenticate(user_record(role="PM", all_clients=False, client_ids=["recTopco"]))
+        self.authenticate(user_record(role="Producer", all_clients=False, client_ids=["recTopco"]))
         create_record.return_value = {
             "id": "recActivation",
             "fields": {
@@ -1018,7 +1183,7 @@ class AuthTests(unittest.TestCase):
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
     def test_update_activation_edits_activation_package(self, get_record, update_record):
-        self.authenticate(user_record(role="PM", all_clients=False, client_ids=["recTopco"]))
+        self.authenticate(user_record(role="Producer", all_clients=False, client_ids=["recTopco"]))
         get_record.return_value = {
             "id": "recActivation",
             "fields": {
@@ -1059,7 +1224,7 @@ class AuthTests(unittest.TestCase):
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
     def test_update_activation_removed_ready_merchandise_returns_to_waiting_activation(self, get_record, update_record):
-        self.authenticate(user_record(role="PM", all_clients=False, client_ids=["recTopco"]))
+        self.authenticate(user_record(role="Producer", all_clients=False, client_ids=["recTopco"]))
         existing_activation = {
             "id": "recActivation",
             "fields": {
@@ -1123,7 +1288,7 @@ class AuthTests(unittest.TestCase):
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
     def test_move_activation_to_photo_moves_linked_merchandise(self, get_record, update_record, populate_feed, list_all_records):
-        self.authenticate(user_record(role="PM", all_clients=False, client_ids=["recTopco"]))
+        self.authenticate(user_record(role="Producer", all_clients=False, client_ids=["recTopco"]))
         activation = {
             "id": "recActivation",
             "fields": {
@@ -1180,7 +1345,7 @@ class AuthTests(unittest.TestCase):
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
     def test_scoped_ecomm_release_does_not_release_packaging_sibling(self, get_record, update_record, populate_feed, list_all_records):
-        self.authenticate(user_record(role="PM", all_clients=False, client_ids=["recTopco"]))
+        self.authenticate(user_record(role="Producer", all_clients=False, client_ids=["recTopco"]))
         activation = {
             "id": "recActivation",
             "fields": {
@@ -1268,7 +1433,7 @@ class AuthTests(unittest.TestCase):
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
     def test_move_activation_to_photo_projects_already_ready_workstream(self, get_record, update_record, populate_feed, list_all_records):
-        self.authenticate(user_record(role="PM", all_clients=False, client_ids=["recTopco"]))
+        self.authenticate(user_record(role="Producer", all_clients=False, client_ids=["recTopco"]))
         activation = {
             "id": "recActivation",
             "fields": {

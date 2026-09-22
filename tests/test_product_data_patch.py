@@ -42,5 +42,18 @@ class ProductDataPatchTests(unittest.TestCase):
             self.assertTrue(fields, f"{key} is patched by the editor but dropped here")
 
 
+    def test_mediabox_can_be_a_client_required_product_field(self):
+        client = {"photoProductionRequirements": {"workstreams": {
+            "Packaging": {"requiredProductFields": ["mboxNumber"]},
+        }}}
+
+        missing = routes._photo_production_status("Packaging", {"mboxNumber": ""}, client)
+        complete = routes._photo_production_status("Packaging", {"mboxNumber": "MB-123"}, client)
+
+        self.assertEqual(missing["productData"]["missing"], ["MediaBox Number"])
+        self.assertFalse(missing["productData"]["ready"])
+        self.assertTrue(complete["productData"]["ready"])
+
+
 if __name__ == "__main__":
     unittest.main()

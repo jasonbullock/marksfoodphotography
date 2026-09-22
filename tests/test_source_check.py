@@ -241,6 +241,7 @@ class SourceCheckTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["sourceData"]["Product Name"], "Lookup Item")
         self.assertEqual(records[0]["matchBasis"], "UPC + Product Name")
+        self.assertEqual(records[0]["fileNameDescriptionSuggestion"], "Lookup_Item")
         create_record.assert_not_called()
         update_record.assert_not_called()
 

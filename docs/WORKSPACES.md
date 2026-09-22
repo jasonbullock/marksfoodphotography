@@ -1,5 +1,7 @@
 # Workspaces
 
+The canonical operational objects are Product, Shipment, Merchandise, optional Request, and Action. Older references in this document to Workstream Cards or THR3D Shipping Items describe compatibility storage during the Phase 1 migration; both represent Actions in the approved domain model.
+
 Workspace means business question.
 
 A workspace exists when the business needs a distinct operational perspective. Views inside a workspace can change often; workspaces should change rarely.
@@ -119,7 +121,7 @@ Warehouse visibility.
 
 Inventory is a warehouse perspective over merchandise. It answers what is here, where it is, how old it is, and what broad operational condition it appears to be in.
 
-Merchandise `Merch Status` is physical state only: `Received`, `Issue`, `Ready to Ship`, `Shipped`, or `Disposed`. Product information being imported or linked does not change this physical status.
+Merchandise `Merch Status` is physical state only: `Received`, `Ready to Ship`, `Shipped`, or `Disposed`. Damage or other physical observations belong in Merchandise condition/notes, not a separate Issue record. Product information being imported or linked does not change this physical status.
 
 Inventory is not the PM decision workspace. It should not become a review board or production workflow.
 
@@ -143,9 +145,9 @@ Business Question:
 
 Purpose:
 
-Resolve uncertainty and prepare work for the final photo release handoff.
+Resolve uncertainty, review Merchandise, and activate approved work.
 
-The primary Planning board is a freeform PM workspace organized by Queue, not an automatic workflow engine.
+The Planning Board view is a freeform PM workspace organized by Queue, not an automatic workflow engine.
 
 Queue answers:
 
@@ -193,14 +195,17 @@ New Merch intake remains the PM path for exceptions and unclear arrivals:
 1. Confirm Received Merch identity
 2. Match Expected Product when possible
 3. Capture manual product information when no Expected Product exists
-4. Assign Ecomm, Packaging, or THR3D
-5. Confirm & Assign
+4. Choose Ecomm, Packaging, or THR3D
+5. Save Merchandise data into Review
+6. Move complete route choices to Ready to Activate
 
-`Confirm & Assign` removes the original Received Merch from New Merch and creates child work: an Ecomm workstream card, a Packaging workstream card, and/or a THR3D shipping item. Ecomm and THR3D are mutually exclusive GS1 paths. Packaging can pair with either.
+`Save Changes` commits Merchandise and Product data only. From Newly Received it always moves the parent Merchandise into Review, even when every requirement is complete. In Review it leaves the parent in Review. It does not create route-specific child Actions and never activates work.
+
+`Move to Ready to Activate` is the explicit route-commit checkpoint. It performs final validation, then removes the parent Merchandise card and creates separate Proposed Ecomm and/or Packaging cards in Ready to Activate. A committed THR3D route creates its shipping item for Shipments/Outgoing instead of a photo activation card. Packaging, Ecomm, and THR3D remain independent Deliverables; any one, any pair, or all three may be selected where client rules allow.
 
 Planning uses a Draft -> Commit interaction model. The board remains the last committed state of the business, and the modal is a safe draft workspace. Selecting `Thr3d`, `Packaging`, `Ecomm`, or any future Deliverable updates only the modal's draft calculation and footer preview. It must not move a card, refresh board columns, change badges, or reroute the Merchandise behind the modal.
 
-The modal footer is the single commit area. It previews the destination with `Will move to ...`, and `Finish & Move` is the only action that saves draft routing changes, updates `Deliverables`, updates `Intake Status`, refreshes the board, and allows the card to move. Closing or canceling the modal discards uncommitted draft changes and leaves the board exactly as it was. While the modal is active, the background board should behave as a static backdrop with drag/drop, hover actions, and background card clicks frozen.
+The modal footer is the single commit area. `Save Changes` commits data without committing routes. `Move to Ready to Activate` is the only command that commits routing changes and creates child Actions. Closing or canceling the modal discards uncommitted draft changes and leaves the board exactly as it was. While the modal is active, the background board should behave as a static backdrop with drag/drop, hover actions, and background card clicks frozen.
 
 Planning decisions should produce one clear answer:
 
@@ -208,9 +213,9 @@ Planning decisions should produce one clear answer:
 
 If not, Planning should explain what is missing.
 
-`Awaiting Photo Release` is the PM-owned queue for work that is ready but waiting for the final release. The explicit `Release to Photo` action performs the handoff and removes the card from active Planning.
+`Awaiting Photo Release` is the PM-owned queue for work that is ready but waiting for the final release. `Save Changes` remains available to reviewers and leaves ready work in this queue. The separate `Activate` action is visible only to roles with the Activate Merchandise capability; it performs the handoff and removes the card from the active Workspace Board. Activated records remain discoverable in the Workspace Table and in their downstream destination.
 
-After `Release to Photo`, downstream status belongs on Production/Creative Force surfaces. This should happen without duplicating Merchandise records.
+After `Activate`, downstream status belongs on Production/Creative Force surfaces. This should happen without duplicating Merchandise records.
 
 ## Production
 

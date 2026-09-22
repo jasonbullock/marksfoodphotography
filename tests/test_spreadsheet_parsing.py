@@ -99,6 +99,27 @@ class SpreadsheetParsingTests(unittest.TestCase):
         self.assertEqual(parsed["columnHeaders"], ["Product", "UPC"])
         self.assertEqual(parsed["rows"][0], ["Cantaloupe", "036800029804"])
 
+    def test_xlsx_can_select_named_worksheet_and_header_row(self):
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        workbook.active.title = "Other"
+        workbook.active.append(["Wrong", "Sheet"])
+        sheet = workbook.create_sheet("Master Tracker Sierra")
+        sheet.append(["Setup"])
+        sheet.append([])
+        sheet.append(["MySGS Job Number", "UPC", "Product Description"])
+        sheet.append(["8481081-1", 888777009392, "Smart Way Storage Containers"])
+        output = io.BytesIO()
+        workbook.save(output)
+
+        parsed = _parse_spreadsheet(output.getvalue(), ".xlsx", header_row="3", sheet_name="Master Tracker Sierra")
+
+        self.assertEqual(parsed["selectedSheet"], "Master Tracker Sierra")
+        self.assertEqual(parsed["headerRow"], 3)
+        self.assertEqual(parsed["columnHeaders"], ["MySGS Job Number", "UPC", "Product Description"])
+        self.assertEqual(parsed["rows"][0], ["8481081-1", "888777009392", "Smart Way Storage Containers"])
+
 
 if __name__ == "__main__":
     unittest.main()

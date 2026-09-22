@@ -231,12 +231,14 @@ class MerchandiseReviewTests(unittest.TestCase):
         self.assertEqual(records["recNeedsReview"]["reviewState"], "Needs Review")
         self.assertEqual(records["recWaiting"]["reviewState"], "Waiting for Product Data")
         self.assertEqual(records["recValidated"]["reviewState"], "Validated")
-        self.assertEqual(records["recIssueState"]["reviewState"], "Issue")
+        self.assertEqual(records["recIssueState"]["reviewState"], "Needs Review")
         self.assertTrue(records["recUnidentified"]["isUnidentified"])
         self.assertEqual(records["recNeedsReview"]["photos"][0]["object_key"], "merchandise/recNeedsReview/image-1.jpg")
         self.assertTrue(records["recNeedsReview"]["photos"][0]["url"].endswith("/merchandise/recNeedsReview/image-1.jpg"))
         self.assertEqual(records["recNeedsReview"]["linkedItem"]["identifier"], "000123")
-        self.assertIn("Damaged package", [issue["name"] for issue in records["recIssueState"]["blockingIssues"]])
+        self.assertEqual(records["recNeedsReview"]["observedProductName"], "Honeydew Package")
+        self.assertEqual(records["recNeedsReview"]["displayName"], "Topco Honeydew Product")
+        self.assertEqual(records["recIssueState"]["blockingIssues"], [])
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.get_record")
@@ -307,19 +309,11 @@ class MerchandiseReviewTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Product must be linked", response.get_json()["error"])
 
-    @patch("routes.airtable.list_records")
-    @patch("routes.airtable.get_record")
-    def test_validate_blocks_unresolved_merchandise_issue(self, get_record, list_records):
-        get_record.side_effect = [
-            self.entry("recEntry", {C.F_RECEIPT_ENTRY_ITEM: ["recProduct"]}),
-            self.receipt(),
-        ]
-        list_records.return_value = {"records": [self.issue()]}
-
-        response = self.app.post("/api/merchandise/review/recEntry/validate", json={"status": "Validated"})
+    def test_issue_is_not_an_allowed_merchandise_status(self):
+        response = self.app.post("/api/merchandise/review/recEntry/validate", json={"status": "Issue"})
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Resolve blocking Merchandise Issues", response.get_json()["error"])
+        self.assertIn("Ready to Ship", response.get_json()["error"])
 
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.update_record")
@@ -378,40 +372,14 @@ class MerchandiseReviewTests(unittest.TestCase):
         self.assertEqual(fields[C.F_RECEIPT_ENTRY_MERCH_STATUS], "Received")
         self.assertEqual(response.get_json()["reviewState"], "Waiting for Product Data")
 
-    @patch("routes._clients_by_id", return_value={})
-    @patch("routes.airtable.update_record")
-    @patch("routes.airtable.create_record")
-    @patch("routes.airtable.get_record")
-    def test_raise_issue_uses_existing_issue_model_and_r2_image_references(self, get_record, create_record, update_record, _clients):
-        entry = self.entry("recEntry", {
-            C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
-            C.F_RECEIPT_ENTRY_PHOTO_METADATA: '[{"object_key":"merchandise/recEntry/image-1.jpg"}]',
-        })
-        get_record.side_effect = [entry, self.receipt(), self.product(), self.product()]
-        create_record.return_value = self.issue("recIssue", {
-            C.F_ISSUE_NAME: "Crushed package",
-            C.F_ISSUE_NOTES: "Corner is crushed\n\nR2 image references:\nmerchandise/recEntry/image-1.jpg",
-        })
-        update_record.return_value = self.entry("recEntry", {
-            C.F_RECEIPT_ENTRY_ITEM: ["recProduct"],
-            C.F_RECEIPT_ENTRY_MERCH_STATUS: "Issue",
-            C.F_RECEIPT_ENTRY_PHOTO_METADATA: '[{"object_key":"merchandise/recEntry/image-1.jpg"}]',
-        })
-
+    def test_legacy_raise_issue_endpoint_is_retired(self):
         response = self.app.post("/api/merchandise/review/recEntry/issue", json={
             "type": "Damaged",
             "description": "Crushed package",
-            "notes": "Corner is crushed",
         })
 
-        self.assertEqual(response.status_code, 201)
-        issue_fields = create_record.call_args.args[1]
-        self.assertEqual(issue_fields[C.F_ISSUE_ITEM], ["recProduct"])
-        self.assertNotIn(C.F_ISSUE_PHOTOS, issue_fields)
-        self.assertIn("merchandise/recEntry/image-1.jpg", issue_fields[C.F_ISSUE_NOTES])
-        self.assertEqual(update_record.call_args.args[2][C.F_RECEIPT_ENTRY_MERCH_STATUS], "Issue")
-        payload = response.get_json()
-        self.assertEqual(payload["merchandise"]["reviewState"], "Issue")
+        self.assertEqual(response.status_code, 410)
+        self.assertIn("retired", response.get_json()["error"])
 
     @patch("routes.airtable.get_record")
     def test_merchandise_history_returns_actor_and_timestamp_newest_first(self, get_record):
@@ -532,6 +500,43 @@ class MerchandiseReviewTests(unittest.TestCase):
 
         self.assertEqual([event["action"] for event in records], ["Merchandise received"])
         self.assertEqual(records[0]["actor"], "Jason Bullock")
+
+
+class MerchandiseLifecycleReasonTests(unittest.TestCase):
+    def test_newly_received_merchandise_is_currently_under_review(self):
+        from routes import _derive_merchandise_lifecycle
+
+        lifecycle = _derive_merchandise_lifecycle(
+            {
+                "planningStatusLabel": "New",
+                "linkedItem": {"id": "recProduct"},
+                "requiredToShoot": {"missing": [],},
+            },
+            [],
+        )
+
+        self.assertEqual(lifecycle["stage"], "Reviewed")
+
+    def test_unmatched_state_stays_with_the_match_control(self):
+        from routes import _derive_merchandise_lifecycle
+
+        lifecycle = _derive_merchandise_lifecycle(
+            {"planningStatusLabel": "New", "linkedItem": None, "requiredToShoot": {"missing": []}},
+            [],
+        )
+
+        self.assertEqual(lifecycle["reviewReasons"], [])
+
+    def test_review_without_a_specific_blocker_has_no_generic_badge(self):
+        from routes import _derive_merchandise_lifecycle
+
+        lifecycle = _derive_merchandise_lifecycle(
+            {"planningStatusLabel": "Needs More Information", "linkedItem": {"id": "recProduct"}, "requiredToShoot": {"missing": []}},
+            [],
+        )
+
+        self.assertEqual(lifecycle["stage"], "Reviewed")
+        self.assertEqual(lifecycle["reviewReasons"], [])
 
 
 if __name__ == "__main__":

@@ -243,6 +243,8 @@ class MerchandiseInventoryTests(unittest.TestCase):
         self.assertIn("recFreshMerch", ids)
         fresh = next(record for record in records if record["id"] == "recFreshMerch")
         self.assertEqual(fresh["packageName"], "Honeydew Melon")
+        self.assertEqual(fresh["observedProductName"], "Honeydew Melon")
+        self.assertEqual(fresh["displayName"], "Topco Honeydew Product")
         self.assertEqual(fresh["barcodeOrIdNumber"], "000123")
         self.assertEqual(fresh["client"], "Topco")
         self.assertEqual(fresh["matchedProduct"]["name"], "Topco Honeydew Product")

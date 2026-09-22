@@ -51,8 +51,8 @@ def _planning_url(merchandise_id=""):
     if not C.APP_BASE_URL:
         return ""
     if merchandise_id:
-        return f"{C.APP_BASE_URL}/planning?item={merchandise_id}"
-    return f"{C.APP_BASE_URL}/planning"
+        return f"{C.APP_BASE_URL}/workspace?view=board&item={merchandise_id}"
+    return f"{C.APP_BASE_URL}/workspace?view=board"
 
 
 def build_arrival_card(*, client_name, carrier, tracking, received, items, image_urls=None):
@@ -101,7 +101,7 @@ def build_arrival_card(*, client_name, carrier, tracking, received, items, image
     actions = []
     planning_url = _planning_url()
     if planning_url:
-        actions.append({"type": "Action.OpenUrl", "title": "Go to Planning", "url": planning_url})
+        actions.append({"type": "Action.OpenUrl", "title": "Go to Workspace", "url": planning_url})
 
     card = {
         "type": "AdaptiveCard",

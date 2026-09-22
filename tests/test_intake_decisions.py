@@ -380,6 +380,16 @@ class IntakeDecisionTests(unittest.TestCase):
                     C.F_THR3D_SHIPPING_ITEM_STATUS: "Needs Shipment",
                 },
             },
+            {
+                "id": "recThr3dAction",
+                "fields": {
+                    C.F_ACTION_NAME: "Frozen Pizza Box - 000123 - THR3D",
+                    C.F_ACTION_MERCHANDISE: ["recMerch"],
+                    C.F_ACTION_TYPE: "THR3D",
+                    C.F_ACTION_STATUS: "Proposed",
+                    C.F_ACTION_QUANTITY: 4,
+                },
+            },
         ]
         update_record.return_value = self.entry()
 
@@ -391,21 +401,60 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(create_record.call_args_list[0].args[0], C.WORKSTREAM_CARDS_TABLE)
         self.assertEqual(create_record.call_args_list[1].args[0], C.THR3D_SHIPPING_ITEMS_TABLE)
+        self.assertEqual(create_record.call_args_list[2].args[0], C.ACTIONS_TABLE)
         payload = response.get_json()
         self.assertEqual(payload["workstreamCards"][0]["type"], "Packaging")
         self.assertEqual(payload["thr3dShippingItems"][0]["shippingStatus"], "Needs Shipment")
+        self.assertEqual(payload["actions"][-1]["type"], "THR3D")
 
+    @patch("routes._clients_by_id", return_value={})
+    @patch("routes.airtable.create_record")
+    @patch("routes.airtable.update_record")
     @patch("routes.airtable.get_record")
-    def test_confirm_assign_rejects_ecomm_and_thr3d_together(self, get_record):
+    def test_confirm_assign_allows_ecomm_and_thr3d_together(self, get_record, update_record, create_record, _clients):
         get_record.side_effect = [self.entry(), self.receipt()]
+        create_record.side_effect = [
+            {
+                "id": "recEcomm",
+                "fields": {
+                    C.F_WORKSTREAM_CARD_NAME: "Frozen Pizza Box - 000123 - Ecomm",
+                    C.F_WORKSTREAM_CARD_RECEIVED_MERCH: ["recMerch"],
+                    C.F_WORKSTREAM_CARD_TYPE: "Ecomm",
+                    C.F_WORKSTREAM_CARD_PLANNING_STATUS: "Needs More Information",
+                    C.F_WORKSTREAM_CARD_QUANTITY: 5,
+                },
+            },
+            {
+                "id": "recThr3d",
+                "fields": {
+                    C.F_THR3D_SHIPPING_ITEM_NAME: "Frozen Pizza Box - 000123 - THR3D",
+                    C.F_THR3D_SHIPPING_ITEM_RECEIVED_MERCH: ["recMerch"],
+                    C.F_THR3D_SHIPPING_ITEM_QUANTITY: 5,
+                    C.F_THR3D_SHIPPING_ITEM_STATUS: "Needs Shipment",
+                },
+            },
+            {
+                "id": "recThr3dAction",
+                "fields": {
+                    C.F_ACTION_NAME: "Frozen Pizza Box - 000123 - THR3D",
+                    C.F_ACTION_MERCHANDISE: ["recMerch"],
+                    C.F_ACTION_TYPE: "THR3D",
+                    C.F_ACTION_STATUS: "Proposed",
+                    C.F_ACTION_QUANTITY: 5,
+                },
+            },
+        ]
+        update_record.return_value = self.entry()
 
         response = self.app.post("/api/merchandise/recMerch/confirm-assign", json={
             "workstreams": [{"type": "Ecomm", "quantity": 5}],
             "thr3d": {"quantity": 5},
         })
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("Ecomm and THR3D are alternate GS1 paths", response.get_json()["error"])
+        self.assertEqual(response.status_code, 201)
+        payload = response.get_json()
+        self.assertEqual(payload["workstreamCards"][0]["type"], "Ecomm")
+        self.assertEqual(payload["thr3dShippingItems"][0]["shippingStatus"], "Needs Shipment")
 
     @patch("routes.airtable.get_record")
     def test_confirm_assign_rejects_packaging_thr3d_quantity_mismatch(self, get_record):
@@ -671,10 +720,17 @@ class IntakeDecisionTests(unittest.TestCase):
                     C.F_THR3D_SHIPPING_ITEM_RECEIVED_MERCH: ["recMerch"],
                     C.F_THR3D_SHIPPING_ITEM_QUANTITY: 1,
                     C.F_THR3D_SHIPPING_ITEM_STATUS: "Shipped",
+                    C.F_THR3D_SHIPPING_ITEM_OUTBOUND_SHIPMENT: ["recOutboundShipment"],
                 },
             }]
         }
-        get_record.side_effect = [self.entry(), self.receipt()]
+        get_record.side_effect = [self.entry(), self.receipt(), {
+            "id": "recOutboundShipment",
+            "fields": {
+                C.F_RECEIPT_NAME: "THR3D outbound",
+                C.F_RECEIPT_RECEIVED: "2026-09-21T14:30:00Z",
+            },
+        }]
 
         response = self.app.get("/api/thr3d-shipping-items")
 
@@ -685,12 +741,14 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertEqual(payload["records"][0]["receivedMerch"]["id"], "recMerch")
         self.assertEqual(len(payload["shipped"]), 1)
         self.assertEqual(payload["shipped"][0]["shippingStatus"], "Shipped")
+        self.assertEqual(payload["shipped"][0]["outboundShipment"]["receivedDate"], "2026-09-21T14:30:00Z")
 
     @patch("routes._now_iso", return_value="2026-08-05T14:30:00+00:00")
+    @patch("routes._list_all_records")
     @patch("routes.airtable.update_record")
     @patch("routes.airtable.create_record")
     @patch("routes.airtable.get_record")
-    def test_ship_thr3d_shipping_item_creates_outbound_shipment_and_marks_shipped(self, get_record, create_record, update_record, _now):
+    def test_ship_thr3d_shipping_item_creates_outbound_shipment_and_marks_shipped(self, get_record, create_record, update_record, list_records, _now):
         shipping_item = {
             "id": "recThr3dItem",
             "fields": {
@@ -705,6 +763,13 @@ class IntakeDecisionTests(unittest.TestCase):
             self.entry({C.F_RECEIPT_ENTRY_QUANTITY: 4}),
             self.receipt(),
         ]
+        list_records.side_effect = lambda table: [{
+            "id": "recThr3dLocation",
+            "fields": {
+                C.F_LOCATION_NAME: "Shipped to Thr3d",
+                C.F_LOCATION_ACTIVE: True,
+            },
+        }] if table == C.LOCATIONS_TABLE else []
         create_record.return_value = {
             "id": "recOutboundShipment",
             "fields": {
@@ -747,6 +812,7 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertEqual(update_record.call_args_list[0].args[2][C.F_THR3D_SHIPPING_ITEM_OUTBOUND_SHIPMENT], ["recOutboundShipment"])
         self.assertEqual(update_record.call_args_list[1].args[0], C.MERCHANDISE_TABLE)
         self.assertEqual(update_record.call_args_list[1].args[2][C.F_RECEIPT_ENTRY_MERCH_STATUS], "Shipped")
+        self.assertEqual(update_record.call_args_list[1].args[2][C.F_RECEIPT_ENTRY_LOCATION], ["recThr3dLocation"])
         payload = response.get_json()
         self.assertEqual(payload["record"]["shippingStatus"], "Shipped")
         self.assertEqual(payload["record"]["outboundShipment"]["tracking"], "1Z999")

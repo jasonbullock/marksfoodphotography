@@ -119,14 +119,15 @@ For Planning and future workflow modals:
 - Board = committed state.
 - Modal = draft workspace.
 - Footer = single commit area.
-- `Finish & Move` = the only commit action for routing changes.
+- `Save Changes` commits Merchandise/Product data without committing routes.
+- `Move to Ready to Activate` = the only commit action for routing changes.
 - Field edits update only the modal draft and any in-modal preview.
 - Do not optimistically route, refresh, resort, badge-flash, or move board cards while a modal is open.
 - Freeze background board interaction while a modal is active: no drag, hover-driven movement, drop targets, or background card actions.
 - Closing, canceling, pressing Esc, or clicking outside discards uncommitted draft changes.
 - Cards animate or visibly move only after the commit save succeeds and fresh data is loaded.
 
-The footer should preview the outcome in business language, for example `Will move to Thr3d Shipment` or `Will move to Awaiting Photo Release`, while keeping the primary button label stable as `Finish & Move`.
+The footer should preview missing requirements or the committed destination in business language. Newly Received exposes only `Save Changes`; Review adds `Move to Ready to Activate` when final validation succeeds; Ready to Activate exposes route-specific activation.
 
 ## 12. Production Is An Execution Perspective
 

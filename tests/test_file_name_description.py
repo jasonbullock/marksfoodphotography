@@ -28,7 +28,7 @@ class FileNameDescriptionTests(unittest.TestCase):
             "id": "012345678901",
             "fileNameDescription": "milk gallon",
         })
-        self.assertEqual(fields[C.Config.F_ITEM_FILE_NAME_DESCRIPTION], "milk gallon")
+        self.assertEqual(fields[C.Config.F_ITEM_FILE_NAME_DESCRIPTION], "milk_gallon")
 
     def test_the_shape_reports_it_once(self):
         shaped = _shape_item({

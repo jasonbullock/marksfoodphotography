@@ -6,23 +6,31 @@ It does not define Airtable schema, API routes, implementation classes, or UI co
 
 ## Core Concept
 
-Marks Photo is product-led and merchandise-verified.
+Marks Photo has five durable business objects:
 
-Expected Product data is the normal operating spine. It describes what the client expects Walnut to prepare for production. Physical merchandise verifies whether those expected products can actually move forward.
+- Product: lightweight identity and source-connected reference data.
+- Shipment: how physical goods arrived.
+- Merchandise: the physical item or lot in the studio.
+- Request: an optional statement that Walnut expects and actively cares about receiving something.
+- Action: an independent proposed or authorized thing Walnut intends to do with Merchandise.
+
+Request and Merchandise have separate lifecycles. A Request moves Waiting -> Fulfilled or Cancelled. Merchandise begins only when an item arrives. Its shared approval milestones are Received -> Reviewed -> Activated. Review reasons explain why work cannot advance; they are not persisted substages. After activation, photo work is owned by Production and THR3D work is owned by Shipments/Outgoing; each destination reports its own execution state.
 
 Marks Photo exists because expected products and physical merchandise rarely line up perfectly without inspection. The application should reveal what products are expected, what merchandise has arrived against them, what exceptions exist, and what work is ready for production.
 
 The application presents different perspectives of the same expected product and physical merchandise relationship. Products, Shipments, Inventory, Planning, Production, and PhotoTrack should not duplicate facts. They should reveal different operational truths about the same readiness problem.
 
-## Product / Expected Product
+## Product
 
-Product is Expected Product: descriptive, client, production, and reporting information aggregated from client product-data sources.
+Product is lightweight descriptive, client, production, and reporting reference information aggregated from client product-data sources. A Product is not operationally expected merely because it exists.
 
-Products are expected work records and the normal operating spine of Marks Photo. PMs may create and maintain them through Excel upload, copy/paste rows, client-specific column mappings, preview/validation, inline editing, and commit flows.
+Products are lightweight identity/reference records. PMs may create and maintain them through Excel upload, copy/paste rows, client-specific column mappings, preview/validation, inline editing, and commit flows.
 
-Product is the normal operating record. It says what work is expected. Received Merch proves whether physical samples have arrived, whether they are usable, and whether quantity/condition/storage creates any blocker.
+MediaBox Number is a first-class Product reference using the existing Airtable Mbox Number storage field. It is searchable and visible in operational views. A separate MediaBox object is deferred until the MediaBox API demonstrates a real project-level object and relationship.
 
-Product should not carry raw physical facts such as storage location, condition, shipment photos, or check-in notes. Those facts belong to Received Merch, Shipments, Issues, History, Creative Force, PhotoTrack, or reporting integrations.
+Product says what is known or expected about an item. Merchandise owns the physical truth, and Actions own proposed and authorized work.
+
+Product should not carry raw physical facts such as storage location, condition, shipment photos, or check-in notes. Those facts belong to Merchandise, Shipments, History, Creative Force, PhotoTrack, or reporting integrations.
 
 If Expected Product information already exists, Marks Photo should reuse it. If it does not exist, Marks Photo should treat the received merchandise as an exception and collect only the minimum missing information required to move work forward. Manual exception facts should not pollute imported Product truth unless a later approved import/reconciliation process promotes them.
 
@@ -33,7 +41,7 @@ Products should not be modeled as one massive universal table that permanently p
 - Client References: values used to connect the product to client systems, reporting, jobs, campaigns, activations, Creative Force, or other handoff contexts.
 - Naming / Path Tokens: structured values used to generate filenames, folder paths, upload locations, or production labels.
 - Import-only extra data / client-specific reference data: source columns retained for traceability or specialized client operations without forcing all clients into the same schema.
-- Derived readiness/work status: calculated summaries from related Received Merch, Activations, workstream cards, THR3D shipping items, artwork, and client requirements.
+- Derived lifecycle/work status: calculated summaries from related Merchandise, Actions, artwork, and client requirements.
 
 Avoid vague `Identifier` language in product design. Say `Match Keys` when a field is used to match physical merchandise to expected products. Say `Client References` when a field exists for client/reporting/handoff systems. Say `Naming / Path Tokens` when a field is used to compose filenames, folder paths, or upload locations.
 
@@ -50,7 +58,6 @@ Merchandise is not the same as Product. Product is the expected item and primary
 Merchandise Status describes the physical state of the sample only:
 
 - `Received`
-- `Issue`
 - `Ready to Ship`
 - `Shipped`
 - `Disposed`
@@ -69,19 +76,21 @@ New Merch is the exception-focused Planning intake list for received merchandise
 
 PMs use New Merch to resolve unmatched or unclear arrivals, confirm identity, match an Expected Product when possible, capture minimum manual product information when no Expected Product exists, and assign the required production/shipping paths. New Merch is not the default operating list for all expected work.
 
-### Workstream Card
+### Action
 
-A Workstream Card is child work created for an expected product/work need once enough product and merchandise facts exist.
+An Action is an independent proposed or authorized thing Walnut intends to do with Merchandise.
 
-Active workstream card types are Ecomm and Packaging. Ecomm and Packaging must be separate cards because they have different dependencies and handoff requirements. Workstream cards link back to their parent Received Merch and to Expected Product when matched.
+Action types begin with Ecomm, Pack, THR3D, Replacement, and Not Needed. An Action carries only Merchandise, Action Type, Status, optional Quantity, activation attribution, an external reference, and an optional cancellation/reversal reason.
 
-This is not the legacy Workstreams/Work Orders architecture. Workstream cards are scoped child work items, not workflow templates, workflow stages, work orders, Product-level routing, or a generic workflow engine.
+Action status is one value: Proposed, Activated, Executing, Done, or Cancelled. Activation is reversible and every status change is recorded in History. Saving Merchandise data does not create Actions or authorize execution. The explicit `Move to Ready to Activate` checkpoint validates the committed route choices and creates Proposed Ecomm/Pack Actions; activation then authorizes an individual Action or a compatible bulk selection and requires the role-level Activate Merchandise capability. A committed THR3D route creates its Proposed outbound shipping Action for Shipments rather than entering photo activation.
 
-### THR3D Shipping Item
+Ecomm and Pack Actions hand off to Creative Force. THR3D Actions surface in Shipments for outbound execution. Those integrations do not create different business objects.
 
-A THR3D Shipping Item is outbound physical movement work created when the expected product/work need requires THR3D and physical samples must leave Walnut.
+The former Workstream Cards table has evolved into Actions. Existing THR3D Shipping Items remain temporarily as compatibility records for outbound shipment details while Shipments is moved to read/write Actions directly.
 
-It is not a production card. It needs quantity-to-ship and outbound shipment tracking, and belongs under the Shipments physical-movement perspective.
+## Request
+
+A Request is optional. It records that Walnut expects and actively cares about receiving something. Merchandise may fulfill or match a Request when it arrives, after which the normal Merchandise and Action lifecycle continues. Ordinary receiving does not require a Request.
 
 ## Merchandise Verification
 
@@ -91,15 +100,15 @@ Verification asks:
 
 - Is the physical Merchandise correct?
 - Can it be matched to an Expected Product?
-- Which child work or shipping items are required?
+- Which Actions are proposed?
 - What information is still missing for those Deliverables?
-- Should the Merchandise wait, route to photo production, require a THR3D outbound shipment, or become an Issue?
+- Should the Merchandise wait, route to photo production, require a THR3D outbound shipment, or be cancelled?
 
 Verification does not require every fact to be known in one sitting. If a PM has started verification but cannot finish, the Merchandise can wait for information with the current progress and missing reasons preserved.
 
-Verification is not represented by the legacy Workstreams, Work Orders, Workstream Assignments, Workflow Templates, Workflow Stages, or Work Order Types. Those were legacy implementation experiments and are not current domain concepts. The current Workstream Card concept means a child Ecomm or Packaging work item created after intake assignment.
+Verification is not represented by the legacy Workstreams, Work Orders, Workstream Assignments, Workflow Templates, Workflow Stages, or Work Order Types. Those were legacy implementation experiments and are not current domain concepts. Review proposes independent Actions; activation authorizes each Action.
 
-Ecomm and THR3D are mutually exclusive GS1 paths. Packaging can pair with either Ecomm or THR3D.
+Packaging, Ecomm, and THR3D are independent Deliverables; any one, any pair, or all three may be selected.
 
 ## Queue
 
@@ -107,7 +116,7 @@ Queue is the PM-owned board placement for Planning work.
 
 Queue is not Merchandise Status. Queue describes where the PM wants the card to sit while work is being organized. Merchandise Status describes the physical or operational condition of the sample.
 
-Canonical Planning Queue values are New, Needs More Information, and Awaiting Photo Release.
+The public Workspace lifecycle labels are Received, Reviewed, and Activated. Existing Planning Queue values are compatibility storage and must not leak into user-facing vocabulary.
 
 New is automatic. Needs More Information is PM-controlled. Awaiting Photo Release is gated by Required to Shoot and means the work is ready but waiting for the explicit photo-release handoff.
 
@@ -201,7 +210,7 @@ Marks Photo prepares merchandise for production and may display production conte
 
 ## Concept Relationships
 
-Expected Product data defines what work is expected.
+Product data defines the reference identity and possible work. A Request says Walnut is actively waiting for an item.
 
 Shipment brings Merchandise into the studio.
 

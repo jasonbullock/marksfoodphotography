@@ -166,14 +166,28 @@ def _current_user_display_name():
     return user.get("displayName") or user.get("name") or ""
 
 
-def _permission_context():
-    user = _current_user()
-    if user is None:
+def _access_context(user=None):
+    user = user or _session_user()
+    if not user:
         return {"all": False, "client_ids": set()}
-    fields = user.get("fields", {})
-    if fields.get(C.F_USER_ALL_CLIENTS):
+    if user.get("allClients"):
         return {"all": True, "client_ids": None}
-    return {"all": False, "client_ids": set(fields.get(C.F_USER_CLIENTS, []) or [])}
+    return {"all": False, "client_ids": set(user.get("clientIds", []) or [])}
+
+
+def _permission_context():
+    user = _session_user()
+    if not user:
+        return {"all": False, "client_ids": set()}
+    active_client_id = str(user.get("activeClientId") or "").strip()
+    access = _access_context(user)
+    if not active_client_id and not access["all"] and len(access["client_ids"]) == 1:
+        active_client_id = next(iter(access["client_ids"]))
+    if active_client_id and (access["all"] or active_client_id in access["client_ids"]):
+        return {"all": False, "client_ids": {active_client_id}}
+    if _is_admin(user):
+        return {"all": True, "client_ids": None}
+    return {"all": False, "client_ids": set()}
 
 
 def _client_permitted(client_id, permissions=None):
@@ -256,11 +270,7 @@ BRAND_PREFIX_PLACEHOLDER = "brand prefixes"
 
 
 def brand_prefix_code(value):
-    """The part of a brand prefix that goes into a file name.
-
-    Stored values match the source sheet exactly - "FC -FoodClub", "CV - Cape
-    Covelle", "BC" - but a delivered file is named with the code alone.
-    """
+    """Return the filename token from a descriptive brand-prefix option."""
     text = str(value or "").strip()
     if not text:
         return ""
@@ -271,13 +281,7 @@ def brand_prefix_code(value):
 
 
 def _parse_brand_prefixes(raw):
-    """A client's brand prefixes, written exactly as the source sheet writes them.
-
-    The stored value is the whole line, so a product matched from the sheet and a
-    product picked in the app carry the same string and can be compared. The code
-    for file naming is derived from it rather than kept separately, which is how
-    the two stay in step.
-    """
+    """A client's descriptive options with their filename token as the value."""
     prefixes = []
     seen = set()
     for line in str(raw or "").splitlines():
@@ -290,7 +294,7 @@ def _parse_brand_prefixes(raw):
         code = brand_prefix_code(line)
         _, _, name = line.partition("-")
         prefixes.append({
-            "value": line,
+            "value": code,
             "label": line,
             "code": code,
             "name": name.strip() or line,
@@ -403,7 +407,7 @@ def _delete_records_in_batches(table_name, record_ids):
 
 
 def _permitted_client_records(records):
-    permissions = _permission_context()
+    permissions = _access_context()
     if permissions["all"]:
         return records
     return [record for record in records if record.get("id") in permissions["client_ids"]]
@@ -727,9 +731,9 @@ def list_clients():
     )
     raw_records = data.get("records", [])
     if request.args.get("all") == "1":
-        management_error = _require_user_management()
-        if management_error:
-            return management_error
+        admin_error = _require_admin()
+        if admin_error:
+            return admin_error
         permitted = raw_records
     else:
         permitted = _permitted_client_records(raw_records)
@@ -868,6 +872,19 @@ def _normalize_product_import_profiles(value):
         if not isinstance(required_targets, list):
             raise ValueError(f"Product Import Profile {clean_name}.requiredTargets must be a list.")
         normalized_profile["requiredTargets"] = [str(target) for target in required_targets if str(target).strip()]
+        sheet_name = str(profile.get("sheetName") or "").strip()
+        if sheet_name:
+            normalized_profile["sheetName"] = sheet_name
+        header_row = profile.get("headerRow")
+        if header_row not in (None, ""):
+            try:
+                header_row = int(header_row)
+            except (TypeError, ValueError) as error:
+                raise ValueError(f"Product Import Profile {clean_name}.headerRow must be a positive row number.") from error
+            if header_row < 1:
+                raise ValueError(f"Product Import Profile {clean_name}.headerRow must be a positive row number.")
+        if header_row:
+            normalized_profile["headerRow"] = header_row
         normalized_profiles[clean_name] = normalized_profile
 
     default_profile = str(value.get("defaultProfile") or "").strip()
@@ -913,6 +930,7 @@ PHOTO_PRODUCTION_REQUIREMENT_FIELDS = {
     "productType": "Product Type",
     "ecommPhotoNotes": "Ecomm Photo Notes",
     "pathToArt": "Valid Artwork Path",
+    "mboxNumber": "MediaBox Number",
 }
 # Entered on the release form, not carried on the Product, so they are kept apart
 # from requiredProductFields - listing them there would leave Planning asking for a
@@ -1313,6 +1331,11 @@ def update_activation(activation_id):
 
 @api.post("/activations/<activation_id>/move-to-photo")
 def move_activation_to_photo(activation_id):
+    capability_error = _require_capability("activate_merchandise", "Activation permission required")
+    if capability_error:
+        return capability_error
+    body = request.get_json(silent=True) or {}
+    send_activation_email = body.get("sendActivationEmail", True) is not False
     try:
         activation = airtable.get_record(C.ACTIVATIONS_TABLE, activation_id, by_field_id=False)
     except requests.HTTPError as exc:
@@ -1338,7 +1361,7 @@ def move_activation_to_photo(activation_id):
     # record still carries the union of all selected deliverables. Load the
     # child cards before updating the parent so a sibling can remain waiting.
     try:
-        workstream_records = _list_all_records(C.WORKSTREAM_CARDS_TABLE)
+        workstream_records = _list_photo_actions()
     except requests.HTTPError as exc:
         return airtable_err(exc)
     release_types = set(deliverables) - {"Thr3d"}
@@ -1430,6 +1453,9 @@ def move_activation_to_photo(activation_id):
         if not workstream_fields.get(C.F_WORKSTREAM_CARD_RELEASED):
             card_update[C.F_WORKSTREAM_CARD_RELEASED] = True
             card_update[C.F_WORKSTREAM_CARD_RELEASED_AT] = _now_iso()
+            card_update[C.F_ACTION_STATUS] = "Activated"
+            card_update[C.F_ACTION_ACTIVATED_AT] = card_update[C.F_WORKSTREAM_CARD_RELEASED_AT]
+            card_update[C.F_ACTION_ACTIVATED_BY] = _current_user_display_name()
             card_releaser_id = _current_user_id()
             if card_releaser_id:
                 card_update[C.F_WORKSTREAM_CARD_RELEASED_BY] = [card_releaser_id]
@@ -1479,14 +1505,14 @@ def move_activation_to_photo(activation_id):
         "moved": moved,
         "movedCount": len(moved),
         "emailSent": False,
-        "emailDetail": "The release is recorded. Send the email from here.",
+        "emailDetail": "Activation recorded. Send the email from here." if send_activation_email else "Activation recorded without an email.",
         # Returned whether or not it sent, so the board can hand an unsent
         # release to the user's own mail client instead of losing it.
         "email": {
             "subject": shaped_activation.get("emailSubject", ""),
             "html": shaped_activation.get("emailBodyHtml", ""),
             "recipients": recipients,
-        },
+        } if send_activation_email else None,
     })
 
 
@@ -1969,6 +1995,7 @@ def structure_form_commit():
 def intake_preview():
     client_id = (request.form.get("clientId") or "").strip()
     header_row = request.form.get("headerRow") or ""
+    sheet_name = (request.form.get("sheetName") or "").strip()
     uploaded = request.files.get("file")
 
     if client_id and not _client_permitted(client_id):
@@ -1986,7 +2013,7 @@ def intake_preview():
         return err("The uploaded file is empty.")
 
     try:
-        parsed = _parse_spreadsheet(content, ext, header_row=header_row)
+        parsed = _parse_spreadsheet(content, ext, header_row=header_row, sheet_name=sheet_name)
         import_record = _create_import_record(client_id, filename, "Parsed", rows=parsed.get("rowCount", 0)) if client_id else None
     except UnicodeDecodeError:
         _fail_import_record(None, client_id, filename, "Unreadable file. The CSV encoding could not be detected.")
@@ -2121,13 +2148,13 @@ def _intake_import_json_response(dry_run):
     return jsonify(result)
 
 
-def _parse_spreadsheet(content, ext, header_row=None):
+def _parse_spreadsheet(content, ext, header_row=None, sheet_name=None):
     if _looks_like_xlsx(content):
-        return _parse_xlsx(content, header_row=header_row)
+        return _parse_xlsx(content, header_row=header_row, sheet_name=sheet_name)
     if ext == ".csv":
         return _parse_csv(content, header_row=header_row)
     if ext == ".xlsx":
-        return _parse_xlsx(content, header_row=header_row)
+        return _parse_xlsx(content, header_row=header_row, sheet_name=sheet_name)
     if _looks_like_text_spreadsheet(content):
         return _parse_delimited_text(content, header_row=header_row)
     return _parse_xls(content, header_row=header_row)
@@ -2250,17 +2277,19 @@ def _parse_csv(content, header_row=None):
     }
 
 
-def _parse_xlsx(content, header_row=None):
+def _parse_xlsx(content, header_row=None, sheet_name=None):
     try:
         from openpyxl import load_workbook
     except ImportError:
-        return _parse_xlsx_xml(content, header_row=header_row)
+        return _parse_xlsx_xml(content, header_row=header_row, sheet_name=sheet_name)
 
     workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     sheet_names = workbook.sheetnames
     if not sheet_names:
         raise ValueError("No sheets were found in the workbook.")
-    selected = workbook[sheet_names[0]]
+    if sheet_name and sheet_name not in sheet_names:
+        raise ValueError(f"Worksheet {sheet_name} was not found in the workbook.")
+    selected = workbook[sheet_name or sheet_names[0]]
     rows = [[_spreadsheet_cell_value(cell) for cell in row] for row in selected.iter_rows()]
     summary = _summarize_rows(rows, header_row=header_row)
     return {
@@ -2293,14 +2322,16 @@ def _parse_xls(content, header_row=None):
     }
 
 
-def _parse_xlsx_xml(content, header_row=None):
+def _parse_xlsx_xml(content, header_row=None, sheet_name=None):
     with zipfile.ZipFile(io.BytesIO(content)) as workbook:
         shared_strings = _xlsx_shared_strings(workbook)
         sheets = _xlsx_sheets(workbook)
         if not sheets:
             raise ValueError("No sheets were found in the workbook.")
 
-        selected = sheets[0]
+        selected = next((sheet for sheet in sheets if sheet["name"] == sheet_name), None) if sheet_name else sheets[0]
+        if selected is None:
+            raise ValueError(f"Worksheet {sheet_name} was not found in the workbook.")
         rows = _xlsx_sheet_rows(workbook, selected["path"], shared_strings)
         summary = _summarize_rows(rows, header_row=header_row)
         return {
@@ -3002,7 +3033,7 @@ def _build_intake_plan(client_id, filename, parsed, mapping=None):
         wkft_job_number = _mapped_value(row, mapping, "wkft_job_number")
         mbox_number = _mapped_value(row, mapping, "mbox_number")
         product_type = _normalize_product_type(_mapped_value(row, mapping, "product_type"))
-        file_name_description = _mapped_value(row, mapping, "file_name_description")
+        file_name_description = _normalize_file_name_description(_mapped_value(row, mapping, "file_name_description"))
         prepro_overlays = _mapped_value(row, mapping, "prepro_overlays")
         ecomm_photo_notes = _mapped_value(row, mapping, "ecomm_photo_notes")
         path_to_art = _mapped_value(row, mapping, "path_to_art")
@@ -3146,7 +3177,7 @@ def _build_intake_plan_from_mapped_rows(client_id, filename, rows):
         wkft_job_number = str(source.get("wkftJobNumber", "") or "").strip()
         mbox_number = str(source.get("mboxNumber", "") or "").strip()
         product_type = _normalize_product_type(source.get("productType", ""))
-        file_name_description = str(source.get("fileNameDescription", "") or source.get("productDescription", "") or "").strip()
+        file_name_description = _normalize_file_name_description(source.get("fileNameDescription", "") or source.get("productDescription", ""))
         prepro_overlays = str(source.get("preproOverlays", "") or "").strip()
         ecomm_photo_notes = str(source.get("ecommPhotoNotes", "") or "").strip()
         path_to_art = str(source.get("pathToArt", "") or "").strip()
@@ -3272,7 +3303,7 @@ def _item_fields_from_row(client_id, row):
     if row.get("cvid"):
         fields[C.F_ITEM_CVID] = row["cvid"]
     if row.get("brandPrefix"):
-        fields[C.F_ITEM_BRAND_PREFIX] = row["brandPrefix"]
+        fields[C.F_ITEM_BRAND_PREFIX] = brand_prefix_code(row["brandPrefix"])
     for key, field in {
         "requestType": C.F_ITEM_REQUEST_TYPE,
         "wkftJobNumber": C.F_ITEM_WKFT_JOB_NUMBER,
@@ -3289,6 +3320,8 @@ def _item_fields_from_row(client_id, row):
                 fields[field] = _normalize_product_type(row[key])
             elif key == "requestType":
                 fields[field] = _normalize_product_request_type(row[key])
+            elif key == "fileNameDescription":
+                fields[field] = _normalize_file_name_description(row[key])
             else:
                 fields[field] = row[key]
         elif clear_blank_source_fields and key == "requestType":
@@ -3428,6 +3461,113 @@ def _shape_location(r):
 
 # ── Users ─────────────────────────────────────────────────────────────────────
 
+ROLE_POLICY_DEFAULTS = {
+    "Admin": ["/dashboard", "/workspace", "/imports", "/shipments", "/merchandise", "/planning", "/production", "/products"],
+    "Producer": ["/dashboard", "/workspace", "/imports", "/shipments", "/merchandise", "/planning", "/production", "/products"],
+    "Merch": ["/shipments", "/merchandise"],
+    "User": ["/dashboard", "/workspace", "/shipments", "/merchandise", "/planning", "/products"],
+    "Viewer": ["/dashboard", "/merchandise", "/products"],
+}
+ROLE_CAPABILITY_DEFAULTS = {
+    "Admin": ["activate_merchandise"],
+    "Producer": ["activate_merchandise"],
+    "Merch": [],
+    "User": [],
+    "Viewer": [],
+}
+ROLE_CAPABILITIES = {"activate_merchandise"}
+
+
+def _role_policy_value(value):
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return []
+    return value
+
+
+def _normalize_role_policy_paths(value):
+    value = _role_policy_value(value)
+    if isinstance(value, dict):
+        value = value.get("paths", [])
+    if not isinstance(value, list):
+        value = []
+    allowed = set(path for paths in ROLE_POLICY_DEFAULTS.values() for path in paths)
+    return [path for path in dict.fromkeys(str(path) for path in value) if path in allowed]
+
+
+def _normalize_role_policy_capabilities(value, role):
+    parsed = _role_policy_value(value)
+    if isinstance(parsed, dict):
+        capabilities = parsed.get("capabilities", [])
+    else:
+        capabilities = ROLE_CAPABILITY_DEFAULTS.get(role, [])
+    if not isinstance(capabilities, list):
+        capabilities = []
+    return [capability for capability in dict.fromkeys(str(value) for value in capabilities) if capability in ROLE_CAPABILITIES]
+
+
+def _shape_role_policy(record):
+    fields = record.get("fields", {})
+    role = str(fields.get(C.F_ROLE_POLICY_ROLE) or "").strip()
+    policy_value = fields.get(C.F_ROLE_POLICY_PATHS, "")
+    return {
+        "id": record.get("id", ""),
+        "role": role,
+        "paths": _normalize_role_policy_paths(policy_value),
+        "capabilities": _normalize_role_policy_capabilities(policy_value, role),
+        "adminCards": DEFAULT_ADMIN_CARDS if role in {"Admin", "Administrator"} else [],
+    }
+
+
+DEFAULT_ADMIN_CARDS = ["users", "roles", "system", "clients", "creative-force", "printers", "developer"]
+
+
+@api.get("/role-policies")
+def list_role_policies():
+    try:
+        records = airtable.list_records(C.ROLE_POLICIES_TABLE, by_field_id=False).get("records", [])
+    except requests.HTTPError:
+        records = []
+    by_role = {_shape_role_policy(record)["role"]: _shape_role_policy(record) for record in records}
+    shaped = []
+    for role, paths in ROLE_POLICY_DEFAULTS.items():
+        shaped.append(by_role.get(role) or {
+            "id": "",
+            "role": role,
+            "paths": paths,
+            "capabilities": ROLE_CAPABILITY_DEFAULTS.get(role, []),
+            "adminCards": DEFAULT_ADMIN_CARDS if role == "Admin" else [],
+        })
+    return jsonify({"records": shaped})
+
+
+@api.put("/role-policies/<role>")
+def update_role_policy(role):
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
+    if role not in ROLE_POLICY_DEFAULTS or role == "Admin":
+        return err("That role policy cannot be edited.", 400)
+    body = request.get_json(silent=True) or {}
+    paths = _normalize_role_policy_paths(body.get("paths"))
+    capabilities = _normalize_role_policy_capabilities(
+        {"capabilities": body.get("capabilities", ROLE_CAPABILITY_DEFAULTS.get(role, []))},
+        role,
+    )
+    try:
+        records = airtable.list_records(C.ROLE_POLICIES_TABLE, by_field_id=False).get("records", [])
+        existing = next((record for record in records if record.get("fields", {}).get(C.F_ROLE_POLICY_ROLE) == role), None)
+        fields = {
+            C.F_ROLE_POLICY_ROLE: role,
+            C.F_ROLE_POLICY_PATHS: json.dumps({"paths": paths, "capabilities": capabilities}),
+        }
+        record = airtable.update_record(C.ROLE_POLICIES_TABLE, existing["id"], fields, by_field_id=False) if existing else airtable.create_record(C.ROLE_POLICIES_TABLE, fields, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"policy": _shape_role_policy(record)})
+
 @api.get("/users")
 def list_users():
     management_error = _require_user_management()
@@ -3520,8 +3660,18 @@ def _session_user():
     return user if isinstance(user, dict) and user.get("id") else None
 
 
-def _set_session_user(record):
+def _set_session_user(record, active_client_id=None):
+    existing = _session_user()
     user = _shape_user(record)
+    if active_client_id is None and existing and existing.get("id") == user["id"]:
+        active_client_id = existing.get("activeClientId")
+    active_client_id = str(active_client_id or "").strip()
+    access = _access_context(user)
+    if not active_client_id and not access["all"] and len(access["client_ids"]) == 1:
+        active_client_id = next(iter(access["client_ids"]))
+    if active_client_id and not (access["all"] or active_client_id in access["client_ids"]):
+        active_client_id = ""
+    user["activeClientId"] = active_client_id
     session.clear()
     session[AUTH_SESSION_KEY] = user
     session.permanent = True
@@ -3554,14 +3704,39 @@ def _require_admin():
     return None
 
 
+def _role_has_capability(capability, user=None):
+    user = user or _session_user()
+    if not user:
+        return False
+    if _is_admin(user):
+        return True
+    role = str(user.get("role") or "").strip()
+    capabilities = ROLE_CAPABILITY_DEFAULTS.get(role, [])
+    try:
+        records = airtable.list_records(C.ROLE_POLICIES_TABLE, by_field_id=False).get("records", [])
+        record = next(
+            (item for item in records if str(item.get("fields", {}).get(C.F_ROLE_POLICY_ROLE) or "").strip() == role),
+            None,
+        )
+        if record:
+            capabilities = _shape_role_policy(record).get("capabilities", capabilities)
+    except requests.HTTPError:
+        current_app.logger.exception("Could not read role capability policy; using role defaults")
+    return capability in capabilities
+
+
+def _require_capability(capability, message):
+    if not _role_has_capability(capability):
+        return err(message, 403)
+    return None
+
+
 def _is_admin_role_value(role):
     return str(role or "").strip() in {"Admin", "Administrator"}
 
 
 def _require_user_management():
-    if not _session_user():
-        return err("Authentication required", 401)
-    return None
+    return _require_admin()
 
 
 def _record_is_admin_user(record):
@@ -3632,6 +3807,37 @@ def update_auth_me():
     except requests.HTTPError as e:
         return airtable_err(e)
     return jsonify({"user": _set_session_user(record)})
+
+
+@api.put("/auth/active-client")
+def update_active_client():
+    user = _session_user()
+    if not user:
+        return err("Authentication required", 401)
+    body = request.get_json(silent=True) or {}
+    client_id = str(body.get("clientId") or "").strip()
+    if not client_id:
+        if not _is_admin(user):
+            return err("Select a client to continue.", 400)
+        user["activeClientId"] = ""
+        session[AUTH_SESSION_KEY] = user
+        session.modified = True
+        return jsonify({"user": user})
+
+    access = _access_context(user)
+    if not (access["all"] or client_id in access["client_ids"]):
+        return err("You do not have access to that client.", 403)
+    try:
+        client_record = airtable.get_record(C.CLIENTS_TABLE, client_id, by_field_id=False)
+    except requests.HTTPError:
+        return err("Client not found.", 404)
+    if not client_record.get("fields", {}).get(C.F_CLIENT_ACTIVE, False):
+        return err("That client is not active.", 400)
+
+    user["activeClientId"] = client_id
+    session[AUTH_SESSION_KEY] = user
+    session.modified = True
+    return jsonify({"user": user})
 
 
 @api.post("/auth/logout")
@@ -3980,10 +4186,12 @@ def _topco_source_suggestion_score(source_data, *, product_name="", upc=""):
 
 
 def _topco_source_suggestions(*, client_id="", product_name="", upc="", limit=8):
+    client = None
     if client_id:
         client_record = _topco_client_record(client_id)
         if not client_record:
             return []
+        client = _shape_client(client_record)
     product_name = str(product_name or "").strip()
     upc = str(upc or "").strip()
     if len(_match_compact(product_name)) < 3 and len(_source_check_upc_key(upc)) < 3:
@@ -4000,10 +4208,19 @@ def _topco_source_suggestions(*, client_id="", product_name="", upc="", limit=8)
         score, basis = _topco_source_suggestion_score(source_data, product_name=product_name, upc=upc)
         if not score:
             continue
+        source_product_fields = {
+            C.F_ITEM_NAME: source_data.get("Product Name", ""),
+            C.F_ITEM_BRAND_PREFIX: source_data.get("Brand Prefix", ""),
+            C.F_ITEM_BRAND: source_data.get("Brand", ""),
+        }
         suggestions.append({
             **row,
             "score": score,
             "matchBasis": " + ".join(basis) or "Source row",
+            "fileNameDescriptionSuggestion": file_name_description.suggest(
+                source_data.get("Product Name", ""),
+                _brand_names_for_item(source_product_fields, client),
+            ),
         })
     return sorted(
         suggestions,
@@ -4514,13 +4731,9 @@ def _clients_by_id():
 
 
 def _issues_by_item_id():
-    data = airtable.list_records(C.ISSUES_TABLE, by_field_id=False)
-    issues = {}
-    for record in _filter_indirect_client_records(data.get("records", []), _client_ids_for_issue):
-        shaped = _shape_issue(record)
-        for item_id in shaped.get("itemIds", []):
-            issues.setdefault(item_id, []).append(shaped)
-    return issues
+    # Issues were retired from the operating model in 2026-09. Physical
+    # observations stay on Merchandise; review reasons are derived.
+    return {}
 
 
 def _product_production_summaries(product_records):
@@ -4534,7 +4747,7 @@ def _product_production_summaries(product_records):
     if not product_ids:
         return {}
     merchandise_records = _list_all_records(C.MERCHANDISE_TABLE)
-    workstream_records = _list_all_records(C.WORKSTREAM_CARDS_TABLE)
+    workstream_records = _list_photo_actions()
     thr3d_records = _list_all_records(C.THR3D_SHIPPING_ITEMS_TABLE)
     grouped = {product_id: {"merchandise": [], "workstreams": [], "thr3d": []} for product_id in product_ids}
     for record in merchandise_records:
@@ -4578,6 +4791,15 @@ def _derive_product_production_summary(*, merchandise, workstreams, thr3d):
         for fields in workstream_fields
     }
     cf_statuses.discard("")
+    cf_syncs = [
+        _parse_creative_force_sync(fields.get(C.F_WORKSTREAM_CARD_CREATIVE_FORCE_SYNC, ""))
+        for fields in workstream_fields
+    ]
+    cf_steps = sorted({str(sync.get("stepName") or "").strip() for sync in cf_syncs} - {""})
+    cf_reported_at = max(
+        (str(sync.get("stepReportedAt") or "").strip() for sync in cf_syncs),
+        default="",
+    )
     shipping_statuses = {str(fields.get(C.F_THR3D_SHIPPING_ITEM_STATUS) or "").strip() for fields in thr3d_fields}
 
     if not merchandise:
@@ -4608,6 +4830,8 @@ def _derive_product_production_summary(*, merchandise, workstreams, thr3d):
         "planningStatusLabels": sorted(planning_labels - {""}),
         "workstreamStatuses": sorted(card_statuses - {""}),
         "creativeForceStatuses": sorted(cf_statuses),
+        "creativeForceSteps": cf_steps,
+        "creativeForceStepReportedAt": cf_reported_at,
         "shippingStatuses": sorted(shipping_statuses - {""}),
     }
 
@@ -4661,7 +4885,7 @@ def _shape_item(r, *, clients_by_id=None, issues_by_item_id=None, required_to_sh
         "primaryMatchKeyLabel": _identifier_label(client),
         "upc": f.get(C.F_ITEM_UPC, "") or f.get(C.F_ITEM_IDENTIFIER, ""),
         "cvid": f.get(C.F_ITEM_CVID, ""),
-        "brandPrefix": f.get(C.F_ITEM_BRAND_PREFIX, ""),
+        "brandPrefix": brand_prefix_code(f.get(C.F_ITEM_BRAND_PREFIX, "")),
         "product": f.get(C.F_ITEM_PRODUCT, ""),
         "requestType": f.get(C.F_ITEM_REQUEST_TYPE, ""),
         "projectStatus": f.get(C.F_ITEM_PROJECT_STATUS, ""),
@@ -4859,7 +5083,7 @@ def _apply_item_fields(fields, body):
     if "cvid" in body and body["cvid"] is not None:
         fields[C.F_ITEM_CVID] = str(body.get("cvid") or "").strip()
     if "brandPrefix" in body and body["brandPrefix"] is not None:
-        fields[C.F_ITEM_BRAND_PREFIX] = str(body.get("brandPrefix") or "").strip()
+        fields[C.F_ITEM_BRAND_PREFIX] = brand_prefix_code(body.get("brandPrefix"))
     for key, field in {
         "requestType": C.F_ITEM_REQUEST_TYPE,
         "wkftJobNumber": C.F_ITEM_WKFT_JOB_NUMBER,
@@ -4885,7 +5109,7 @@ def _apply_item_fields(fields, body):
             else:
                 fields[field] = str(value or "").strip()
     if "fileNameDescription" in body and body["fileNameDescription"] is not None:
-        fields[C.F_ITEM_FILE_NAME_DESCRIPTION] = str(body.get("fileNameDescription") or "").strip()
+        fields[C.F_ITEM_FILE_NAME_DESCRIPTION] = _normalize_file_name_description(body.get("fileNameDescription"))
     if "masterOrVariant" in body and body["masterOrVariant"] is not None:
         normalized = _normalize_master_or_variant(body.get("masterOrVariant"))
         if normalized:
@@ -5026,6 +5250,7 @@ def _find_matching_skus(query, *, client_id="", include_item_id="", limit=8):
 
 @api.get("/issues")
 def list_issues():
+    return err("Issues have been retired from the Marks Photo operating model.", 410)
     data = airtable.list_records(
         C.ISSUES_TABLE,
         params={"sort[0][field]": C.F_ISSUE_OPENED, "sort[0][direction]": "desc"},
@@ -5038,6 +5263,7 @@ def list_issues():
 
 @api.post("/issues")
 def create_issue():
+    return err("Issues have been retired from the Marks Photo operating model.", 410)
     body = request.get_json(silent=True) or {}
     issue = (body.get("issue") or body.get("name") or "").strip()
     if not issue:
@@ -5073,6 +5299,7 @@ def create_issue():
 
 @api.patch("/issues/<record_id>")
 def update_issue(record_id):
+    return err("Issues have been retired from the Marks Photo operating model.", 410)
     body = request.get_json(silent=True) or {}
     previous = airtable.get_record(C.ISSUES_TABLE, record_id, by_field_id=False)
     if not _client_ids_permitted(_client_ids_for_issue(previous)):
@@ -5277,29 +5504,56 @@ def delete_shipment(shipment_id):
 
 # ── Verification ──────────────────────────────────────────────────────────────
 
-def _list_merchandise_review_records():
+def _list_merchandise_review_records(*, include_released=False):
     try:
         entries = _list_all_records(C.MERCHANDISE_TABLE)
         receipts = _list_all_records(C.SHIPMENTS_TABLE)
-        issues = _list_all_records(C.ISSUES_TABLE)
+        issues = []
+        products = _list_all_records(C.PRODUCTS_TABLE) if include_released else []
+        workstream_cards = _list_photo_actions() if include_released else []
+        actions = _list_all_records(C.ACTIONS_TABLE) if include_released else []
     except requests.HTTPError as error:
         raise error
 
     receipts_by_id = {record["id"]: record for record in _filter_receipts_by_access(receipts)}
     issues_by_item = {}
-    for issue in _filter_indirect_client_records(issues, _client_ids_for_issue):
-        shaped_issue = _shape_issue(issue)
-        for item_id in shaped_issue.get("itemIds", []):
-            issues_by_item.setdefault(item_id, []).append(shaped_issue)
     records = []
+    product_ids = {
+        product_id
+        for entry in entries
+        for product_id in _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_ITEM, []))
+    }
+    products_by_id = {record["id"]: record for record in products if record.get("id") in product_ids}
+    production_summaries = _product_production_summaries(list(products_by_id.values())) if include_released else {}
+    workstream_cards_by_merchandise = {}
+    for card in workstream_cards:
+        for merchandise_id in _as_list(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_RECEIVED_MERCH, [])):
+            workstream_cards_by_merchandise.setdefault(merchandise_id, []).append(card)
+    actions_by_merchandise = {}
+    for action in actions:
+        for merchandise_id in _as_list(action.get("fields", {}).get(C.F_ACTION_MERCHANDISE, [])):
+            actions_by_merchandise.setdefault(merchandise_id, []).append(_shape_action(action))
     for entry in entries:
-        if entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RELEASED):
+        if not include_released and entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RELEASED):
             continue
         linked_receipts = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_RECEIPT, []))
         receipt = next((receipts_by_id.get(receipt_id) for receipt_id in linked_receipts if receipt_id in receipts_by_id), None)
         if linked_receipts and receipt is None:
             continue
-        records.append(_shape_verification_entry(entry, receipt, issues_by_item_id=issues_by_item))
+        item_ids = _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_ITEM, []))
+        item_record = products_by_id.get(item_ids[0]) if include_released and item_ids else None
+        shaped = _shape_verification_entry(
+            entry,
+            receipt,
+            item_record=item_record,
+            issues_by_item_id=issues_by_item,
+            production_summary=production_summaries.get(item_ids[0]) if item_ids else None,
+            workstream_cards=workstream_cards_by_merchandise.get(entry.get("id"), []),
+        )
+        shaped_actions = actions_by_merchandise.get(entry.get("id"), [])
+        shaped["actions"] = shaped_actions
+        shaped["lifecycle"] = _derive_merchandise_lifecycle(shaped, shaped_actions)
+        records.append(shaped)
     records.sort(key=lambda record: (record.get("received") or "", record.get("name") or ""), reverse=True)
     return records
 
@@ -6059,7 +6313,7 @@ def _creative_force_feed_fields(record, handoff):
 
 def _creative_force_product_feed_preview():
     rows = []
-    for card in _list_all_records(C.WORKSTREAM_CARDS_TABLE):
+    for card in _list_photo_actions():
         card_fields = card.get("fields", {})
         if card_fields.get(C.F_WORKSTREAM_CARD_TYPE) not in C.WORKSTREAM_TYPE_OPTIONS:
             continue
@@ -6080,7 +6334,7 @@ def _creative_force_product_feed_preview():
 def _workstream_cards_for_merchandise(entry_id):
     """Photo cards belonging to one merchandise record."""
     cards = []
-    for record in _list_all_records(C.WORKSTREAM_CARDS_TABLE):
+    for record in _list_photo_actions():
         linked = _as_list(record.get("fields", {}).get(C.F_WORKSTREAM_CARD_RECEIVED_MERCH, []))
         if entry_id in linked:
             cards.append(record)
@@ -6287,7 +6541,7 @@ def creative_force_webhook():
             "reason": "Missing WorkUnitId.",
         })
         return jsonify({"accepted": False, "reason": "Missing WorkUnitId."})
-    records = _list_all_records(C.WORKSTREAM_CARDS_TABLE)
+    records = _list_photo_actions()
     target = _find_creative_force_card(records, sync)
     if not target:
         _record_creative_force_webhook({
@@ -6341,6 +6595,11 @@ def creative_force_webhook():
             merged.get("stepStatusRaw") or merged.get("statusRaw", "")
         ),
         C.F_WORKSTREAM_CARD_CREATIVE_FORCE_STEP: "" if disabled else merged.get("stepName", ""),
+        C.F_ACTION_STATUS: (
+            "Activated" if disabled
+            else "Done" if str(merged.get("statusRaw") or "").strip().casefold() in CREATIVE_FORCE_DONE_STATUSES
+            else "Executing"
+        ),
     }
     # The shoot date is lifted out of the sync blob onto a field of its own, so a
     # question like "what has been on a shelf since June" is a view rather than a
@@ -6459,7 +6718,7 @@ def _product_view_for_requirements(product_fields):
         "identifier": fields.get(C.F_ITEM_IDENTIFIER, ""),
         "cvid": fields.get(C.F_ITEM_CVID, ""),
         "itemJobNumber": fields.get(C.F_ITEM_JOB_NUMBER, ""),
-        "brandPrefix": fields.get(C.F_ITEM_BRAND_PREFIX, ""),
+        "brandPrefix": brand_prefix_code(fields.get(C.F_ITEM_BRAND_PREFIX, "")),
         "fileNameDescription": fields.get(C.F_ITEM_FILE_NAME_DESCRIPTION, ""),
         "productType": fields.get(C.F_ITEM_PRODUCT_TYPE, ""),
         "ecommPhotoNotes": fields.get(C.F_ITEM_ECOMM_PHOTO_NOTES, ""),
@@ -6480,6 +6739,7 @@ def _photo_product_value(product, key):
         "productType": product.get("productType"),
         "ecommPhotoNotes": product.get("ecommPhotoNotes"),
         "pathToArt": product.get("pathToArt"),
+        "mboxNumber": product.get("mboxNumber"),
         "fileNameDescription": product.get("fileNameDescription"),
     }
     if key in direct_values and direct_values[key] not in (None, ""):
@@ -6647,8 +6907,244 @@ def _shape_thr3d_shipping_item(record):
     }
 
 
+def _action_external_reference(source_table, source_record_id):
+    return json.dumps(
+        {"sourceTable": source_table, "sourceRecordId": source_record_id},
+        sort_keys=True,
+    )
+
+
+def _list_photo_actions():
+    return [
+        record
+        for record in _list_all_records(C.ACTIONS_TABLE)
+        if str(record.get("fields", {}).get(C.F_ACTION_TYPE) or "").strip() in {"Ecomm", "Packaging", "Pack"}
+    ]
+
+
+def _shape_action(record):
+    fields = record.get("fields", {})
+    external_reference = fields.get(C.F_ACTION_EXTERNAL_REFERENCE, "")
+    try:
+        external_reference = json.loads(external_reference) if external_reference else {}
+    except (TypeError, ValueError):
+        external_reference = {"value": external_reference}
+    return {
+        "id": record.get("id", ""),
+        "name": fields.get(C.F_ACTION_NAME, ""),
+        "merchandiseIds": _as_list(fields.get(C.F_ACTION_MERCHANDISE, [])),
+        "type": "Pack" if fields.get(C.F_ACTION_TYPE) == "Packaging" else fields.get(C.F_ACTION_TYPE, ""),
+        "status": fields.get(C.F_ACTION_STATUS, "") or "Proposed",
+        "quantity": fields.get(C.F_ACTION_QUANTITY, 0),
+        "activatedAt": fields.get(C.F_ACTION_ACTIVATED_AT, ""),
+        "activatedBy": fields.get(C.F_ACTION_ACTIVATED_BY, ""),
+        "externalReference": external_reference,
+        "cancellationReason": fields.get(C.F_ACTION_CANCELLATION_REASON, ""),
+    }
+
+
+def _derive_merchandise_lifecycle(shaped, actions):
+    active = [action for action in actions if action.get("status") != "Cancelled"]
+    statuses = {action.get("status") for action in active}
+    planning_status = str(shaped.get("planningStatusLabel") or shaped.get("planningStatus") or "").strip()
+    if statuses & {"Activated", "Executing", "Done"}:
+        stage = "Activated"
+    else:
+        # A Merchandise record exists only after physical receipt. Newly Received is
+        # the PM inbox, so receipt is complete and Review is the current milestone.
+        stage = "Reviewed"
+    reasons = []
+    required = shaped.get("requiredToShoot") or {}
+    missing = set(required.get("missing") or [])
+    if any("Mbox" in value or "MediaBox" in value for value in missing):
+        reasons.append("Missing MediaBox")
+    return {
+        "stage": stage,
+        "stages": ["Received", "Reviewed", "Activated"],
+        "reviewReasons": reasons,
+    }
+
+
+@api.get("/actions")
+def list_actions():
+    try:
+        records = _list_all_records(C.ACTIONS_TABLE)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"records": [_shape_action(record) for record in records]})
+
+
+@api.patch("/actions/<record_id>")
+def update_action(record_id):
+    body = request.get_json(silent=True) or {}
+    if str(body.get("status") or "").strip() == "Activated":
+        capability_error = _require_capability("activate_merchandise", "Activation permission required")
+        if capability_error:
+            return capability_error
+    try:
+        current = airtable.get_record(C.ACTIONS_TABLE, record_id, by_field_id=False)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    merchandise_ids = _as_list(current.get("fields", {}).get(C.F_ACTION_MERCHANDISE, []))
+    if merchandise_ids:
+        _entry, _receipt, access_error = _permitted_merchandise_or_error(merchandise_ids[0])
+        if access_error:
+            return access_error
+    current_status = str(current.get("fields", {}).get(C.F_ACTION_STATUS) or "Proposed")
+    status = str(body.get("status") or current_status).strip()
+    if status not in C.ACTION_STATUS_OPTIONS:
+        return err(f"Status must be one of: {', '.join(C.ACTION_STATUS_OPTIONS)}.", 400)
+    reason = str(body.get("reason") or body.get("cancellationReason") or "").strip()
+    if status in {"Cancelled", "Proposed"} and current_status in {"Activated", "Executing"} and not reason:
+        return err("A reversal reason is required.", 400)
+    fields = {C.F_ACTION_STATUS: status}
+    if status == "Activated" and current_status != "Activated":
+        activated_at = _now_iso()
+        fields[C.F_ACTION_ACTIVATED_AT] = activated_at
+        fields[C.F_ACTION_ACTIVATED_BY] = _current_user_display_name()
+        action_type = str(current.get("fields", {}).get(C.F_ACTION_TYPE) or "")
+        if action_type in {"Ecomm", "Packaging", "Pack"}:
+            try:
+                _populate_creative_force_feed_for_ready_cards([current])
+            except requests.HTTPError as error:
+                return airtable_err(error)
+            fields[C.F_WORKSTREAM_CARD_RELEASED] = True
+            fields[C.F_WORKSTREAM_CARD_RELEASED_AT] = activated_at
+            user_id = _current_user_id()
+            if user_id:
+                fields[C.F_WORKSTREAM_CARD_RELEASED_BY] = [user_id]
+    if reason:
+        fields[C.F_ACTION_CANCELLATION_REASON] = reason
+    try:
+        updated = airtable.update_record(C.ACTIONS_TABLE, record_id, fields, by_field_id=False, typecast=True)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    _create_history_event(
+        f"Action {status}",
+        merchandise_ids=merchandise_ids,
+        user_ids=[_current_user_id()] if _current_user_id() else None,
+        from_value=current_status,
+        to_value=status,
+    )
+    return jsonify({"record": _shape_action(updated)})
+
+
+def _shape_request(record):
+    fields = record.get("fields", {})
+    return {
+        "id": record.get("id", ""),
+        "name": fields.get(C.F_REQUEST_NAME, ""),
+        "productIds": _as_list(fields.get(C.F_REQUEST_PRODUCT, [])),
+        "status": fields.get(C.F_REQUEST_STATUS, "") or "Waiting",
+        "merchandiseIds": _as_list(fields.get(C.F_REQUEST_MERCHANDISE, [])),
+        "neededBy": fields.get(C.F_REQUEST_NEEDED_BY, ""),
+        "notes": fields.get(C.F_REQUEST_NOTES, ""),
+    }
+
+
+def _fulfill_waiting_requests(product_id, merchandise_id):
+    if not product_id or not merchandise_id:
+        return []
+    fulfilled = []
+    for record in _list_all_records(C.REQUESTS_TABLE):
+        fields = record.get("fields", {})
+        if product_id not in _as_list(fields.get(C.F_REQUEST_PRODUCT, [])):
+            continue
+        if str(fields.get(C.F_REQUEST_STATUS) or "Waiting") != "Waiting":
+            continue
+        updated = airtable.update_record(
+            C.REQUESTS_TABLE,
+            record["id"],
+            {
+                C.F_REQUEST_STATUS: "Fulfilled",
+                C.F_REQUEST_MERCHANDISE: [merchandise_id],
+            },
+            by_field_id=False,
+            typecast=True,
+        )
+        fulfilled.append(updated)
+    return fulfilled
+
+
+@api.get("/requests")
+def list_requests():
+    try:
+        records = _list_all_records(C.REQUESTS_TABLE)
+        products = {record["id"]: record for record in _list_all_records(C.PRODUCTS_TABLE)}
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    visible = []
+    for record in records:
+        product_id = (_as_list(record.get("fields", {}).get(C.F_REQUEST_PRODUCT, [])) or [""])[0]
+        product = products.get(product_id)
+        if product and _client_ids_permitted(_as_list(product.get("fields", {}).get(C.F_ITEM_CLIENT, []))):
+            visible.append(_shape_request(record))
+    return jsonify({"records": visible})
+
+
+@api.post("/requests")
+def create_request():
+    body = request.get_json(silent=True) or {}
+    product_id = str(body.get("productId") or "").strip()
+    if not product_id:
+        return err("Product is required.", 400)
+    try:
+        product = airtable.get_record(C.PRODUCTS_TABLE, product_id, by_field_id=False)
+        existing = _list_all_records(C.REQUESTS_TABLE)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    if not _client_ids_permitted(_as_list(product.get("fields", {}).get(C.F_ITEM_CLIENT, []))):
+        return _forbidden()
+    waiting = next((
+        record for record in existing
+        if product_id in _as_list(record.get("fields", {}).get(C.F_REQUEST_PRODUCT, []))
+        and str(record.get("fields", {}).get(C.F_REQUEST_STATUS) or "Waiting") == "Waiting"
+    ), None)
+    if waiting:
+        return jsonify({"record": _shape_request(waiting), "existing": True})
+    product_name = product.get("fields", {}).get(C.F_ITEM_NAME) or "Product"
+    fields = {
+        C.F_REQUEST_NAME: str(body.get("name") or f"Waiting for {product_name}").strip(),
+        C.F_REQUEST_PRODUCT: [product_id],
+        C.F_REQUEST_STATUS: "Waiting",
+    }
+    if str(body.get("neededBy") or "").strip():
+        fields[C.F_REQUEST_NEEDED_BY] = str(body["neededBy"]).strip()
+    if str(body.get("notes") or "").strip():
+        fields[C.F_REQUEST_NOTES] = str(body["notes"]).strip()
+    try:
+        created = airtable.create_record(C.REQUESTS_TABLE, fields, by_field_id=False, typecast=True)
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": _shape_request(created)}), 201
+
+
+@api.patch("/requests/<record_id>")
+def update_request(record_id):
+    body = request.get_json(silent=True) or {}
+    status = str(body.get("status") or "").strip()
+    if status not in C.REQUEST_STATUS_OPTIONS:
+        return err(f"Status must be one of: {', '.join(C.REQUEST_STATUS_OPTIONS)}.", 400)
+    try:
+        current = airtable.get_record(C.REQUESTS_TABLE, record_id, by_field_id=False)
+        product_id = (_as_list(current.get("fields", {}).get(C.F_REQUEST_PRODUCT, [])) or [""])[0]
+        product = airtable.get_record(C.PRODUCTS_TABLE, product_id, by_field_id=False) if product_id else None
+        if product and not _client_ids_permitted(_as_list(product.get("fields", {}).get(C.F_ITEM_CLIENT, []))):
+            return _forbidden()
+        updated = airtable.update_record(
+            C.REQUESTS_TABLE,
+            record_id,
+            {C.F_REQUEST_STATUS: status},
+            by_field_id=False,
+            typecast=True,
+        )
+    except requests.HTTPError as error:
+        return airtable_err(error)
+    return jsonify({"record": _shape_request(updated)})
+
+
 def _workstream_cards_for_planning():
-    records = _list_all_records(C.WORKSTREAM_CARDS_TABLE)
+    records = _list_photo_actions()
     shaped_records = []
     clients_by_id = _clients_by_id()
     for record in records:
@@ -6706,9 +7202,18 @@ def _thr3d_shipping_items_for_shipments(records=None, *, include_shipped=False, 
             if access_error:
                 continue
             parent = _shape_verification_entry(entry, receipt)
+        outbound_shipment = None
+        outbound_shipment_id = (_as_list(fields.get(C.F_THR3D_SHIPPING_ITEM_OUTBOUND_SHIPMENT, [])) or ["" ])[0]
+        if outbound_shipment_id:
+            try:
+                outbound_record = airtable.get_record(C.SHIPMENTS_TABLE, outbound_shipment_id, by_field_id=False)
+                outbound_shipment = _shape_receipt(outbound_record, entries_by_receipt={outbound_shipment_id: []})
+            except requests.HTTPError:
+                outbound_shipment = None
         shaped_records.append({
             **_shape_thr3d_shipping_item(record),
             "receivedMerch": parent,
+            "outboundShipment": outbound_shipment,
         })
     shaped_records.sort(key=lambda item: (item.get("shippingStatus") or "", item.get("name") or ""))
     return shaped_records
@@ -6774,7 +7279,31 @@ def _mark_thr3d_shipping_item_shipped(record_id, body):
             parent_quantity = 0
         updated_entry = entry
         if quantity_to_ship and parent_quantity and quantity_to_ship >= parent_quantity:
-            updated_entry = _update_receipt_entry_record(merchandise_id, {C.F_RECEIPT_ENTRY_MERCH_STATUS: "Shipped"})
+            shipped_location_id = next(
+                (
+                    location.get("id")
+                    for location in _list_all_records(C.LOCATIONS_TABLE)
+                    if str(location.get("fields", {}).get(C.F_LOCATION_NAME) or "").strip().casefold()
+                    == "shipped to thr3d"
+                    and location.get("fields", {}).get(C.F_LOCATION_ACTIVE, True)
+                ),
+                "",
+            )
+            merchandise_updates = {C.F_RECEIPT_ENTRY_MERCH_STATUS: "Shipped"}
+            if shipped_location_id:
+                merchandise_updates[C.F_RECEIPT_ENTRY_LOCATION] = [shipped_location_id]
+            updated_entry = _update_receipt_entry_record(merchandise_id, merchandise_updates)
+        source_ref = _action_external_reference(C.THR3D_SHIPPING_ITEMS_TABLE, record_id)
+        for action in _list_all_records(C.ACTIONS_TABLE):
+            if action.get("fields", {}).get(C.F_ACTION_EXTERNAL_REFERENCE) == source_ref:
+                airtable.update_record(
+                    C.ACTIONS_TABLE,
+                    action["id"],
+                    {C.F_ACTION_STATUS: "Done"},
+                    by_field_id=False,
+                    typecast=True,
+                )
+                break
     except requests.HTTPError as error:
         return airtable_err(error)
 
@@ -6835,8 +7364,6 @@ def _confirm_assign_payload(body, entry, item_record=None, card_planning_status=
             **({C.F_THR3D_SHIPPING_ITEM_MANUAL_PRODUCT_INFO: manual_product_info} if manual_product_info else {}),
         }
 
-    if thr3d_fields and any(fields[C.F_WORKSTREAM_CARD_TYPE] == "Ecomm" for fields in workstreams):
-        return err("Ecomm and THR3D are alternate GS1 paths. Choose one of them, not both.", 400)
     if thr3d_fields:
         packaging_quantity = sum(
             fields[C.F_WORKSTREAM_CARD_QUANTITY]
@@ -6984,6 +7511,36 @@ def _evaluate_required_to_shoot(shaped, linked_item=None):
     return _evaluate_required_to_shoot_from_fields(entry_fields, product_fields)
 
 
+def _product_fields_with_review_draft(product_fields, draft):
+    """Overlay unsaved modal values for a read-only missing-information check."""
+    fields = dict(product_fields or {})
+    mapping = {
+        "name": C.F_ITEM_NAME,
+        "primaryMatchKey": C.F_ITEM_IDENTIFIER,
+        "cvid": C.F_ITEM_CVID,
+        "itemJobNumber": C.F_ITEM_JOB_NUMBER,
+        "brandPrefix": C.F_ITEM_BRAND_PREFIX,
+        "fileNameDescription": C.F_ITEM_FILE_NAME_DESCRIPTION,
+        "productType": C.F_ITEM_PRODUCT_TYPE,
+        "ecommPhotoNotes": C.F_ITEM_ECOMM_PHOTO_NOTES,
+        "pathToArt": C.F_ITEM_PATH_TO_ART,
+        "mboxNumber": C.F_ITEM_MBOX_NUMBER,
+    }
+    for key, field in mapping.items():
+        if key in (draft or {}):
+            fields[field] = str(draft.get(key) or "").strip()
+    return fields
+
+
+def _client_answerable_missing_requirements(readiness):
+    internal_keys = {"merchandise-verified", "deliverables", "product-linked"}
+    return [
+        requirement.get("label")
+        for requirement in (readiness or {}).get("requirements", [])
+        if not requirement.get("ready") and requirement.get("key") not in internal_keys
+    ]
+
+
 def _quantity_is_present(value):
     try:
         return float(value) > 0
@@ -7128,6 +7685,7 @@ def _shape_merchandise_inventory_entry(entry, *, receipts_by_id, products_by_id,
     return {
         **shaped,
         "packageName": shaped.get("productName", ""),
+        "displayName": (linked_product or {}).get("name") or (linked_product or {}).get("product") or shaped.get("productName") or shaped.get("description", ""),
         "barcodeOrIdNumber": shaped.get("skuId", ""),
         "client": client.get("name", "") if client else "",
         "clientIds": client_ids,
@@ -7174,7 +7732,7 @@ def _list_merchandise_inventory_records():
     clients_by_id = {record["id"]: _shape_client(record) for record in clients}
     locations_by_id = {record["id"]: _shape_location(record) for record in locations}
     cards_by_merchandise = {}
-    for card in _list_all_records(C.WORKSTREAM_CARDS_TABLE):
+    for card in _list_photo_actions():
         for merchandise_id in _as_list(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_RECEIVED_MERCH, [])):
             cards_by_merchandise.setdefault(merchandise_id, []).append(card)
     now = _now_utc()
@@ -7219,7 +7777,7 @@ def list_merchandise_inventory():
 @api.get("/merchandise/review")
 def list_verification_entries():
     try:
-        records = _list_merchandise_review_records()
+        records = _list_merchandise_review_records(include_released=request.args.get("includeReleased") == "1")
     except requests.HTTPError as error:
         return airtable_err(error)
     return jsonify({"records": records})
@@ -7493,7 +8051,7 @@ def create_workstream_card():
     if access_error:
         return access_error
     try:
-        siblings = _list_all_records(C.WORKSTREAM_CARDS_TABLE)
+        siblings = _list_photo_actions()
     except requests.HTTPError as error:
         return airtable_err(error)
     existing_types = []
@@ -7620,7 +8178,7 @@ def delete_workstream_card(record_id):
     remaining_types = []
     if merchandise_id:
         try:
-            siblings = _list_all_records(C.WORKSTREAM_CARDS_TABLE)
+            siblings = _list_photo_actions()
         except requests.HTTPError as error:
             return airtable_err(error)
         for sibling in siblings:
@@ -7683,6 +8241,10 @@ def ship_thr3d_shipping_item(record_id):
 @api.post("/merchandise/review/<entry_id>/confirm-assign")
 def confirm_assign_merchandise(entry_id):
     body = request.get_json(silent=True) or {}
+    if body.get("activationIntent") is True:
+        capability_error = _require_capability("activate_merchandise", "Activation permission required")
+        if capability_error:
+            return capability_error
     entry, receipt, access_error = _permitted_merchandise_or_error(entry_id)
     if access_error:
         return access_error
@@ -7721,8 +8283,6 @@ def confirm_assign_merchandise(entry_id):
         )
         if not readiness["ready"]:
             return err(f"Cannot move to Awaiting Photo Release.\nMissing: {', '.join(readiness['missing'])}", 400)
-        if expected_product_id and _blocking_merchandise_issues(_issues_by_item_id().get(expected_product_id, [])):
-            return err("Cannot move to Awaiting Photo Release.\nMissing: Resolved Merchandise Issues", 400)
         card_planning_status = PLANNING_STATUS_LABELS["awaiting-photo-release"]
     elif requested_status and requested_status not in PLANNING_STATUS_VALUES:
         return err("planningStatus must be one of: Needs More Information, Awaiting Photo Release.")
@@ -7734,12 +8294,39 @@ def confirm_assign_merchandise(entry_id):
 
     try:
         workstream_cards = [
-            airtable.create_record(C.WORKSTREAM_CARDS_TABLE, fields, by_field_id=False, typecast=True)
+            airtable.create_record(
+                C.WORKSTREAM_CARDS_TABLE,
+                {
+                    **fields,
+                    C.F_ACTION_STATUS: "Proposed",
+                    C.F_ACTION_EXTERNAL_REFERENCE: _action_external_reference("legacy", "workstream-card"),
+                },
+                by_field_id=False,
+                typecast=True,
+            )
             for fields in workstream_fields
         ]
         thr3d_items = []
         if thr3d_fields:
             thr3d_items.append(airtable.create_record(C.THR3D_SHIPPING_ITEMS_TABLE, thr3d_fields, by_field_id=False, typecast=True))
+        actions = list(workstream_cards)
+        if thr3d_fields and thr3d_items:
+            actions.append(airtable.create_record(
+                C.ACTIONS_TABLE,
+                {
+                    C.F_ACTION_NAME: thr3d_fields[C.F_THR3D_SHIPPING_ITEM_NAME],
+                    C.F_ACTION_MERCHANDISE: [entry_id],
+                    C.F_ACTION_TYPE: "THR3D",
+                    C.F_ACTION_STATUS: "Proposed",
+                    C.F_ACTION_QUANTITY: thr3d_fields[C.F_THR3D_SHIPPING_ITEM_QUANTITY],
+                    C.F_ACTION_EXTERNAL_REFERENCE: _action_external_reference(
+                        C.THR3D_SHIPPING_ITEMS_TABLE,
+                        thr3d_items[0]["id"],
+                    ),
+                },
+                by_field_id=False,
+                typecast=True,
+            ))
 
         update_fields = {
             # The parent leaves the board because child work now exists, not because
@@ -7753,6 +8340,8 @@ def confirm_assign_merchandise(entry_id):
         if manual_product_info:
             update_fields[C.F_RECEIPT_ENTRY_MANUAL_PRODUCT_INFO] = manual_product_info
         updated = _update_receipt_entry_record(entry_id, update_fields)
+        for product_id in expected_product_ids:
+            _fulfill_waiting_requests(product_id, entry_id)
     except requests.HTTPError as error:
         return airtable_err(error)
 
@@ -7760,6 +8349,7 @@ def confirm_assign_merchandise(entry_id):
         "merchandise": _shape_verification_entry(updated, receipt, item_record=item_record),
         "workstreamCards": [_shape_workstream_card(record) for record in workstream_cards],
         "thr3dShippingItems": [_shape_thr3d_shipping_item(record) for record in thr3d_items],
+        "actions": [_shape_action(record) for record in actions],
     }), 201
 
 
@@ -7937,9 +8527,6 @@ def update_merchandise_intake_state(entry_id):
         )
         if not requiredToShoot["ready"]:
             return err(f"Cannot move to Awaiting Photo Release.\nMissing: {', '.join(requiredToShoot['missing'])}", 400)
-        issues = _issues_by_item_id().get(item_ids[0], [])
-        if _blocking_merchandise_issues(issues):
-            return err("Cannot move to Awaiting Photo Release.\nMissing: Resolved Merchandise Issues", 400)
         update_fields[C.F_RECEIPT_ENTRY_PLANNING_STATUS] = PLANNING_STATUS_LABELS["awaiting-photo-release"]
         update_fields.update(_merch_status_normalization_fields(fields))
 
@@ -7965,6 +8552,9 @@ def update_merchandise_intake_state(entry_id):
 @api.post("/merchandise/<entry_id>/release")
 @api.post("/merchandise/review/<entry_id>/release")
 def release_merchandise_to_production(entry_id):
+    capability_error = _require_capability("activate_merchandise", "Activation permission required")
+    if capability_error:
+        return capability_error
     try:
         entry = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
     except requests.HTTPError as error:
@@ -8027,6 +8617,9 @@ def release_merchandise_to_production(entry_id):
     card_fields = {
         C.F_WORKSTREAM_CARD_RELEASED: True,
         C.F_WORKSTREAM_CARD_RELEASED_AT: released_at,
+        C.F_ACTION_STATUS: "Activated",
+        C.F_ACTION_ACTIVATED_AT: released_at,
+        C.F_ACTION_ACTIVATED_BY: _current_user_display_name(),
     }
     if user_id:
         card_fields[C.F_WORKSTREAM_CARD_RELEASED_BY] = [user_id]
@@ -8175,6 +8768,7 @@ def match_verification_entry(entry_id):
             C.F_RECEIPT_ENTRY_PLANNING_STATUS: entry_fields.get(C.F_RECEIPT_ENTRY_PLANNING_STATUS) or "New",
             **_merch_status_normalization_fields(entry_fields),
         })
+        _fulfill_waiting_requests(item_id, entry_id)
     except requests.HTTPError as error:
         return airtable_err(error)
     return jsonify(_shape_verification_entry(updated, receipt, item_record=item))
@@ -8414,8 +9008,8 @@ def activate_source_row_for_merchandise(entry_id):
 def validate_verification_entry(entry_id):
     body = request.get_json(silent=True) or {}
     status = (body.get("status") or "").strip()
-    if status not in {"Validated", "Received", "Issue", "Ready to Ship", "Shipped", "Disposed"}:
-        return err("status must be one of: Validated, Received, Issue, Ready to Ship, Shipped, Disposed")
+    if status not in {"Validated", "Received", "Ready to Ship", "Shipped", "Disposed"}:
+        return err("status must be one of: Validated, Received, Ready to Ship, Shipped, Disposed")
 
     try:
         entry = airtable.get_record(C.MERCHANDISE_TABLE, entry_id, by_field_id=False)
@@ -8432,9 +9026,6 @@ def validate_verification_entry(entry_id):
     if status == "Validated":
         if not item_ids:
             return err("A Product must be linked before Merchandise can be validated.", 400)
-        issues = _issues_by_item_id().get(item_ids[0], [])
-        if _blocking_merchandise_issues(issues):
-            return err("Resolve blocking Merchandise Issues before validation.", 400)
 
     update_fields = {}
     if status == "Validated":
@@ -8505,6 +9096,7 @@ def mark_merchandise_waiting_for_product_data(entry_id):
 
 @api.post("/merchandise/review/<entry_id>/issue")
 def create_merchandise_review_issue(entry_id):
+    return err("Issues have been retired from the Marks Photo operating model.", 410)
     body = request.get_json(silent=True) or {}
     issue_type = (body.get("type") or "Unknown Item").strip()
     description = (body.get("description") or body.get("issue") or "Merchandise issue").strip()
@@ -10103,7 +10695,7 @@ def dashboard_creative_force_pipeline():
     unreported = []
     total = 0
 
-    for card in _list_all_records(C.WORKSTREAM_CARDS_TABLE):
+    for card in _list_photo_actions():
         fields = card.get("fields", {})
         if not fields.get(C.F_WORKSTREAM_CARD_RELEASED, False):
             continue  # not handed over, so not Creative Force's to be holding
@@ -10206,7 +10798,7 @@ def inventory_purge_list():
     }
     clients_by_id = {record["id"]: record for record in _client_records()}
     cards_by_merchandise = {}
-    for card in _list_all_records(C.WORKSTREAM_CARDS_TABLE):
+    for card in _list_photo_actions():
         for merchandise_id in _as_list(card.get("fields", {}).get(C.F_WORKSTREAM_CARD_RECEIVED_MERCH, [])):
             cards_by_merchandise.setdefault(merchandise_id, []).append(card)
 
@@ -10271,16 +10863,21 @@ def request_missing_information(entry_id):
     # lives on its workstream cards rather than on the merchandise row. Evaluated
     # without them the item looked as though it were missing its Deliverables, and
     # that is what the client was asked for.
-    deliverables = _merchandise_deliverables_in_scope(entry_id, entry_fields, body=request.get_json(silent=True) or {})
+    body = request.get_json(silent=True) or {}
+    deliverables = _merchandise_deliverables_in_scope(entry_id, entry_fields, body=body)
     client_config = _client_config_for_entry(entry_fields, receipt)
+    product_fields = _product_fields_with_review_draft(
+        product_record.get("fields", {}) if product_record else {},
+        body.get("productDraft") if isinstance(body.get("productDraft"), dict) else {},
+    )
     readiness = _evaluate_required_to_shoot_from_fields(
         {**entry_fields, C.F_RECEIPT_ENTRY_DELIVERABLES: deliverables},
-        product_record.get("fields", {}) if product_record else {},
+        product_fields,
         client_config=client_config,
     )
-    missing = readiness.get("missing") or []
+    missing = _client_answerable_missing_requirements(readiness)
     if not missing:
-        return err("Nothing is missing on this item.", 400)
+        return err("No client information is missing on this item.", 400)
 
     client_ids = _as_list(entry_fields.get(C.F_RECEIPT_CLIENT, [])) or _as_list(
         (receipt or {}).get("fields", {}).get(C.F_RECEIPT_CLIENT, []))
@@ -10293,7 +10890,7 @@ def request_missing_information(entry_id):
     client_fields = (client_record or {}).get("fields", {})
     webhook = str(client_fields.get(C.F_CLIENT_TEAMS_WEBHOOK, "") or "").strip()
     if not webhook:
-        return err("This client has no Teams channel configured.", 400)
+        return err("This client has no Chat channel configured.", 400)
 
     tag = _merchandise_tag(entry, receipt, product_record)
     user = _current_user() or {}
@@ -10308,7 +10905,7 @@ def request_missing_information(entry_id):
     posted, detail = notifier.post_arrival(webhook, card)
     if not posted:
         return err(detail, 502)
-    _record_merchandise_history(entry_id, f"Asked Teams for: {', '.join(missing)}")
+    _record_merchandise_history(entry_id, f"Asked in Chat for: {', '.join(missing)}")
     return jsonify({"posted": True, "missing": missing, "detail": detail})
 
 
@@ -10407,6 +11004,8 @@ def _shape_receipt_entry(r, *, products_by_id=None, clients_by_id=None):
         "id": r["id"],
         "name": product_name,
         "productName": product_name,
+        "observedProductName": product_name,
+        "displayName": (matched_product or {}).get("name") or product_name or f.get(C.F_RECEIPT_ENTRY_DESCRIPTION, "") or "",
         "receiptIds": f.get(C.F_RECEIPT_ENTRY_RECEIPT, []),
         "skuId": sku_id,
         "observedIdentifier": sku_id,
@@ -10468,8 +11067,6 @@ def _verification_status_label(status):
 def _review_state_for_entry(shaped, linked_item=None, blocking_issues=None):
     merch_status = shaped.get("merchStatus") or ""
     planning_label_value = shaped.get("planningStatusLabel") or ""
-    if merch_status == "Issue" or blocking_issues:
-        return "Issue"
     if planning_label_value in {"Needs More Information", "Waiting on Information"}:
         return "Waiting for Product Data"
     if planning_label_value == "Awaiting Photo Release":
@@ -10477,7 +11074,7 @@ def _review_state_for_entry(shaped, linked_item=None, blocking_issues=None):
     return "Needs Review"
 
 
-def _shape_verification_entry(entry, receipt=None, *, item_record=None, issues_by_item_id=None):
+def _shape_verification_entry(entry, receipt=None, *, item_record=None, issues_by_item_id=None, production_summary=None, workstream_cards=None):
     shaped = _shape_receipt_entry(entry)
     entry_fields = entry.get("fields", {})
     receipt_fields = receipt.get("fields", {}) if receipt else {}
@@ -10493,8 +11090,8 @@ def _shape_verification_entry(entry, receipt=None, *, item_record=None, issues_b
             item_record = None
     if item_record:
         clients_by_id = _clients_by_id()
-        linked_item = _shape_item(item_record, clients_by_id=clients_by_id)
-    blocking_issues = _blocking_merchandise_issues((issues_by_item_id or {}).get(item_ids[0], [])) if item_ids else []
+        linked_item = _shape_item(item_record, clients_by_id=clients_by_id, production_summary=production_summary)
+    blocking_issues = []
     received = receipt_fields.get(C.F_RECEIPT_RECEIVED, "") if receipt else ""
     days_here = _days_here_from_received(received)
     review_state = _review_state_for_entry(shaped, linked_item, blocking_issues)
@@ -10519,6 +11116,8 @@ def _shape_verification_entry(entry, receipt=None, *, item_record=None, issues_b
         "clientIds": client_ids,
         "locationId": location_ids[0] if location_ids else "",
         "productName": shaped.get("productName") or shaped.get("description", ""),
+        "observedProductName": shaped.get("observedProductName") or shaped.get("productName", ""),
+        "displayName": (linked_item or {}).get("name") or (linked_item or {}).get("product") or shaped.get("productName") or shaped.get("description", ""),
         "skuId": shaped.get("skuId", ""),
         "brand": entry_fields.get("Brand", ""),
         "packageSize": entry_fields.get("Package Size", ""),
@@ -10527,6 +11126,7 @@ def _shape_verification_entry(entry, receipt=None, *, item_record=None, issues_b
         "reviewState": review_state,
         "requiredToShoot": required_to_shoot,
         "photoProduction": photo_production,
+        "photoWorkstreams": [_shape_workstream_card(card) for card in (workstream_cards or [])],
         "releaseReady": required_to_shoot.get("ready", False),
         "isUnidentified": not any([shaped.get("productName"), shaped.get("skuId"), shaped.get("description")]),
         "received": received,
@@ -10750,6 +11350,9 @@ def _queue_assignment(records, issues_by_item):
 def randomize_demo_data():
     if not _is_development_mode():
         return err("Developer tools are only available in development mode.", 404)
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
 
     clients_data = _client_records()
     clients_by_id = {record["id"]: _shape_client(record) for record in clients_data}
@@ -10841,6 +11444,9 @@ def randomize_demo_data():
 def clear_core_tables():
     if not _is_development_mode():
         return err("Developer tools are only available in development mode.", 404)
+    admin_error = _require_admin()
+    if admin_error:
+        return admin_error
 
     record_cache = {}
     photo_keys = set()
@@ -10850,7 +11456,6 @@ def clear_core_tables():
         ("workstreamCards", C.WORKSTREAM_CARDS_TABLE),
         ("thr3dShippingItems", C.THR3D_SHIPPING_ITEMS_TABLE),
         ("activations", C.ACTIVATIONS_TABLE),
-        ("issues", C.ISSUES_TABLE),
         ("history", C.HISTORY_TABLE),
         ("imports", C.IMPORTS_TABLE),
         ("merchandise", C.MERCHANDISE_TABLE),
@@ -10926,7 +11531,6 @@ def settings():
                 "receiptEntries": C.RECEIPT_ENTRIES_TABLE,
                 "locations": C.LOCATIONS_TABLE,
                 "users": C.USERS_TABLE,
-                "issues": C.ISSUES_TABLE,
                 "history": C.HISTORY_TABLE,
                 "imports": C.IMPORTS_TABLE,
                 "comments": C.COMMENTS_TABLE,
@@ -10936,3 +11540,5 @@ def settings():
             },
         }
     })
+def _normalize_file_name_description(value):
+    return file_name_description.normalize(value)

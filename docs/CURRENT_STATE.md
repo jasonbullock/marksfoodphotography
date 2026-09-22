@@ -1,4 +1,184 @@
+## 2026-09-22 - Planning and operations checkpoint verified
+
+The accumulated Planning, Activation, Requests, permissions, source-data, filename, navigation, and workspace-polish work is captured as one repository checkpoint. The full backend/frontend unit suite passes 843 tests, the production frontend build passes, and `git diff --check` reports no whitespace errors. The frontend build retains its existing large-chunk warning.
+
+## 2026-09-21 - Activation SKU copy simplified
+
+The Activation item section now uses the instruction `Add an item to activate.` and labels both add controls `Add SKU`. Behavior is unchanged.
+
+Verification: `npm --prefix frontend run build` passed and `tests.test_frontend_routing` passed 175 tests. The existing Vite large-chunk warning remains.
+
+## 2026-09-21 - Activation subject convention restored
+
+Activation email subjects now use the established Topco convention, `Topco eComm Photo Request - [Project Name]`. A blank Project name uses `Photo request` instead of leaving a dangling hyphen. The preview renders the same generated subject that is stored and passed to Compose email.
+
+Verification: `npm --prefix frontend run build` passed and `tests.test_frontend_routing` passed 175 tests. The existing Vite large-chunk warning remains.
+
+## 2026-09-21 - Activation email table stabilized
+
+The copied Activation email now enforces `WKFT #` and `MediaBox #` at final HTML generation, uses a fixed table layout with deliberate SKU column widths, and prevents header wrapping. This keeps pasted messages readable across mail clients even when their table rendering differs from the browser preview.
+
+Verification: `npm --prefix frontend run build` passed and `tests.test_frontend_routing` passed 175 tests. The existing Vite large-chunk warning remains.
+
+## 2026-09-21 - Activation email preview actions simplified
+
+The Activation modal header, deliverable badge, internal headings, and preview typography are smaller, and the body begins closer to the header. Project name no longer displays an Optional helper. Activation email columns use `WKFT #` and `MediaBox #`. The automatic-send checkbox is removed: activation now preserves the manual handoff, with adjacent `Copy email` and `Compose email` actions; Compose opens the user's mail client with the preview subject populated and no body so the formatted clipboard content can be pasted.
+
+Verification: `npm --prefix frontend run build` passed and `tests.test_frontend_routing` passed 175 tests. The existing Vite large-chunk warning remains.
+
+## 2026-09-21 - Activation modal left pane condensed
+
+The Activation modal now gives the form roughly 40% of the two-pane layout and reserves the wider side for the email preview. The form uses shorter controls, tighter section and item spacing, and a single bordered five-column validated-details strip instead of nested detail tiles. A draggable divider now resizes the panes within guarded minimum widths; arrow keys adjust it, double-click restores the default split, and the divider disappears when responsive behavior stacks the panes on narrower windows.
+
+Verification: `npm --prefix frontend run build` passed and `tests.test_frontend_routing` passed 175 tests. The existing Vite large-chunk warning remains.
+
+## 2026-09-21 - Planning Board controls share one height
+
+The Table / Board switcher, deliverable filter, and grouping filter now use an explicit 36px outer height. The segmented switcher uses fixed 28px inner links so font metrics and padding cannot make it taller than the adjacent native selects.
+
+Verification: `npm run build` passed and `tests.test_frontend_routing` passed 175 tests.
+
+## 2026-09-21 - Planning Board control strip uses board navy
+
+The Board view control strip now uses the same dark navy as the board canvas instead of the light gray Table surface. The Table / Board switcher and filters remain light for contrast and retain their fixed shared position.
+
+Verification: `npm run build` passed and `tests.test_frontend_routing` passed 175 tests.
+
+## 2026-09-21 - Shipments badge spacing tightened
+
+The THR3D / Outgoing count badge in the primary Shipments navigation now sits four pixels closer to the Shipments label. Navigation behavior and badge meaning are unchanged.
+
+Verification: `npm run build` passed and `tests.test_frontend_routing` passed 175 tests.
+
+## 2026-09-21 - Deliverable footer actions grouped
+
+The Planning modal now keeps `Add Pack/Ecomm Deliverable` directly beside `Remove This Deliverable` as one compact action group. Add precedes Remove, the pair aligns to the right edge of the image footer, and narrow layouts wrap the controls together rather than pinning Remove independently.
+
+Verification: `npm run build` passed and `tests.test_frontend_routing` passed 175 tests.
+
+## 2026-09-21 - Planning Table and Board share one control anchor
+
+Planning Table and Board now place the Table / Board switcher at the same top-left content inset and in the same control-row position, including both loading states. View-specific filters continue immediately to its right with matching light surfaces, heights, borders, and spacing. The Table summary is compact and trails the same row instead of creating a separate header; Board feedback uses that trailing space while its darker canvas begins below the shared control band.
+
+Verification: `npm run build` passed and `tests.test_frontend_routing` passed 175 tests. The existing Vite large-chunk warning remains.
+
+## 2026-09-21 - Review checkpoint and bulk photo activation
+
+Planning now separates data save, route commitment, and execution authorization. Saving Newly Received Merchandise always moves the parent into Review without creating child work, while saving from Review keeps it there. Review exposes a separately validated `Move to Ready to Activate` command that creates route-specific Ecomm/Packaging cards; THR3D commitment continues to create a Shipments/Outgoing shipping item. Ready photo cards support same-client, same-deliverable multi-selection and open one bulk Activation package. Newly Received never renders Activate, including while a save is in progress.
+
+Verification: frontend `npm run build` passed; `tests.test_intake_decisions` and `tests.test_release_to_production` passed; the updated `tests.test_frontend_routing` suite passed. The existing Vite large-chunk warning remains.
+
+## 2026-09-21 - Workspace view switcher moved into filter rows
+
+Workspace Table and Board now render the shared Table / Board switcher as the first control in their filter rows. The table view places it before the record-type tabs, search, deliverable filter, and Columns menu. The board view places it before the deliverable and grouping filters. The board loading state renders that same compact control row with disabled filters, avoiding the former centered dark header flash. The change is presentation-only and does not change saved view preference behavior, filtering, board queues, schema, or workflow state.
+
+Verification: `npm run build` in `frontend/` passed with the existing Vite large-chunk warning.
+
+## 2026-09-21 - Planning deliverable controls clarified
+
+- Planning deliverable cards now label the destructive action `Remove This Deliverable` instead of using legacy Workstream language.
+- The received timestamp sits directly beneath the merchandise image controls.
+- The add action names the available photo deliverable explicitly: `Add Ecomm Deliverable` or `Add Pack Deliverable`.
+
+
+## 2026-09-17 - Workspace client controls removed
+
+Workspace no longer displays a Client column or a page-level client selector. The current operational view is Topco-focused, while linked Client data remains internal for requirement configuration and authorization. Shipments retains its local client selector as the explicit exception.
+
+Resolved on 2026-09-18: repeated page-level client filters are replaced by the session-wide Active Client boundary documented below. Non-admins see one Client at a time; only admins may use an all-client view.
+
+Verification: `python3 -m unittest tests.test_frontend_routing -q` passed 159 tests. `npm run build` passed with the existing Vite large-chunk warning.
+
+
+## 2026-09-17 - Product match folded into Product Name
+
+Workspace no longer has a separate Product Match column. The Product Name cell carries the linked Product value and shows a green check when the Merchandise is matched. Unmatched rows show `Not matched` in that same Product Name column; matching still opens through the row's Planning action. Product Name remains inline-editable after matching.
+
+Verification: `python3 -m unittest tests.test_frontend_routing -q` passed 159 tests. `npm run build` passed with the existing Vite large-chunk warning.
+
+
+## 2026-09-17 - Workspace and Admin navigation cleanup
+
+Primary navigation now orders Workspace immediately before Planning and gives Workspace a list icon distinct from Planning's columns icon. Planning's legacy `/work` matcher is exact enough that `/workspace` no longer activates both tabs.
+
+Admin has no desktop or mobile top-navigation shortcut. Users with admin access see Admin only after opening the user menu; non-admin users do not see that option. Admin routes and authorization are unchanged.
+
+Verification: `python3 -m unittest tests.test_frontend_routing -q` passed 159 tests. `npm run build` passed with the existing Vite large-chunk warning.
+
+
+## 2026-09-17 - Workspace requirement-grid refinement
+
+Workspace now shows the union of a client's configured Packaging/Ecomm Product requirements before deliverables are selected, so early merchandise rows expose the information PMs need to collect instead of appearing empty. After photo deliverables are selected, the row narrows to those deliverables' configured requirements. THR3D-only rows retain their minimal non-Product path and are not marked as missing photo Product data.
+
+The Product-info condition is now an early, prominent table column. Merchandise photo and identity columns remain visible while scrolling horizontally, and inline Product editing continues to use the existing Product endpoint and validation.
+
+
+## 2026-09-17 - Merchandise removed from primary navigation
+
+The standalone Merchandise/Inventory page is no longer shown in the main top navigation. Workspace is the visible high-volume merchandise surface. The existing `/merchandise` route, page, role permissions, and direct-link behavior remain available for compatibility and physical inventory use.
+
+Verification: `python3 -m unittest tests.test_frontend_routing -q` passed 159 tests. `npm run build` passed with the existing Vite large-chunk warning.
+
+
+## 2026-09-17 - High-volume Workspace grid
+
+A new top-level `Workspace` page at `/workspace` is available to Admin, Producer, User, and PM roles. It is a dense one-row-per-Merchandise operational grid backed by the existing Merchandise review feed, linked Products, and Client photo-production requirements.
+
+The grid derives its editable Product columns from each row's selected Packaging/Ecomm deliverables and the corresponding `Clients.Photo Production Requirements` configuration. Product Name and the client identifier are included for photo work, while other required columns come only from client configuration. Missing required values are highlighted per cell and summarized per row; the page adds no statuses and does not change Planning queue placement.
+
+Linked Product fields save inline on blur or Enter through the existing Product update endpoint. A matched Merchandise row uses the linked Product name and identifier in its Merchandise summary, so an inline UPC / Product ID edit is reflected immediately in both the editable Product column and the frozen Merchandise column; the original received name remains visible as provenance when it differs. Unmatched rows remain read-only in Product columns and use the shared in-place Merchandise modal for matching or workflow decisions. Search and the summary filters support high-volume review.
+
+The Workspace table no longer carries separate Product Info or Actions columns. Missing Product values are visible in their highlighted field cells, and missing Product match/name also highlights the Merchandise cell. Compact Ecomm, Pack, and THR3D badges sit with the merchandise identity. Clicking the thumbnail opens the shared Merchandise Planning modal over Workspace, keeping the table in place while preserving the existing Product, deliverable, issue, comment, history, and Draft -> Commit behavior. Saving refreshes the Workspace rows; no second quick-view implementation was introduced.
+
+Workspace now has All, Planning, and Production record-type tabs. Planning contains one row per Merchandise record only while it has no Ecomm or Packaging Workstream Card. Production contains one row per Ecomm or Packaging Workstream Card, so Merchandise with both deliverables appears twice with independent Planning Status, Creative Force status, and current step. All combines those sets with explicit Planning and Production section rows; it never shows both a parent Merchandise row and its child photo cards. A Production-row thumbnail opens that exact Workstream Card in the shared modal.
+
+The `Merch received` column remains Merchandise-owned in every tab. Production-card rows inherit the parent Merchandise arrival date, with Shipment received date as a fallback, rather than leaving that lifecycle context blank.
+
+All three Workspace summary segments are interactive filters: All Items restores the full set, Need info shows rows with missing requirements, and Info complete shows rows with no missing requirements. Search continues to narrow the selected segment.
+
+The released timestamp badge in the Planning merchandise record uses explicit white text on its green background for consistent contrast.
+
+Verification: `python3 -m unittest tests.test_frontend_routing -q` passed 159 tests. `npm run build` passed; Vite retains the existing large-chunk warning.
+
 # Current State
+
+## 2026-09-19 - Phase 1 Action model
+
+The live Airtable Workstream Cards table was evolved in place into Actions; no parallel Actions table was created. Its primary field is now Action, Received Merch is now Merchandise, and Workstream Type is now Action Type. The table adds the single lifecycle Status (Proposed, Activated, Executing, Done, Cancelled), Activated At, Activated By, External Reference, and Cancellation / Reversal Reason. Three existing photo records were backfilled and one existing THR3D Shipping Item was imported as an Action. A post-migration dry run reported zero remaining updates or imports.
+
+The compatibility layer still uses the existing photo-specific fields on Actions for Creative Force handoff and the existing THR3D Shipping Items table for outbound carrier/tracking details. New photo assignments are Actions directly. New THR3D assignments create the canonical Action plus a temporary compatibility shipping record. Photo Action activation performs the existing Creative Force feed handoff and stamps the activation/release fields. Creative Force events advance Actions to Executing or Done; shipping a THR3D compatibility record marks its linked Action Done.
+
+Workspace's shared Merchandise modal now shows the derived EXPECTED -> RECEIVED -> REVIEW -> ACTIVATE -> EXECUTE -> DONE lifecycle, explicit Review reasons, and independent Action rows with Activate and Reverse controls. The lifecycle and reasons are API-derived rather than stored as another status model. The Product grid and source-detail UI display the existing Products.Mbox Number value as MediaBox Number; no MediaBox table was created. Dashboard and database infrastructure were not redesigned.
+
+Verification on 2026-09-19: the post-migration Actions dry run reported the table and all fields reused with zero record updates and zero THR3D imports remaining. The backend suite passed 818 tests. The frontend production build passed with the existing Vite large-chunk advisory. Both existing local servers responded successfully at ports 5057 and 5173.
+
+## 2026-09-18 - Active Client workspace boundary
+
+Authenticated sessions now carry an `activeClientId` in addition to the user's durable Client access assignments. A non-admin with one assigned Client enters that Client automatically. A non-admin with multiple assigned Clients must choose one before operational routes render, and backend record filters and mutation checks authorize only that active Client. The Client list remains entitlement-scoped so the chooser can show every Client assigned to the user. Non-admins cannot clear the selection or enter an all-client operational view.
+
+Admins may select a Client or use `All Clients`. The top navigation owns the system-wide selector, and changing it reloads the application so open drafts and cached data cannot cross the Client boundary. This uses signed session state only and adds no Airtable field or schema. Client-specific Product import profiles and photo-production requirements continue to drive the fields shown within the selected Client. A broader explicit capability setting for disabling whole workflows such as THR3D per Client remains a separate configuration slice; it was not inferred from the current photo requirements JSON.
+
+Verification: `backend/.venv/bin/python -m unittest discover -s tests` passed 809 tests; `npm run build` in `frontend/` passed with the existing Vite large-chunk warning; `git diff --check` passed. Automated browser inspection was unavailable because the local workspace path is a symlink that the browser sandbox cannot mount.
+
+## 2026-09-18 - Canonical roles and guarded views
+
+Role navigation now loads from the shared Airtable `Role Policies` table, with the checked-in `ROLE_NAV` matrix as the fallback and initial seed. The former `marks:role-permissions` browser-local setting is no longer read or written; it allowed two browsers to show different permissions for the same user. Admin > Roles edits the operational workspace paths for Producer, Merch, User, and Viewer and saves them centrally. Producer was seeded with Dashboard, Import, Shipments, Workspace, Planning, Production, and Products.
+
+Only Admin and Administrator roles receive the Administration menu, may enter Administration routes, list/create/update Users, request the all-client list, edit Role Policies, or run Developer Tools maintenance actions. Admin access is intentionally fixed and cannot be delegated through the role editor. Operational routes enforce the shared role matrix on direct navigation and redirect an unauthorized user to their first permitted workspace. Profile editing remains available to every authenticated user through `/auth/me`.
+
+The active Client selector was reduced to a compact 150px control aligned with the profile button; the visible `CLIENT` caption was removed while retaining an accessible label.
+
+Verification: `backend/.venv/bin/python -m unittest discover -s tests` passed 815 tests; `npm run build` in `frontend/` passed with the existing Vite large-chunk warning; `git diff --check` passed.
+
+The live Airtable base now contains `Role Policies` with `Role` and `Workspace Paths` fields and seeded rows for Admin, Producer, Merch, User, and Viewer.
+
+## 2026-09-18 - Workspace lifecycle column groups
+
+Workspace now presents one merchandise row across three explicit ownership groups: Merchandise, Planning, and Production. Merchandise contains the physical identity and received age. Planning contains the missing-information summary, client-configured Product fields, human-readable Planning status, and the action into Planning or Production. Production is glance-only and shows derived Creative Force status, current reported step, and time since that step update.
+
+Workspace requests released and unreleased Merchandise. The ordinary Planning/review endpoint remains unreleased-only unless `includeReleased=1` is requested, so expanding Workspace does not return completed/released work to Planning. Production values come from the existing Product production summary built from Workstream Cards, THR3D Shipping Items, and Creative Force Sync; no Product or Merchandise production status field was added. Photo work not yet released says `Not released`. THR3D-only or otherwise non-photo work says `Not applicable` / `No photo workflow`.
+
+Verification: `backend/.venv/bin/python -m unittest discover -s tests` passed 816 tests; `npm run build` in `frontend/` passed with the existing Vite large-chunk warning; `git diff --check` passed.
 
 Marks Photo is an Operations Readiness Platform. The target philosophy is now product-led and merchandise-verified.
 
@@ -682,3 +862,626 @@ Creative Force posts to `https://hooks.walnutcontent.com/api/integrations/creati
 The Topco source refresh reads the sheet before Airtable and fingerprints the parsed rows, so an unchanged sheet costs no Airtable calls at all; only a changed fingerprint triggers the Products scan. The background worker re-reads its schedule at the cadence that schedule names, capped at five minutes, and sleeps until a client is due rather than waking every minute. A manual refresh forces the work regardless. Each process running the worker keeps its own loop, so a multi-worker server or a development instance running alongside production multiplies the calls.
 
 Whole-table Airtable scans are cached in process: sixty seconds for Clients, Locations and Users, ten seconds for other tables, with filtered reads never served from cache. Every create, update or delete through the Airtable client invalidates that table first, so the application's own writes are visible immediately and only direct Airtable edits can be stale. `create_app()` clears the cache. A Planning page load costs 14 Airtable calls, down from 22.
+
+### 2026-09-18 - Kroger workbook upload settings
+
+Kroger onboarding starts with manual workbook upload through the existing Import workspace. Admin > Clients can configure a Product Import mapping even when the Client has no saved mapping yet. For Kroger, opening that editor starts with an unsaved `Kroger workbook` profile configured for worksheet `Master Tracker Sierra`, header row 3, and the source columns `MySGS Job Number`, `UPC`, `Product Description`, `Structure/Cap Color`, `Visible Product?`, `Structure Status`, `On Hold/Live`, and `If on hold, reason`. Saving persists the worksheet, header row, and mappings in the existing Client `Product Import Profiles` JSON field. Production milestone columns beginning with Sierra pulled-files and photography/outlining/retouching dates are not part of this initial Product import contract. No Airtable schema or Planning workflow changed.
+
+The Client mapping editor now exposes every supported Product import destination, including Brand, Notes, Product Job Number, and Reference Data, displays saved Reference Data mappings accurately, and shows the configured worksheet/header row. Import preview accepts a named worksheet and includes a worksheet picker for multi-tab workbooks. The attached `Kroger Render Master Tracker.xlsx` was verified against `Master Tracker Sierra`: 10 rows, 17 populated source columns, header row 3.
+
+### 2026-09-18 - Actionable lifecycle Workspace
+
+Workspace now spans Merchandise, Planning, and a read-only Production glance in one grouped table. Rows that are fully Required to Shoot and already committed to `Awaiting Photo Release` show one release action for each pending Ecomm or Packaging workstream. The action uses the existing scoped release endpoint, requires confirmation, writes the normal Creative Force handoff, and refreshes the row. Already-released workstreams are not offered again; fully released rows open Production. Rows that still need Product data show `Complete data`, while otherwise-uncommitted rows open Planning. Saving the final inline Product field refreshes the feed so release eligibility is recalculated immediately. THR3D-only rows never show a photo-release action.
+
+Verification on 2026-09-18: `backend/.venv/bin/python -m unittest discover -s tests` passed 816 tests. `npm run build` passed; Vite continues to report the existing large-chunk advisory.
+
+### 2026-09-18 - Matched Products provide the Merchandise display name
+
+Merchandise now has one consistent display-name rule across Workspace, Inventory, Merchandise Review, Planning summaries, release prompts, and THR3D shipping views. When a Product is linked, its canonical Product name is the primary Merchandise title. Unmatched Merchandise continues to use the observed package name, then its description, then `Unnamed Merchandise`. The API exposes the derived `displayName` and preserved `observedProductName`; no Airtable field or observed value is overwritten. Where the names differ, Inventory and Workspace retain the observation as quiet `Received as` context, and verification/matching surfaces continue to use the observed package name as evidence.
+
+The Workspace `Received` column shows the Central-time calendar date only; relative age remains underneath. Other detailed date/time surfaces are unchanged.
+
+Workspace no longer repeats the canonical name in a separate Product Name column. A linked Product is shown by a compact green check beside the Merchandise title; unmatched Product Name still contributes to the Product Info missing count and is resolved in Planning.
+
+The Merchandise group header explains that check with `= Matched to a Product`. Workspace table headers suppress the shared global table border and draw one divider between the group and column-label rows plus one beneath the complete header, avoiding stacked duplicate rules while preserving the hierarchy.
+
+Workspace column widths are user-adjustable from the column-header boundaries. Dragging resizes a column, focused handles accept Left/Right arrow keys, and double-click restores that column's default width. Widths are stored in the browser for the current user/device; no shared data or schema is involved.
+
+Verification remains 816 passing tests. The frontend production build passes with the existing Vite large-chunk advisory.
+
+### 2026-09-18 - Brand Prefix stores the filename token
+
+Client Brand Prefix configuration keeps descriptive options such as `FC -FoodClub` for recognition in the open selector. Products canonically store and display only the filename token, such as `FC`. Product imports and Product edits normalize descriptive values before writing, and API reads normalize legacy full-label values so existing records display consistently without a schema migration. The open selector retains the descriptive label; its closed state shows the saved token.
+
+
+## 2026-09-19 - Request is separate from Merchandise lifecycle
+
+Product records are reference data and are not operationally expected merely because they exist. Products now expose an Expected column and flag action that creates an optional Request with status Waiting; clearing the flag cancels that Request. Matching received Merchandise to the Product, including during confirm-and-assign, fulfills any waiting Request and links it to the Merchandise.
+
+The Merchandise modal lifecycle now starts at Received and reads Received -> Review -> Activate -> Execute -> Done. Expected is no longer a Merchandise stage. The modal is wider, comments/history may be collapsed to recover work space, and the footer is explicitly Close plus Save review/Save changes. Saving refreshes the open record in place rather than silently closing it. Action activation remains on the individual Action row.
+
+Issues are retired from the active operating model. The review interface no longer creates or displays Issue records, validation and release no longer query Issues, and physical exceptions belong in Merchandise condition/notes while review blockers remain derived reasons. The confirmed-empty Airtable table was renamed Deprecated Issues - Delete because Airtable's metadata API does not provide table deletion through the application endpoint; it is a manual deletion target.
+
+Live schema state: Requests exists with Product, Status, Merchandise, Needed By, and Notes fields. The schema utility is backend/ensure_requests_schema.py.
+
+Verification: the frontend production build passes. The full backend suite passes 820 tests. Vite continues to report the existing large-chunk advisory.
+
+
+## 2026-09-19 - Deliverables are independently selectable
+
+Packaging, Ecomm, and THR3D are independent deliverable choices. Planning may select any one, any pair, or all three on the same Merchandise record. Ecomm and THR3D are no longer treated as mutually exclusive GS1 paths. Packaging plus THR3D retains quantity allocation because those paths may divide physical units; adding Ecomm does not alter that allocation.
+
+
+### 2026-09-19 - Lifecycle header clarity
+
+The Merchandise review modal now labels every lifecycle step as Complete, Current, or Upcoming and uses an amber current-stage treatment so the active stage cannot be confused with a completed one. The generic `Missing CF Data` lifecycle badge was removed; actionable missing requirements remain beside the Product Data or Deliverables section where they can be resolved.
+
+Verification: the frontend production build passes with the existing Vite large-chunk advisory. Focused merchandise review and intake tests pass: 61 tests.
+
+
+### 2026-09-19 - Review is the visible lifecycle label
+
+Planning and Workspace now display `Review` anywhere the persisted compatibility status is `Needs More Information`. Existing Airtable values and queue routing remain unchanged; the translation is presentation-only so current records require no migration.
+
+Verification: the frontend production build passes with the existing Vite large-chunk advisory. Frontend source contract tests pass: 163 tests.
+
+
+### 2026-09-19 - MediaBox visibility and client requirement
+
+MediaBox Number is always visible and editable in the Merchandise modal Product Data section for photo deliverables. A blank value is labeled Optional unless that Client has selected MediaBox Number under the Packaging or Ecomm required Product fields. When selected, it participates in the existing readiness and release gate; when unselected, it does not block release. Storage remains the existing Product `Mbox Number` field and no schema change was made.
+
+Verification: the frontend production build passes with the existing Vite large-chunk advisory. The focused client settings, Product data, readiness, release, and frontend contract suite passes 254 tests; the dedicated Product data test passes 5 tests.
+
+
+### 2026-09-19 - Workspace Board/Table and three-milestone lifecycle
+
+Workspace now owns Board and Table views behind one navigation item. The Board uses Received and Reviewed sections and removes photo work immediately after activation; its parent Merchandise does not reappear because board membership still recognizes all child work. The Table remains the broader searchable view, including activated work. Legacy Planning, Intake, Work, and merchandise-review-v2 routes redirect to the Workspace Board, and deep-link item parameters are preserved by in-app routing.
+
+The Merchandise modal now presents only Received, Review, and Activate as the shared lifecycle. A complete review can proceed directly into activation without closing and reopening the item. Activation may optionally include the existing activation email. THR3D-only activation continues into Shipments / Outgoing rather than implying production completion. Ask in Chat is available when required information is missing; it sends the missing-field request to the client's configured chat channel and records the request in History without changing the item's queue or lifecycle. MediaBox Number remains visible in Product Data and is client-configurable as required.
+
+No Airtable schema or database migration was performed. Existing Planning Status and Released fields continue as compatibility storage.
+
+The Workspace view selector now lists Table before Board to match the default experience. Each user's last selected Table or Board view is stored in browser preferences and restored on later plain `/workspace` visits. Explicit `?view=table` and `?view=board` links still open the requested view and update that preference.
+
+Ask in Chat evaluates the unsaved Product values currently visible in the Merchandise modal, so a populated field is not requested merely because Save Changes has not run yet. Chat requests include only client-answerable missing information; internal checks such as Merchandise Verified, Deliverables, and Product Linked are excluded.
+
+File Name Description is a filename-safe token rather than prose. Generated suggestions, modal edits, imports, and Product writes allow only ASCII letters, numbers, and underscores; punctuation and whitespace become collapsed underscores while apostrophes are removed. For example, `Ice Cream Cones (Original, Chocolate, Strawberry)` becomes `Ice_Cream_Cones_Original_Chocolate_Strawberry`.
+
+Merchandise modal section markers are status indicators rather than step numbers. Incomplete sections show an empty gray circle, while complete sections show the existing green check.
+
+The merchandise fact list in the modal uses a tighter row rhythm so shipment, quantity, condition, and package identity read as one compact block.
+
+The Merchandise lifecycle header uses only Received, Review, and Activate. Its color, top rail, and active background communicate state without the redundant Complete, Current, and Upcoming sublabels.
+
+The Deliverables section keeps its bottom divider. The split-quantity panel shows the received quantity and the two allocations without repeating them in an additional assignment sentence.
+
+Source-linked Products show a refresh icon in the Merchandise modal's matched Product card. It refreshes that Product from its exact source row and reloads the open record; Products without source-row metadata do not show the control. Automatic source refresh remains client-configurable and defaults to every 300 seconds for Topco. The refresh busy state is local to the Merchandise Planning modal, preventing unrelated Workspace or Shipments renders from referencing it. The returned refreshed Product also replaces the open modal draft immediately, so newly supplied values such as CVID appear without closing or reopening the item. The refresh icon rotates for the duration of that request and exposes a matching refreshing label to assistive technology.
+
+Verification on 2026-09-19: the full unittest suite passes 821 tests. The frontend production build passes; Vite continues to report the existing large-chunk advisory.
+
+### 2026-09-19 - Lifecycle tense follows milestone state
+
+Completed lifecycle milestones use completed-state labels, while the current and upcoming milestones use command labels. For example, a merchandise item under review displays `Received` / Complete, `Review` / Current, and `Activate` / Upcoming. The underlying lifecycle values remain Received, Reviewed, and Activated.
+
+Verification: frontend contract tests pass 163 tests and the frontend production build passes with the existing Vite large-chunk advisory.
+
+### 2026-09-19 - Review reasons are specific only
+
+The lifecycle header no longer displays the generic `Needs Direction` badge. The Product Match section communicates its own unmatched state, so the lifecycle header does not repeat `Needs Product Match`. Review reason badges are reserved for actionable conditions that are not already clear at their control, such as `Missing MediaBox`; section-level requirements such as choosing a Deliverable remain beside the control that resolves them.
+
+Verification: focused merchandise-review and frontend contract suites pass 180 tests, and the frontend production build passes with the existing Vite large-chunk advisory.
+
+### 2026-09-19 - Activation history is contextual, not a Board command
+
+The Workspace Board no longer shows `Edit Activations` or `Activate Ready Items` as global header actions. Individual merchandise activation remains available from the modal, and selected ready cards may still be activated together from their Board section. Existing Activation records and Merchandise History remain intact; activation history belongs with the Merchandise History and broader Workspace Table rather than a competing Board-level editor.
+
+Verification: frontend contract tests pass 163 tests and the frontend production build passes with the existing Vite large-chunk advisory.
+
+### 2026-09-19 - Obsolete Activation utilities removed
+
+The former Activation list editor and bulk ready-item selection flow are removed, including their state, handlers, card checkboxes, group selection controls, and styles. Activation now begins only from the individual Merchandise review context. Existing Activation records are retained as audit/email-package data and continue to contribute to Merchandise History; removing the utilities does not delete historical records. This supersedes the earlier same-day note that selected ready groups could still be activated together.
+
+Verification: frontend contract tests pass 163 tests, the frontend production build passes with only the existing large-chunk advisory, and the diff has no whitespace errors.
+
+### 2026-09-19 - Workspace views share stable header geometry
+
+Board and Table now use the same three-column Workspace header geometry: title at left, the Board/Table switcher fixed in the center, and the Table summary at right with an equal reserved footprint on Board. The embedded Board also uses the same horizontal content edges as Table. Switching views no longer moves the title, switcher, or primary content boundary.
+
+Verification: frontend contract tests pass 163 tests and the frontend production build passes with the existing Vite large-chunk advisory.
+
+### 2026-09-19 - Workspace header remains visible over Board
+
+The shared Workspace header now owns an explicit light background and title color rather than inheriting the Board canvas. The Board/Table switcher is positioned at the visual center independently of the right-side Table summary, so it does not drift when switching views. Mobile returns the controls to normal document flow.
+
+Verification: frontend contract tests pass 163 tests and the frontend production build passes with the existing Vite large-chunk advisory.
+
+### 2026-09-19 - Newly Received is an inbox, while the modal begins at Review
+
+The Workspace Board keeps `Newly Received` as a dedicated attention column for merchandise that has not yet received PM review. Opening one of those cards does not repeat physical receipt as an unfinished task: because a Merchandise record exists only after receipt, the modal displays `Received` as complete, `Review` as current, and `Activate` as upcoming.
+
+When the Merchandise is already matched to a Product, the same modal shows Deliverables and required Product data immediately. A PM may complete review and activate in one session without saving, closing, and reopening the item. Unmatched merchandise continues to require a Product match before new Deliverables are chosen. No Airtable schema change was made.
+
+Verification: focused merchandise lifecycle and frontend contract suites pass 181 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+### 2026-09-19 - Product Match collapses source rows into durable Products
+
+The Product Match picker no longer displays an Airtable Product beside the source-sheet row from which it was created. Candidate merging prefers the durable Airtable Product and removes the corresponding source candidate by source-row snapshot first, then UPC, with exact normalized name used only when neither candidate has an identifier. Source-only rows remain available for activation. This is a presentation/read-model change and does not delete or merge Airtable or source data.
+
+Verification: Product Match and source integration suites pass 196 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+### 2026-09-19 - Workspace queue labels use active tense
+
+Workspace Board queue labels now use `Review`, not `Reviewed`: `Review` and `Review · Ready to Activate`. Supporting descriptions and move confirmations follow the same vocabulary. The persisted lifecycle/status value `Reviewed` remains unchanged as an internal completed-state value; this is a presentation correction with no schema or routing change.
+
+Verification: frontend contract tests pass 163 tests; the production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+### 2026-09-19 - File Name Description calculates when a Product is selected
+
+Selecting either an existing Airtable Product or a source-sheet Product candidate now populates File Name Description immediately in the open Merchandise modal. Source candidates receive the same brand-aware, size-removing suggestion used by durable Products before they are saved; an explicit source description still wins when present. The PM may edit the draft before committing it with the review. No save-and-refresh round trip or schema change is required.
+
+Verification: filename suggestion, source integration, and frontend contract suites pass 251 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+### 2026-09-19 - Save Changes and Activate are separate authorized commands
+
+The Merchandise modal always presents `Save Changes` for review work. When the item is ready, users whose role has the `activate_merchandise` capability also see a separate `Activate` command; users without it see no disabled or unavailable activation control. Admin and Producer roles receive the capability by default, and administrators can change it per role on Administration / Roles. The same capability is enforced by activation, Action-status, release, and explicit dispatch endpoints.
+
+Saving ready photo work leaves it in `Review · Ready to Activate`. Saving THR3D-only work no longer creates its Outgoing shipment; only Activate performs that handoff. Role Policies continue using the existing `Workspace Paths` Airtable field, whose JSON now supports both `paths` and `capabilities`; legacy path-array records remain compatible and inherit role defaults. No Airtable schema migration was made.
+
+Verification: the full unittest suite passes 825 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+### 2026-09-19 - Activate appears only when activation is valid
+
+The Merchandise modal does not render the `Activate` command while any required Product field, Product match, deliverable, or quantity-allocation requirement is unresolved. `Save Changes` remains available so incomplete work can be preserved. Once the review is activation-ready, `Activate` appears only for users whose role has the activation capability.
+
+Verification: frontend contract tests pass 163 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Workspace table has a filterable Deliverable column
+
+The Workspace table displays Packaging, Ecomm, and THR3D badges in a dedicated Deliverable column under Planning instead of embedding them in the Merchandise identity cell. Those badges reuse the shared Package, Camera, and 3D icons, and their flex layout lives inside a normal table cell so column sizing and row borders remain intact. A single All/Ecomm/Pack/THR3D menu filters both Planning merchandise rows and Production action rows by their canonical committed Deliverables. Mixed-deliverable merchandise keeps all applicable badges visible. No schema or routing behavior changed.
+
+Verification: frontend contract tests pass 168 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+### 2026-09-21 - Workspace Production begins at activation
+
+Workspace no longer treats the existence of an Ecomm or Packaging action row as evidence that work is in Production. Unreleased photo action rows remain under Planning and count in the Planning filter; only released rows appear under Production and count in the Production filter. The section labels now reinforce the boundary as `Planning · Awaiting activation` and `Production · Activated Ecomm and Packaging`. No Airtable field, status, or schema changed.
+
+Verification: frontend contract tests pass 168 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+### 2026-09-21 - Workspace table includes THR3D shipment rows
+
+The Workspace table now includes one derived row for every existing THR3D Shipping Item, including both open and shipped items returned by the canonical Shipments endpoint. THR3D rows appear in a distinct `Shipments · THR3D` section and a filterable `THR3D` scope rather than being classified as photo Production. Each row displays `Not shipped` with the quantity still to send, or `Shipped` after the outbound shipment is completed. Once a THR3D Shipping Item exists, its parent Merchandise row is not duplicated in Planning; mixed photo plus THR3D work still displays its independent photo and shipping rows. No schema or Airtable status was added.
+
+Verification: frontend contract tests pass 168 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors. Visual browser verification was unavailable because the configured writable root contains a symlink that prevents the browser-control runtime from starting.
+
+### 2026-09-21 - Workspace table uses activation vocabulary
+
+Workspace translates the compatibility Planning value `Awaiting Photo Release` to the public label `Awaiting Activation`, regardless of source casing. Unactivated photo work displays `Not activated`, and completed handoffs display `Activated`. The stored Airtable value and backend contract remain unchanged; this is a presentation-boundary correction rather than a schema or data migration.
+
+Verification: frontend contract tests pass 168 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+### 2026-09-21 - THR3D has a separate Workspace shipment table
+
+Workspace no longer mixes THR3D Shipping Items into the wide Planning/Production table. A compact `Ship to THR3D` table appears beneath it with Merchandise, received date, quantity to ship, shipping status, and the date shipped to THR3D. Shipped dates come from the linked outbound Shipment `receivedDate`; no duplicate date field was added. The THR3D endpoint now includes the linked outbound Shipment when available. Search applies to both Workspace tables.
+
+The Dashboard `Completed` KPI was replaced with `Ship to THR3D`. Its number counts open THR3D Shipping Items (`Needs Shipment`), not merchandise units, and opens Shipments when selected.
+
+Verification: the focused THR3D endpoint test and frontend contract suite pass 170 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Workspace columns are customizable per user
+
+The Workspace Table now has a Columns menu for both photo work and THR3D shipments. Users may show or hide operational columns independently, and the choice is remembered in browser storage under the signed-in user identity. Merchandise identity remains pinned so a working row cannot lose its context. The main table retains its existing drag-to-resize column widths; grouped Planning and Production headers recalculate from the visible columns. No Airtable schema or workflow state changed.
+
+Verification: frontend contract tests and production build pass; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Dashboard opens THR3D Outgoing directly
+
+The Dashboard `Ship to THR3D` KPI now deep-links to `Shipments -> THR3D / Outgoing` through the durable `/shipments?tab=outgoing` URL. Shipments initializes and synchronizes its selected subview from that URL.
+
+The Outgoing Ship command now validates tracking before sending the request, labels the field `Tracking required`, and renders validation or server errors inside the Outgoing view. Previously the server correctly rejected blank tracking, but the page displayed the error only inside the hidden Incoming form, making Ship appear unresponsive. No schema or shipment-state behavior changed.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Workspace Merchandise header spans identity columns
+
+The top Workspace table now uses one `Merchandise` column heading across both the thumbnail and merchandise-name columns, matching the THR3D shipment table. The combined heading retains the merchandise-column resize handle. This is presentation-only.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - THR3D shipping defaults to FedEx and exposes completion date
+
+THR3D Outgoing selects FedEx by default regardless of Airtable carrier-option order, while preserving the user's ability to choose another carrier. The outgoing work area is wider so carrier, tracking, and Ship controls have sufficient room. After a successful Ship request, the canonical endpoint creates the outbound Shipment, marks the THR3D Shipping Item `Shipped`, reloads the queue, and the shipment-history table displays the outbound Shipment's recorded date. No duplicate shipped-date field was added.
+
+Verification: focused frontend and intake suites pass 214 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - THR3D queue exposes its ship-to address
+
+The THR3D Outgoing header includes a compact in-app `Ship-to address` disclosure for the current THR3D recipient and destination. It reveals the address without navigating away from Marks Photo or sending recipient data to an external mapping service. The header width matches the widened outgoing work area.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Workspace THR3D rows carry their deliverable badge
+
+Each row in the Workspace `Ship to THR3D` table now displays the shared THR3D deliverable badge and 3D icon inside its Merchandise identity cell. The shipping table remains independently filterable and does not add a duplicate deliverable column.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - THR3D quantity label names its purpose
+
+The Workspace THR3D table and its column-visibility menu label the outbound amount `Quantity To Ship`, replacing the ambiguous `Quantity` label. This is presentation-only.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Shipments routes preserve requested subviews
+
+The shared page-route helper now retains query parameters for Shipments. As a result, the Dashboard `Ship to THR3D` KPI resolves to `/shipments?tab=outgoing` and reliably opens `THR3D / Outgoing`; previously the click supplied the tab but the helper discarded it while constructing the Shipments URL.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Workspace tables share one visual structure
+
+The Workspace THR3D shipment table now uses the same table structure and styling as the photo-work table: a two-level Merchandise/Shipping header, separate thumbnail and merchandise identity columns, a dedicated Deliverable column, stacked Received date and age, matching typography and row density, fixed column widths, and the shared sticky identity treatment. Shipment-specific columns remain Quantity To Ship, Shipping Status, and Shipped to THR3D. THR3D column visibility remains independently customizable.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - THR3D Outgoing thumbnails open merchandise photos
+
+Each open THR3D Outgoing item now opens a read-only Merchandise photo viewer from its thumbnail. The viewer presents every available item and linked Shipment photo, the quantity to ship, thumbnail navigation, Previous/Next controls, and keyboard navigation. Shipping staff can inspect exactly what belongs in the box without entering Planning or exposing review and activation controls. No Airtable schema or shipment-state behavior changed.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Workspace THR3D filter toggles its shipment table
+
+The Workspace scope control now includes a THR3D button with the total shipment count. THR3D remains an independent outbound-shipment table rather than a photo-work lifecycle scope: the control starts active and toggles that table on or off without changing the selected All, Planning, or Production scope. No data model or workflow behavior changed.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Workspace tables fill the available width
+
+Both Workspace tables now extend to the right edge of the work area on wide screens. Their calculated column totals remain minimum widths, so compact screens retain horizontal scrolling instead of compressing operational fields beyond readability. This is presentation-only.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Workspace tables use a single header row
+
+The repeated grouped header bands were removed from both Workspace tables. The photo-work table no longer repeats Merchandise, Planning, and Production above its actual columns, and the THR3D table no longer repeats Merchandise and Shipping. The green `Matched to a Product` legend now sits directly beside the Merchandise column label. Sticky-header positioning was adjusted for the shorter one-row header. This is presentation-only.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Workspace is labeled Planning in the application
+
+The PM-facing navigation tab and page heading are now `Planning`, matching the language used throughout the board and activation process. Related view, summary, search, record-type, and column accessibility labels also use Planning. The canonical route remains `/workspace`, and internal workspace-prefixed state and preference keys remain unchanged to preserve links and user settings. No permissions, queues, schema, or lifecycle behavior changed.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Creative Force column includes a compact brand mark
+
+The Planning table now places a small branded `C` mark immediately before the Creative Force column label. The mark is decorative, while the full text remains available to assistive technology and the column resize control retains its `Resize Creative Force column` label. This is presentation-only.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - THR3D shipping cards show only actionable facts
+
+Open THR3D Outgoing cards no longer display the fallback phrases `No identifier`, `Location needed`, or `Original shipment not linked`. Real values are labeled `UPC / ID` and `Current location`; absent optional values are omitted. Completing a full-quantity THR3D shipment continues to create the outbound Shipment and now moves the same Merchandise record to the existing active `Shipped to Thr3d` Location. A partial shipment leaves the parent Merchandise location unchanged because Walnut still holds the remaining units; the THR3D Shipping Item and outbound Shipment record the shipped portion. No duplicate Merchandise record or schema change was introduced.
+
+Verification: focused frontend and intake suites pass 214 tests.
+
+
+### 2026-09-21 - Planning scopes are mutually exclusive
+
+The Planning table scope now treats `All`, `Planning`, `Production`, and `THR3D` as one mutually exclusive tab set. Selecting THR3D hides the photo-work table and shows only the `Ship to THR3D` table; selecting any other scope hides the THR3D table. The separate `showThr3d` toggle state was removed, and the toolbar item count follows the selected table.
+
+Verification: frontend contract tests pass 169 tests.
+
+
+### 2026-09-21 - Dashboard top badges follow Planning
+
+The Dashboard top row now shows `Newly Received Merch`, `Needs Review`, and `Awaiting Activation`. These counts use the same Merchandise and unreleased photo-card membership and section routing as the Planning board, including suppression of parent Merchandise once child photo or THR3D work exists. The retired Product-readiness KPIs no longer appear in this top row. Each badge opens Planning; the lower blocker and Creative Force dashboard areas are unchanged.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Planning table identity spacing is consistent
+
+The THR3D table remains full-width, but its extra horizontal space now flows into the final column instead of widening the thumbnail-to-name gap. Its Merchandise identity spacing therefore matches the main Planning table. The `Matched to a Product` legend beside the main Merchandise header is again compact secondary text. This is presentation-only.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - THR3D tracking is visible after shipment
+
+Shipments `THR3D / Outgoing` now shows the outbound tracking number in its Shipped history table. Planning's THR3D table also includes Tracking, sourced from the same linked outbound Shipment and available in the user-local Columns menu. Open items show no tracking value until shipped. No schema or duplicate tracking field was introduced.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Planning uses the supplied Creative Force mark
+
+The Creative Force column header now uses the supplied transparent Creative Force `C` image rather than the temporary styled text character. The visible `Creative Force` label remains unchanged and accessible. This is presentation-only.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - All Planning view includes THR3D
+
+Selecting `All` in the Planning table now shows the photo-work table followed by the `Ship to THR3D` table. The All badge and toolbar item total include both photo-work rows and THR3D shipment rows. The focused `Planning` and `Production` scopes continue to show only photo work, while `THR3D` continues to show only the shipment table.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Remove workstream control is right-aligned
+
+The destructive `Remove workstream` control now aligns to the right edge of its modal footer area, while the received date remains left-aligned. Its behavior and confirmation rules are unchanged. This is presentation-only.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Remove workstream aligns to the media-panel edge
+
+On desktop Planning modals, `Remove workstream` is anchored to the right edge of the dark merchandise media panel rather than the narrower footer content group. Narrow layouts return the control to normal footer flow. Behavior and confirmation rules are unchanged. This supersedes the earlier same-day alignment adjustment.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Matched Product legend sizing refined
+
+The Planning table's `Matched to a Product` legend now uses a slightly smaller 12px check indicator and a 9px label. Row-level match indicators are unchanged. This is presentation-only.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Creative Force presentation begins at activation
+
+The supplied Creative Force header logo now has a transparent background. In the Planning table, photo-work rows that have not been activated leave Creative Force Status and Current Step blank; their Planning Status continues to show `Awaiting Activation`. Activated photo work retains Creative Force status and step reporting, and THR3D shipment statuses are unchanged.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the logo PNG has a transparent corner pixel; the diff has no whitespace errors.
+
+### 2026-09-21 - Optional MediaBox Planning column
+
+The Planning table column chooser now includes MediaBox Number using the existing Product `Mbox Number` field. The column is hidden by default for both new and existing users and becomes visible only when explicitly enabled. Column visibility does not change whether MediaBox is required; client settings remain the source of that requirement. No schema change was made.
+
+### 2026-09-21 - Columns menu dismissal
+
+The Planning table Columns menu now closes when the user clicks outside it. Interactions inside the menu remain active, and the Columns control retains its native toggle behavior.
+
+### 2026-09-21 - Creative Force To Do status label
+
+Creative Force raw `Todo` and `ToDo` values now display as `To Do`. The Planning production table prioritizes the overall Creative Force work-unit status over the per-step status. Current Step remains `Awaiting first update` until Creative Force reports a named step; Marks Photo does not infer Photography from a generic To Do status.
+
+
+### 2026-09-21 - Planning table view uses three independent tables
+
+The Planning table view now renders Planning, Production, and Ship to THR3D as separate tables. `All` stacks all three tables; the Planning, Production, and THR3D scope tabs isolate their corresponding table. Each table has its own saved per-user column visibility and column widths. Planning contains planning data only; Creative Force Status and Current Step are available only in Production. Planning and Production now use the same direct title/count plus column-header structure as the THR3D table instead of colored divider rows inside one merged table. No schema or workflow behavior changed.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+### 2026-09-21 - Creative Force header alignment
+
+The Creative Force mark and label in the Production table header now align as one vertically centered unit with the neighboring column labels. This is presentation-only.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+### 2026-09-21 - Planning table headers tightened
+
+Planning, Production, and THR3D column headers now use less space below their labels while retaining a readable top inset and the existing alignment. This is presentation-only.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Per-table column order and defaults
+
+Planning, Production, and THR3D column menus now support drag-to-reorder. The resulting table column order is saved per signed-in user and independently per table in browser storage. Planning defaults to its review fields with MediaBox Number hidden. Production defaults to Received, Deliverable, UPC / Product ID, MediaBox Number, Activation Status, Creative Force, Current Step, and Current Step Date; CVID, WKFT #, Brand Prefix, and File Name Description remain available but start hidden. THR3D keeps all shipping columns visible by default. Current Step Date uses the existing Creative Force step reported timestamp and introduces no schema field.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Optional MP Number table column
+
+Planning and Production column menus now include MP Number. It displays the existing Merchandise Marks Number in its formatted `MP-#####` form, is read-only, is off by default in both tables, and can be independently enabled and reordered per user. No Product field or Airtable schema change was introduced.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Column drag placement indicator
+
+The Planning, Production, and THR3D column menus now show a blue insertion line above or below the target row while a column is dragged, plus a subtle target-row highlight. The pointer position determines both the displayed placement and whether the column is inserted before or after the target. Saved per-user column ordering is otherwise unchanged.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - MediaBox display label shortened
+
+User-facing MediaBox Number labels now display as `MediaBox #` across the app, including Planning and Production column selectors. The internal `mboxNumber` key and Airtable `Mbox Number` field remain unchanged. This is presentation-only.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Current Step timestamp includes time
+
+The Production table Current Step Date column now displays both the date and time of the existing Creative Force reported timestamp in Central time. No source data or schema changed.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Matched Product legend is Planning-only
+
+The Matched to a Product legend now appears only in the Planning table Merchandise header. The Production table keeps its plain Merchandise header, while row-level Product match indicators remain unchanged. This is presentation-only.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - THR3D merchandise spacing aligned
+
+THR3D table rows now keep the thumbnail and merchandise copy in one two-column cell with a fixed internal gap. This prevents the thumbnail column from stretching when the narrower shipping table fills the available width and keeps its spacing consistent with Planning and Production. No data or workflow behavior changed.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Planning board controls align with lanes and support MediaBox grouping
+
+The Planning board filter controls now occupy the same three-column grid as the board and align to the right edge of the rightmost lane instead of the page edge. The former shipment checkbox is now a mutually exclusive grouping selector with `Group by shipment` and `Group by MediaBox #`. MediaBox grouping reads the matched Product's existing MediaBox value and places blank values under `No MediaBox #`; it does not add or change Airtable fields.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory; the diff has no whitespace errors.
+
+
+### 2026-09-21 - Awaiting Activation modal exposes Activate
+
+Eligible, unreleased photo-work cards in the Awaiting Activation queue now show an `Activate` button beside `Save Changes` in the Planning modal. `Save Changes` persists Product detail edits without opening activation; `Activate` first saves pending edits and then opens the activation package. Activation remains unavailable when required data is incomplete, the user lacks activation permission, or the card is already activated. No schema or lifecycle state changed.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory.
+
+
+### 2026-09-21 - Dashboard ready-to-production count restored
+
+The dashboard no longer crashes when rendering the Ready for Production section. Its `readyToShoot` count is again derived from open Product records whose existing Required to Shoot state is `ready_for_photo`; no workflow state or schema changed.
+
+Verification: frontend contract tests pass 169 tests; the frontend production build passes with the existing Vite large-chunk advisory.
+
+### 2026-09-21 - Empty Planning tables are suppressed
+
+Planning, Production, and THR3D table sections now render only when their current filtered view contains rows. When the selected scope or filters produce no rows at all, Planning shows one `No items match this view.` empty state instead of an empty table shell. No data model or workflow behavior changed.
+
+Verification: `backend/.venv/bin/python -m unittest tests.test_frontend_routing` (169 tests passed); `npm --prefix frontend run build` (passed; existing Vite chunk-size warning remains).
+
+### 2026-09-21 - THR3D merchandise labels retain their table width
+
+The THR3D shipment table merchandise cell no longer overrides the table-cell layout with flex display. Its thumbnail and merchandise copy now align inline within the intact two-column span, preserving room for the full product name and UPC with ellipsis only when the combined merchandise column is genuinely constrained.
+
+Verification: `backend/.venv/bin/python -m unittest tests.test_frontend_routing` (169 tests passed); `npm --prefix frontend run build` (passed; existing Vite chunk-size warning remains).
+
+### 2026-09-21 - Resizable table columns have visible boundaries
+
+Planning, Production, and THR3D table headers now show a very faint vertical divider at each column-resize handle. Hovering or focusing a divider retains the stronger blue affordance, making draggable boundaries discoverable without visually boxing in the table.
+
+Verification: `backend/.venv/bin/python -m unittest tests.test_frontend_routing` (169 tests passed); `npm --prefix frontend run build` (passed; existing Vite chunk-size warning remains); `git diff --check` passed.
+
+### 2026-09-21 - THR3D rows no longer inherit photo-table sticky columns
+
+The THR3D shipment table now opts out of the shared first- and second-column sticky positioning that was treating its combined Merchandise cell and Received cell as separate sticky photo-table columns. This restores the full merchandise label and UPC width. Header boundaries also use faint vertical rules and slightly clearer resize handles so draggable columns are discoverable.
+
+Verification: `backend/.venv/bin/python -m unittest tests.test_frontend_routing` (169 tests passed); `npm --prefix frontend run build` (passed; existing Vite chunk-size warning remains); `git diff --check` passed.
+
+### 2026-09-21 - Planning header and filters tightened
+
+The redundant Planning page title was removed from both table and board views, collapsing the unused title band while preserving the centered Table/Board switch and summary controls. The table search now uses a shorter desktop width, and the deliverable filter has matching control height, typography, border, hover, and focus styling so it reads as part of the same toolbar. No workflow or data behavior changed.
+
+Verification: `backend/.venv/bin/python -m unittest tests.test_frontend_routing` (169 tests passed); `npm --prefix frontend run build` (passed; existing Vite chunk-size warning remains); `git diff --check` passed.
+
+### 2026-09-21 - Planning table section headers size naturally
+
+Planning, Production, and THR3D table section headers no longer reserve a 34px minimum height. Their height now follows the heading content, reducing unnecessary vertical space without changing table behavior.
+
+Verification: frontend production build passed with the existing Vite chunk-size warning; `git diff --check` passed.
+
+### 2026-09-21 - Redundant Planning toolbar count removed
+
+The aggregate item count beside the Columns control was removed because the scope tabs and table section headings already show the relevant counts.
+
+Verification: frontend production build passed with the existing Vite chunk-size warning; `git diff --check` passed.
+
+### 2026-09-21 - THR3D merchandise spacing matches photo tables
+
+The THR3D table now uses the same effective thumbnail-to-copy spacing as the separate thumbnail and Merchandise columns in Planning and Production. The merchandise copy width was adjusted with the gap so long labels continue to truncate safely.
+
+Verification: frontend production build passed with the existing Vite chunk-size warning; `git diff --check` passed.
+
+### 2026-09-21 - THR3D merchandise copy aligns with the tables above
+
+The THR3D merchandise cell now reserves the same visual thumbnail column width as Planning and Production, aligning its merchandise name and identifier with the names above rather than placing them immediately after the thumbnail.
+
+Verification: frontend production build passed with the existing Vite chunk-size warning; `git diff --check` passed.
+
+
+### 2026-09-21 - THR3D quantity splitting applies to all Walnut photo work
+
+The Planning merchandise modal now shows the quantity split whenever THR3D is selected with Ecomm, Packaging, or both. The entered THR3D quantity is assigned to the outbound action and the remaining units stay with Walnut for each selected photo deliverable. This replaces the prior Packaging-only condition, which hid the split for Ecomm + THR3D and could assign the full received quantity to both actions.
+
+Verification: frontend production build passed with the existing Vite chunk-size warning.
+
+
+### 2026-09-21 - Planning board defaults to Shipment grouping
+
+The Planning board grouping selector now lists `Group by shipment` first and uses it as the default. `Group by MediaBox #` remains available, and `No grouping` renders cards directly without group headers. This is a presentation-only choice and does not change Planning state or records.
+
+Verification: frontend contract tests passed; frontend production build passed with the existing Vite chunk-size warning; `git diff --check` passed.
+
+### 2026-09-21 - Planning requirements wait for a photo deliverable
+
+Planning table rows with no selected deliverable now show neutral values rather than marking client photo fields as Required. Client requirement rules begin only after Ecomm or Packaging is selected; THR3D-only merchandise does not trigger photo-production field requirements.
+
+Verification: `backend/.venv/bin/python -m unittest tests.test_frontend_routing` (170 tests passed); `npm --prefix frontend run build` passed with the existing Vite chunk-size warning.
+
+### 2026-09-21 - Complete Newly Received saves reveal Awaiting Activation
+
+When `Save Changes` commits a complete Newly Received item, Planning creates its proposed deliverable cards, refreshes the board, and closes the original Review modal. The user now lands on the committed `Review - Ready to Activate` placement instead of continuing to see the modal's stale pre-save Review snapshot. This does not activate the work; `Activate` remains the separate permission-controlled approval command.
+
+Verification: targeted confirm-assign routing test, 171 frontend routing tests, frontend production build, and `git diff --check` all pass.
+
+### 2026-09-21 - Complete Review saves reveal Awaiting Activation
+
+Saving a complete merchandise review now promotes all existing Ecomm and Packaging deliverable cards for that merchandise to Awaiting Activation. This matches the complete Newly Received behavior: the modal closes after refresh and the committed cards appear in `Review - Ready to Activate`. Saving does not activate the cards or send an activation email.
+
+Verification: `backend/.venv/bin/python -m unittest tests.test_frontend_routing` (170 tests), `backend/.venv/bin/python -m unittest tests.test_intake_decisions.IntakeDecisionTests.test_update_workstream_card_status_updates_child_record_only`, `npm --prefix frontend run build`, and `git diff --check` passed.
+
+### 2026-09-21 - Review footer progress labels identify the submitted command
+
+- Saving a Review draft changes only the Save button label to `Saving...`; Activate remains labeled `Activate` while temporarily disabled.
+- Activating changes only the Activate button label to `Activating...`; the shared submission lock still prevents duplicate requests.
+
+Verification: `backend/.venv/bin/python -m unittest tests.test_frontend_routing` (170 tests), `npm --prefix frontend run build`, and `git diff --check` passed.
+
+### 2026-09-21 - Activate remains the sole primary Review action
+
+- In an activation-ready Review modal, `Save Changes` uses the same neutral button treatment as `Close`; only `Activate` uses the dark primary treatment.
+
+Verification: `backend/.venv/bin/python -m unittest tests.test_frontend_routing` (170 tests), `npm --prefix frontend run build`, and `git diff --check` passed.
+
+
+### 2026-09-21 - Activation packages preload selected Merchandise
+
+Opening Activation from Planning now resolves the selected Merchandise actual client even when the global client filter is `All Clients`, links the selected row automatically, and imports its current linked Product data. MediaBox # is included in the item details and activation email preview when present. Project name is optional; when omitted, the activation record uses the first merchandise description as its internal fallback name.
+
+Verification: `npm --prefix frontend run build` passed with the existing Vite chunk-size warning; `git diff --check` passed.
+
+### 2026-09-21 - Shipments count opens THR3D Outgoing
+
+The Shipments navigation label and icon continue to open the standard Shipments page. Its yellow ready-count badge is now a separate accessible link that opens the `THR3D / Outgoing` tab directly.
+
+Verification: `backend/.venv/bin/python -m unittest tests.test_frontend_routing` (171 tests), `npm --prefix frontend run build`, and `git diff --check` passed.
+
+### 2026-09-21 - THR3D shipment history includes shipping time
+- The Shipments > THR3D / Outgoing history now labels the final column `Shipped date / time` and shows the recorded shipment timestamp in Central time, including hours and minutes.
+- The Planning THR3D shipment table uses the same date-time presentation for its shipped timestamp.
+- Verification: `backend/.venv/bin/python -m unittest tests.test_frontend_routing`; `npm --prefix frontend run build`; `git diff --check`.
+
+### 2026-09-21 - New Merchandise requirements follow selected deliverables
+
+The Planning modal now rebuilds required Product fields from the client's current configuration for each selected draft deliverable. A stored photo-production snapshot can no longer make Packaging display Ecomm-only requirements, or make Ecomm display Packaging-only requirements. This changes validation presentation only and does not commit or reroute the draft.
+
+Verification: `backend/.venv/bin/python -m unittest tests.test_frontend_routing` (172 tests) and `npm --prefix frontend run build` passed. The existing Vite chunk-size warning remains.
+
+### 2026-09-21 - Planning board can group deliverables by Product
+
+The Planning board grouping menu now includes `Group by Product`. It groups Ecomm and Packaging cards under their shared linked Product identity so the two deliverables stay together. Unmatched cards appear under `No matched Product`. `Group by shipment` remains the default.
+
+### 2026-09-21 - Planning board header uses the board canvas
+
+The Board view switcher header now uses the same dark background as the Planning board, removing the light-gray band above the board. The Table view remains unchanged.
+
+Verification: `npm --prefix frontend run build`; `git diff --check`.

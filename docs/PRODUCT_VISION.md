@@ -1,6 +1,6 @@
 # Product Vision
 
-Marks Photo is an Operations Readiness Platform.
+Marks Photo is an operations platform for moving physical merchandise from expectation through authorized work.
 
 Its mission is to transform expected product data and incoming merchandise into production-ready work.
 
@@ -21,7 +21,7 @@ Workflow, planning, production systems, and reporting systems may connect to Mar
 
 The core operating question is:
 
-> What must be true before this expected product can enter production?
+> What is this merchandise, what do we intend to do with it, and is each action authorized to proceed?
 
 Marks Photo should make the answer visible, actionable, and reliable.
 
@@ -32,23 +32,11 @@ It should not ask users to maintain records for their own sake. It should not as
 Marks Photo sits in the operational handoff between expected product data, merchandise arrival, and production execution.
 
 ```text
-Expected Products
-↓
-Shipment
-↓
-Shipments
-↓
-Inventory
-↓
-Planning
-↓
-Awaiting Photo Release
-↓
-Production
-↓
-Creative Force
-↓
-PhotoTrack
+REQUEST: WAITING → FULFILLED
+
+MERCHANDISE: RECEIVED → REVIEWED → ACTIVATED
+
+DOWNSTREAM: Photo work → Production; THR3D work → Shipments / Outgoing
 ```
 
 ## Phase Ownership
@@ -79,7 +67,7 @@ Inventory answers what the studio physically has. It is a shelf and storage pers
 
 Ownership: Project Management and operations readiness.
 
-Planning is where uncertainty is resolved before production. It starts from expected Product data when available, verifies whether usable merchandise has arrived, captures exceptions when merchandise cannot be matched, assigns the Ecomm/Packaging work units or THR3D shipping item, records blockers, and establishes whether each work item is ready for handoff.
+Planning is where uncertainty is resolved before activation. It starts from expected Product data when available, verifies whether usable merchandise has arrived, captures exceptions when merchandise cannot be matched, assigns the Ecomm/Packaging work units or THR3D shipping item, records blockers, and establishes whether each work item is ready for handoff.
 
 Planning is the PM preparation perspective. Product data is the normal operating spine; unmatched Received Merch is an exception lane. After readiness/work assignment, separate child work exists for Ecomm and Packaging because they have different dependencies; THR3D remains a shipping item owned by Shipments. The implementation must not revive the legacy workflow-engine tables.
 
@@ -101,15 +89,13 @@ Topco is the complex starting client, but the Product workspace must support cli
 
 Queue is separate from Merchandise Status. Queue organizes PM work; Merchandise Status describes the physical or operational state of the sample.
 
-Planning Status is intentionally small: `New`, `Needs More Information`, and `Awaiting Photo Release`.
+The user-facing lifecycle is `Received`, `Reviewed`, and `Activated`. Existing Planning Status values remain compatibility storage and are translated at the application boundary.
 
-### Awaiting Photo Release
+### Activation
 
 Ownership: Project Management.
 
-Awaiting Photo Release is the PM-owned queue for work that has the required merchandise facts, product facts, client requirements, deliverables, and production instructions complete enough for the final photo release.
-
-There should be one clear release point. Readiness paths may differ by client or deliverables, but the handoff should remain explicit and should not duplicate Merchandise records.
+Activation is the explicit approval that selected work may proceed to execution. Review and activation are separated by an explicit route-commit checkpoint. Saving Merchandise data moves Newly Received work into Review and never activates it. `Move to Ready to Activate` performs final validation and creates the proposed route-specific Ecomm/Packaging Actions; only roles with the Activate Merchandise capability may then activate an individual ready Action or a compatible bulk selection. THR3D route commitment creates the outbound shipping Action owned by Shipments rather than a photo activation card. An optional Activation email may accompany a photo activation decision, but sending email is not what makes the work activated.
 
 ### Production
 
@@ -117,7 +103,7 @@ Ownership: Production coordination.
 
 Production determines how the work will be executed: schedule, resources, studio, pre-production, planning, and integration with Creative Force. Marks Photo may prepare and display production intent, but it should not become the system that manages every production task.
 
-Production begins after Planning performs the explicit `Release to Photo` handoff. That handoff should transfer ownership from Project Management to Production-facing systems, remove the card from active Planning, show it on Production/Creative Force surfaces, and log Activity.
+Production begins after Project Management performs the explicit `Activate` handoff for photo work. Activation transfers ownership to Production-facing systems, removes the card from the active Workspace board, keeps it discoverable in the Workspace table, and logs History.
 
 ### Creative Force
 
@@ -133,11 +119,11 @@ PhotoTrack answers whether production succeeded and where produced assets stand 
 
 ## Long-Term Direction
 
-Marks Photo should be organized around product-led readiness verified by physical merchandise, not around database tables or workflow mechanics.
+Marks Photo should be organized around physical Merchandise and its independent Actions, supported by lightweight Product/reference data and optional Requests. Product data helps identify and prepare the work; it is not the parent of every operational step.
 
 The prior workflow-table experiment is not part of the product direction. Legacy Workstreams tables, Work Orders, Workstream Assignments, Workflow Templates, Workflow Stages, Work Order Types, Product-level Workstream routing, Product-level production/storage state, and Merchandise Resolution should not be required to receive, plan, release, or ship merchandise. Current workstream cards are scoped Ecomm or Packaging child work, not that legacy workflow engine.
 
-Products are Expected Product records maintained from client product-data sources. They are the normal operating records for expected work. Product data says what should exist and what production outcomes may be needed; Received Merch verifies whether usable physical samples are present. Physical facts, check-in evidence, storage, condition, and outbound shipping facts still belong to Received Merch, Shipments, Issues, History, Creative Force, PhotoTrack, or reporting integrations.
+Products are lightweight reference records maintained from client product-data sources. Their presence does not mean Walnut is actively waiting for the physical item. A Request supplies that optional operational meaning; Received Merch records whether physical samples actually arrived. Physical facts, check-in evidence, storage, condition, and outbound shipping facts still belong to Merchandise, Shipments, History, Creative Force, PhotoTrack, or reporting integrations.
 
 The application presents different perspectives of expected products and their supporting merchandise:
 

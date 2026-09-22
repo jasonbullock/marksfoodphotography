@@ -135,7 +135,9 @@ class Config:
         "AIRTABLE_MERCHANDISE_TABLE",
         os.getenv("AIRTABLE_RECEIPT_ENTRIES_TABLE", "Merchandise"),
     )
-    WORKSTREAM_CARDS_TABLE = os.getenv("AIRTABLE_WORKSTREAM_CARDS_TABLE", "Workstream Cards")
+    ACTIONS_TABLE = os.getenv("AIRTABLE_ACTIONS_TABLE", "Actions")
+    WORKSTREAM_CARDS_TABLE = ACTIONS_TABLE
+    REQUESTS_TABLE = os.getenv("AIRTABLE_REQUESTS_TABLE", "Requests")
     THR3D_SHIPPING_ITEMS_TABLE = os.getenv("AIRTABLE_THR3D_SHIPPING_ITEMS_TABLE", "THR3D Shipping Items")
     CREATIVE_FORCE_PRODUCT_FEED_TABLE = os.getenv(
         "AIRTABLE_CREATIVE_FORCE_PRODUCT_FEED_TABLE", "Creative Force Product Feed"
@@ -191,6 +193,11 @@ class Config:
     COMMENTS_TABLE = "Comments"
     IMPORTS_TABLE = "Imports"
     ACTIVATIONS_TABLE = "Activations"
+    ROLE_POLICIES_TABLE = "Role Policies"
+
+    # Field names - Role Policies
+    F_ROLE_POLICY_ROLE = "Role"
+    F_ROLE_POLICY_PATHS = "Workspace Paths"
 
     # Field names — Locations
     F_LOCATION_NAME = "Location"
@@ -262,10 +269,10 @@ class Config:
     DELIVERABLE_OPTIONS = ["Packaging", "Ecomm", "Thr3d"]
 
     # Field names - Workstream Cards
-    F_WORKSTREAM_CARD_NAME = "Workstream Card"
-    F_WORKSTREAM_CARD_RECEIVED_MERCH = "Received Merch"
+    F_WORKSTREAM_CARD_NAME = "Action"
+    F_WORKSTREAM_CARD_RECEIVED_MERCH = "Merchandise"
     F_WORKSTREAM_CARD_EXPECTED_PRODUCT = "Expected Product"
-    F_WORKSTREAM_CARD_TYPE = "Workstream Type"
+    F_WORKSTREAM_CARD_TYPE = "Action Type"
     F_WORKSTREAM_CARD_PLANNING_STATUS = "Planning Status"
     F_WORKSTREAM_CARD_QUANTITY = "Quantity"
     F_WORKSTREAM_CARD_MANUAL_PRODUCT_INFO = "Manual Product Info"
@@ -291,6 +298,28 @@ class Config:
     F_THR3D_SHIPPING_ITEM_MANUAL_PRODUCT_INFO = "Manual Product Info"
     F_THR3D_SHIPPING_ITEM_NOTES = "Notes"
     THR3D_SHIPPING_STATUS_OPTIONS = ["Needs Shipment", "Shipped"]
+
+    # Field names - Actions
+    F_ACTION_NAME = "Action"
+    F_ACTION_MERCHANDISE = "Merchandise"
+    F_ACTION_TYPE = "Action Type"
+    F_ACTION_STATUS = "Status"
+    F_ACTION_QUANTITY = "Quantity"
+    F_ACTION_ACTIVATED_AT = "Activated At"
+    F_ACTION_ACTIVATED_BY = "Activated By"
+    F_ACTION_EXTERNAL_REFERENCE = "External Reference"
+    F_ACTION_CANCELLATION_REASON = "Cancellation / Reversal Reason"
+    ACTION_TYPE_OPTIONS = ["Ecomm", "Pack", "THR3D", "Replacement", "Not Needed"]
+    ACTION_STATUS_OPTIONS = ["Proposed", "Activated", "Executing", "Done", "Cancelled"]
+
+    # Field names - Requests
+    F_REQUEST_NAME = "Request"
+    F_REQUEST_PRODUCT = "Product"
+    F_REQUEST_STATUS = "Status"
+    F_REQUEST_MERCHANDISE = "Merchandise"
+    F_REQUEST_NEEDED_BY = "Needed By"
+    F_REQUEST_NOTES = "Notes"
+    REQUEST_STATUS_OPTIONS = ["Waiting", "Fulfilled", "Cancelled"]
 
     # Field names — Clients
     F_CLIENT_NAME = "Client"

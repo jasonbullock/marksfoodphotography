@@ -38,6 +38,18 @@ class SanitiseTests(unittest.TestCase):
     def test_newlines_and_tabs_do_not_survive(self):
         self.assertEqual(fnd.sanitise("Vegan\tMayo\nSpread"), "Vegan Mayo Spread")
 
+    def test_filename_description_words_are_joined_with_underscores(self):
+        self.assertEqual(fnd.normalize("Ice Cream  Pumpkin"), "Ice_Cream_Pumpkin")
+
+    def test_filename_description_strips_punctuation(self):
+        self.assertEqual(
+            fnd.normalize("Ice_Cream_Cones_(Original,_Chocolate,_Strawberry)"),
+            "Ice_Cream_Cones_Original_Chocolate_Strawberry",
+        )
+
+    def test_filename_description_removes_apostrophes_without_splitting_words(self):
+        self.assertEqual(fnd.normalize("Sweet P's Cupcakes"), "Sweet_Ps_Cupcakes")
+
 
 class SuggestTests(unittest.TestCase):
     """Measured against what people actually wrote in the tracker."""
@@ -45,41 +57,41 @@ class SuggestTests(unittest.TestCase):
     def test_it_drops_the_brand_and_the_size(self):
         self.assertEqual(
             fnd.suggest("Celtrade Vegan Mayo Spread 14.5oz", brands=["Celtrade"]),
-            "Vegan Mayo Spread",
+            "Vegan_Mayo_Spread",
         )
 
     def test_it_drops_marketing_words(self):
         self.assertEqual(
             fnd.suggest("Mariner CRACKER FLATBREAD ROSEMARY ORGANIC 5 OZ", brands=["Mariner"]),
-            "CRACKER FLATBREAD ROSEMARY",
+            "CRACKER_FLATBREAD_ROSEMARY",
         )
 
     def test_it_takes_the_half_after_a_dash(self):
         self.assertEqual(
             fnd.suggest("Food Club Dry Soup Mix - Beefy Onion Soup", brands=["FC - Food Club"]),
-            "Beefy Onion Soup",
+            "Beefy_Onion_Soup",
         )
 
     def test_it_drops_a_brand_code_as_well_as_a_brand_name(self):
         self.assertEqual(
             fnd.suggest("CF Ice Cream Pumpkin Scr 48oz", brands=["CF - Cravin Flavor"]),
-            "Ice Cream Pumpkin",
+            "Ice_Cream_Pumpkin",
         )
 
     def test_a_size_can_be_kept_when_it_is_the_differentiator(self):
         # Two products alike but for the size need it back to tell them apart.
         self.assertEqual(
             fnd.suggest("Cedar's Original Hummus 8oz", brands=["Cedar's"], keep_size=True),
-            "Original Hummus 8oz",
+            "Original_Hummus_8oz",
         )
 
     def test_a_number_left_behind_by_a_stripped_size_goes_too(self):
-        self.assertEqual(fnd.suggest("Waffles Homestyle 6 CT 7.4 OZ"), "Waffles Homestyle")
+        self.assertEqual(fnd.suggest("Waffles Homestyle 6 CT 7.4 OZ"), "Waffles_Homestyle")
 
     def test_an_unknown_third_party_brand_stays_for_someone_to_remove(self):
         # Guessing which leading word is a brand would eat real product words.
         self.assertEqual(fnd.suggest("Capeachio's CRACKER WATER ORG 4.4 OZ"),
-                         "Capeachio's CRACKER WATER")
+                         "Capeachios_CRACKER_WATER")
 
     def test_an_empty_name_gives_nothing_rather_than_a_stray_separator(self):
         self.assertEqual(fnd.suggest(""), "")
@@ -101,19 +113,19 @@ class RealTrackerTests(unittest.TestCase):
     """Measured against pairs people wrote by hand in the Topco tracker."""
 
     CASES = [
-        ("Celtrade Vegan Mayo Spread 14.5oz", "Celtrade", "Vegan Mayo Spread", "Vegan Mayo"),
-        ("CF Ice Cream Pumpkin Scr 48oz", "CF -CravinFlavor", "Ice Cream Pumpkin", "Pumpkin Ice Cream"),
-        ("Food Club Dry Soup Mix - Beefy Onion Soup", "FC -FoodClub", "Beefy Onion Soup", "Beefy Onion Soup"),
-        ("Food Club Dry Soup Mix - Noodle Soup", "FC -FoodClub", "Noodle Soup", "Noodle Soup"),
-        ("Food Club New Tropical Fruit Blend 16oz", "FC -FoodClub", "Tropical Fruit Blend", "Tropical Fruit Blend"),
-        ("Culinary Tours Bang Bang Sauce 12oz", "CT -CulinaryTours", "Bang Bang Sauce", None),
+        ("Celtrade Vegan Mayo Spread 14.5oz", "Celtrade", "Vegan_Mayo_Spread", "Vegan_Mayo"),
+        ("CF Ice Cream Pumpkin Scr 48oz", "CF", "Ice_Cream_Pumpkin", "Pumpkin_Ice_Cream"),
+        ("Food Club Dry Soup Mix - Beefy Onion Soup", "FC -FoodClub", "Beefy_Onion_Soup", "Beefy_Onion_Soup"),
+        ("Food Club Dry Soup Mix - Noodle Soup", "FC -FoodClub", "Noodle_Soup", "Noodle_Soup"),
+        ("Food Club New Tropical Fruit Blend 16oz", "FC -FoodClub", "Tropical_Fruit_Blend", "Tropical_Fruit_Blend"),
+        ("Culinary Tours Bang Bang Sauce 12oz", "CT", "Bang_Bang_Sauce", None),
     ]
 
     def test_a_run_together_brand_still_matches_a_spelled_out_one(self):
         # The tracker writes "FC -FoodClub"; the product name says "Food Club".
         self.assertEqual(
             fnd.suggest("Food Club New Tropical Fruit Blend 16oz", brands=["FC -FoodClub"]),
-            "Tropical Fruit Blend",
+            "Tropical_Fruit_Blend",
         )
 
     def test_the_suggestion_matches_what_a_person_wrote_where_no_reordering_was_needed(self):
@@ -125,13 +137,13 @@ class RealTrackerTests(unittest.TestCase):
     def test_where_a_person_reordered_the_words_the_suggestion_holds_the_same_ones(self):
         # "Ice Cream Pumpkin" -> "Pumpkin Ice Cream". Reordering needs to know which
         # word is the noun, so the suggestion keeps source order and is edited.
-        suggestion = fnd.suggest("CF Ice Cream Pumpkin Scr 48oz", brands=["CF -CravinFlavor"])
-        self.assertEqual(sorted(suggestion.casefold().split()),
-                         sorted("Pumpkin Ice Cream".casefold().split()))
+        suggestion = fnd.suggest("CF Ice Cream Pumpkin Scr 48oz", brands=["CF"])
+        self.assertEqual(sorted(suggestion.casefold().split('_')),
+                         sorted("Pumpkin_Ice_Cream".casefold().split('_')))
 
 
 class BrandPrefixConfigTests(unittest.TestCase):
-    """The list mirrors the source sheet, so values written either side match."""
+    """Descriptive client options resolve to canonical filename tokens."""
 
     @classmethod
     def setUpClass(cls):
@@ -139,15 +151,12 @@ class BrandPrefixConfigTests(unittest.TestCase):
         cls.routes = routes
         cls.source = (Path(__file__).resolve().parents[1] / "frontend" / "src" / "App.jsx").read_text()
 
-    def test_the_value_is_the_sheet_line_verbatim(self):
-        # A product matched from the sheet and one picked in the app have to carry
-        # the same string or they cannot be compared.
+    def test_the_value_is_the_filename_token_and_label_stays_descriptive(self):
         entry = self.routes._parse_brand_prefixes("FC -FoodClub")[0]
-        self.assertEqual(entry["value"], "FC -FoodClub")
+        self.assertEqual(entry["value"], "FC")
         self.assertEqual(entry["label"], "FC -FoodClub")
 
-    def test_the_file_name_code_is_derived_rather_than_stored_separately(self):
-        # Kept apart they would drift; derived they cannot.
+    def test_the_file_name_code_is_derived_consistently(self):
         self.assertEqual(self.routes.brand_prefix_code("FC -FoodClub"), "FC")
         self.assertEqual(self.routes.brand_prefix_code("CV - Cape Covelle"), "CV")
         self.assertEqual(self.routes.brand_prefix_code("BC"), "BC")
@@ -168,8 +177,26 @@ class BrandPrefixConfigTests(unittest.TestCase):
         # PY is against PureHarmony and Pantry Fresh in the real sheet.
         self.assertEqual(len(self.routes._parse_brand_prefixes("PY -PureHarmony\nPY")), 2)
 
-    def test_the_dropdown_offers_the_line_itself(self):
-        self.assertIn("<option key={entry.value} value={entry.value}>{entry.label}</option>", self.source)
+    def test_the_dropdown_offers_descriptive_labels_for_token_values(self):
+        self.assertIn('value={entry.value}>{entry.label}</option>', self.source)
+        self.assertIn('className="brand-prefix-select"', self.source)
+
+    def test_product_writes_normalize_descriptive_values_to_tokens(self):
+        fields = {}
+        self.routes._apply_item_fields(fields, {"brandPrefix": "FC -FoodClub"})
+        self.assertEqual(fields[self.routes.C.F_ITEM_BRAND_PREFIX], "FC")
+
+    def test_product_writes_normalize_file_name_description_spacing(self):
+        fields = {}
+        self.routes._apply_item_fields(fields, {"fileNameDescription": "Ice Cream Pumpkin"})
+        self.assertEqual(fields[self.routes.C.F_ITEM_FILE_NAME_DESCRIPTION], "Ice_Cream_Pumpkin")
+
+    def test_import_writes_normalize_descriptive_values_to_tokens(self):
+        fields = self.routes._item_fields_from_row("recClient", {
+            "itemName": "Test product",
+            "brandPrefix": "FC -FoodClub",
+        })
+        self.assertEqual(fields[self.routes.C.F_ITEM_BRAND_PREFIX], "FC")
 
     def test_there_is_no_invented_other_option(self):
         # The sheet's own list carries "Other - Non Topco"; a second one confuses.
@@ -183,9 +210,9 @@ class BrandPrefixConfigTests(unittest.TestCase):
         self.assertIn("field === 'brandPrefix' && brandPrefixes.length ?", self.source)
 
     def test_the_suggestion_never_displaces_a_written_value(self):
-        self.assertIn("if (field === 'fileNameDescription' && product.fileNameDescription) return product.fileNameDescription;",
+        self.assertIn("if (field === 'fileNameDescription' && product.fileNameDescription) return normalizeFileNameDescription(product.fileNameDescription);",
                       self.source)
-        self.assertIn("if (product.fileNameDescriptionSuggestion) return product.fileNameDescriptionSuggestion;",
+        self.assertIn("if (product.fileNameDescriptionSuggestion) return normalizeFileNameDescription(product.fileNameDescriptionSuggestion);",
                       self.source)
 
 
@@ -204,7 +231,7 @@ class BrandPrefixWarningTests(unittest.TestCase):
         # The real sheet has PY against PureHarmony and against Pantry Fresh.
         # Dropping the second would make that brand unpickable.
         prefixes = self.routes._parse_brand_prefixes("PY -PureHarmony\nPY")
-        self.assertEqual([entry["value"] for entry in prefixes], ["PY -PureHarmony", "PY"])
+        self.assertEqual([entry["value"] for entry in prefixes], ["PY", "PY"])
 
     def test_and_the_clash_is_reported(self):
         # Guessing which brand owns the code would silently rename a delivery.
@@ -217,8 +244,8 @@ class BrandPrefixWarningTests(unittest.TestCase):
 
     def test_the_real_topco_list_reports_exactly_the_two_known_problems(self):
         real = "\n".join([
-            "FC -FoodClub", "FX -FullCircleMarket", "CD -CornershotCuts", "CF -CravinFlavor",
-            "CT -CulinaryTours", "CV - Cape Covelle", "P7 -PawsHappyLife", "PY -PureHarmony",
+            "FC -FoodClub", "FX -FullCircleMarket", "CD -CornershotCuts", "CF",
+            "CT", "CV - Cape Covelle", "P7 -PawsHappyLife", "PY -PureHarmony",
             "SD -SimpleDone", "S6 -SweetPeas", "TS -ThatsSmart", "T1 -TippyToes", "TR -TopCare",
             "WA -WideAwake", "BB -BasketBushel", "BC", "CK", "FF", "GG", "HV", "OTT", "PY",
             "Other - Non Topco", "No Brand/Branding",
@@ -271,13 +298,13 @@ class BrandInferenceTests(unittest.TestCase):
         return entry["value"] if entry else None
 
     def test_a_leading_code_is_recognised(self):
-        self.assertEqual(self.infer("CF Ice Cream Scrounds DFA"), "CF -CravinFlavor")
+        self.assertEqual(self.infer("CF Ice Cream Scrounds DFA"), "CF")
 
     def test_a_leading_brand_name_is_recognised_though_the_list_runs_it_together(self):
-        self.assertEqual(self.infer("Food Club thicky & chunky salsa medium 16oz"), "FC -FoodClub")
+        self.assertEqual(self.infer("Food Club thicky & chunky salsa medium 16oz"), "FC")
 
     def test_a_two_word_brand_is_recognised(self):
-        self.assertEqual(self.infer("Culinary Tours Bang Bang Sauce 12oz"), "CT -CulinaryTours")
+        self.assertEqual(self.infer("Culinary Tours Bang Bang Sauce 12oz"), "CT")
 
     def test_a_product_with_no_brand_in_its_name_is_left_alone(self):
         self.assertIsNone(self.infer("Salsa Hot Pineapple Jalapeno"))
@@ -291,7 +318,7 @@ class BrandInferenceTests(unittest.TestCase):
         self.assertIsNone(self.infer("PY Something Or Other"))
 
     def test_the_longer_brand_wins_over_a_shorter_coincidence(self):
-        self.assertEqual(self.infer("Pure Harmony Dog Food"), "PY -PureHarmony")
+        self.assertEqual(self.infer("Pure Harmony Dog Food"), "PY")
 
     def test_an_empty_name_infers_nothing(self):
         self.assertIsNone(self.infer(""))
