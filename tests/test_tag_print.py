@@ -18,7 +18,8 @@ def tag(**overrides):
         "marksId": "MP-00005",
         "storage": "Rack B - Shelf 3",
         "arrival": "Aug 31 - FedEx ...666",
-        "quantity": "Qty 7",
+        "quantityReceived": "7",
+        "shipToThr3d": "2",
         "upc": "011225017728",
         "received": "Aug 31, 3:16 PM CDT",
         "qrUrl": "https://food.walnutcontent.com/planning?item=recABC",
@@ -38,9 +39,13 @@ class TagLayoutTests(unittest.TestCase):
         self.assertIn("Topco", zpl)
         self.assertIn("CT Extra Aged Parmesan Cheese 8oz", zpl)
         self.assertIn("MP-00005", zpl)
-        self.assertIn("Rack B - Shelf 3", zpl)
         self.assertIn("^BQN", zpl)   # QR to the planning card
         self.assertIn("^BCN", zpl)   # Code128 of the tag code
+        self.assertIn("RECEIVED", zpl)
+        self.assertIn("Shot date", zpl)
+        self.assertIn("Creative Force Scan", zpl)
+        self.assertIn("Quantity received: 7", zpl)
+        self.assertIn("Ship to THR3D: 2", zpl)
 
     def test_the_qr_opens_the_planning_card(self):
         self.assertIn("planning?item=recABC", tag())
@@ -59,9 +64,8 @@ class TagLayoutTests(unittest.TestCase):
     def test_a_non_http_qr_is_ignored_rather_than_encoded(self):
         self.assertNotIn("^BQN", tag(qrUrl="javascript:alert(1)"))
 
-    def test_empty_lines_do_not_leave_gaps(self):
-        zpl = tag(storage="", arrival="", quantity="", received="")
-        self.assertEqual(zpl.count("^A0N,30,30"), 0)
+    def test_missing_received_date_is_explicit(self):
+        self.assertIn("Not recorded", tag(received=""))
 
     def test_an_unmatched_item_still_says_something(self):
         self.assertIn("Unidentified merchandise", tag(productName=""))
@@ -99,6 +103,9 @@ class TagContentTests(unittest.TestCase):
     def test_the_received_date_is_on_the_tag(self):
         self.assertIn("Aug 31, 3:16 PM CDT", tag(received="Aug 31, 3:16 PM CDT"))
 
+    def test_thr3d_quantity_is_omitted_when_nothing_is_allocated(self):
+        self.assertNotIn("Ship to THR3D", tag(shipToThr3d=""))
+
     def test_nothing_overlaps_down_the_label(self):
         # The QR grows with its data, so every position below it is measured from
         # the code's real size rather than from an assumed one.
@@ -106,7 +113,10 @@ class TagContentTests(unittest.TestCase):
         self.assertLess(layout["qrTop"] + layout["qrReserved"], layout["codeTop"])
         self.assertLess(layout["codeTop"] + tag_print.CODE_TEXT, layout["upcTop"])
         self.assertLess(layout["upcTop"] + tag_print.UPC_TEXT, layout["barcodeTop"])
+        self.assertLess(layout["upcTop"] + tag_print.UPC_TEXT, layout["creativeForceTop"])
+        self.assertLess(layout["creativeForceTop"] + tag_print.CREATIVE_FORCE_TEXT, layout["barcodeTop"])
         self.assertLess(layout["barcodeTop"] + tag_print.BARCODE_HEIGHT, layout["footerTop"])
+        self.assertLess(layout["footerTop"] + tag_print.RECEIVED_HEIGHT, layout["shotTop"])
 
     def test_the_symbols_stay_apart(self):
         layout = tag_print.tag_layout(QR_URL)
@@ -116,7 +126,7 @@ class TagContentTests(unittest.TestCase):
     def test_the_marks_code_is_no_longer_shouting(self):
         # It was 66pt, larger than the client name needed to be.
         zpl = tag()
-        self.assertIn("^A0N,46,46^FDMP-00005", zpl)
+        self.assertIn("^A0N,40,40^FDMP-00005", zpl)
         self.assertNotIn("^A0N,66,66", zpl)
 
     def test_a_missing_upc_leaves_no_gap(self):
@@ -125,11 +135,9 @@ class TagContentTests(unittest.TestCase):
 
 class TagFitsTests(unittest.TestCase):
     def test_the_shot_line_does_not_land_on_the_footer(self):
-        # Four footer rows plus a hand-written line is the tightest the foot gets.
+        # The received block and hand-written line remain distinct.
         layout = tag_print.tag_layout(QR_URL)
-        last_footer_bottom = (
-            layout["footerTop"] + (3 * tag_print.FOOTER_LINE_HEIGHT) + tag_print.FOOTER_TEXT
-        )
+        last_footer_bottom = layout["footerTop"] + tag_print.RECEIVED_HEIGHT
         self.assertLess(last_footer_bottom, layout["shotTop"])
 
     def test_everything_fits_on_the_label(self):
@@ -137,12 +145,13 @@ class TagFitsTests(unittest.TestCase):
 
     def test_the_footer_is_labelled(self):
         zpl = tag(received="Aug 31, 3:16 PM CDT", storage="Rack B")
-        self.assertIn("Received: Aug 31, 3:16 PM CDT", zpl)
-        self.assertIn("Storage: Rack B", zpl)
+        self.assertIn("RECEIVED", zpl)
+        self.assertIn("Aug 31, 3:16 PM CDT", zpl)
+        self.assertNotIn("Storage: Rack B", zpl)
 
     def test_there_is_somewhere_to_write_the_shot_date(self):
         # Only known once the shoot happens, and nobody reprints a tag for it.
-        self.assertIn("^FDShot^FS", tag())
+        self.assertIn("^FDShot date^FS", tag())
 
 
 class TagSpacingTests(unittest.TestCase):
@@ -154,8 +163,9 @@ class TagSpacingTests(unittest.TestCase):
             ("qr", layout["qrTop"], layout["qrTop"] + layout["qrReserved"]),
             ("code", layout["codeTop"], layout["codeTop"] + t.CODE_TEXT),
             ("upc", layout["upcTop"], layout["upcTop"] + t.UPC_TEXT),
+            ("creative force id", layout["creativeForceTop"], layout["creativeForceTop"] + t.CREATIVE_FORCE_TEXT),
             ("barcode", layout["barcodeTop"], layout["barcodeTop"] + t.BARCODE_HEIGHT),
-            ("footer", layout["footerTop"], layout["footerTop"] + t.FOOTER_LINES * t.FOOTER_LINE_HEIGHT),
+            ("received", layout["footerTop"], layout["footerTop"] + t.RECEIVED_HEIGHT),
             ("shot", layout["shotTop"], layout["bottom"]),
         ]
         for (above, _, above_bottom), (below, below_top, _) in zip(blocks, blocks[1:]):

@@ -57,17 +57,17 @@ def qr_modules_for(data):
 # The fixed part of the tag: everything above the QR is the same on every label.
 # The name is capped at two lines - a third ran into the QR.
 NAME_TOP = 118
-NAME_TEXT = 42
+NAME_TEXT = 36
 NAME_LINES = 2
 NAME_LINE_SPACING = 8
 NAME_BOTTOM = NAME_TOP + (NAME_LINES * (NAME_TEXT + NAME_LINE_SPACING))
 QR_TOP = NAME_BOTTOM + 20
-CODE_TEXT = 46
-UPC_TEXT = 32
+CODE_TEXT = 40
+UPC_TEXT = 28
+CREATIVE_FORCE_TEXT = 24
 BARCODE_HEIGHT = 90
-FOOTER_LINE_HEIGHT = 30
-FOOTER_TEXT = 28
-FOOTER_LINES = 4
+RECEIVED_HEIGHT = 110
+RECEIVED_TEXT = 30
 
 
 def tag_layout(qr_url=""):
@@ -79,8 +79,8 @@ def tag_layout(qr_url=""):
     to stretch to fit the code.
     """
     below_the_qr = (
-        18 + CODE_TEXT + 12 + UPC_TEXT + 76 + BARCODE_HEIGHT + 30
-        + (FOOTER_LINES * FOOTER_LINE_HEIGHT) + 10 + 32
+        18 + CODE_TEXT + 12 + UPC_TEXT + 90 + CREATIVE_FORCE_TEXT + 10 + BARCODE_HEIGHT + 30
+        + RECEIVED_HEIGHT + 18 + 32
     )
     available = LABEL_HEIGHT_DOTS - QR_TOP - below_the_qr - 1
     modules = qr_modules_for(qr_url) if qr_url else 0
@@ -95,17 +95,19 @@ def tag_layout(qr_url=""):
     upc_top = code_top + CODE_TEXT + 12
     # Roughly an inch of clear label between the two symbols, which is what stops a
     # handheld scanner reading the wrong one.
-    barcode_top = upc_top + UPC_TEXT + 76
+    creative_force_top = upc_top + UPC_TEXT + 90
+    barcode_top = creative_force_top + CREATIVE_FORCE_TEXT + 10
     footer_top = barcode_top + BARCODE_HEIGHT + 30
     # A hand-written line at the foot, always in the same place relative to the
     # details above it.
-    shot_top = footer_top + (FOOTER_LINES * FOOTER_LINE_HEIGHT) + 10
+    shot_top = footer_top + RECEIVED_HEIGHT + 18
     return {
         "magnification": magnification,
         "qrReserved": reserved,
         "qrTop": QR_TOP,
         "codeTop": code_top,
         "upcTop": upc_top,
+        "creativeForceTop": creative_force_top,
         "barcodeTop": barcode_top,
         "footerTop": footer_top,
         "shotTop": shot_top,
@@ -136,11 +138,10 @@ def build_merchandise_tag_zpl(tag):
     client = clean(tag.get("client"), 28)
     name = clean(tag.get("productName"), 60)
     code = clean(tag.get("marksId"), 20)
-    storage = clean(tag.get("storage"), 40)
-    arrival = clean(tag.get("arrival"), 40)
     received = clean(tag.get("received"), 40)
     upc = clean(tag.get("upc"), 24)
-    quantity = clean(tag.get("quantity"), 12)
+    quantity_received = clean(tag.get("quantityReceived"), 12)
+    ship_to_thr3d = clean(tag.get("shipToThr3d"), 12)
     qr_url = clean(_http_url(tag.get("qrUrl")), 512)
 
     if not code:
@@ -156,7 +157,7 @@ def build_merchandise_tag_zpl(tag):
         "^LH0,0",
         "^FWN",
         # Client, loudest thing on the tag - it is how a shelf is scanned by eye.
-        f"^FO{MARGIN},26^FB{CONTENT_WIDTH},1,0,L^A0N,58,58^FD{client or 'No client'}^FS",
+        f"^FO{MARGIN},26^FB{CONTENT_WIDTH},1,0,L^A0N,52,52^FD{client or 'No client'}^FS",
         f"^FO{MARGIN},96^GB{CONTENT_WIDTH},3,3^FS",
         # Three lines is enough for the longest real product name; beyond that the
         # name is truncated rather than pushing the QR off the label.
@@ -183,25 +184,39 @@ def build_merchandise_tag_zpl(tag):
             f"^FO{MARGIN},{layout['upcTop']}^FB{CONTENT_WIDTH},1,0,C^A0N,{UPC_TEXT},{UPC_TEXT}^FD{upc}^FS"
         )
     lines.append(
+        f"^FO{MARGIN},{layout['creativeForceTop']}^FB{CONTENT_WIDTH},1,0,C"
+        f"^A0N,{CREATIVE_FORCE_TEXT},{CREATIVE_FORCE_TEXT}"
+        f"^FDCreative Force Scan^FS"
+    )
+    lines.append(
         f"^FO{MARGIN},{layout['barcodeTop']}^BY3,2,{BARCODE_HEIGHT}^BCN,{BARCODE_HEIGHT},N,N,N^FD{code}^FS"
     )
 
-    y = layout["footerTop"]
-    footer = [("Received", received), ("Storage", storage), ("Carrier", arrival), ("", quantity)]
-    for label, value in footer:
-        if not value:
-            continue
-        text = f"{label}: {value}" if label else value
-        lines.append(
-            f"^FO{MARGIN},{y}^FB{CONTENT_WIDTH},1,0,L^A0N,{FOOTER_TEXT},{FOOTER_TEXT}^FD{text}^FS"
-        )
-        y += FOOTER_LINE_HEIGHT
+    # Receiving age determines what should be shot or purged next, so it gets a
+    # bordered block instead of being buried among handling details.
+    lines.append(
+        f"^FO{MARGIN},{layout['footerTop']}^GB{CONTENT_WIDTH},{RECEIVED_HEIGHT},2^FS"
+    )
+    lines.append(
+        f"^FO{MARGIN + 12},{layout['footerTop'] + 10}^A0N,22,22^FDRECEIVED^FS"
+    )
+    lines.append(
+        f"^FO{MARGIN + 12},{layout['footerTop'] + 36}^FB{CONTENT_WIDTH - 24},1,0,L"
+        f"^A0N,{RECEIVED_TEXT},{RECEIVED_TEXT}^FD{received or 'Not recorded'}^FS"
+    )
+    quantity_text = f"Quantity received: {quantity_received or 'Not recorded'}"
+    if ship_to_thr3d:
+        quantity_text += f"   Ship to THR3D: {ship_to_thr3d}"
+    lines.append(
+        f"^FO{MARGIN + 12},{layout['footerTop'] + 76}^FB{CONTENT_WIDTH - 24},1,0,L"
+        f"^A0N,22,22^FD{quantity_text}^FS"
+    )
 
     # A ruled line for the shot date. Written on by hand at the bench, because the
     # date is only known once the shoot happens and nobody is reprinting a tag for it.
-    lines.append(f"^FO{MARGIN},{layout['shotTop']}^A0N,26,26^FDShot^FS")
+    lines.append(f"^FO{MARGIN},{layout['shotTop']}^A0N,24,24^FDShot date^FS")
     lines.append(
-        f"^FO{MARGIN + 70},{layout['shotTop'] + 30}^GB{CONTENT_WIDTH - 70},2,2^FS"
+        f"^FO{MARGIN + 125},{layout['shotTop'] + 30}^GB{CONTENT_WIDTH - 125},2,2^FS"
     )
 
     lines.append("^XZ")

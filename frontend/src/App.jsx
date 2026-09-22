@@ -31,6 +31,7 @@ import {
   import { Select as FormSelect } from './design-system.jsx';
   import { DOMAIN_TERMS, getFieldLabel, technicalTableLabel } from './domainVocabulary';
   import { exportTableToXlsx, todayExportFilename } from './tableExport';
+  import { printMerchandiseTagWithSystemDialog } from './merchandiseTagPrint';
   import {
   MERCHANDISE_PLANNING_BOARD,
   QUEUE_IDS,
@@ -1031,6 +1032,7 @@ function Dashboard({ navigate }) {
   const receipts = useResource(() => api.listShipments());
   const clients = useResource(() => api.listClients());
   const locations = useResource(() => api.listLocations());
+  const recentComments = useResource(() => api.listRecentComments(8));
   const skuList = skus.data?.records ?? [];
   const receiptList = receipts.data?.records ?? [];
   const clientMap = Object.fromEntries((clients.data?.records ?? []).map(c => [c.id, c]));
@@ -1198,7 +1200,47 @@ function Dashboard({ navigate }) {
         </div>
       </div>
 
-      <CreativeForceStrip navigate={navigate} />
+      <div className="dash-activity-row">
+        <CreativeForceStrip navigate={navigate} />
+
+        <section className="dash-card dash-recent-comments" aria-labelledby="dash-recent-comments-title">
+        <div className="dash-section-title-row">
+          <span id="dash-recent-comments-title">Recent Comments</span>
+          <button type="button" className="dash-section-link" onClick={() => navigate('planning')}>Open Planning</button>
+        </div>
+        {recentComments.loading ? (
+          <div className="dash-comments-empty">Loading comments…</div>
+        ) : recentComments.error ? (
+          <div className="dash-comments-empty is-error">Could not load recent comments.</div>
+        ) : !(recentComments.data?.records || []).length ? (
+          <div className="dash-comments-empty">No comments yet.</div>
+        ) : (
+          <div className="dash-comment-list">
+            {(recentComments.data?.records || []).map(comment => (
+              <button
+                type="button"
+                className="dash-comment-row"
+                key={comment.id}
+                onClick={() => navigate('planning', { item: comment.merchandiseId })}
+              >
+                <span className="dash-comment-icon" aria-hidden="true"><MessageSquare /></span>
+                <span className="dash-comment-content">
+                  <span className="dash-comment-product">
+                    <strong>{comment.productName || 'Unnamed Product'}</strong>
+                    {comment.marksId && <small>{comment.marksId}</small>}
+                  </span>
+                  <span className="dash-comment-preview">{comment.body}</span>
+                </span>
+                <span className="dash-comment-meta">
+                  <strong>{commentAuthorName(comment)}</strong>
+                  <time dateTime={comment.createdAt}>{formatInventoryDate(comment.createdAt)}</time>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        </section>
+      </div>
 
       {!receipts.loading && newlyReceivedMerch.length > 0 && (
         <div className="dash-card">
@@ -2103,8 +2145,8 @@ function PhoneReceiving({ clientList, locationList, carrierOptions, onShipmentSa
     setPrintingTagId(saved.id);
     setError('');
     try {
-      const result = await api.printMerchandiseTag(saved.id);
-      setNotice(tagPrintOutcome(result));
+      const tag = await printMerchandiseTagWithSystemDialog(api, saved.id);
+      setNotice(`${tag.marksId} opened in the system print dialog.`);
     } catch (err) {
       setError(err.message || 'Could not print the tag.');
     } finally {
@@ -2315,8 +2357,8 @@ function ShipmentsPage() {
     setPrintingTagId(entryId);
     setError('');
     try {
-      const result = await api.printMerchandiseTag(entryId);
-      setToast(tagPrintOutcome(result));
+      const tag = await printMerchandiseTagWithSystemDialog(api, entryId);
+      setToast(`${tag.marksId} opened in the system print dialog.`);
     } catch (err) {
       setError(err.message || 'Could not print the tag.');
     } finally {
@@ -7977,6 +8019,7 @@ function OperationsWorkspacePage({ navigate }) {
   const [workspaceFilter, setWorkspaceFilter] = useState('all');
   const [workspaceScope, setWorkspaceScope] = useState('all');
   const [workspaceDeliverableFilter, setWorkspaceDeliverableFilter] = useState('');
+  const [workspaceStatusFilter, setWorkspaceStatusFilter] = useState('in-progress');
   const [drafts, setDrafts] = useState({});
   const [savingCell, setSavingCell] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -8085,7 +8128,11 @@ function OperationsWorkspacePage({ navigate }) {
   }));
   const workspaceRows = workspaceScope === 'planning'
     ? planningRows
-    : workspaceScope === 'production' ? productionRows : [...planningRows, ...productionRows];
+    : workspaceScope === 'production'
+      ? productionRows
+      : workspaceScope === 'thr3d'
+        ? shippingRows
+        : [...planningRows, ...productionRows, ...shippingRows];
   function requiredFieldsForRow(row) {
     const workstreams = clientMap[row.clientIds?.[0]]?.photoProductionRequirements?.workstreams || {};
     const deliverables = normalizeDeliverableList(row.deliverables);
@@ -8127,6 +8174,7 @@ function OperationsWorkspacePage({ navigate }) {
     { key: 'photo', width: 56, min: 56 },
     { key: 'merchandise', width: 250, min: 170 },
     { key: 'received', width: 125, min: 90 },
+    { key: 'merchStatus', width: 118, min: 105 },
     { key: 'deliverable', width: 120, min: 96 },
     { key: 'mpNumber', width: 130, min: 100 },
     ...dynamicFieldKeys.map(field => ({ key: `field:${field}`, width: 170, min: 100 })),
@@ -8143,6 +8191,7 @@ function OperationsWorkspacePage({ navigate }) {
     { key: 'shipping:photo', width: 56, min: 56 },
     { key: 'shipping:merchandise', width: 250, min: 170 },
     { key: 'shipping:received', width: 125, min: 90 },
+    { key: 'shipping:merchStatus', width: 118, min: 105 },
     { key: 'shipping:deliverable', width: 120, min: 96 },
     { key: 'shipping:quantity', width: 140, min: 110 },
     { key: 'shipping:status', width: 150, min: 110 },
@@ -8220,6 +8269,7 @@ function OperationsWorkspacePage({ navigate }) {
   const workspaceFieldHeader = field => ({ jobNumber: 'WKFT #', fileNameDescription: 'File Name Desc.' }[field] || fieldDefinitions[field].label);
   function workspaceColumnLabel(table, key) {
     if (key === 'received' || key === 'shipping:received') return 'Received';
+    if (key === 'merchStatus' || key === 'shipping:merchStatus') return 'Merch status';
     if (key === 'deliverable' || key === 'shipping:deliverable') return 'Deliverable';
     if (key === 'mpNumber') return 'MP Number';
     if (key.startsWith('field:')) return workspaceFieldHeader(key.slice(6));
@@ -8275,6 +8325,21 @@ function OperationsWorkspacePage({ navigate }) {
   }
   const productValue = (row, field) => photoProductionProductValue(row.linkedItem || {}, field);
   const merchandiseReceivedDate = row => row.received || row.dateReceived || row.receipt?.received || row.shipment?.received || '';
+  const merchandiseIsDisposed = row => String(row.merchStatus || '').trim().toLowerCase() === 'disposed';
+  const workspaceRowIsComplete = row => {
+    if (merchandiseIsDisposed(row)) return false;
+    if (row.thr3dShippingItem) return String(row.shippingStatus || '').trim().toLowerCase() === 'shipped';
+    if (!row.released) return false;
+    const card = row.workstreamCard || {};
+    const status = String(card.creativeForceWorkUnitStatus || card.creativeForceStatus || '').trim().toLowerCase();
+    return ['done', 'completed', 'complete', 'approved'].includes(status);
+  };
+  const workspaceStatusMatches = row => {
+    if (workspaceStatusFilter === 'all') return true;
+    if (workspaceStatusFilter === 'disposed') return merchandiseIsDisposed(row);
+    if (workspaceStatusFilter === 'complete') return workspaceRowIsComplete(row);
+    return !merchandiseIsDisposed(row) && !workspaceRowIsComplete(row);
+  };
   const missingFieldsForRow = row => {
     const fields = requiredFieldsForRow(row);
     if (fields.length && !row.linkedItem?.id) return ['Product Match', ...fields.map(field => fieldDefinitions[field].label)];
@@ -8283,6 +8348,7 @@ function OperationsWorkspacePage({ navigate }) {
   const searchText = search.trim().toLowerCase();
   const photoRowMatches = row => {
     const missingCount = missingFieldsForRow(row).length;
+    if (!workspaceStatusMatches(row)) return false;
     if (workspaceFilter === 'attention' && !missingCount) return false;
     if (workspaceFilter === 'complete' && missingCount) return false;
     if (workspaceDeliverableFilter && !normalizeDeliverableList(row.deliverables).includes(workspaceDeliverableFilter)) return false;
@@ -8293,6 +8359,7 @@ function OperationsWorkspacePage({ navigate }) {
   const visiblePlanningRows = planningRows.filter(photoRowMatches);
   const visibleProductionRows = productionRows.filter(photoRowMatches);
   const visibleShippingRows = shippingRows.filter(row => {
+    if (!workspaceStatusMatches(row)) return false;
     if (!searchText) return true;
     return [merchandiseDisplayName(row), merchandiseObservedName(row), row.skuId, row.receipt?.name, row.linkedItem?.identifier]
       .some(value => String(value || '').toLowerCase().includes(searchText));
@@ -8304,7 +8371,8 @@ function OperationsWorkspacePage({ navigate }) {
       : workspaceScope === 'thr3d'
         ? visibleShippingRows.length
         : visiblePlanningRows.length + visibleProductionRows.length + visibleShippingRows.length;
-  const attentionCount = workspaceRows.filter(row => missingFieldsForRow(row).length).length;
+  const statusScopedWorkspaceRows = workspaceRows.filter(workspaceStatusMatches);
+  const attentionCount = statusScopedWorkspaceRows.filter(row => missingFieldsForRow(row).length).length;
   const cellKey = (rowId, field) => rowId + ':' + field;
   function productionGlance(row) {
     if (row.thr3dShippingItem) {
@@ -8344,6 +8412,7 @@ function OperationsWorkspacePage({ navigate }) {
   function photoColumnHeader(table, column) {
     const key = column.key;
     if (key === 'received') return resizableHeader(table, key, 'Received');
+    if (key === 'merchStatus') return resizableHeader(table, key, 'Merch status');
     if (key === 'deliverable') return resizableHeader(table, key, 'Deliverable');
     if (key === 'mpNumber') return resizableHeader(table, key, 'MP Number');
     if (key.startsWith('field:')) return resizableHeader(table, key, workspaceFieldHeader(key.slice(6)));
@@ -8358,6 +8427,7 @@ function OperationsWorkspacePage({ navigate }) {
     const { requiredFields, linked, production, rowDeliverables } = context;
     const key = column.key;
     if (key === 'received') return <td key={key}><span>{formatWorkspaceReceivedDate(merchandiseReceivedDate(row))}</span><small>{row.timeHere || ''}</small></td>;
+    if (key === 'merchStatus') return <td key={key}><MerchStatusControl row={row} /></td>;
     if (key === 'deliverable') return <td key={key} className="operations-deliverable-cell">{rowDeliverables.length ? <DeliverableBadges values={rowDeliverables} /> : <span className="operations-na">-</span>}</td>;
     if (key === 'mpNumber') return <td key={key}>{row.marksId || <span className="operations-na">-</span>}</td>;
     if (key.startsWith('field:')) {
@@ -8400,12 +8470,65 @@ function OperationsWorkspacePage({ navigate }) {
   }
 
   function shippingColumnHeader(column) {
-    return resizableHeader('shipping', column.key, workspaceColumnLabel('shipping', column.key));
+    const key = column.key;
+    const label = workspaceColumnLabel('shipping', key);
+    const dragPosition = columnDragTarget?.table === 'shipping' && columnDragTarget?.key === key
+      ? columnDragTarget.position
+      : '';
+    return <th
+      className={`operations-draggable-column ${dragPosition ? `is-drag-${dragPosition}` : ''}`.trim()}
+      draggable="true"
+      key={key}
+      title={`Drag ${label} to reorder`}
+      onDragStart={event => {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', 'shipping|' + key);
+        setColumnDragTarget(null);
+      }}
+      onDragOver={event => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        const bounds = event.currentTarget.getBoundingClientRect();
+        const position = event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after';
+        setColumnDragTarget(current => current?.table === 'shipping' && current?.key === key && current?.position === position
+          ? current
+          : { table: 'shipping', key, position });
+      }}
+      onDragLeave={event => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setColumnDragTarget(null);
+      }}
+      onDrop={event => {
+        event.preventDefault();
+        const [sourceTable, ...sourceKeyParts] = event.dataTransfer.getData('text/plain').split('|');
+        if (sourceTable === 'shipping') moveWorkspaceColumn('shipping', sourceKeyParts.join('|'), key, dragPosition || 'before');
+        setColumnDragTarget(null);
+      }}
+      onDragEnd={() => setColumnDragTarget(null)}
+    >
+      <span>{label}</span>
+      <span
+        className="operations-column-resizer"
+        role="separator"
+        aria-label={`Resize ${label} column`}
+        aria-orientation="vertical"
+        tabIndex="0"
+        draggable="false"
+        onDragStart={event => event.preventDefault()}
+        onPointerDown={event => startColumnResize(event, 'shipping', key)}
+        onDoubleClick={() => resetColumnWidth('shipping', key)}
+        onKeyDown={event => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+          event.preventDefault();
+          saveColumnWidth('shipping', key, workspaceColumnWidth('shipping', key) + (event.key === 'ArrowRight' ? 10 : -10));
+        }}
+      />
+    </th>;
   }
 
   function shippingColumnCell(column, row, shipped, shippedAt) {
     const key = column.key;
     if (key === 'shipping:received') return <td key={key}><span>{formatWorkspaceReceivedDate(merchandiseReceivedDate(row))}</span><small>{row.timeHere || ''}</small></td>;
+    if (key === 'shipping:merchStatus') return <td key={key}><MerchStatusControl row={row} /></td>;
     if (key === 'shipping:deliverable') return <td key={key} className="operations-deliverable-cell"><DeliverableBadges values={['Thr3d']} /></td>;
     if (key === 'shipping:quantity') return <td key={key}><strong>{row.quantityToShip || 0}</strong></td>;
     if (key === 'shipping:status') return <td key={key}><span className={'operations-production-state ' + (shipped ? 'is-complete' : 'is-muted')}>{shipped ? 'Shipped' : 'Not shipped'}</span></td>;
@@ -8438,6 +8561,43 @@ function OperationsWorkspacePage({ navigate }) {
       setFeedback(definition.label + ' saved.');
     } catch (error) {
       setFeedback(error.message || 'Could not save ' + fieldDefinitions[field].label + '.');
+    } finally {
+      setSavingCell('');
+    }
+  }
+
+  function MerchStatusControl({ row }) {
+    const status = row.merchStatus || 'Received';
+    const key = `merch-status:${row.id}`;
+    return <select
+      className={`operations-merch-status is-${String(status).toLowerCase().replace(/\s+/g, '-')}`}
+      value={status}
+      disabled={savingCell === key}
+      aria-label={`Merchandise status for ${merchandiseDisplayName(row) || 'merchandise'}`}
+      onChange={event => updateWorkspaceMerchStatus(row, event.target.value)}
+    >
+      <option value="Received">Received</option>
+      <option value="Issue">Issue</option>
+      <option value="Ready to Ship">Ready to Ship</option>
+      <option value="Shipped">Shipped</option>
+      <option value="Disposed">Disposed</option>
+    </select>;
+  }
+
+  async function updateWorkspaceMerchStatus(row, status) {
+    const currentStatus = row.merchStatus || 'Received';
+    if (status === currentStatus) return;
+    if (status === 'Disposed' && !window.confirm(`Mark ${merchandiseDisplayName(row) || 'this merchandise'} as disposed? It will leave the In progress view.`)) return;
+    const key = `merch-status:${row.id}`;
+    setSavingCell(key);
+    setFeedback('');
+    try {
+      await api.updateMerchandiseStatus(row.id, status);
+      setRows(current => current.map(candidate => candidate.id === row.id ? { ...candidate, merchStatus: status } : candidate));
+      await Promise.all([entries.reload(), thr3dShippingItems.reload()]);
+      setFeedback(status === 'Disposed' ? 'Merchandise marked disposed.' : `Merchandise status changed to ${status}.`);
+    } catch (error) {
+      setFeedback(error.message || 'Could not update merchandise status.');
     } finally {
       setSavingCell('');
     }
@@ -8544,6 +8704,14 @@ function OperationsWorkspacePage({ navigate }) {
           <option value="Ecomm">Ecomm</option>
           <option value="Packaging">Pack</option>
         </select>}
+        <label className="operations-current-status-filter">
+          <select value={workspaceStatusFilter} onChange={event => setWorkspaceStatusFilter(event.target.value)} aria-label="Filter by current status">
+            <option value="in-progress">In progress</option>
+            <option value="complete">Complete</option>
+            <option value="disposed">Disposed</option>
+            <option value="all">All statuses</option>
+          </select>
+        </label>
         <details ref={columnsMenuRef} className="workspace-columns-menu">
           <summary className="btn btn-ghost table-filter-button"><Columns3 size={15} aria-hidden="true" />Columns</summary>
           <div className="workspace-columns-popover" role="group" aria-label="Table columns">
@@ -8563,9 +8731,9 @@ function OperationsWorkspacePage({ navigate }) {
         </details>
         {feedback && <strong role="status">{feedback}</strong>}
         <div className="operations-workspace-summary" aria-label="Planning summary">
-          <button type="button" className={workspaceFilter === 'all' ? 'is-active' : ''} onClick={() => setWorkspaceFilter('all')}><strong>{workspaceRows.length}</strong><span>All items</span></button>
+          <button type="button" className={workspaceFilter === 'all' ? 'is-active' : ''} onClick={() => setWorkspaceFilter('all')}><strong>{statusScopedWorkspaceRows.length}</strong><span>All items</span></button>
           <button type="button" className={workspaceFilter === 'attention' ? 'is-active is-attention' : 'is-attention'} onClick={() => setWorkspaceFilter('attention')}><strong>{attentionCount}</strong><span>Need info</span></button>
-          <button type="button" className={workspaceFilter === 'complete' ? 'is-active' : ''} onClick={() => setWorkspaceFilter('complete')}><strong>{workspaceRows.length - attentionCount}</strong><span>Info complete</span></button>
+          <button type="button" className={workspaceFilter === 'complete' ? 'is-active' : ''} onClick={() => setWorkspaceFilter('complete')}><strong>{statusScopedWorkspaceRows.length - attentionCount}</strong><span>Info complete</span></button>
         </div>
       </div></DataTableToolbar>
       {(workspaceScope === 'all' || workspaceScope === 'planning') && visiblePlanningRows.length > 0 && renderPhotoTable('planning', 'Planning', visiblePlanningRows)}
@@ -8579,7 +8747,27 @@ function OperationsWorkspacePage({ navigate }) {
             <colgroup>{visibleColumnsFor('shipping').map(column => <col key={column.key} style={{ width: workspaceColumnWidth('shipping', column.key) }} />)}</colgroup>
             <thead>
               <tr className="operations-column-row">
-                <th colSpan="2">Merchandise</th>
+                <th colSpan="2" className="operations-merchandise-column-head">
+                  <span>Merchandise</span>
+                  <span
+                    className="operations-column-resizer"
+                    role="separator"
+                    aria-label="Resize THR3D Merchandise column"
+                    aria-orientation="vertical"
+                    tabIndex="0"
+                    onPointerDown={event => startColumnResize(event, 'shipping', 'shipping:merchandise')}
+                    onDoubleClick={() => resetColumnWidth('shipping', 'shipping:merchandise')}
+                    onKeyDown={event => {
+                      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                      event.preventDefault();
+                      saveColumnWidth(
+                        'shipping',
+                        'shipping:merchandise',
+                        workspaceColumnWidth('shipping', 'shipping:merchandise') + (event.key === 'ArrowRight' ? 10 : -10),
+                      );
+                    }}
+                  />
+                </th>
                 {visibleColumnsFor('shipping').filter(column => !['shipping:photo', 'shipping:merchandise'].includes(column.key)).map(shippingColumnHeader)}
               </tr>
             </thead>
@@ -9736,17 +9924,6 @@ function observedIdentityForRecord(record = {}) {
   const observed = String(record.skuId || record.observedIdentifier || '').trim();
   if (!observed) return {};
   return { upc: observed, primaryMatchKey: observed, identifier: observed };
-}
-
-function tagPrintOutcome(result) {
-  // From the live site the API cannot reach a studio printer, so it queues the
-  // label for the studio agent. Reporting that as printed would be a lie the
-  // person only discovers by walking to the printer.
-  const code = result?.tag?.marksId || 'Tag';
-  const printer = result?.printer?.name || 'the printer';
-  return result?.queued
-    ? `${code} queued for ${printer}. It prints when the studio agent picks it up.`
-    : `${code} printed to ${printer}.`;
 }
 
 function productDataSourceForPlanningItem(item = {}, draft = {}, stagedProduct = null) {
@@ -11879,7 +12056,6 @@ function MerchFacts({ item }) {
     { key: 'condition', label: 'Condition', value: condition, tone: condition && condition !== 'Good' ? 'attention' : '' },
     { key: 'storage', label: 'Storage', value: item?.location || '' },
     { key: 'description', label: 'Description', value: String(record.description || '').trim() },
-    { key: 'notes', label: 'Notes', value: String(record.notes || '').trim() },
   ].filter(row => row.value !== '' && row.value !== null && row.value !== undefined);
   return (
     <dl className="merch-facts">
@@ -12047,6 +12223,7 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
   // one - that then had to be undone.
   const [matchDraft, setMatchDraft] = useState(null);
   const product = item.record?.linkedItem || {};
+  const ingestNotes = String(item.record?.notes || '').trim();
   const committedDeliverables = deliverablesForRecord(item.record);
   const stagedMatchProduct = matchDraft?.item || null;
   const productRequestTypeSuggestion = suggestedDeliverablesForRecord(item.record, stagedMatchProduct);
@@ -12357,8 +12534,8 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
     setTagPrinting(true);
     setTagNotice(null);
     try {
-      const result = await api.printMerchandiseTag(item.merchandiseId);
-      setTagNotice({ tone: 'ok', text: tagPrintOutcome(result) });
+      const tag = await printMerchandiseTagWithSystemDialog(api, item.merchandiseId);
+      setTagNotice({ tone: 'ok', text: `${tag.marksId} opened in the system print dialog.` });
     } catch (error) {
       setTagNotice({ tone: 'error', text: error.message || 'Could not print the tag.' });
     } finally {
@@ -12664,6 +12841,13 @@ function NewReviewModal({ item, decision, onDecisionChange, onFinish, onReadyFor
                   </div>
                 )}
               </ReviewStep>
+            )}
+
+            {ingestNotes && (
+              <section className="new-review-ingest-notes" aria-labelledby="new-review-ingest-notes-title">
+                <h3 id="new-review-ingest-notes-title">Notes</h3>
+                <p>{ingestNotes}</p>
+              </section>
             )}
 
           </aside>
@@ -15431,7 +15615,7 @@ function CreativeForceStrip({ navigate }) {
   const oldest = waiting[0];
 
   return (
-    <div className="dash-card">
+    <div className="dash-card dash-cf-card">
       <div className="dash-section-title-row">
         <span>In Creative Force</span>
         <button type="button" className="dash-section-link" onClick={() => navigate('production')}>

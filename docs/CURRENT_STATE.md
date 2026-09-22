@@ -1,3 +1,19 @@
+## 2026-09-22 - Merchandise operations checkpoint verified
+
+The accumulated THR3D table interactions, Planning status views, physical-status synchronization, system merchandise-label printing, dashboard comments, and Merchandise modal notes are captured as one repository checkpoint. The complete test suite passes 852 tests, the frontend production build passes, and `git diff --check` reports no whitespace errors. The existing Vite large-chunk warning remains.
+
+## 2026-09-22 - THR3D headers reorder directly
+
+The THR3D workspace table now allows direct horizontal drag-and-drop reordering from the Received, Deliverable, Quantity To Ship, Shipping Status, Tracking, and Shipped to THR3D headers. A blue insertion marker shows the drop side, and the saved shipping-column order remains scoped to the signed-in user's workspace preferences. The combined photo/Merchandise pair stays anchored first while retaining its resize divider. No routing, shipping data, or schema changes were made.
+
+Verification: `npm --prefix frontend run build` passed and `tests.test_frontend_routing` passed 175 tests. The existing Vite large-chunk warning remains.
+
+## 2026-09-22 - THR3D table columns are fully resizable
+
+The THR3D workspace table now gives its combined Merchandise column the same persisted resize interaction as its Received, Deliverable, Quantity To Ship, Shipping Status, Tracking, and Shipped to THR3D columns. The Merchandise divider supports pointer dragging, keyboard arrow adjustment, and double-click reset. This is presentation-only and does not change THR3D routing, shipping records, or schema.
+
+Verification: `npm --prefix frontend run build` passed and `tests.test_frontend_routing` passed 175 tests. The existing Vite large-chunk warning remains.
+
 ## 2026-09-22 - Planning and operations checkpoint verified
 
 The accumulated Planning, Activation, Requests, permissions, source-data, filename, navigation, and workspace-polish work is captured as one repository checkpoint. The full backend/frontend unit suite passes 843 tests, the production frontend build passes, and `git diff --check` reports no whitespace errors. The frontend build retains its existing large-chunk warning.
@@ -1485,3 +1501,35 @@ The Planning board grouping menu now includes `Group by Product`. It groups Ecom
 The Board view switcher header now uses the same dark background as the Planning board, removing the light-gray band above the board. The Table view remains unchanged.
 
 Verification: `npm --prefix frontend run build`; `git diff --check`.
+## 2026-09-22 - Planning can hide completed and disposed merchandise
+
+The Planning table now opens in an `In progress` status view that excludes photo Actions completed in Creative Force, shipped THR3D Actions, and Merchandise whose physical `Merch Status` is `Disposed`. The upper toolbar can switch to `Complete`, `Disposed`, or `All statuses`. Received date remains visible in the existing Received column, and Planning, Production, and THR3D tables now expose the Merchandise physical status as an editable column. Marking Merchandise `Disposed` requires confirmation and writes the existing Merchandise `Merch Status`; it does not create a new status field or infer physical disposal from production completion.
+
+Production completion remains derived from the existing Creative Force work-unit status (`Done`, `Completed`, `Complete`, or `Approved`), while THR3D completion remains derived from its existing `Shipped` state. These are presentation filters over the canonical records, not new workflow states.
+
+Verification: frontend production build passed; frontend routing contract tests passed; `git diff --check` passed. The existing Vite large-chunk advisory remains.
+## 2026-09-22 - THR3D actions synchronize physical Merchandise status
+
+Creating a THR3D Shipping Item through the current `confirm-assign` path now sets the parent Merchandise `Merch Status` to `Ready to Ship`, matching the older THR3D-only intake path. Completing the outbound THR3D shipment sets `Merch Status` to `Shipped`. A full-quantity shipment also moves the Merchandise to the active `Shipped to Thr3d` Location; a partial shipment leaves its physical location unchanged because units remain at Walnut. The Planning table's Merchandise status control is capped at 118px instead of stretching across a wide saved column.
+
+Verification: targeted THR3D intake tests, frontend routing contract tests, frontend production build, and `git diff --check` pass.
+
+## 2026-09-22 - Merchandise labels use the system print dialog
+
+Merchandise tag actions now open the browser/operating-system print dialog instead of requiring a reachable network Zebra printer. The app renders an exact 3-inch-wide by 5-inch-tall portrait label with client, product, QR deep link to the Planning item modal, MP number, UPC, Code 128 barcode of the MP number, a prominent received date, and a blank shot-date line. The existing Zebra endpoint remains available and its ZPL follows the same content hierarchy.
+
+The label typography is slightly reduced to leave clearer scanning space. `Creative Force Scan` is centered directly above the barcode; the barcode itself encodes the unique MP number and no redundant CVID value is printed. The QR block has additional separation from that barcode in both the system-print and Zebra layouts. The Received box includes Quantity Received and conditionally includes Ship to THR3D as soon as units are allocated to the THR3D shipping path, including before the outbound shipment is completed.
+
+## 2026-09-22 - Dashboard links to recent comment threads
+
+The Dashboard now shows the latest comment from each recently active Merchandise conversation. Each row includes the Product name, MP number when available, comment preview, author, and Central-time timestamp. Selecting a row opens that Merchandise item directly in the Planning modal. The feed respects the signed-in user's active client access and intentionally shows one row per Merchandise thread.
+
+## 2026-09-22 - Merchandise modal preserves ingest notes
+
+The Merchandise Planning modal displays item-level notes captured during shipment ingest in a read-only Notes block at the bottom of the detail column. The block is omitted when the stored note is empty or whitespace, and the initial merchandise facts no longer duplicate the same note.
+
+## 2026-09-22 - Dashboard dark-card contrast is explicit
+
+The Creative Force dashboard strip now uses explicit light text for step counts, stage names, loading text, and the longest-waiting item. It no longer inherits light-page text variables that become unreadable on the dashboard's dark card background.
+
+The Creative Force summary and Recent Comments now share one equal-width dashboard activity row instead of each consuming a full-width band. Each card sizes to its own content; the row collapses to a single column on narrow screens.

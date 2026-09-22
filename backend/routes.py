@@ -6907,6 +6907,22 @@ def _shape_thr3d_shipping_item(record):
     }
 
 
+def _thr3d_quantity_for_merchandise(entry_id, records=None):
+    """Units allocated to THR3D for one Merchandise record."""
+    total = 0
+    for record in records if records is not None else _list_all_records(C.THR3D_SHIPPING_ITEMS_TABLE):
+        fields = record.get("fields", {})
+        if entry_id not in _as_list(fields.get(C.F_THR3D_SHIPPING_ITEM_RECEIVED_MERCH, [])):
+            continue
+        if str(fields.get(C.F_THR3D_SHIPPING_ITEM_STATUS) or "").strip().lower() == "cancelled":
+            continue
+        try:
+            total += max(0, int(fields.get(C.F_THR3D_SHIPPING_ITEM_QUANTITY) or 0))
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
 def _action_external_reference(source_table, source_record_id):
     return json.dumps(
         {"sourceTable": source_table, "sourceRecordId": source_record_id},
@@ -7277,7 +7293,7 @@ def _mark_thr3d_shipping_item_shipped(record_id, body):
         except (TypeError, ValueError):
             quantity_to_ship = 0
             parent_quantity = 0
-        updated_entry = entry
+        merchandise_updates = {C.F_RECEIPT_ENTRY_MERCH_STATUS: "Shipped"}
         if quantity_to_ship and parent_quantity and quantity_to_ship >= parent_quantity:
             shipped_location_id = next(
                 (
@@ -7289,10 +7305,9 @@ def _mark_thr3d_shipping_item_shipped(record_id, body):
                 ),
                 "",
             )
-            merchandise_updates = {C.F_RECEIPT_ENTRY_MERCH_STATUS: "Shipped"}
             if shipped_location_id:
                 merchandise_updates[C.F_RECEIPT_ENTRY_LOCATION] = [shipped_location_id]
-            updated_entry = _update_receipt_entry_record(merchandise_id, merchandise_updates)
+        updated_entry = _update_receipt_entry_record(merchandise_id, merchandise_updates)
         source_ref = _action_external_reference(C.THR3D_SHIPPING_ITEMS_TABLE, record_id)
         for action in _list_all_records(C.ACTIONS_TABLE):
             if action.get("fields", {}).get(C.F_ACTION_EXTERNAL_REFERENCE) == source_ref:
@@ -7856,6 +7871,59 @@ def _list_comments_for_merchandise(entry_id):
     ]
 
 
+@api.get("/comments/recent")
+def list_recent_comments():
+    """Latest active conversation per Merchandise item, newest first."""
+    try:
+        requested_limit = int(request.args.get("limit", "8"))
+    except (TypeError, ValueError):
+        requested_limit = 8
+    limit = max(1, min(requested_limit, 20))
+
+    try:
+        comment_records = sorted(
+            _list_all_records(C.COMMENTS_TABLE),
+            key=_comment_sort_key,
+            reverse=True,
+        )
+    except requests.HTTPError as error:
+        return airtable_err(error)
+
+    selected = []
+    seen_merchandise = set()
+    for comment_record in comment_records:
+        merchandise_id = (_as_list(
+            comment_record.get("fields", {}).get(C.F_COMMENT_MERCHANDISE, []),
+        ) or [""])[0]
+        if not merchandise_id or merchandise_id in seen_merchandise:
+            continue
+        entry, _, access_error = _permitted_merchandise_or_error(merchandise_id)
+        if access_error:
+            continue
+        seen_merchandise.add(merchandise_id)
+        selected.append((comment_record, entry))
+        if len(selected) >= limit:
+            break
+
+    users = _users_by_id(_comment_user_ids([record for record, _ in selected]))
+    product_ids = {
+        product_id
+        for _, entry in selected
+        for product_id in _as_list(entry.get("fields", {}).get(C.F_RECEIPT_ENTRY_ITEM, []))
+    }
+    products_by_id = _products_by_id_for_ids(list(product_ids))
+    records = []
+    for comment_record, entry in selected:
+        comment = _shape_comment(comment_record, users)
+        merchandise = _shape_receipt_entry(entry, products_by_id=products_by_id)
+        records.append({
+            **comment,
+            "productName": merchandise.get("displayName") or "Unnamed Product",
+            "marksId": merchandise.get("marksId") or "",
+        })
+    return jsonify({"records": records})
+
+
 def _comment_reads_for_user(user_id):
     """Read the signed-in user's comment read-through map.
 
@@ -8335,6 +8403,8 @@ def confirm_assign_merchandise(entry_id):
             C.F_RECEIPT_ENTRY_PLANNING_STATUS: PLANNING_STATUS_LABELS["needs-more-information"],
             **_merch_status_normalization_fields(entry.get("fields", {})),
         }
+        if thr3d_fields:
+            update_fields[C.F_RECEIPT_ENTRY_MERCH_STATUS] = "Ready to Ship"
         if expected_product_ids:
             update_fields[C.F_RECEIPT_ENTRY_ITEM] = expected_product_ids
         if manual_product_info:
@@ -10597,7 +10667,7 @@ def _merchandise_tag(entry, receipt=None, product_record=None):
         "storage": storage,
         "received": notifier._studio_time(received_raw),
         "arrival": arrival,
-        "quantity": f"Qty {quantity}" if quantity else "",
+        "quantityReceived": str(quantity or "").strip(),
         "qrUrl": f"{C.APP_BASE_URL}/planning?item={entry.get('id', '')}" if C.APP_BASE_URL else "",
     }
 
@@ -10926,6 +10996,11 @@ def print_merchandise_tag(entry_id):
             product_record = None
 
     tag = _merchandise_tag(entry, receipt, product_record)
+    try:
+        ship_to_thr3d = _thr3d_quantity_for_merchandise(entry_id)
+    except requests.HTTPError:
+        ship_to_thr3d = 0
+    tag["shipToThr3d"] = str(ship_to_thr3d) if ship_to_thr3d else ""
     if not tag["marksId"]:
         return err("This merchandise has no Marks number yet, so it cannot be tagged.", 400)
     try:

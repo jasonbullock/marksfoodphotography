@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 
 from app import create_app  # noqa: E402
 from config import Config as C  # noqa: E402
-from routes import AUTH_SESSION_KEY  # noqa: E402
+from routes import AUTH_SESSION_KEY, _thr3d_quantity_for_merchandise  # noqa: E402
 
 
 class IntakeDecisionTests(unittest.TestCase):
@@ -24,6 +24,28 @@ class IntakeDecisionTests(unittest.TestCase):
                 "clientIds": [],
                 "allClients": True,
             }
+
+    def test_label_quantity_counts_active_thr3d_allocations_before_and_after_shipping(self):
+        records = [{
+            "fields": {
+                C.F_THR3D_SHIPPING_ITEM_RECEIVED_MERCH: ["recMerch"],
+                C.F_THR3D_SHIPPING_ITEM_QUANTITY: 3,
+                C.F_THR3D_SHIPPING_ITEM_STATUS: "Shipped",
+            },
+        }, {
+            "fields": {
+                C.F_THR3D_SHIPPING_ITEM_RECEIVED_MERCH: ["recMerch"],
+                C.F_THR3D_SHIPPING_ITEM_QUANTITY: 2,
+                C.F_THR3D_SHIPPING_ITEM_STATUS: "Needs Shipment",
+            },
+        }, {
+            "fields": {
+                C.F_THR3D_SHIPPING_ITEM_RECEIVED_MERCH: ["recOther"],
+                C.F_THR3D_SHIPPING_ITEM_QUANTITY: 8,
+                C.F_THR3D_SHIPPING_ITEM_STATUS: "Shipped",
+            },
+        }]
+        self.assertEqual(_thr3d_quantity_for_merchandise("recMerch", records), 5)
 
     @staticmethod
     def entry(fields=None):
@@ -402,6 +424,7 @@ class IntakeDecisionTests(unittest.TestCase):
         self.assertEqual(create_record.call_args_list[0].args[0], C.WORKSTREAM_CARDS_TABLE)
         self.assertEqual(create_record.call_args_list[1].args[0], C.THR3D_SHIPPING_ITEMS_TABLE)
         self.assertEqual(create_record.call_args_list[2].args[0], C.ACTIONS_TABLE)
+        self.assertEqual(update_record.call_args.args[2][C.F_RECEIPT_ENTRY_MERCH_STATUS], "Ready to Ship")
         payload = response.get_json()
         self.assertEqual(payload["workstreamCards"][0]["type"], "Packaging")
         self.assertEqual(payload["thr3dShippingItems"][0]["shippingStatus"], "Needs Shipment")
@@ -452,6 +475,7 @@ class IntakeDecisionTests(unittest.TestCase):
         })
 
         self.assertEqual(response.status_code, 201)
+        self.assertEqual(update_record.call_args.args[2][C.F_RECEIPT_ENTRY_MERCH_STATUS], "Ready to Ship")
         payload = response.get_json()
         self.assertEqual(payload["workstreamCards"][0]["type"], "Ecomm")
         self.assertEqual(payload["thr3dShippingItems"][0]["shippingStatus"], "Needs Shipment")

@@ -182,6 +182,60 @@ class MerchandiseReviewTests(unittest.TestCase):
         self.assertEqual(records[0]["author"]["role"], "PM")
         self.assertEqual(records[0]["createdAt"], "2026-07-22T12:30:00.000Z")
 
+    @patch("routes.airtable.get_record")
+    @patch("routes.airtable.list_records")
+    def test_recent_comments_return_the_latest_comment_per_merchandise_thread(self, list_records, get_record):
+        comments = [
+            self.comment("recLatest", {
+                C.F_COMMENT_BODY: "Latest reply",
+                C.F_COMMENT_CREATED_AT: "2026-07-22T12:40:00.000Z",
+                C.F_COMMENT_MERCHANDISE: ["recMerch"],
+            }),
+            self.comment("recOlderSameThread", {
+                C.F_COMMENT_BODY: "Older reply",
+                C.F_COMMENT_CREATED_AT: "2026-07-22T12:35:00.000Z",
+                C.F_COMMENT_MERCHANDISE: ["recMerch"],
+            }),
+            self.comment("recOtherThread", {
+                C.F_COMMENT_BODY: "Other thread",
+                C.F_COMMENT_CREATED_AT: "2026-07-22T12:30:00.000Z",
+                C.F_COMMENT_MERCHANDISE: ["recOther"],
+            }),
+        ]
+        products = [
+            self.product("recProduct", {C.F_ITEM_NAME: "Honeydew Product"}),
+            self.product("recOtherProduct", {C.F_ITEM_NAME: "Apple Product"}),
+        ]
+
+        def list_side_effect(table, *args, **kwargs):
+            if table == C.COMMENTS_TABLE:
+                return {"records": comments}
+            if table == C.PRODUCTS_TABLE:
+                return {"records": products}
+            raise AssertionError(f"Unexpected table {table}")
+
+        def get_side_effect(table, record_id, by_field_id=False):
+            if table == C.MERCHANDISE_TABLE:
+                product_id = "recProduct" if record_id == "recMerch" else "recOtherProduct"
+                return self.entry(record_id, {C.F_RECEIPT_ENTRY_ITEM: [product_id]})
+            if table == C.SHIPMENTS_TABLE:
+                return self.receipt()
+            if table == C.USERS_TABLE:
+                return self.user(record_id)
+            raise AssertionError(f"Unexpected table {table}")
+
+        list_records.side_effect = list_side_effect
+        get_record.side_effect = get_side_effect
+
+        response = self.app.get("/api/comments/recent?limit=8")
+
+        self.assertEqual(response.status_code, 200)
+        records = response.get_json()["records"]
+        self.assertEqual([record["body"] for record in records], ["Latest reply", "Other thread"])
+        self.assertEqual(records[0]["productName"], "Honeydew Product")
+        self.assertEqual(records[1]["productName"], "Apple Product")
+        self.assertEqual(records[0]["merchandiseId"], "recMerch")
+
     @patch("routes._clients_by_id", return_value={})
     @patch("routes.airtable.get_record")
     @patch("routes.airtable.list_records")

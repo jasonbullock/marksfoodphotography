@@ -2340,3 +2340,32 @@ Decision: MediaBox Number is available as an optional Planning table column and 
 - Project name is optional; merchandise description provides the internal fallback when no project name is entered.
 - MediaBox # is optional activation context and appears when present without becoming a new requirement or schema field.
 - The global `All Clients` filter is presentation state and must never be treated as a client identifier.
+### 2026-09-22 - Planning completion and physical disposition stay separate
+
+- Planning's `In progress`, `Complete`, `Disposed`, and `All statuses` options are table filters, not persisted workflow states.
+- Photo completion is derived from Creative Force work-unit status, and THR3D completion is derived from its shipped state.
+- Physical disposition continues to use Merchandise `Merch Status = Disposed` and must be explicitly set by a user; completing or delivering photography never disposes merchandise automatically.
+- Received age continues to come from the linked Shipment received timestamp. No duplicate Merchandise received-date field is added.
+### 2026-09-22 - THR3D action state drives Merchandise shipping status
+
+- Creating a THR3D outbound Action sets Merchandise `Merch Status` to `Ready to Ship`.
+- Completing that outbound shipment sets Merchandise `Merch Status` to `Shipped`.
+- Physical location still follows the quantity boundary: only a full-quantity shipment moves the parent Merchandise to the `Shipped to Thr3d` Location; partial shipments leave its location at Walnut.
+
+### 2026-09-22 - Merchandise tag printing is device-independent
+
+- The default merchandise tag action uses the browser and operating system print dialog, so any locally installed printer can be used without studio network-printer configuration.
+- Marks Photo owns the exact 3-inch-wide by 5-inch-tall portrait layout; printer drivers must not be relied on to compose or resize the label.
+- The QR opens the existing Planning item modal deep link, and the MP number remains the value encoded in the Code 128 barcode.
+- Direct Zebra printing remains an optional supported transport and uses the same label hierarchy.
+
+### 2026-09-22 - Dashboard comments represent active Merchandise threads
+
+- Recent Comments shows the newest comment for each Merchandise item rather than a flat stream of every reply.
+- Rows are ordered by that latest comment and deep-link to the existing Planning item modal; the Dashboard does not create a second conversation surface.
+- Comment visibility follows the current user's client access.
+
+### 2026-09-22 - Shipment-ingest notes remain contextual Merchandise facts
+
+- Item-level notes captured during shipment ingest appear at the bottom of the existing Merchandise modal.
+- Notes are read-only in this surface and are omitted entirely when empty; comments remain the editable conversation channel.

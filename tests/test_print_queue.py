@@ -174,16 +174,18 @@ if __name__ == "__main__":
 
 
 class PrintOutcomeWordingTests(unittest.TestCase):
-    """Three print buttons, one truthful phrasing."""
+    """Every merchandise tag action uses the system print dialog."""
 
     @classmethod
     def setUpClass(cls):
         cls.source = (ROOT / "frontend" / "src" / "App.jsx").read_text()
 
-    def test_a_queued_label_is_not_reported_as_printed(self):
-        self.assertIn("function tagPrintOutcome(result) {", self.source)
-        self.assertIn("queued for ${printer}", self.source)
+    def test_network_queue_wording_is_not_used(self):
+        self.assertNotIn("function tagPrintOutcome(result) {", self.source)
+        self.assertNotIn("queued for ${printer}", self.source)
+        self.assertIn("opened in the system print dialog.", self.source)
 
-    def test_every_print_button_uses_it(self):
-        # The definition plus one call from each of the three print buttons.
-        self.assertEqual(self.source.count("tagPrintOutcome(result)"), 4)
+    def test_every_print_button_uses_the_system_dialog(self):
+        self.assertIn("await printMerchandiseTagWithSystemDialog(api, saved.id)", self.source)
+        self.assertIn("await printMerchandiseTagWithSystemDialog(api, entryId)", self.source)
+        self.assertIn("await printMerchandiseTagWithSystemDialog(api, item.merchandiseId)", self.source)

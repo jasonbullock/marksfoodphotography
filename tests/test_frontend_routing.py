@@ -129,9 +129,27 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("const columnsByTable = { planning: planningColumns, production: productionColumns, shipping: shippingColumns }", self.source)
         self.assertIn("style={{ width: '100%', minWidth: tableWidthFor(table) }}", self.source)
         self.assertIn("style={{ width: '100%', minWidth: tableWidthFor('shipping') }}", self.source)
+        self.assertIn('aria-label="Resize THR3D Merchandise column"', self.source)
+        self.assertIn("startColumnResize(event, 'shipping', 'shipping:merchandise')", self.source)
+        self.assertIn("resetColumnWidth('shipping', 'shipping:merchandise')", self.source)
+        self.assertIn('className={`operations-draggable-column', self.source)
+        self.assertIn("moveWorkspaceColumn('shipping', sourceKeyParts.join('|'), key", self.source)
+        self.assertIn("event.clientX < bounds.left + bounds.width / 2", self.source)
+        self.assertIn(".operations-draggable-column.is-drag-before::before", self.styles)
         self.assertIn("if (key === 'shipping:quantity') return 'Quantity To Ship'", self.source)
         self.assertIn("if (key === 'shipping:status') return 'Shipping status'", self.source)
         self.assertIn("if (key === 'shipping:shippedAt') return 'Shipped to THR3D'", self.source)
+        self.assertIn("const [workspaceStatusFilter, setWorkspaceStatusFilter] = useState('in-progress')", self.source)
+        self.assertIn('<option value="in-progress">In progress</option>', self.source)
+        self.assertIn('<option value="complete">Complete</option>', self.source)
+        self.assertIn('<option value="disposed">Disposed</option>', self.source)
+        self.assertIn("['done', 'completed', 'complete', 'approved'].includes(status)", self.source)
+        self.assertIn("if (workspaceStatusFilter === 'disposed') return merchandiseIsDisposed(row)", self.source)
+        self.assertIn("{ key: 'merchStatus', width: 118, min: 105 }", self.source)
+        self.assertIn("{ key: 'shipping:merchStatus', width: 118, min: 105 }", self.source)
+        self.assertIn("max-width: 118px", self.styles)
+        self.assertIn("await api.updateMerchandiseStatus(row.id, status)", self.source)
+        self.assertIn("It will leave the In progress view.", self.source)
         self.assertIn("outboundShipment?.receivedDate", self.source)
         self.assertNotIn("showThr3d", self.source)
         self.assertIn("aria-selected={workspaceScope === 'thr3d'}", self.source)
@@ -178,7 +196,7 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn('aria-label={`Resize ${title} Merchandise column`}', self.source)
         self.assertIn("jobNumber: 'WKFT #'", self.source)
         self.assertIn("fileNameDescription: 'File Name Desc.'", self.source)
-        self.assertIn('<th colSpan="2">Merchandise</th>', self.source)
+        self.assertIn('<th colSpan="2" className="operations-merchandise-column-head">', self.source)
         self.assertNotIn('visiblePlanningColumnCount', self.source)
         self.assertIn("marks:workspace-columns:v2:", self.source)
         self.assertIn("marks:workspace-column-order:", self.source)
@@ -2307,6 +2325,7 @@ class FileNameDescriptionTests(unittest.TestCase):
     def setUpClass(cls):
         cls.source = APP.read_text()
         cls.api = (ROOT / "frontend" / "src" / "api.js").read_text()
+        cls.system_print = (ROOT / "frontend" / "src" / "merchandiseTagPrint.js").read_text()
 
     def test_one_field_under_one_name(self):
         # The same Airtable cell was exposed as productDescription and
@@ -2517,6 +2536,47 @@ class DashboardPlanningBadgeTests(unittest.TestCase):
         self.assertNotIn("Ready to Shoot</div>", source)
         self.assertIn("const readyToShoot = skuList.filter", source)
 
+    def test_recent_comments_open_the_existing_planning_thread(self):
+        source = APP.read_text()
+        self.assertIn("const recentComments = useResource(() => api.listRecentComments(8));", source)
+        self.assertIn("Recent Comments</span>", source)
+        self.assertIn("comment.productName", source)
+        self.assertIn("formatInventoryDate(comment.createdAt)", source)
+        self.assertIn("navigate('planning', { item: comment.merchandiseId })", source)
+        self.assertIn("api.listRecentComments = async (limit = 8)", (ROOT / "frontend" / "src" / "api.js").read_text())
+
+    def test_creative_force_dashboard_text_has_dark_card_contrast(self):
+        source = APP.read_text()
+        styles = STYLES.read_text()
+        creative_force = source.split("function CreativeForceStrip", 1)[1].split("function ProductionTrack", 1)[0]
+        self.assertIn('className="dash-card dash-cf-card"', creative_force)
+        self.assertIn(".dash-cf-step strong {\n  color: #fff;", styles)
+        self.assertIn(".dash-cf-oldest strong { color: #fff; }", styles)
+
+    def test_creative_force_and_comments_share_a_compact_dashboard_row(self):
+        source = APP.read_text()
+        styles = STYLES.read_text()
+        dashboard = source.split("function Dashboard", 1)[1].split("function IntakePage", 1)[0]
+        activity = dashboard.split('className="dash-activity-row"', 1)[1].split("</div>", 1)[0]
+        self.assertIn("<CreativeForceStrip navigate={navigate} />", activity)
+        self.assertIn('className="dash-card dash-recent-comments"', activity)
+        self.assertIn("grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);", styles)
+        self.assertIn(".dash-activity-row { grid-template-columns: minmax(0, 1fr); }", styles)
+
+
+class MerchandiseModalNotesTests(unittest.TestCase):
+    def test_ingest_notes_only_render_when_present(self):
+        source = APP.read_text()
+        self.assertIn("const ingestNotes = String(item.record?.notes || '').trim();", source)
+        self.assertIn("{ingestNotes && (", source)
+        self.assertIn('className="new-review-ingest-notes"', source)
+        self.assertIn("<p>{ingestNotes}</p>", source)
+
+    def test_notes_are_not_duplicated_in_merch_facts(self):
+        source = APP.read_text()
+        merch_facts = source.split("function MerchFacts", 1)[1].split("function ReviewStep", 1)[0]
+        self.assertNotIn("key: 'notes'", merch_facts)
+
 
 class ShipmentsMobileLayoutTests(unittest.TestCase):
     @classmethod
@@ -2624,12 +2684,14 @@ class PrintTagTests(unittest.TestCase):
     def setUpClass(cls):
         cls.source = APP.read_text()
         cls.api = (ROOT / "frontend" / "src" / "api.js").read_text()
+        cls.system_print = (ROOT / "frontend" / "src" / "merchandiseTagPrint.js").read_text()
 
     def test_tags_print_from_receiving_on_both_screens(self):
         # Printed where the box is in hand, not from a separate screen later.
-        self.assertIn("api.printMerchandiseTag = async (entryId", self.api)
-        self.assertEqual(self.source.count("await api.printMerchandiseTag(saved.id)"), 1)
-        self.assertEqual(self.source.count("await api.printMerchandiseTag(entryId)"), 1)
+        self.assertIn("api.previewMerchandiseTag = async entryId", self.api)
+        self.assertEqual(self.source.count("await printMerchandiseTagWithSystemDialog(api, saved.id)"), 1)
+        self.assertEqual(self.source.count("await printMerchandiseTagWithSystemDialog(api, entryId)"), 1)
+        self.assertIn("@page { size: 3in 5in; margin: 0; }", self.system_print)
         # Not in the logged-entry row: that actions column stacks vertically, and a
         # button there turns a compact row into three storeys.
         self.assertNotIn('className="recv-tag-btn"', self.source)
@@ -2653,7 +2715,13 @@ class PrintTagTests(unittest.TestCase):
         # reopening.
         source = APP.read_text()
         self.assertIn("async function printTagForItem()", source)
-        self.assertIn("await api.printMerchandiseTag(item.merchandiseId)", source)
+        self.assertIn("await printMerchandiseTagWithSystemDialog(api, item.merchandiseId)", source)
+
+    def test_the_system_label_has_the_studio_hierarchy(self):
+        for content in ('class="client"', 'class="product"', 'class="qr"', 'MP #', 'UPC',
+                        'Creative Force Scan', 'class="barcode"', 'Quantity received',
+                        'Ship to THR3D', 'Received', 'Shot date'):
+            self.assertIn(content, self.system_print)
 
 
 class PrinterAdminTests(unittest.TestCase):
