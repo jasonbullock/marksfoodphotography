@@ -7291,33 +7291,30 @@ input[type="checkbox"]:disabled {
   min-height: 20px;
   padding: 2px 7px;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: #fff;
-  color: var(--text-3);
+  border: 1px solid #0369a1;
+  background: #0284c7;
+  color: #fff;
   font-size: 10.5px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
-/* Three steps in one hue rather than two competing hues. The old "recent" state was
-   amber, which collided with the age chip's aging colour and made a comment count the
-   loudest thing on the card. Escalating by weight keeps recency legible while leaving
-   amber and red to mean age and blockers everywhere on this board.
-
-     quiet outline  = there is a conversation, you are caught up
-     blue tint      = unread
-     solid blue     = unread and still live (posted within the last four hours)  */
+/* A conversation should be unmistakable while scanning the board. Unread and
+   recent activity increase the contrast without changing the meaning of age or
+   blocker colours elsewhere on the card. */
 .planning-comment-signal.has-unread {
-  border-color: rgba(37, 99, 235, 0.32);
-  background: #eff6ff;
-  color: #1d4ed8;
+  border-color: #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.22);
 }
 
 .planning-comment-signal.has-recent.has-unread {
-  border-color: #1d4ed8;
+  border-color: #1e3a8a;
   background: #1d4ed8;
   color: #fff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.28);
 }
 
 .planning-comment-signal.has-recent.has-unread .planning-unread-dot {
@@ -7328,14 +7325,14 @@ input[type="checkbox"]:disabled {
   opacity: 0.9;
 }
 
-/* Caught up, but the thread moved recently: worth noticing, not worth shouting. */
 .planning-comment-signal.has-recent:not(.has-unread) {
-  border-color: rgba(37, 99, 235, 0.34);
-  color: var(--text-2);
+  border-color: #075985;
+  background: #0369a1;
+  color: #fff;
 }
 
 .planning-comment-signal svg {
-  opacity: 0.75;
+  opacity: 1;
   transform: scaleX(-1);
 }
 

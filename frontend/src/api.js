@@ -1,7 +1,10 @@
 // Every call goes through the Marks Photo API. The browser holds no Airtable
 // credential: a VITE_* value is compiled into the public bundle, so a token
 // here would be readable by anyone who loads the site.
-const BACKEND_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5057/api';
+// Keep browser requests on the same origin by default. In development Vite
+// proxies /api to Flask; in production the public host serves that path. This
+// also means a phone opening the LAN URL does not try to call its own localhost.
+const BACKEND_API_URL = import.meta.env.VITE_API_URL || '/api';
 
 const TABLES = {
   CLIENTS: 'Clients',

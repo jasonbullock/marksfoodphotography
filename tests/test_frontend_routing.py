@@ -23,6 +23,13 @@ class FrontendRoutingTests(unittest.TestCase):
         cls.table_export = TABLE_EXPORT.read_text()
         cls.merchandise_routing = MERCHANDISE_ROUTING.read_text()
 
+    def test_api_defaults_to_same_origin_for_lan_and_mobile_access(self):
+        api_source = (ROOT / "frontend" / "src" / "api.js").read_text()
+        vite_source = (ROOT / "frontend" / "vite.config.js").read_text()
+        self.assertIn("import.meta.env.VITE_API_URL || '/api'", api_source)
+        self.assertNotIn("http://localhost:5057/api", api_source)
+        self.assertIn("target: 'http://localhost:5057'", vite_source)
+
     def test_router_library_is_used(self):
         package = json.loads(PACKAGE.read_text())
         self.assertIn("react-router-dom", package["dependencies"])
@@ -139,7 +146,11 @@ class FrontendRoutingTests(unittest.TestCase):
         self.assertIn("if (key === 'shipping:quantity') return 'Quantity To Ship'", self.source)
         self.assertIn("if (key === 'shipping:status') return 'Shipping status'", self.source)
         self.assertIn("if (key === 'shipping:shippedAt') return 'Shipped to THR3D'", self.source)
-        self.assertIn("const [workspaceStatusFilter, setWorkspaceStatusFilter] = useState('in-progress')", self.source)
+        self.assertIn("const [workspaceStatusFilter, setWorkspaceStatusFilter] = useState('all')", self.source)
+        self.assertLess(
+            self.source.index('<option value="all">All statuses</option>'),
+            self.source.index('<option value="in-progress">In progress</option>'),
+        )
         self.assertIn('<option value="in-progress">In progress</option>', self.source)
         self.assertIn('<option value="complete">Complete</option>', self.source)
         self.assertIn('<option value="disposed">Disposed</option>', self.source)

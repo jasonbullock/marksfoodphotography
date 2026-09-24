@@ -8019,7 +8019,7 @@ function OperationsWorkspacePage({ navigate }) {
   const [workspaceFilter, setWorkspaceFilter] = useState('all');
   const [workspaceScope, setWorkspaceScope] = useState('all');
   const [workspaceDeliverableFilter, setWorkspaceDeliverableFilter] = useState('');
-  const [workspaceStatusFilter, setWorkspaceStatusFilter] = useState('in-progress');
+  const [workspaceStatusFilter, setWorkspaceStatusFilter] = useState('all');
   const [drafts, setDrafts] = useState({});
   const [savingCell, setSavingCell] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -8706,10 +8706,10 @@ function OperationsWorkspacePage({ navigate }) {
         </select>}
         <label className="operations-current-status-filter">
           <select value={workspaceStatusFilter} onChange={event => setWorkspaceStatusFilter(event.target.value)} aria-label="Filter by current status">
+            <option value="all">All statuses</option>
             <option value="in-progress">In progress</option>
             <option value="complete">Complete</option>
             <option value="disposed">Disposed</option>
-            <option value="all">All statuses</option>
           </select>
         </label>
         <details ref={columnsMenuRef} className="workspace-columns-menu">

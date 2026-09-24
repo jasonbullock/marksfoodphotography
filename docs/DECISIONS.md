@@ -2369,3 +2369,9 @@ Decision: MediaBox Number is available as an optional Planning table column and 
 
 - Item-level notes captured during shipment ingest appear at the bottom of the existing Merchandise modal.
 - Notes are read-only in this surface and are omitted entirely when empty; comments remain the editable conversation channel.
+
+## 2026-09-24 - Local browser access uses same-origin API routing
+
+- The frontend defaults to `/api` and the Vite development server proxies that path to the local Flask service on port 5057.
+- Phones and other LAN devices therefore authenticate against the host serving the page instead of incorrectly calling their own `localhost`.
+- `VITE_API_URL` remains available as an explicit deployment override.

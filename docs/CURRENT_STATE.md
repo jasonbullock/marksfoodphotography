@@ -1,3 +1,9 @@
+# Current State
+
+## 2026-09-24 - Mobile LAN access and Planning visibility
+
+The frontend now uses same-origin `/api` requests by default, with Vite proxying development traffic to Flask on port 5057, so LAN devices such as iPhones authenticate against the development host instead of their own localhost. Planning Table defaults to `All statuses` and lists that option first. Planning Board cards render any existing comment count as a high-contrast blue signal, with stronger emphasis for unread or recent activity. Verification: the full backend suite passed 853 tests, the focused frontend routing suite passed 182 tests, the frontend production build passed with the existing large-chunk warning, and both localhost and LAN requests reached the frontend and proxied authentication endpoint. Browser automation remained unavailable because the saved Sierra workspace path is a symlink that its sandbox cannot mount.
+
 ## 2026-09-22 - Merchandise operations checkpoint verified
 
 The accumulated THR3D table interactions, Planning status views, physical-status synchronization, system merchandise-label printing, dashboard comments, and Merchandise modal notes are captured as one repository checkpoint. The complete test suite passes 852 tests, the frontend production build passes, and `git diff --check` reports no whitespace errors. The existing Vite large-chunk warning remains.
