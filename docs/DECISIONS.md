@@ -2375,3 +2375,8 @@ Decision: MediaBox Number is available as an optional Planning table column and 
 - The frontend defaults to `/api` and the Vite development server proxies that path to the local Flask service on port 5057.
 - Phones and other LAN devices therefore authenticate against the host serving the page instead of incorrectly calling their own `localhost`.
 - `VITE_API_URL` remains available as an explicit deployment override.
+
+
+## 2026-10-26 - Printed tag links identify Merchandise across its lifecycle
+
+Keep existing `/planning?item=<Merchandise ID>` printed URLs valid. Preserve their item selection through the compatibility redirect and open the existing Merchandise modal using the Table record set, which includes activated Merchandise. Generic Planning links retain Board behavior. This is navigation over existing records, not a new workflow, schema, or duplicate detail surface.

@@ -409,7 +409,7 @@ class FrontendRoutingTests(unittest.TestCase):
     def test_merchandise_review_uses_shared_subnav_without_equal_width_overrides(self):
         self.assertIn('className="merch-review-subnav"', self.source)
         self.assertIn('<Route path="/merchandise/review" element={<MerchandiseReviewPage />} />', self.source)
-        self.assertIn('<Route path="/planning" element={<Navigate to="/workspace?view=board" replace />} />', self.source)
+        self.assertIn('<Route path="/planning" element={<PlanningRedirect />} />', self.source)
         self.assertIn('<Route path="/intake" element={<Navigate to="/workspace?view=board" replace />} />', self.source)
         self.assertIn('<Route path="/work" element={<Navigate to="/workspace?view=board" replace />} />', self.source)
         self.assertIn('<Route path="/merchandise-review-v2" element={<Navigate to="/workspace?view=board" replace />} />', self.source)
@@ -438,7 +438,7 @@ class FrontendRoutingTests(unittest.TestCase):
             "ConversationPanel",
             "NewReviewSupportPanel",
             "api.listMerchandiseReviewEntries()",
-            '<Route path="/planning" element={<Navigate to="/workspace?view=board" replace />} />',
+            '<Route path="/planning" element={<PlanningRedirect />} />',
         ]:
             self.assertIn(text, self.source)
         for text in [
@@ -2673,6 +2673,20 @@ class ShipmentFinishTests(unittest.TestCase):
 
 
 class PlanningDeepLinkTests(unittest.TestCase):
+    def test_printed_tag_redirect_preserves_the_item_and_opens_table_details(self):
+        source = APP.read_text()
+        redirect = source.split('function PlanningRedirect()', 1)[1].split('function RouteProductsPage', 1)[0]
+        self.assertIn('new URLSearchParams(searchParams)', redirect)
+        self.assertIn("next.set('view', next.get('item') ? 'table' : 'board')", redirect)
+        self.assertIn('to={`/workspace?${next.toString()}`}', redirect)
+        table = source.split('function OperationsWorkspacePage', 1)[1].split('function MerchandiseReviewPage', 1)[0]
+        self.assertIn('includeReleased: true', table)
+        self.assertIn("detailSearchParams.get('item')", table)
+        self.assertIn('rows.some(row => row.id === requestedDetailId)', table)
+        self.assertIn('setSelectedMerchandiseId(requestedDetailId)', table)
+        self.assertIn("next.delete('item')", table)
+        self.assertIn('{selectedPlanningItem && <NewReviewModal', table)
+
     def test_planning_opens_the_card_named_in_the_url(self):
         # A Teams notification links at one arrival; the board should land on it
         # rather than leave the reader to find it.

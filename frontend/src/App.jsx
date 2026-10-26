@@ -8007,6 +8007,8 @@ function WorkspacePage({ navigate }) {
 }
 
 function OperationsWorkspacePage({ navigate }) {
+  const [detailSearchParams, setDetailSearchParams] = useSearchParams();
+  const requestedDetailId = detailSearchParams.get('item') || '';
   const { auth } = useAuth();
   const workspacePreferenceOwner = auth?.user?.id || auth?.id || auth?.email || 'local';
   const workspaceColumnPreferenceKey = 'marks:workspace-columns:v2:' + workspacePreferenceOwner;
@@ -8044,6 +8046,15 @@ function OperationsWorkspacePage({ navigate }) {
   const [storedColumnVisibility, setStoredColumnVisibility] = useStoredState(workspaceColumnPreferenceKey, '{}');
   const [storedColumnOrder, setStoredColumnOrder] = useStoredState(workspaceColumnOrderKey, '{}');
   useEffect(() => { if (entries.data?.records) setRows(entries.data.records); }, [entries.data]);
+
+  useEffect(() => {
+    if (!requestedDetailId || !rows.some(row => row.id === requestedDetailId)) return;
+    setSelectedMerchandiseId(requestedDetailId);
+    setSelectedWorkstreamCardId('');
+    const next = new URLSearchParams(detailSearchParams);
+    next.delete('item');
+    setDetailSearchParams(next, { replace: true });
+  }, [requestedDetailId, rows, detailSearchParams, setDetailSearchParams]);
 
   const clientList = clients.data?.records || [];
   const clientMap = Object.fromEntries(clientList.map(client => [client.id, client]));
@@ -15542,6 +15553,14 @@ function pageTitleForPath(pathname) {
   return 'Not Found';
 }
 
+function PlanningRedirect() {
+  const [searchParams] = useSearchParams();
+  const next = new URLSearchParams(searchParams);
+  // Printed tags identify physical Merchandise, including activated items.
+  next.set('view', next.get('item') ? 'table' : 'board');
+  return <Navigate to={`/workspace?${next.toString()}`} replace />;
+}
+
 function RouteProductsPage({ navigate }) {
   const [searchParams] = useSearchParams();
   return (
@@ -16069,7 +16088,7 @@ function AppLayout() {
             <Route path="/verification" element={<Navigate to="/merchandise/review" replace />} />
             <Route path="/merchandise" element={<MerchandiseInventoryPage navigate={navigate} />} />
             <Route path="/merchandise/review" element={<MerchandiseReviewPage />} />
-            <Route path="/planning" element={<Navigate to="/workspace?view=board" replace />} />
+            <Route path="/planning" element={<PlanningRedirect />} />
             <Route path="/intake" element={<Navigate to="/workspace?view=board" replace />} />
             <Route path="/work" element={<Navigate to="/workspace?view=board" replace />} />
             <Route path="/merchandise-review-v2" element={<Navigate to="/workspace?view=board" replace />} />

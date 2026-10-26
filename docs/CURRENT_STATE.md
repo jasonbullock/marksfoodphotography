@@ -1,5 +1,13 @@
 # Current State
 
+## 2026-10-26 - Printed merchandise tags open the detail modal
+
+The legacy `/planning?item=<Merchandise ID>` URL printed on tags now preserves its query parameters when redirecting to `/workspace` and selects Table for item links. The table waits for accessible Merchandise records to load, opens the existing Merchandise detail modal for the requested record (including activated records), and consumes the `item` parameter so closing the modal does not reopen it. Plain `/planning` links continue to open Board. Existing labels do not require reprinting. No Airtable schema, workflow, or tag payload changes were made.
+
+Verification: `backend/.venv/bin/python -m unittest tests.test_frontend_routing tests.test_tag_print` passed 215 tests; `npm run build` in frontend passed with the existing large-chunk warning; `git diff --check` passed. Browser scan verification was not performed. This change is local and requires deployment for tags pointing to a hosted app. Existing permissions and client scope still determine accessible records. PRODUCT_VISION.md and DOMAIN_MODEL.md need no revision.
+
+Resume: Inspect the 2026-10-26 tag deep-link checkpoint, then verify an existing printed `/planning?item=...` tag opens Merchandise details against the intended deployment. Implementation is in frontend/src/App.jsx; regression checks are in tests/test_frontend_routing.py. Preserve pre-existing webhook changes.
+
 ## 2026-09-24 - Mobile LAN access and Planning visibility
 
 The frontend now uses same-origin `/api` requests by default, with Vite proxying development traffic to Flask on port 5057, so LAN devices such as iPhones authenticate against the development host instead of their own localhost. Planning Table defaults to `All statuses` and lists that option first. Planning Board cards render any existing comment count as a high-contrast blue signal, with stronger emphasis for unread or recent activity. Verification: the full backend suite passed 853 tests, the focused frontend routing suite passed 182 tests, the frontend production build passed with the existing large-chunk warning, and both localhost and LAN requests reached the frontend and proxied authentication endpoint. Browser automation remained unavailable because the saved Sierra workspace path is a symlink that its sandbox cannot mount.
